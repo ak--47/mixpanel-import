@@ -1,0 +1,11 @@
+# ignore this shit
+*.py
+*.ndjson
+*.gz
+scratchpad.js
+.vscode/*
+.DS_Store
+.env
+node_modules/
+archived/
+someTestData.json
