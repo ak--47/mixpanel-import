@@ -1,12 +1,12 @@
 {
-  "name": "mpImport",
+  "name": "mixpanel-import",
   "version": "1.0.0",
   "description": "a library to import events in mixpanel for node",
   "main": "index.js",
   "scripts": {
     "dev": "nodemon --inspect -w index.js index.js",
     "import": "node index.js",
-    "generate": "node generateFakeData.js",
+    "generate": "NUMEVENTS=100000 SINCEDAYS=30 node generateFakeData.js",
     "prune": "rm -rf someTestData.json"
   },
   "repository": {
@@ -26,6 +26,8 @@
     "md5": "^2.3.0",
     "node-fetch": "^2.6.1",
     "node-gzip": "^1.1.2",
+    "split": "^1.0.1",
+    "stream-json": "^1.7.4",
     "underscore": "^1.13.2"
   },
   "devDependencies": {

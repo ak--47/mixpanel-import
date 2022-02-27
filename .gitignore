@@ -1,5 +1,4 @@
 # ignore this shit
-*.py
 *.ndjson
 *.gz
 scratchpad.js
@@ -7,5 +6,5 @@ scratchpad.js
 .DS_Store
 .env
 node_modules/
-archived/
-someTestData.json
+testData/*
+!testData/.gitkeep

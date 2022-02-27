@@ -1,9 +1,9 @@
-const util = require('util');
 const fs = require('fs')
 const path = require('path')
 const Chance = require('chance'); //https://github.com/chancejs/chancejs
 const chance = new Chance();
 const readline = require('readline');
+
 
 //possible names of events for test data
 const eventNames = ['app open', 'log in', 'send message', 'receive message', 'roll dice', 'attack', 'defend', 'level up', 'start game']
@@ -12,15 +12,18 @@ const eventNames = ['app open', 'log in', 'send message', 'receive message', 'ro
 const now = Date.now();
 const dayInMs = 8.64e+7;
 
-function main() {
+function main(numEvents, numDays) {
+    require('dotenv').config({ override: true })
     const arrOfEvents = [];
-    let numOfEvents = 10000
+    let numOfEvents = Number(process.env.events) || Number(process.env.NUMEVENTS) || numEvents || 10000
+    
     const lastArgument = [...process.argv].pop()
     if (!isNaN(lastArgument)) {
         numOfEvents = Number(lastArgument);
     }
 
     console.log('starting data generator...\n');
+    const sinceDays = Number(process.env.days) || Number(process.env.SINCEDAYS) || numDays || 90
 
     //mixin for generating random events
     chance.mixin({
@@ -30,13 +33,14 @@ function main() {
                 properties: {
                     distinct_id: chance.guid(),                    
                     time: chance.integer({
-                        min: now - dayInMs * 90, //90 days in the past
+                        min: now - dayInMs * sinceDays, //90 days in the past
                         max: now
                     }),
-                    $source: "mpBatchImport Test Data (AK)",
+                    $source: "mixpanel import by AK (test Data)",
                     luckyNumber: chance.prime({min: 1, max: 10000}),
                     ip: chance.ip(),
-                    email: chance.email()
+                    email: chance.email(),
+                    tag: "foo"
                 }
 
 
@@ -44,7 +48,7 @@ function main() {
         }
     });
 
-    console.log(`generating ${numberWithCommas(numOfEvents)} events...\n`);
+    console.log(`generating ${numberWithCommas(numOfEvents)} events... over the last ${sinceDays} days \n`);
 
     for (let index = 1; index < numOfEvents+1; index++) {
         arrOfEvents.push(chance.event());
@@ -53,12 +57,12 @@ function main() {
 
     console.log(`\n\nsaving ${numberWithCommas(numOfEvents)} events to ./someTestData.json\n`);
 
-    fs.writeFile("./someTestData.json", JSON.stringify(arrOfEvents), function(err) {
+    fs.writeFile("./testData/someTestData.json", JSON.stringify(arrOfEvents), function(err) {
         if(err) {
             return console.log(err);
             process.exit(1)
         }
-        console.log("all finished\ntry 'npm run import' to send the data to mixpanel!");
+        console.log("\ntry:\n\nnpm run import ./testData/someTestData.json\n\nto send the data to mixpanel!");
         process.exit(0)
     }); 
 
@@ -75,6 +79,7 @@ function showProgress(thing, p) {
     process.stdout.write(`${thing} created: ${numberWithCommas(p)}`);
 }
 
+module.exports = main;
 
 // ;)
 main();
