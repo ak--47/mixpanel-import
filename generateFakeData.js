@@ -40,7 +40,7 @@ function main(numEvents, numDays) {
                     luckyNumber: chance.prime({min: 1, max: 10000}),
                     ip: chance.ip(),
                     email: chance.email(),
-                    tag: "foo"
+                    tag: "bar"
                 }
 
 

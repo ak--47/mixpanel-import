@@ -1,19 +1,28 @@
 // import things into mixpanel... quickly
 
-//DEPENDENCIES
+
 //https://github.com/uhop/stream-json/wiki
 const { parser } = require('stream-json');
 const StreamArray = require('stream-json/streamers/StreamArray');
 const JsonlParser = require('stream-json/jsonl/Parser');
+const Batch = require('stream-json/utils/Batch');
+
+//https://github.com/uhop/stream-chain/wiki
+const { chain } = require('stream-chain');
+
+//first party
+const { pipeline } = require('stream/promises')
 const { createReadStream, existsSync } = require('fs');
-// const { readFile } = require('fs')
+const path = require('path')
+const { pick } = require('underscore')
+const readline = require('readline');
+const zlib = require('zlib');
+
+//third party
 const { gzip, ungzip } = require('node-gzip')
 const md5 = require('md5')
 const isGzip = require('is-gzip')
 const fetch = require('node-fetch')
-const path = require('path')
-const { pick } = require('underscore')
-const readline = require('readline');
 const split = require('split');
 
 //.env (if used)
@@ -48,7 +57,6 @@ async function main(creds = {}, data = [], opts = {}) {
         recordsPerBatch: 2000, //event in each req
         bytesPerBatch: 2 * 1024 * 1024, //bytes in each req
         strict: true, //use strict mode?
-        compress: true, //gzip
         logs: false //print to stdout?
     }
     const options = { ...defaultOpts, ...opts }
@@ -69,30 +77,75 @@ async function main(creds = {}, data = [], opts = {}) {
     const project = resolveProjInfo({ ...defaultCreds, ...creds, ...envCreds })
 
     //these values are used for configuation   
-    const { recordType, streamSize, region, recordsPerBatch, bytesPerBatch, strict, compress, logs } = options
+    const { recordType, streamSize, region, recordsPerBatch, bytesPerBatch, strict, logs } = options
     logging = options.logs
     streamOpts = { highWaterMark: 2 ** streamSize }
     url = ENDPOINTS[region.toLowerCase()][recordType]
-    if (logging) console.time('parse')    
+    if (logging) console.time('parse')
 
-    //parse, partition, and compress the data
-    const dataIn = await loadData(data);
-    const batches = await zipChunks(chunkSize(chunkEv(dataIn, recordsPerBatch), bytesPerBatch));
-    if (logging) console.timeEnd('parse')
-    log(`\nloaded ${addComma(dataIn.length)} ${recordType}s`)
+    //streaming files to mixpanel!
+    if (logging) console.time('pipeline')
+    const pipeline = chain([
+        createReadStream(path.resolve(data)),
+        parseType(data),
+        //transform func
+        (data) => data.value,
+        new Batch({ batchSize: recordsPerBatch }),        
+        async (batch) => await gzip(JSON.stringify(batch)),
+        async (batch) => {
+            return await sendDataToMixpanel(project, batch)
+        }
+    ]);
     
-    //flush to mixpanel
-    let responses = []
-    let iter = 0;
-    if (logging) console.time('flush')
-    for (const batch of batches) {
-        iter += 1
-        showProgress(recordType, recordsPerBatch * iter, dataIn.length, iter, batches.length)
-        let res = await sendDataToMixpanel(project, batch);
-        responses.push(res)
-    }
-    if (logging) log('\n'); console.timeEnd('flush')
-    let foo;
+    //listening to the pipeline
+    let records = 0;
+    let batches = 0;
+    pipeline.on('error', error => console.log(error));
+    pipeline.on('data', (response)=>{        
+        batches += 1;
+        records += Number(response.num_records_imported)
+        if (logging) showProgress(recordType, records, records, batches, batches)
+        
+        
+    });
+    pipeline.on('end', ()=>{
+        if (logging) log(``); console.timeEnd('pipeline');
+    });
+
+
+
+    /*
+    essentially:
+
+    pipeline(
+        loadData,
+        transform
+        chunk,
+        zip,
+        flush
+    )
+
+    */
+
+    // //parse, partition, and compress the data
+    // const dataIn = await loadData(data);
+    // const batches = await zipChunks(chunkSize(chunkEv(dataIn, recordsPerBatch), bytesPerBatch));
+    // if (logging) console.timeEnd('parse')
+    // log(`\nloaded ${addComma(dataIn.length)} ${recordType}s`)
+
+    // //flush to mixpanel
+    // let responses = []
+    // let iter = 0;
+    // if (logging) console.time('flush')
+    // for (const batch of batches) {
+    //     iter += 1
+    //     showProgress(recordType, recordsPerBatch * iter, dataIn.length, iter, batches.length)
+    //     let res = await sendDataToMixpanel(project, batch);
+    //     responses.push(res)
+    // }
+    // if (logging) log('\n');
+    // console.timeEnd('flush')
+    // let foo;
 
 
 
@@ -104,28 +157,15 @@ async function main(creds = {}, data = [], opts = {}) {
 
 
 //HELPERS
-async function handleFile(fileName) {
-    let result = [];
-    return new Promise(async (resolve, reject) => {
-        let pipeline
-        if (fileName.endsWith('.json')) {
-            pipeline = createReadStream(fileName, streamOpts).pipe(StreamArray.withParser());
-        }
+function parseType(fileName) {
+    if (fileName.endsWith('.json')) {
+        return StreamArray.withParser()
+    }
 
-        if (fileName.endsWith('.ndjson') || fileName.endsWith('.jsonl')) {
-            const jsonlParser = new JsonlParser();
-            pipeline = createReadStream(fileName, streamOpts).pipe(jsonlParser)
-        }
-
-        pipeline.on('data', (data) => {
-            result.push(data.value)
-        });
-        pipeline.on('end', () => {
-            resolve(result)
-        });
-      
-
-    })
+    if (fileName.endsWith('.ndjson') || fileName.endsWith('.jsonl')) {
+        const jsonlParser = new JsonlParser();
+        return jsonlParser
+    }
 
 }
 
@@ -139,7 +179,7 @@ async function loadData(data) {
             //probably a file; stream it
             let dataPath = path.resolve(data)
             if (!existsSync(dataPath)) console.error(`could not find ${data} ... does it exist?`)
-            return await handleFile(dataPath)
+            return handleFile(createReadStream(dataPath, streamOpts), dataPath)
             break;
         case `object`:
             //probably structured data; return it
@@ -229,9 +269,9 @@ async function zipChunks(arrayOfBatches) {
     return Promise.all(allBatches)
 }
 
-async function sendDataToMixpanel(proj, batch) {    
+async function sendDataToMixpanel(proj, batch) {
     let authString = proj.auth
-    
+
     let options = {
         method: 'POST',
         headers: {
@@ -244,7 +284,7 @@ async function sendDataToMixpanel(proj, batch) {
     }
 
     try {
-        let req = await fetch(url, options)
+        let req = await fetch(`${url}?ip=0&verbose=1`, options)
         let res = await req.json()
         //console.log(`           ${JSON.stringify(res)}`)
         return res
