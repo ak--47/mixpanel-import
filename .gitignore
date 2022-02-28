@@ -6,6 +6,7 @@ scratch.js
 .vscode/*
 .DS_Store
 .env
+.envBAK
 node_modules/
 testData/*
 !testData/.gitkeep

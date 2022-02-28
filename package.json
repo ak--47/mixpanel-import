@@ -4,12 +4,10 @@
   "description": "a library to import events in mixpanel for node",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon --inspect -w index.js index.js",
-    "devScratch": "nodemon --inspect -w scratch.js scratch.js",
-    "scratch": "nodemon --inspect -w scratchpad.js scratchpad.js",
+    "dev": "nodemon --ignore ./testData scratch.js",
     "import": "node index.js",
     "generate": "NUMEVENTS=100000 SINCEDAYS=30 node generateFakeData.js",
-    "prune": "rm -rf someTestData.json"
+    "prune": "rm -rf ./testData/*"
   },
   "repository": {
     "type": "git",
@@ -28,7 +26,6 @@
     "md5": "^2.3.0",
     "node-fetch": "^2.6.1",
     "node-gzip": "^1.1.2",
-    "split": "^1.0.1",
     "stream-chain": "^2.2.5",
     "stream-json": "^1.7.4",
     "underscore": "^1.13.2"

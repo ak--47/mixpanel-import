@@ -14,7 +14,7 @@ const { chain } = require('stream-chain');
 
 //first party
 const { pipeline } = require('stream/promises')
-const { createReadStream, existsSync } = require('fs');
+const { createReadStream, existsSync, lstatSync, readdirSync } = require('fs');
 const path = require('path')
 const { pick } = require('underscore')
 const readline = require('readline');
@@ -100,13 +100,41 @@ async function main(creds = {}, data = [], opts = {}) {
     const dataType = determineData(data)
     switch (dataType) {
         case `file`:
-            if (logging) log(`streaming ${recordType}s from ${data}`)
+            if (logging) log(`streaming ${recordType}s from ${data}`); console.time('stream pipeline');
             pipeline = await streamPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc)
+            if (logging) log('\n'); console.timeEnd('stream pipeline');
             break;
+        
         case `inMem`:
             if (logging) log(`parsing ${recordType}s`)
             pipeline = await sendDataInMem(data, project, recordsPerBatch, bytesPerBatch, transformFunc)
             break;
+
+        case `directory`:
+            pipeline = [];
+            const files = readdirSync(data).map(fileName => {
+                return {
+                    name: fileName,
+                    path: path.resolve(`${data}/${fileName}`)
+                }
+            });
+            if (logging) log(`found ${addComma(files.length)} files in ${data}`); console.time('stream pipeline');
+            
+            loopFiles: for (const file of files) {
+                if (logging) log(`streaming ${recordType}s from ${file.name}`)
+                try {
+                    let result = await streamPipeline(file.path, project, recordsPerBatch, bytesPerBatch, transformFunc)
+                    pipeline.push({[file.name]: result })
+                    if (logging) log('\n'); 
+                }
+                catch (e) {
+                    if (logging) log(`  ${file.name} is not valid JSON/NDJSON; skipping`)
+                    continue loopFiles;
+                }
+            }
+            if (logging) console.timeEnd('stream pipeline');
+            break;
+
         default:
             if (logging) log(`could not determine data source`)
             pipeline = `error`
@@ -120,8 +148,7 @@ async function main(creds = {}, data = [], opts = {}) {
 //CORE PIPELINE(S)
 async function streamPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc) {
     return new Promise((resolve, reject) => {
-        //streaming files to mixpanel!
-        if (logging) console.time('stream pipeline')
+        //streaming files to mixpanel!       
         const pipeline = chain([
             createReadStream(path.resolve(data)),
             streamParseType(data),
@@ -142,7 +169,6 @@ async function streamPipeline(data, project, recordsPerBatch, bytesPerBatch, tra
         let responses = [];
 
         pipeline.on('error', (error) => {
-            if (logging) log(error)
             reject(error)
         });
 
@@ -155,8 +181,6 @@ async function streamPipeline(data, project, recordsPerBatch, bytesPerBatch, tra
 
         });
         pipeline.on('end', () => {
-            if (logging) log(``);
-            if (logging) console.timeEnd('stream pipeline');
             resolve(responses)
         });
     })
@@ -179,8 +203,9 @@ async function sendDataInMem(data, project, recordsPerBatch, bytesPerBatch, tran
         let res = await sendDataToMixpanel(project, batch)
         responses.push(res)
     }
-    if (logging) log('\n');
+    if (logging) log('\n')
     if (logging) console.timeEnd('flush')
+    if (logging) log('\n')
 
     return responses
 
@@ -217,9 +242,13 @@ function streamParseType(fileName) {
         return StreamArray.withParser()
     }
 
-    if (fileName.endsWith('.ndjson') || fileName.endsWith('.jsonl')) {
+    else if (fileName.endsWith('.ndjson') || fileName.endsWith('.jsonl')) {
         const jsonlParser = new JsonlParser();
         return jsonlParser
+    }
+
+    else {
+        throw Error(`could not identify ${fileName}; it does not end with: .json, .ndjson, .jsonl`)
     }
 
 }
@@ -232,13 +261,19 @@ function determineData(data) {
                 JSON.parse(data)
                 return `structString`
             } catch (error) {
-
+                //data is not stringified
             }
 
-            //probably a file; stream it
-            let dataPath = path.resolve(data)
-            if (!existsSync(dataPath)) console.error(`could not find ${data} ... does it exist?`)
-            return `file`
+            //probably a file or directory; stream it
+            let dataPath = path.resolve(data);
+            if (!existsSync(dataPath)) {
+                console.error(`could not find ${data} ... does it exist?`)
+            } else {
+                let fileMeta = lstatSync(dataPath);
+                if (fileMeta.isDirectory()) return `directory`
+                if (fileMeta.isFile()) return `file`
+                return `file`
+            }
             break;
 
         case `object`:
@@ -249,6 +284,7 @@ function determineData(data) {
 
         default:
             console.error(`could not determine the type of ${data} ... `)
+            return [];
             process.exit(0)
             break;
     }
