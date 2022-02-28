@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon --inspect -w index.js index.js",
+    "devScratch": "nodemon --inspect -w scratch.js scratch.js",
     "scratch": "nodemon --inspect -w scratchpad.js scratchpad.js",
     "import": "node index.js",
     "generate": "NUMEVENTS=100000 SINCEDAYS=30 node generateFakeData.js",

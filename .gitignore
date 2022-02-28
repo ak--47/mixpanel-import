@@ -2,6 +2,7 @@
 *.ndjson
 *.gz
 scratchpad.js
+scratch.js
 .vscode/*
 .DS_Store
 .env
