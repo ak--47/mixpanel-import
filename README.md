@@ -1,352 +1,159 @@
 
-# mp import node.js
-
   
 
+# mixpanel-import
+**note:** if you're trying to add real-time tracking mixpanel to a node.js web application - this module is **NOT** what you want; you want **[mixpanel-node](https://github.com/mixpanel/mixpanel-node)** the official node.js SDK.
+    
 ## wat.
+This module is designed for streaming large amounts of event or object data to Mixpanel from a node.js environment. It implements the  [`/import`](https://developer.mixpanel.com/reference/events#import-events),  [`/engage`](https://developer.mixpanel.com/reference/profile-set), and [`/groups`](https://developer.mixpanel.com/reference/group-set-property) APIs by streaming JSON files that are compliant with Mixpanel's [data model](https://developer.mixpanel.com/docs/data-structure-deep-dive).
 
-  
-
-This is a one-off script that implement's [Mixpanel's `/import` API](https://developer.mixpanel.com/reference/events#import-events) in node.js. It uses [service accounts](https://developer.mixpanel.com/reference/authentication#service-accounts) for authentication, and can batch import millions of events, quickly.
-
-  
-
-This script is meant to be run **locally**; for a **cloud-based** data import, [see our in-depth guide](https://developer.mixpanel.com/docs/cloud-ingestion).
-
+This is particularly useful for running one-time backfills or streaming data into Mixpanel from cloud-based data pipelines.
   
 
 ## tldr;
 
-install as a module:
+ this module can be used in *two ways*; as a native module or as a standalone ETL.
 
+### module usage
+install `mixpanel-import` as a dependency
 ```
-npm install mp-batch-import --save
-```
-then use in your code:
-```
-const mpImport = require('mp-batch-import');
-const credentials = {
-	project_id: `{{mp project id}}`,
-	username: `{{service account user}}`
-	password: `{{service account pass}}`
-}
-const res = mpImport(credentials, `./pathToData.json`).then(res => console.log(res));
+npm i mixpanel-import --save
 ```
 
-run locally:
+use it in code:
+```
+const mpImport  =  require('mixpanel-import') 
+	...
+const importedData = await mp(credentials, data, options);
+console.log(importedData) // array of responses from Mixpanel
 ```
 
-git clone https://github.com/ak--47/mpBatchImport-node.git
+read more about [`credentials`](#credentials), [`data`](#data), and [`options`](#options) 
 
-  
+### stand-alone usage
+clone the module:
+```
+git clone https://github.com/ak--47/mixpanel-import.git
+```
+run it and providing a path to the data you wish to import:
+```
+$ node index.js ./pathToData
+```
+when running stand-alone, `pathToData` can be a `.json`, `.jsonl`, or `.ndjson` file OR a directory which contains said files.
 
-cd mpBatchImport-node/
-
-  
-
-npm install
-
-  
-
-echo 'PROJECTID=<your-project-id>
-
-USERNAME=<your-service-account-user>
-
-PASSWORD=<your-service-secret-secret>
-
-' > .env
-
-  
-
-npm run import ./path-To-JSON-Data
+you will also need a `.env` configuration file with the following values:
 
 ```
+# if using service account auth; these 3 values are required:
+MP_PROJECT={{your-mp-project}}
+MP_ACCT={{your-service-acct}}
+MP_PASS={{your-service-pass}}
 
-  
+# if using secret based auth; only this value is required
+MP_SECRET={{your-api-secret}}
 
-or if you want to generate some test data first:
-
-  
-
+# this is optional (but strongly encouraged)
+MP_TOKEN={{your-mp-token}}
 ```
+ 
+ ## arguments
 
-npm run generate
+when using `mixpanel-import` in code, you will pass in 3 arguments:  [`credentials`](#credentials), [`data`](#data), and [`options`](#options) 
 
-  
+### credentials
+mixpanel's ingestion APIs authenticate with [service accounts](https://developer.mixpanel.com/reference/service-accounts) OR [API secrets](https://developer.mixpanel.com/reference/authentication#service-account); service accounts are the preferred authentication method.
 
-npm run import
-
-```
-
-  
-
-## Detailed Instructions
-
-  
-
-### Install Dependencies
-
-  
-
-This script uses `npm` to manage dependencies, similar to a web application.
-
-  
-
-After cloning the repo, `cd` into the `/mpBatchImport-node` and run:
-
-  
-
-```
-
-npm install
-
-```
-
-  
-
-this only needs to be done once.
-
-  
-
-### Authentication
-
-  
-
-Authentication for `/import` is handled by [service accounts](https://developer.mixpanel.com/reference/authentication#service-accounts). You'll need to create a service account in your Mixpanel project and provide this script with your credentials (`project_id` , `username`, `secret`)
-
-  
-
-There are two ways to do that; you can choose whichever best suits your needs:
-
-  
-
-#### Add Credentials to the Script
-
-You can supply your credentials directly in the script by editing [lines 19-26](https://github.com/ak--47/mpBatchImport-node/blob/main/index.js#L19-L26):
-
-  
-
-```
-
+using a service account:
+```javascript
 const creds = {
-
-project_id: 'myProjectId'
-
-username: 'myServiceAccount',
-
-password: 'myServiceSecret'
-
+	acct: `{{my-servce-acct}}`, //service acct username
+	pass: `{{my-service-seccret}}`, //service acct secret
+	project: `{{my-project-id}}`, //project id
+	token: `{{my-project-token}}`  //project token
 }
-
+const importedData = await mpImport(creds, data, options);
 ```
-
-  
-  
-
-#### Use an .env file
-
-  
-
-Alternatively, you can provide credentials to this script via a `.env` file of the form:
-
-  
-
-```
-
-PROJECTID=myProjectId
-
-USERNAME=myServiceAccount
-
-PASSWORD=myServiceSecret
-
-```
-
-the `.env` file should be in the root directory of the script.
-
-  
-
-### Passing In Data
-
-  
-
-You can pass in data files of any size, as long as they are valid [JSON](https://jsonlint.com/) or [NDJSON](http://ndjson.org/). If the data is compressed (`gzip`), the script will automatically decompress it.
-
-  
-
-The data should have the general form of Mixpanel's [event specification](https://developer.mixpanel.com/reference/events#track-event):
-
-  
-
-```
-
-{
-
-"event": "eventName" //required: event name
-
-"properties": {
-
-"distinct_id": 1337, //required: user id
-
-"time": 1629120141 //required: unix epoc (sec or ms)
-
-"foo": "bar" //optional: any other props
-
+using secrets:
+```javascript
+const creds = {
+	secret: `{{my-api-secret}}`, //api secret (deprecated auth)
+	token: `{{my-project-token}}`  //project token
 }
+const importedData = await mpImport(creds, data, options);
+```
+note: it is possible to delegate the authentication details to environment variables, using a `.env` file of the form:
 
+```
+# if using service account auth; these 3 values are required:
+MP_PROJECT={{your-mp-project}}
+MP_ACCT={{your-service-acct}}
+MP_PASS={{your-service-pass}}
+
+# if using secret based auth; only this value is required
+MP_SECRET={{your-api-secret}}
+
+# this is optional (but strongly encouraged)
+MP_TOKEN={{your-mp-token}}
+```
+
+if using environment variables for authentication, pass `null` as the first argument to the module:
+
+```javascript
+const importedData = await mpImport(null, data, options);
+```
+
+### data
+the `data` param represents the data you wish to import; this might be [events](https://developer.mixpanel.com/reference/import-events), [user profiles](https://developer.mixpanel.com/reference/profile-set), or [group profiles](https://developer.mixpanel.com/reference/group-set-property)
+
+the value of data can be:
+
+- a path to a _file_, which contains records as `.json`, or `.jsonl/.ndjson`
+```javascript
+const data = `./myEventsToImport.json`
+const importedData = await mpImport(creds, data, options);
+```
+- a path to a _directory_, which contains files that have records as `.json`, or `.jsonl/.ndjson`	
+```javascript
+const data = `./myEventsToImport/`
+const importedData = await mpImport(creds, data, options);
+```
+ - an array of objects (records), in memory
+```javascript
+const data = require('./myEventsToImport.json')
+const importedData = await mpImport(creds, data, options);
+```
+ - a  stringified array of objects
+```javascript
+const records = require('./myEventsToImport.json')
+const data = JSON.stringify(data)
+const importedData = await mpImport(creds, data, options);
+```
+**important note**: you will use the  [`options`](#options) (below) to specify what type of records you are importing
+
+### options
+`options` is an object that allows you to configure the behavior of this module. 
+
+Below, the default values are given, but you can override them with you own value:
+
+```javascript
+const options = {
+	recordType: `event`, //event, user, OR group
+	streamSize: 27, // highWaterMark for streaming chunks (2^27 ~= 134MB)
+	region: `US`, //US or EU
+	recordsPerBatch: 2000, //max # of records in each batch
+	bytesPerBatch: 2 * 1024 * 1024, //max # of bytes in each batch
+	strict: true, //use strict mode?
+	logs: false, //print to stdout?
+
+	//a reference to a function that will be called on every record
+	//useful if you need to transform the data before streaming
+	transformFunc: function noop(a) { return a }
 }
-
 ```
+**note**: the `recordType` param is very important; by default this module assumes you wish to import `events` but change this value to `user` or `group` if you are importing other entities.
 
-  
 
-For data imports, `token` is not required in `properties`; this script generates `$insert_id` using `md5` hashing. You can add additional data transformations on [line 120](https://github.com/ak--47/mpBatchImport-node/blob/main/index.js#L120-L122).
+## why?
+because... i needed this and it didn't exists... so i made it.
 
-  
-
-There are two ways to pass data into the script; choose which best suits your needs:
-
-  
-
-#### Reference the absolute path
-
-  
-
-[Line 36](https://github.com/ak--47/mpBatchImport-node/blob/main/index.js#L36) specifies the path to the source data:
-
-  
-
-```
-
-let pathToDataFile = `./someTestData.json`
-
-```
-
-  
-
-change this to a valid path that points to the data you wish to import
-
-  
-
-#### Use command line arguments
-
-  
-
-The script also accepts a single command line argument to reference the data you wish to import:
-
-  
-
-```
-
-npm run import ./path-to-data.json
-
-```
-
-  
-
-### Generating Test Data
-
-  
-
-If you do not have data to import, but want to test/evaluate Mixpanel's `/import` API, this script will generate data for you.
-
-  
-
-Simply run:
-
-```
-
-npm run generate
-
-```
-
-  
-
-and you will see a file `./someTestData.ndjson` is created in the top level of the project directory.
-
-  
-
-Optionally, you may add a command line argument to specify the number of test events to create (defaults to `10,000`):
-
-  
-
-```
-
-npm run generate 20000
-
-```
-
-  
-
-### Sending Data to Mixpanel
-
-  
-
-Once you have specified:
-
-  
-
-- Your credentials (in the script OR using `.env`)
-
-- Path to your data filed (in the script OR using command line arguments)
-
-  
-
-You are ready to run an import:
-
-  
-
-```
-
-npm run import
-
-```
-
-  
-
-The script will output messages to keep you informed of it's progress:
-
-  
-
-```
-
-starting up...
-
-  
-
-using .env supplied credentials:
-
-  
-
-project id: 2507188
-
-user: nodeIsTheThing.bd59fa.mp-service-account
-
-parsed 10,000 events from ./someTestData.ndjson
-
-  
-
-sending 10,000 events in 5 batches
-
-  
-
-{ code: 200, num_records_imported: 2000, status: 'OK' }
-
-{ code: 200, num_records_imported: 2000, status: 'OK' }
-
-{ code: 200, num_records_imported: 2000, status: 'OK' }
-
-{ code: 200, num_records_imported: 2000, status: 'OK' }
-
-{ code: 200, num_records_imported: 2000, status: 'OK' }
-
-  
-
-successfully imported 10,000 events
-
-finshed.
-
-```
-
-  
-
-For more on the `/import` API's various responses, [see the relevant documentation](https://developer.mixpanel.com/reference/events#import-events).npm
+then i open-sourced it because i thought it would be useful to others

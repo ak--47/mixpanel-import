@@ -53,7 +53,7 @@ let recordType = ``
 async function main(creds = {}, data = [], opts = {}) {
     const defaultOpts = {
         recordType: `event`, //event, user, group (todo lookup table)
-        streamSize: 27, //power of 2 for bytes  
+        streamSize: 27, //power of 2 for highWaterMark in stream  (default 134 MB)
         region: `US`, //US or EU
         recordsPerBatch: 2000, //event in each req
         bytesPerBatch: 2 * 1024 * 1024, //bytes in each req
