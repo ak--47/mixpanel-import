@@ -13,19 +13,17 @@ const Batch = require('stream-json/utils/Batch');
 const { chain } = require('stream-chain');
 
 //first party
-const { pipeline } = require('stream/promises')
 const { createReadStream, existsSync, lstatSync, readdirSync } = require('fs');
 const path = require('path')
 const { pick } = require('underscore')
 const readline = require('readline');
-const zlib = require('zlib');
 
 //third party
 const { gzip, ungzip } = require('node-gzip')
 const md5 = require('md5')
 const isGzip = require('is-gzip')
 const fetch = require('node-fetch')
-const split = require('split');
+
 
 //.env (if used)
 require('dotenv').config()
