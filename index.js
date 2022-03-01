@@ -1,3 +1,5 @@
+#! /usr/bin/env node
+
 // mixpanel-import
 // by AK
 // purpose: import events, users, groups, tables into mixpanel... quickly
