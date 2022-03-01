@@ -38,12 +38,18 @@ read more about [`credentials`](#credentials), [`data`](#data), and [`options`](
 ### stand-alone usage
 clone the module:
 ```
-git clone https://github.com/ak--47/mixpanel-import.git
+$ git clone https://github.com/ak--47/mixpanel-import.git
 ```
 run it and providing a path to the data you wish to import:
 ```
 $ node index.js ./pathToData
 ```
+
+alternatively:
+```
+$ npx mixpanel-import ./pathToData
+```
+
 when running stand-alone, `pathToData` can be a `.json`, `.jsonl`, `.ndjson`, or `.txt` file OR a directory which contains said files.
 
 you will also need a [`.env` configuration file](#environment-variables)
