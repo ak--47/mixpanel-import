@@ -2,7 +2,7 @@
   
 
 # mixpanel-import
-**note:** if you're trying to add real-time tracking mixpanel to a node.js web application - this module is **NOT** what you want; you want **[mixpanel-node](https://github.com/mixpanel/mixpanel-node)** the official node.js SDK.
+**note:** if you're trying to add real-time mixpanel tracking to a node.js web application - this module is **NOT** what you want; you want **[mixpanel-node](https://github.com/mixpanel/mixpanel-node)** the official node.js SDK.
     
 ## wat.
 
@@ -10,7 +10,7 @@
 
 This module is designed for streaming large amounts of event or object data to Mixpanel from a node.js environment. It implements the  [`/import`](https://developer.mixpanel.com/reference/events#import-events),  [`/engage`](https://developer.mixpanel.com/reference/profile-set), and [`/groups`](https://developer.mixpanel.com/reference/group-set-property) APIs by streaming JSON files that are compliant with Mixpanel's [data model](https://developer.mixpanel.com/docs/data-structure-deep-dive).
 
-This utility is particularly useful for running one-time backfills or streaming data into Mixpanel from cloud-based data pipelines where RETL is not available.
+This utility is particularly useful for running one-time backfills, streaming larget sets of data into Mixpanel from cloud-based data pipelines where RETL is not available.
   
 
 ## tldr;
@@ -52,14 +52,14 @@ $ npx mixpanel-import ./pathToData
 
 when running stand-alone, `pathToData` can be a `.json`, `.jsonl`, `.ndjson`, or `.txt` file OR a directory which contains said files.
 
-you will also need a [`.env` configuration file](#environment-variables)
+you will also need a [`.env` configuration file](#environment-variables) for authentication.
  
  ## arguments
 
 when using `mixpanel-import` in code, you will pass in 3 arguments:  [`credentials`](#credentials), [`data`](#data), and [`options`](#options) 
 
 ### credentials
-mixpanel's ingestion APIs authenticate with [service accounts](https://developer.mixpanel.com/reference/service-accounts) OR [API secrets](https://developer.mixpanel.com/reference/authentication#service-account); service accounts are the preferred authentication method.
+Mixpanel's ingestion APIs authenticate with [service accounts](https://developer.mixpanel.com/reference/service-accounts) OR [API secrets](https://developer.mixpanel.com/reference/authentication#service-account); service accounts are the preferred authentication method.
 
 #### service account:
 ```javascript
@@ -81,7 +81,7 @@ const importedData = await mpImport(creds, data, options);
 ```
 
 #### environment variables:
-note: it is possible to delegate the authentication details to environment variables, using a `.env` file of the form:
+it is possible to delegate the authentication details to environment variables, using a `.env` file of the form:
 
 ```
 # if using service account auth; these 3 values are required:
@@ -96,7 +96,7 @@ MP_SECRET={{your-api-secret}}
 MP_TOKEN={{your-mp-token}}
 ```
 
-if using environment variables for authentication, pass `null` as the `creds` (first argument) to the module:
+when using environment variables for authentication, pass `null` as the `creds` (first argument) to the module:
 
 ```javascript
 const importedData = await mpImport(null, data, options);
@@ -128,12 +128,12 @@ const records = require('./myEventsToImport.json')
 const data = JSON.stringify(data)
 const importedData = await mpImport(creds, data, options);
 ```
-**important note**: you will use the  [`options`](#options) (below) to specify what type of records you are importing
+**important note**: you will use the  [`options`](#options) (below) to specify what type of records you are importing; `event` is thedefault type
 
 ### options
 `options` is an object that allows you to configure the behavior of this module. 
 
-Below, the default values are given, but you can override them with you own value:
+Below, the default values are given, but you can override them with your own values:
 
 ```javascript
 const options = {
@@ -153,7 +153,9 @@ const options = {
 **note**: the `recordType` param is very important; by default this module assumes you wish to import `event` records but change this value to `user` or `group` if you are importing other entities.
 
 ## recipies
-the `transformFunc` is useful because it can preprocess the records using arbitrary javascript. here are some examples:
+the `transformFunc` is useful because it can preprocess records in the pipeline using arbitrary javascript. 
+
+here are some examples:
 
 - putting a `token` on every `user` record:
 ```javascript
@@ -187,6 +189,6 @@ $ npm run generate
 `someTestData.json` will be written to `./testData`
 
 ## why?
-because... i needed this and it didn't exists... so i made it.
+because... i needed this and it didn't exist... so i made it.
 
-then i open-sourced it because i thought it would be useful to others
+then i made it public it because i thought it would be useful to others
