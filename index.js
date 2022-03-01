@@ -2,7 +2,6 @@
 // by AK
 // purpose: import events, users, groups, tables into mixpanel... quickly
 
-
 //stream stuff
 //https://github.com/uhop/stream-json/wiki
 const { parser } = require('stream-json');
@@ -23,7 +22,6 @@ const { gzip, ungzip } = require('node-gzip')
 const md5 = require('md5')
 const isGzip = require('is-gzip')
 const fetch = require('node-fetch')
-
 
 //.env (if used)
 require('dotenv').config()
@@ -49,13 +47,14 @@ let logging = false;
 let fileStreamOpts = {};
 let url = ``;
 let recordType = ``
+let strict = true;
 
 async function main(creds = {}, data = [], opts = {}) {
     const defaultOpts = {
         recordType: `event`, //event, user, group (todo lookup table)
         streamSize: 27, //power of 2 for highWaterMark in stream  (default 134 MB)
         region: `US`, //US or EU
-        recordsPerBatch: 2000, //event in each req
+        recordsPerBatch: 2000, //records in each req; max 2000 (200 for groups)
         bytesPerBatch: 2 * 1024 * 1024, //bytes in each req
         strict: true, //use strict mode?
         logs: false, //print to stdout?
@@ -78,34 +77,42 @@ async function main(creds = {}, data = [], opts = {}) {
     const envCreds = renameKeys(envVars, envKeyNames)
     const project = resolveProjInfo({ ...defaultCreds, ...creds, ...envCreds })
 
-    //these values are used for configuation   
-    const { streamSize, region, recordsPerBatch, bytesPerBatch, strict, logs, transformFunc } = options
+    //these values are used in the pipeline
+    const { streamSize, region, recordsPerBatch, bytesPerBatch, transformFunc } = options
+
+    //these a 'globals' set by the caller
     recordType = options.recordType
     logging = options.logs
     fileStreamOpts = { highWaterMark: 2 ** streamSize }
+    strict = options.strict
     url = ENDPOINTS[region.toLowerCase()][recordType]
 
-    //in case this is run as CLI
+    //if script is run standalone, use CLI params as source data
     const lastArgument = [...process.argv].pop()
-
     if (data?.length === 0 && lastArgument.includes('json')) {
         data = lastArgument;
         logging = true;
     }
+    
+    time('ETL', 'start')
 
-    //the pipeline
+    //implemented pipeline
     let pipeline;
     const dataType = determineData(data)
     switch (dataType) {
         case `file`:
-            if (logging) log(`streaming ${recordType}s from ${data}`); console.time('stream pipeline');
+            log(`streaming ${recordType}s from ${data}`)
+            time('stream pipeline', 'start')
+
             pipeline = await streamPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc)
-            if (logging) log('\n'); console.timeEnd('stream pipeline');
+
+            log('\n')
+            time('stream pipeline', 'stop');
             break;
-        
+
         case `inMem`:
-            if (logging) log(`parsing ${recordType}s`)
-            pipeline = await sendDataInMem(data, project, recordsPerBatch, bytesPerBatch, transformFunc)
+            log(`parsing ${recordType}s`)
+            pipeline = await dataInMemPiepline(data, project, recordsPerBatch, bytesPerBatch, transformFunc)
             break;
 
         case `directory`:
@@ -116,29 +123,32 @@ async function main(creds = {}, data = [], opts = {}) {
                     path: path.resolve(`${data}/${fileName}`)
                 }
             });
-            if (logging) log(`found ${addComma(files.length)} files in ${data}`); console.time('stream pipeline');
-            
-            loopFiles: for (const file of files) {
-                if (logging) log(`streaming ${recordType}s from ${file.name}`)
+            log(`found ${addComma(files.length)} files in ${data}`)
+            time('stream pipeline', 'start');
+
+            walkDirectory: for (const file of files) {
+                log(`streaming ${recordType}s from ${file.name}`)
                 try {
                     let result = await streamPipeline(file.path, project, recordsPerBatch, bytesPerBatch, transformFunc)
-                    pipeline.push({[file.name]: result })
-                    if (logging) log('\n'); 
-                }
-                catch (e) {
-                    if (logging) log(`  ${file.name} is not valid JSON/NDJSON; skipping`)
-                    continue loopFiles;
+                    pipeline.push({
+                        [file.name]: result
+                    })
+                    log('\n');
+                } catch (e) {
+                    log(`  ${file.name} is not valid JSON/NDJSON; skipping`)
+                    continue walkDirectory;
                 }
             }
-            if (logging) console.timeEnd('stream pipeline');
+            time('stream pipeline', 'stop');
             break;
 
         default:
-            if (logging) log(`could not determine data source`)
-            pipeline = `error`
+            log(`could not determine data source`)
+            throw new Error(`mixpanel-import was not able to import: ${data}`)
             break;
     }
-
+    
+    time('ETL', 'stop')
     return pipeline;
 
 }
@@ -155,8 +165,16 @@ async function streamPipeline(data, project, recordsPerBatch, bytesPerBatch, tra
                 return transformFunc(data.value)
             },
             new Batch({ batchSize: recordsPerBatch }),
-            async (batch) => await gzip(JSON.stringify(batch)),
-                async (batch) => {
+            async (batch) => {
+                if (recordType === `event`) {
+                    return await gzip(JSON.stringify(batch)) 
+                }
+                else {
+                    return Promise.resolve(JSON.stringify(batch))
+                }
+                
+            },
+            async (batch) => {
                     return await sendDataToMixpanel(project, batch)
                 }
         ]);
@@ -172,8 +190,8 @@ async function streamPipeline(data, project, recordsPerBatch, bytesPerBatch, tra
 
         pipeline.on('data', (response) => {
             batches += 1;
-            records += Number(response.num_records_imported)
-            if (logging) showProgress(recordType, records, records, batches, batches)
+            records += Number(response.num_records_imported) || recordsPerBatch
+            showProgress(recordType, records, records, batches, batches)
             responses.push(response)
 
 
@@ -184,26 +202,27 @@ async function streamPipeline(data, project, recordsPerBatch, bytesPerBatch, tra
     })
 }
 
-async function sendDataInMem(data, project, recordsPerBatch, bytesPerBatch, transformFunc) {
-    if (logging) console.time('chunk')
+async function dataInMemPiepline(data, project, recordsPerBatch, bytesPerBatch, transformFunc) {
+    time('chunk', 'start')
     let dataIn = data.map(transformFunc)
     const batches = await zipChunks(chunkSize(chunkEv(dataIn, recordsPerBatch), bytesPerBatch));
-    if (logging) console.timeEnd('chunk')
+    time('chunk', 'stop')
     log(`\nloaded ${addComma(dataIn.length)} ${recordType}s`)
 
     //flush to mixpanel
-    if (logging) console.time('flush')
+    time('flush')
     let responses = []
     let iter = 0;
     for (const batch of batches) {
         iter += 1
-        if (logging) showProgress(recordType, recordsPerBatch * iter, dataIn.length, iter, batches.length)
+        showProgress(recordType, recordsPerBatch * iter, dataIn.length, iter, batches.length)
         let res = await sendDataToMixpanel(project, batch)
         responses.push(res)
     }
-    if (logging) log('\n')
-    if (logging) console.timeEnd('flush')
-    if (logging) log('\n')
+
+    log('\n')
+    time('flush', 'stop')
+    log('\n')
 
     return responses
 
@@ -217,19 +236,20 @@ async function sendDataToMixpanel(proj, batch) {
         headers: {
             'Authorization': authString,
             'Content-Type': 'application/json',
-            'Content-Encoding': 'gzip'
 
         },
         body: batch
     }
 
+    if (recordType === `event`) options.headers['Content-Encoding'] = 'gzip'
+
     try {
-        let req = await fetch(`${url}?ip=0&verbose=1`, options)
+        let req = await fetch(`${url}?ip=0&verbose=1&strict=${Number(strict)}`, options)
         let res = await req.json()
         return res
 
     } catch (e) {
-        if (logging) log(`problem with request:\n${e}`)
+        log(`problem with request:\n${e}`)
     }
 }
 
@@ -238,15 +258,11 @@ async function sendDataToMixpanel(proj, batch) {
 function streamParseType(fileName) {
     if (fileName.endsWith('.json')) {
         return StreamArray.withParser()
-    }
-
-    else if (fileName.endsWith('.ndjson') || fileName.endsWith('.jsonl')) {
+    } else if (fileName.endsWith('.ndjson') || fileName.endsWith('.jsonl') || fileName.endsWith('.txt')) {
         const jsonlParser = new JsonlParser();
         return jsonlParser
-    }
-
-    else {
-        throw Error(`could not identify ${fileName}; it does not end with: .json, .ndjson, .jsonl`)
+    } else {
+        throw Error(`could not identify data; it does not end with: .json, .ndjson, .jsonl, .txt`)
     }
 
 }
@@ -281,9 +297,8 @@ function determineData(data) {
             break;
 
         default:
-            console.error(`could not determine the type of ${data} ... `)
-            return [];
-            process.exit(0)
+            console.error(`${data} is not an Array or string...`)
+            return `unknown`;
             break;
     }
 }
@@ -301,7 +316,8 @@ function renameKeys(obj, newKeys) {
 
 function resolveProjInfo(auth) {
     let result = {
-        auth: `Basic `
+        auth: `Basic `,
+        method: ``
     }
     //fallback method: secret auth
     if (auth.secret) {
@@ -338,11 +354,10 @@ function chunkEv(arrayOfEvents, chunkSize) {
 
 function chunkSize(arrayOfBatches, maxBytes) {
     return arrayOfBatches.reduce((resultArray, item, index) => {
-        //assume each character is a byte
-        const currentLengthInBytes = JSON.stringify(item).length
+        const currentLengthInBytes = JSON.stringify(item).length //assume each character is a byte
 
+        //if the batch is too big; cut it in half
         if (currentLengthInBytes >= maxBytes) {
-            //if the batch is too big; cut it in half
             //todo: make this is a little smarter
             let midPointIndex = Math.ceil(item.length / 2)
             let firstHalf = item.slice(0, midPointIndex)
@@ -364,11 +379,25 @@ async function zipChunks(arrayOfBatches) {
     return Promise.all(allBatches)
 }
 
-
+//side effects + logging things
 function log(message) {
     if (logging) {
         console.log(`${message}\n`)
     }
+}
+
+function time(label = `foo`, directive = `start`) {
+    if (logging) {
+        if (directive === `start`) {
+            console.time(label)
+        } else if (directive === `stop`) {
+            console.timeEnd(label)
+        }
+    }
+}
+
+function addComma(x) {
+    return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
 function showProgress(record, ev, evTotal, batch, batchTotal) {
@@ -378,17 +407,15 @@ function showProgress(record, ev, evTotal, batch, batchTotal) {
     }
 }
 
-// 1000 => 1,000
-function addComma(x) {
-    return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-}
-
-
 module.exports = main
 
+//this allows the module to function as a standalone script
 if (require.main === module) {
-    main();
+    main(null).then((result)=>{
+        console.log(JSON.stringify(result, null, 2));
+    })
+    
 }
 
-//test
+//quick test
 //main(null, `./testData/someTestData.ndjson`, { logs: true })
