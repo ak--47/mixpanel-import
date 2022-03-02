@@ -186,7 +186,7 @@ sometimes it's helpful to generate test data, so this module includes [a separat
 ```bash
 $ npm run generate
 ```
-`someTestData.json` will be written to `./testData`
+`someTestData.json` will be written to `./testData` ... so you can then `node index.js ./testData/someTestData.json`
 
 ## why?
 because... i needed this and it didn't exist... so i made it.

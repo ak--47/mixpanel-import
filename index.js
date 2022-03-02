@@ -50,6 +50,7 @@ let fileStreamOpts = {};
 let url = ``;
 let recordType = ``
 let strict = true;
+const supportedTypes = ['.json', '.txt', '.jsonl', '.ndjson']
 
 async function main(creds = {}, data = [], opts = {}) {
     const defaultOpts = {
@@ -91,7 +92,7 @@ async function main(creds = {}, data = [], opts = {}) {
 
     //if script is run standalone, use CLI params as source data
     const lastArgument = [...process.argv].pop()
-    if (data?.length === 0 && lastArgument.includes('json')) {
+    if (data?.length === 0 && supportedTypes.some(type => lastArgument.includes(type))) {
         data = lastArgument;
         logging = true;
     }
@@ -189,14 +190,11 @@ async function streamPipeline(data, project, recordsPerBatch, bytesPerBatch, tra
         pipeline.on('error', (error) => {
             reject(error)
         });
-
         pipeline.on('data', (response) => {
             batches += 1;
             records += Number(response.num_records_imported) || recordsPerBatch
             showProgress(recordType, records, records, batches, batches)
             responses.push(response)
-
-
         });
         pipeline.on('end', () => {
             resolve(responses)
@@ -246,7 +244,7 @@ async function sendDataToMixpanel(proj, batch) {
     if (recordType === `event`) options.headers['Content-Encoding'] = 'gzip'
 
     try {
-        let req = await fetch(`${url}?ip=0&verbose=1&strict=${Number(strict)}`, options)
+        let req = await fetch(`${url}?ip=0&verbose=1&strict=${Number(strict)}&project_id=${proj.projId}`, options)
         let res = await req.json()
         return res
 
