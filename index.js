@@ -51,6 +51,8 @@ let url = ``;
 let recordType = ``
 let strict = true;
 const supportedTypes = ['.json', '.txt', '.jsonl', '.ndjson']
+let totalRecordCount = 0
+let totalReqs = 0
 
 async function main(creds = {}, data = [], opts = {}) {
     const defaultOpts = {
@@ -152,7 +154,17 @@ async function main(creds = {}, data = [], opts = {}) {
     }
     
     time('ETL', 'stop')
-    return pipeline;
+    const summary = {
+        results : {            
+            // numSuccess : 0,
+            // numFailed : 0,
+            totalRecordCount,
+            totalReqs,
+            recordType
+        },
+        responses : pipeline
+    }
+    return summary;
 
 }
 
@@ -169,6 +181,9 @@ async function streamPipeline(data, project, recordsPerBatch, bytesPerBatch, tra
             },
             new Batch({ batchSize: recordsPerBatch }),
             async (batch) => {
+                records += batch.length
+                batches += 1
+
                 if (recordType === `event`) {
                     return await gzip(JSON.stringify(batch)) 
                 }
@@ -190,13 +205,13 @@ async function streamPipeline(data, project, recordsPerBatch, bytesPerBatch, tra
         pipeline.on('error', (error) => {
             reject(error)
         });
-        pipeline.on('data', (response) => {
-            batches += 1;
-            records += Number(response.num_records_imported) || recordsPerBatch
+        pipeline.on('data', (response, f, o) => {           
+            totalReqs += 1
             showProgress(recordType, records, records, batches, batches)
             responses.push(response)
         });
         pipeline.on('end', () => {
+            totalRecordCount += records
             resolve(responses)
         });
     })
@@ -215,11 +230,13 @@ async function dataInMemPiepline(data, project, recordsPerBatch, bytesPerBatch, 
     let iter = 0;
     for (const batch of batches) {
         iter += 1
+        totalReqs += 1
+        
         showProgress(recordType, recordsPerBatch * iter, dataIn.length, iter, batches.length)
         let res = await sendDataToMixpanel(project, batch)
         responses.push(res)
     }
-
+    totalRecordCount = dataIn.length
     log('\n')
     time('flush', 'stop')
     log('\n')
@@ -255,6 +272,13 @@ async function sendDataToMixpanel(proj, batch) {
 
 
 //HELPERS
+function calcResults(arrOfResponses) {
+    //for events
+
+
+    //for engage
+}
+
 function streamParseType(fileName) {
     if (fileName.endsWith('.json')) {
         return StreamArray.withParser()
