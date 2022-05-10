@@ -117,7 +117,7 @@ async function main(creds = {}, data = [], opts = {}) {
 
         case `inMem`:
             log(`parsing ${recordType}s`)
-            pipeline = await dataInMemPiepline(data, project, recordsPerBatch, bytesPerBatch, transformFunc)
+            pipeline = await dataInMemPiepline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType)
             break;
 
         case `directory`:
@@ -217,10 +217,16 @@ async function streamPipeline(data, project, recordsPerBatch, bytesPerBatch, tra
     })
 }
 
-async function dataInMemPiepline(data, project, recordsPerBatch, bytesPerBatch, transformFunc) {
+async function dataInMemPiepline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType) {
     time('chunk', 'start')
     let dataIn = data.map(transformFunc)
-    const batches = await zipChunks(chunkSize(chunkEv(dataIn, recordsPerBatch), bytesPerBatch));
+	let batches; 
+	if (recordType === `event`) {
+		batches = await zipChunks(chunkSize(chunkEv(dataIn, recordsPerBatch), bytesPerBatch));
+	}
+	else {
+		batches = chunkSize(chunkEv(dataIn, recordsPerBatch), bytesPerBatch)
+	}
     time('chunk', 'stop')
     log(`\nloaded ${addComma(dataIn.length)} ${recordType}s`)
 
@@ -259,6 +265,9 @@ async function sendDataToMixpanel(proj, batch) {
     }
 
     if (recordType === `event`) options.headers['Content-Encoding'] = 'gzip'
+	else {
+		options.body = JSON.stringify(options.body)
+	}
 
     try {
         let req = await fetch(`${url}?ip=0&verbose=1&strict=${Number(strict)}&project_id=${proj.projId}`, options)
