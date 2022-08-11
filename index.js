@@ -98,71 +98,71 @@ async function main(creds = {}, data = [], opts = {}) {
         data = lastArgument;
         logging = true;
     }
-    
+
     time('ETL', 'start')
 
     //implemented pipeline
     let pipeline;
     const dataType = determineData(data)
     switch (dataType) {
-        case `file`:
-            log(`streaming ${recordType}s from ${data}`)
-            time('stream pipeline', 'start')
+    case `file`:
+        log(`streaming ${recordType}s from ${data}`)
+        time('stream pipeline', 'start')
 
-            pipeline = await streamPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc)
+        pipeline = await streamPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc)
 
-            log('\n')
-            time('stream pipeline', 'stop');
-            break;
+        log('\n')
+        time('stream pipeline', 'stop');
+        break;
 
-        case `inMem`:
-            log(`parsing ${recordType}s`)
-            pipeline = await dataInMemPiepline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType)
-            break;
+    case `inMem`:
+        log(`parsing ${recordType}s`)
+        pipeline = await dataInMemPiepline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType)
+        break;
 
-        case `directory`:
-            pipeline = [];
-            const files = readdirSync(data).map(fileName => {
-                return {
-                    name: fileName,
-                    path: path.resolve(`${data}/${fileName}`)
-                }
-            });
-            log(`found ${addComma(files.length)} files in ${data}`)
-            time('stream pipeline', 'start');
-
-            walkDirectory: for (const file of files) {
-                log(`streaming ${recordType}s from ${file.name}`)
-                try {
-                    let result = await streamPipeline(file.path, project, recordsPerBatch, bytesPerBatch, transformFunc)
-                    pipeline.push({
-                        [file.name]: result
-                    })
-                    log('\n');
-                } catch (e) {
-                    log(`  ${file.name} is not valid JSON/NDJSON; skipping`)
-                    continue walkDirectory;
-                }
+    case `directory`:
+        pipeline = [];
+        const files = readdirSync(data).map(fileName => {
+            return {
+                name: fileName,
+                path: path.resolve(`${data}/${fileName}`)
             }
-            time('stream pipeline', 'stop');
-            break;
+        });
+        log(`found ${addComma(files.length)} files in ${data}`)
+        time('stream pipeline', 'start');
 
-        default:
-            log(`could not determine data source`)
-            throw new Error(`mixpanel-import was not able to import: ${data}`)
-            break;
+        walkDirectory: for (const file of files) {
+            log(`streaming ${recordType}s from ${file.name}`)
+            try {
+                let result = await streamPipeline(file.path, project, recordsPerBatch, bytesPerBatch, transformFunc)
+                pipeline.push({
+                    [file.name]: result
+                })
+                log('\n');
+            } catch (e) {
+                log(`  ${file.name} is not valid JSON/NDJSON; skipping`)
+                continue walkDirectory;
+            }
+        }
+        time('stream pipeline', 'stop');
+        break;
+
+    default:
+        log(`could not determine data source`)
+        throw new Error(`mixpanel-import was not able to import: ${data}`)
+        break;
     }
-    
+
     time('ETL', 'stop')
     const summary = {
-        results : {            
+        results: {
             // numSuccess : 0,
             // numFailed : 0,
             totalRecordCount,
             totalReqs,
             recordType
         },
-        responses : pipeline
+        responses: pipeline
     }
     return summary;
 
@@ -181,18 +181,17 @@ async function streamPipeline(data, project, recordsPerBatch, bytesPerBatch, tra
             },
             new Batch({ batchSize: recordsPerBatch }),
             async (batch) => {
-                records += batch.length
-                batches += 1
+                    records += batch.length
+                    batches += 1
 
-                if (recordType === `event`) {
-                    return await gzip(JSON.stringify(batch)) 
-                }
-                else {
-                    return Promise.resolve(JSON.stringify(batch))
-                }
-                
-            },
-            async (batch) => {
+                    if (recordType === `event`) {
+                        return await gzip(JSON.stringify(batch))
+                    } else {
+                        return Promise.resolve(JSON.stringify(batch))
+                    }
+
+                },
+                async (batch) => {
                     return await sendDataToMixpanel(project, batch)
                 }
         ]);
@@ -205,7 +204,7 @@ async function streamPipeline(data, project, recordsPerBatch, bytesPerBatch, tra
         pipeline.on('error', (error) => {
             reject(error)
         });
-        pipeline.on('data', (response, f, o) => {           
+        pipeline.on('data', (response, f, o) => {
             totalReqs += 1
             showProgress(recordType, records, records, batches, batches)
             responses.push(response)
@@ -220,13 +219,12 @@ async function streamPipeline(data, project, recordsPerBatch, bytesPerBatch, tra
 async function dataInMemPiepline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType) {
     time('chunk', 'start')
     let dataIn = data.map(transformFunc)
-	let batches; 
-	if (recordType === `event`) {
-		batches = await zipChunks(chunkSize(chunkEv(dataIn, recordsPerBatch), bytesPerBatch));
-	}
-	else {
-		batches = chunkSize(chunkEv(dataIn, recordsPerBatch), bytesPerBatch)
-	}
+    let batches;
+    if (recordType === `event`) {
+        batches = await zipChunks(chunkSize(chunkEv(dataIn, recordsPerBatch), bytesPerBatch));
+    } else {
+        batches = chunkSize(chunkEv(dataIn, recordsPerBatch), bytesPerBatch)
+    }
     time('chunk', 'stop')
     log(`\nloaded ${addComma(dataIn.length)} ${recordType}s`)
 
@@ -237,7 +235,7 @@ async function dataInMemPiepline(data, project, recordsPerBatch, bytesPerBatch, 
     for (const batch of batches) {
         iter += 1
         totalReqs += 1
-        
+
         showProgress(recordType, recordsPerBatch * iter, dataIn.length, iter, batches.length)
         let res = await sendDataToMixpanel(project, batch)
         responses.push(res)
@@ -265,9 +263,12 @@ async function sendDataToMixpanel(proj, batch) {
     }
 
     if (recordType === `event`) options.headers['Content-Encoding'] = 'gzip'
-	else {
-		options.body = JSON.stringify(options.body)
-	}
+    else {
+        //only stringify non-stringied records
+		if (typeof options.body !== `string`) {
+            options.body = JSON.stringify(options.body)
+        }
+    }
 
     try {
         let req = await fetch(`${url}?ip=0&verbose=1&strict=${Number(strict)}&project_id=${proj.projId}`, options)
@@ -302,37 +303,37 @@ function streamParseType(fileName) {
 
 function determineData(data) {
     switch (typeof data) {
-        case `string`:
-            try {
-                //could be stringified data
-                JSON.parse(data)
-                return `structString`
-            } catch (error) {
-                //data is not stringified
-            }
+    case `string`:
+        try {
+            //could be stringified data
+            JSON.parse(data)
+            return `structString`
+        } catch (error) {
+            //data is not stringified
+        }
 
-            //probably a file or directory; stream it
-            let dataPath = path.resolve(data);
-            if (!existsSync(dataPath)) {
-                console.error(`could not find ${data} ... does it exist?`)
-            } else {
-                let fileMeta = lstatSync(dataPath);
-                if (fileMeta.isDirectory()) return `directory`
-                if (fileMeta.isFile()) return `file`
-                return `file`
-            }
-            break;
+        //probably a file or directory; stream it
+        let dataPath = path.resolve(data);
+        if (!existsSync(dataPath)) {
+            console.error(`could not find ${data} ... does it exist?`)
+        } else {
+            let fileMeta = lstatSync(dataPath);
+            if (fileMeta.isDirectory()) return `directory`
+            if (fileMeta.isFile()) return `file`
+            return `file`
+        }
+        break;
 
-        case `object`:
-            //probably structured data; just load it
-            if (!Array.isArray(data)) console.error(`only arrays of events are support`)
-            return `inMem`
-            break;
+    case `object`:
+        //probably structured data; just load it
+        if (!Array.isArray(data)) console.error(`only arrays of events are support`)
+        return `inMem`
+        break;
 
-        default:
-            console.error(`${data} is not an Array or string...`)
-            return `unknown`;
-            break;
+    default:
+        console.error(`${data} is not an Array or string...`)
+        return `unknown`;
+        break;
     }
 }
 
@@ -406,7 +407,7 @@ function chunkSize(arrayOfBatches, maxBytes) {
 }
 
 async function zipChunks(arrayOfBatches) {
-    const allBatches = arrayOfBatches.map(async function(batch) {
+    const allBatches = arrayOfBatches.map(async function (batch) {
         return await gzip(JSON.stringify(batch))
     })
     return Promise.all(allBatches)
@@ -444,10 +445,10 @@ module.exports = main
 
 //this allows the module to function as a standalone script
 if (require.main === module) {
-    main(null).then((result)=>{
+    main(null).then((result) => {
         console.log(JSON.stringify(result, null, 2));
     })
-    
+
 }
 
 //quick test
