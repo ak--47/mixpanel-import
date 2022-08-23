@@ -122,12 +122,18 @@ const importedData = await mpImport(creds, data, options);
 const data = require('./myEventsToImport.json')
 const importedData = await mpImport(creds, data, options);
 ```
- - a  stringified array of objects
+ - a stringified array of objects
 ```javascript
 const records = require('./myEventsToImport.json')
 const data = JSON.stringify(data)
 const importedData = await mpImport(creds, data, options);
 ```
+ - a node.js JSON (or JSONL) stream
+```javascript
+const myStream = fs.createReadStream('./testData/lines.json')
+const res = await mpImport(creds, myStream, {streamFormat: `jsonl`})	
+```
+
 **important note**: you will use the  [`options`](#options) (below) to specify what type of records you are importing; `event` is thedefault type
 
 ### options
@@ -144,6 +150,7 @@ const options = {
 	bytesPerBatch: 2 * 1024 * 1024, //max # of bytes in each batch
 	strict: true, //use strict mode?
 	logs: false, //print to stdout?
+	streamFormat: 'json', //or jsonl... required if source is a Readable or Transform stream
 
 	//a function reference to be called on every record
 	//useful if you need to transform the data

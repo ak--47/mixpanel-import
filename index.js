@@ -63,6 +63,7 @@ async function main(creds = {}, data = [], opts = {}) {
         bytesPerBatch: 2 * 1024 * 1024, //bytes in each req
         strict: true, //use strict mode?
         logs: false, //print to stdout?
+		streamFormat: 'json', //or jsonl ... only relevant for streams
         transformFunc: function noop(a) { return a } //will be called on every record
     }
     const options = { ...defaultOpts, ...opts }
@@ -83,7 +84,7 @@ async function main(creds = {}, data = [], opts = {}) {
     const project = resolveProjInfo({ ...defaultCreds, ...creds, ...envCreds })
 
     //these values are used in the pipeline
-    const { streamSize, region, recordsPerBatch, bytesPerBatch, transformFunc } = options
+    const { streamSize, region, recordsPerBatch, bytesPerBatch, transformFunc, streamFormat } = options
 
     //these a 'globals' set by the caller
     recordType = options.recordType
@@ -120,6 +121,10 @@ async function main(creds = {}, data = [], opts = {}) {
         pipeline = await dataInMemPiepline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType)
         break;
 
+    case `stream`:
+        log(`consuming stream of ${recordType}s from ${data?.path}`)
+        pipeline = await steamFromSteamPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat)
+        break;
     case `directory`:
         pipeline = [];
         const files = readdirSync(data).map(fileName => {
@@ -265,7 +270,7 @@ async function sendDataToMixpanel(proj, batch) {
     if (recordType === `event`) options.headers['Content-Encoding'] = 'gzip'
     else {
         //only stringify non-stringied records
-		if (typeof options.body !== `string`) {
+        if (typeof options.body !== `string`) {
             options.body = JSON.stringify(options.body)
         }
     }
@@ -280,6 +285,56 @@ async function sendDataToMixpanel(proj, batch) {
     }
 }
 
+async function steamFromSteamPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat = 'json') {
+    //needs to .pipe() from data source!
+	return new Promise((resolve, reject) => {
+        //streaming files to mixpanel!       
+        const pipeline = chain([
+            streamParseType(data, streamFormat),
+            //transform func
+            (data) => {
+                return transformFunc(data.value)
+            },
+            new Batch({ batchSize: recordsPerBatch }),
+            async (batch) => {
+                    records += batch.length
+                    batches += 1
+
+                    if (recordType === `event`) {
+                        return await gzip(JSON.stringify(batch))
+                    } else {
+                        return Promise.resolve(JSON.stringify(batch))
+                    }
+
+                },
+                async (batch) => {
+                    return await sendDataToMixpanel(project, batch)
+                }
+        ]);
+
+		data.pipe(pipeline)
+
+        //listening to the pipeline
+        let records = 0;
+        let batches = 0;
+        let responses = [];
+
+        pipeline.on('error', (error) => {
+            reject(error)
+        });
+        pipeline.on('data', (response, f, o) => {
+            totalReqs += 1
+            showProgress(recordType, records, records, batches, batches)
+            responses.push(response)
+        });
+        pipeline.on('end', () => {
+            totalRecordCount += records
+            resolve(responses)
+        });
+    })
+}
+
+
 
 //HELPERS
 function calcResults(arrOfResponses) {
@@ -289,19 +344,33 @@ function calcResults(arrOfResponses) {
     //for engage
 }
 
-function streamParseType(fileName) {
-    if (fileName.endsWith('.json')) {
+function streamParseType(fileName, type) {
+    if (type === 'json') {
         return StreamArray.withParser()
-    } else if (fileName.endsWith('.ndjson') || fileName.endsWith('.jsonl') || fileName.endsWith('.txt')) {
+    }
+
+	if (type === 'jsonl') {
+		return new JsonlParser();
+	}
+
+    if (fileName?.endsWith('.json')) {
+        return StreamArray.withParser()
+    } else if (fileName?.endsWith('.ndjson') || fileName?.endsWith('.jsonl') || fileName?.endsWith('.txt')) {
         const jsonlParser = new JsonlParser();
         return jsonlParser
     } else {
-        throw Error(`could not identify data; it does not end with: .json, .ndjson, .jsonl, .txt`)
+        throw Error(`could not identify data; it does not end with: .json, .ndjson, .jsonl, .txt\nif you are .pipe() a stream to this module, specify streamFormat`)
     }
 
 }
 
 function determineData(data) {
+    //identify streams?
+    //some duck typing right here
+    if (data.pipe) {
+        return `stream`
+    }
+
     switch (typeof data) {
     case `string`:
         try {

@@ -12,7 +12,7 @@ const eventNames = ['app open', 'log in', 'send message', 'receive message', 'ro
 const now = Date.now();
 const dayInMs = 8.64e+7;
 
-function main(numEvents, numDays) {
+function main(numEvents = 1000, numDays) {
     require('dotenv').config({ override: true })
     const arrOfEvents = [];
     let numOfEvents = Number(process.env.events) || Number(process.env.NUMEVENTS) || numEvents || 10000

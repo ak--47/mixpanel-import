@@ -1,11 +1,11 @@
 {
   "name": "mixpanel-import",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "a library to import events in mixpanel for node",
   "main": "index.js",
   "scripts": {
     "dev": "nodemon --ignore ./testData scratch.js",
-    "publish": "npm publish",
+    "post": "npm publish",
     "import": "node index.js",
     "generate": "NUMEVENTS=100000 SINCEDAYS=30 node generateFakeData.js",
     "prune": "rm -rf ./testData/*"
