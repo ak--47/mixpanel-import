@@ -131,7 +131,7 @@ const importedData = await mpImport(creds, data, options);
  - a node.js JSON (or JSONL) stream
 ```javascript
 const myStream = fs.createReadStream('./testData/lines.json')
-const res = await mpImport(creds, myStream, {streamFormat: `jsonl`})	
+const res = await mpImport(creds, myStream, {streamFormat: `json`})	
 ```
 
 **important note**: you will use the  [`options`](#options) (below) to specify what type of records you are importing; `event` is thedefault type
