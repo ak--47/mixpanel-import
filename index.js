@@ -5,7 +5,7 @@
 // purpose: import events, users, groups, tables into mixpanel... quickly
 
 //stream stuff
-const { Transform } = require('stream')
+const { Transform, PassThrough } = require('stream')
 
 //https://github.com/uhop/stream-json/wiki
 const { parser } = require('stream-json');
@@ -14,6 +14,7 @@ const JsonlParser = require('stream-json/jsonl/Parser');
 const Batch = require('stream-json/utils/Batch');
 //https://github.com/uhop/stream-chain/wiki
 const { chain } = require('stream-chain');
+const Chain = require('stream-chain');
 
 //first party
 const { createReadStream, existsSync, lstatSync, readdirSync } = require('fs');
@@ -112,7 +113,7 @@ async function main(creds = {}, data = [], opts = {}) {
         log(`streaming ${recordType}s from ${data}`)
         time('stream pipeline', 'start')
 
-        pipeline = await streamPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc)
+        pipeline = await filePipeLine(data, project, recordsPerBatch, bytesPerBatch, transformFunc)
 
         log('\n')
         time('stream pipeline', 'stop');
@@ -125,7 +126,7 @@ async function main(creds = {}, data = [], opts = {}) {
 
     case `stream`:
         log(`consuming stream of ${recordType}s from ${data?.path}`)
-        pipeline = await steamFromSteamPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat)
+        pipeline = await streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat)
         break;
     case `directory`:
         pipeline = [];
@@ -141,7 +142,7 @@ async function main(creds = {}, data = [], opts = {}) {
         walkDirectory: for (const file of files) {
             log(`streaming ${recordType}s from ${file.name}`)
             try {
-                let result = await streamPipeline(file.path, project, recordsPerBatch, bytesPerBatch, transformFunc)
+                let result = await filePipeLine(file.path, project, recordsPerBatch, bytesPerBatch, transformFunc)
                 pipeline.push({
                     [file.name]: result
                 })
@@ -176,7 +177,7 @@ async function main(creds = {}, data = [], opts = {}) {
 }
 
 //CORE PIPELINE(S)
-async function streamPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc) {
+async function filePipeLine(data, project, recordsPerBatch, bytesPerBatch, transformFunc) {
     return new Promise((resolve, reject) => {
         //streaming files to mixpanel!       
         const pipeline = chain([
@@ -287,7 +288,7 @@ async function sendDataToMixpanel(proj, batch) {
     }
 }
 
-async function steamFromSteamPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat = 'json') {
+async function streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat = 'json') {
     //needs to .pipe() from data source!
     return new Promise((resolve, reject) => {
         //streaming files to mixpanel!       
@@ -295,6 +296,7 @@ async function steamFromSteamPipeline(data, project, recordsPerBatch, bytesPerBa
             streamParseType(data, streamFormat),
             //transform func
             (data) => {
+				// debugger;
                 return transformFunc(data.value)
             },
             new Batch({ batchSize: recordsPerBatch }),
@@ -336,16 +338,25 @@ async function steamFromSteamPipeline(data, project, recordsPerBatch, bytesPerBa
     })
 }
 
-const pipeToMixpanelPipeline = (data, enc) => {
-    if (data instanceof Buffer) {
-		debugger;
-	}
+const pipeToMixpanelPipeline = new Chain([
+    () => {
+        return new PassThrough();
+    },
+    async (stream, enc) => { return await main({}, stream) },
+    (result) => { debugger; return result }
+]).on('end', (res) => {
+    debugger;
+});
+// const pipeToMixpanelPipeline = (data, enc) => {
+//     if (data instanceof Buffer) {
+// 		debugger;
+// 	}
 
-	else {
-		return ()=>{} //no-op
-	}
-	
-}
+// 	else {
+// 		return ()=>{} //no-op
+// 	}
+
+// }
 
 
 
@@ -519,20 +530,18 @@ function addComma(x) {
 function showProgress(record, ev, evTotal, batch, batchTotal) {
     if (logging) {
         readline.cursorTo(process.stdout, 0);
-        process.stdout.write(`  ${record}s sent: ${addComma(ev)}/${addComma(evTotal)} | batches sent: ${addComma(batch)}/${addComma(batchTotal)}`);
+        process.stdout.write(`  ${record}s sent: ${addComma(ev)}/${addComma(evTotal)} | batches sent: ${addComma(batch)}/${addComma(batchTotal)}\n\n`);
     }
 }
-//hack for streams
-main.on = pipeToMixpanelPipeline
-main.once = pipeToMixpanelPipeline
-main.emit = pipeToMixpanelPipeline
-main.write = pipeToMixpanelPipeline
-main.end = pipeToMixpanelPipeline
-module.exports = main
+
+const mpImport = module.exports = main;
+mpImport.mpStream = pipeToMixpanelPipeline;
+
 
 //this allows the module to function as a standalone script
 if (require.main === module) {
     main(null).then((result) => {
+        console.log(`RESULTS:\n\n`)
         console.log(JSON.stringify(result, null, 2));
     })
 
