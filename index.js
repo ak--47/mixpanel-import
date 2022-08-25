@@ -5,6 +5,8 @@
 // purpose: import events, users, groups, tables into mixpanel... quickly
 
 //stream stuff
+const { Transform } = require('stream')
+
 //https://github.com/uhop/stream-json/wiki
 const { parser } = require('stream-json');
 const StreamArray = require('stream-json/streamers/StreamArray');
@@ -63,7 +65,7 @@ async function main(creds = {}, data = [], opts = {}) {
         bytesPerBatch: 2 * 1024 * 1024, //bytes in each req
         strict: true, //use strict mode?
         logs: false, //print to stdout?
-		streamFormat: 'json', //or jsonl ... only relevant for streams
+        streamFormat: 'json', //or jsonl ... only relevant for streams
         transformFunc: function noop(a) { return a } //will be called on every record
     }
     const options = { ...defaultOpts, ...opts }
@@ -118,7 +120,7 @@ async function main(creds = {}, data = [], opts = {}) {
 
     case `inMem`:
         log(`parsing ${recordType}s`)
-        pipeline = await dataInMemPiepline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType)
+        pipeline = await dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType)
         break;
 
     case `stream`:
@@ -221,7 +223,7 @@ async function streamPipeline(data, project, recordsPerBatch, bytesPerBatch, tra
     })
 }
 
-async function dataInMemPiepline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType) {
+async function dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType) {
     time('chunk', 'start')
     let dataIn = data.map(transformFunc)
     let batches;
@@ -287,7 +289,7 @@ async function sendDataToMixpanel(proj, batch) {
 
 async function steamFromSteamPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat = 'json') {
     //needs to .pipe() from data source!
-	return new Promise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
         //streaming files to mixpanel!       
         const pipeline = chain([
             streamParseType(data, streamFormat),
@@ -312,7 +314,7 @@ async function steamFromSteamPipeline(data, project, recordsPerBatch, bytesPerBa
                 }
         ]);
 
-		data.pipe(pipeline)
+        data.pipe(pipeline)
 
         //listening to the pipeline
         let records = 0;
@@ -334,6 +336,17 @@ async function steamFromSteamPipeline(data, project, recordsPerBatch, bytesPerBa
     })
 }
 
+const pipeToMixpanelPipeline = (data, enc) => {
+    if (data instanceof Buffer) {
+		debugger;
+	}
+
+	else {
+		return ()=>{} //no-op
+	}
+	
+}
+
 
 
 //HELPERS
@@ -349,9 +362,9 @@ function streamParseType(fileName, type) {
         return StreamArray.withParser()
     }
 
-	if (type === 'jsonl') {
-		return new JsonlParser();
-	}
+    if (type === 'jsonl') {
+        return new JsonlParser();
+    }
 
     if (fileName?.endsWith('.json')) {
         return StreamArray.withParser()
@@ -509,7 +522,12 @@ function showProgress(record, ev, evTotal, batch, batchTotal) {
         process.stdout.write(`  ${record}s sent: ${addComma(ev)}/${addComma(evTotal)} | batches sent: ${addComma(batch)}/${addComma(batchTotal)}`);
     }
 }
-
+//hack for streams
+main.on = pipeToMixpanelPipeline
+main.once = pipeToMixpanelPipeline
+main.emit = pipeToMixpanelPipeline
+main.write = pipeToMixpanelPipeline
+main.end = pipeToMixpanelPipeline
 module.exports = main
 
 //this allows the module to function as a standalone script
@@ -519,6 +537,3 @@ if (require.main === module) {
     })
 
 }
-
-//quick test
-//main(null, `./testData/someTestData.ndjson`, { logs: true })
