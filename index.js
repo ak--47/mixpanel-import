@@ -5,7 +5,8 @@
 // purpose: import events, users, groups, tables into mixpanel... quickly
 
 //stream stuff
-const { Transform, PassThrough } = require('stream')
+const { Transform, PassThrough, Readable, Writable } = require('stream')
+
 
 //https://github.com/uhop/stream-json/wiki
 const { parser } = require('stream-json');
@@ -15,6 +16,8 @@ const Batch = require('stream-json/utils/Batch');
 //https://github.com/uhop/stream-chain/wiki
 const { chain } = require('stream-chain');
 const Chain = require('stream-chain');
+
+const split = require('split2')
 
 //first party
 const { createReadStream, existsSync, lstatSync, readdirSync } = require('fs');
@@ -57,7 +60,7 @@ const supportedTypes = ['.json', '.txt', '.jsonl', '.ndjson']
 let totalRecordCount = 0
 let totalReqs = 0
 
-async function main(creds = {}, data = [], opts = {}) {
+async function main(creds = {}, data = [], opts = {}, isStream = false) {
     const defaultOpts = {
         recordType: `event`, //event, user, group (todo lookup table)
         streamSize: 27, //power of 2 for highWaterMark in stream  (default 134 MB)
@@ -66,7 +69,7 @@ async function main(creds = {}, data = [], opts = {}) {
         bytesPerBatch: 2 * 1024 * 1024, //bytes in each req
         strict: true, //use strict mode?
         logs: false, //print to stdout?
-        streamFormat: 'json', //or jsonl ... only relevant for streams
+        streamFormat: 'jsonl', //or json ... only relevant for streams
         transformFunc: function noop(a) { return a } //will be called on every record
     }
     const options = { ...defaultOpts, ...opts }
@@ -107,7 +110,7 @@ async function main(creds = {}, data = [], opts = {}) {
 
     //implemented pipeline
     let pipeline;
-    const dataType = determineData(data)
+    const dataType = determineData(data, isStream)
     switch (dataType) {
     case `file`:
         log(`streaming ${recordType}s from ${data}`)
@@ -189,6 +192,7 @@ async function filePipeLine(data, project, recordsPerBatch, bytesPerBatch, trans
             },
             new Batch({ batchSize: recordsPerBatch }),
             async (batch) => {
+
                     records += batch.length
                     batches += 1
 
@@ -296,11 +300,12 @@ async function streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, 
             streamParseType(data, streamFormat),
             //transform func
             (data) => {
-				// debugger;
+                // debugger;
                 return transformFunc(data.value)
             },
             new Batch({ batchSize: recordsPerBatch }),
             async (batch) => {
+
                     records += batch.length
                     batches += 1
 
@@ -338,15 +343,38 @@ async function streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, 
     })
 }
 
-const pipeToMixpanelPipeline = new Chain([
-    () => {
-        return new PassThrough();
+const pipeToMixpanelPipeline = new Transform({
+    defaultEncoding: 'utf8',
+    transform(chunk, encoding, cb) {
+        this.push(chunk.toString('utf8'));
+        cb()
     },
-    async (stream, enc) => { return await main({}, stream) },
-    (result) => { debugger; return result }
-]).on('end', (res) => {
-    debugger;
+    flush(cb) {
+        this.push(null)
+        cb()
+    }
+
 });
+
+pipeToMixpanelPipeline.on('data', async (stream, b, c) => {
+    let pipeData = await main({}, stream, {}, true);
+	return pipeData;
+})
+
+
+// const streamPipe = new Chain([
+// 	(stream) => { new Readable().wrap(stream) },
+// 	// (stream) => { return stream.pipe(split())},
+// 	async (stream, enc) => { return await main({}, stream, {}, true) },
+// 		(result) => { debugger; return result }
+// ]).on('end', (res) => {
+// 	debugger;
+// })
+
+
+
+
+
 // const pipeToMixpanelPipeline = (data, enc) => {
 //     if (data instanceof Buffer) {
 // 		debugger;
@@ -388,10 +416,10 @@ function streamParseType(fileName, type) {
 
 }
 
-function determineData(data) {
+function determineData(data, isStream = false) {
     //identify streams?
     //some duck typing right here
-    if (data.pipe) {
+    if (data.pipe || isStream) {
         return `stream`
     }
 
