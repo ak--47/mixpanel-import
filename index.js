@@ -162,7 +162,7 @@ const options = {
 		process.exit(0);
 	}
 	time('ETL', 'start');
-	track('start', options);
+	track('start', {runId, ...options});
 
 	//implemented pipeline
 	let pipeline;
@@ -221,7 +221,7 @@ const options = {
 	}
 
 	time('ETL', 'stop');
-	track('end', options);
+	track('end', {runId, ...options});
 	const summary = {
 		results: {
 			// numSuccess : 0,

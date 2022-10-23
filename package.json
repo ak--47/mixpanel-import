@@ -1,6 +1,6 @@
 {
   "name": "mixpanel-import",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "description": "a library to import events in mixpanel for node",
   "main": "index.js",
   "scripts": {
