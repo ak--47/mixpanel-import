@@ -6,6 +6,9 @@
 
 //stream stuff
 const { Transform, PassThrough, Readable, Writable } = require('stream');
+const u = require('ak-tools');
+const track = u.tracker('mixpanel-import');
+const runId = u.uid(32);
 
 
 //https://github.com/uhop/stream-json/wiki
@@ -159,6 +162,7 @@ const options = {
 		process.exit(0);
 	}
 	time('ETL', 'start');
+	track('start', options);
 
 	//implemented pipeline
 	let pipeline;
@@ -217,6 +221,7 @@ const options = {
 	}
 
 	time('ETL', 'stop');
+	track('end', options);
 	const summary = {
 		results: {
 			// numSuccess : 0,

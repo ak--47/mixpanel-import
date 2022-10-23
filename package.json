@@ -24,6 +24,7 @@
   },
   "homepage": "https://github.com/ak--47/mixpanel-import#readme",
   "dependencies": {
+    "ak-tools": "^1.0.19",
     "chance": "^1.1.7",
     "dotenv": "^10.0.0",
     "is-gzip": "^2.0.0",
