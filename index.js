@@ -4,40 +4,65 @@
 // by AK
 // purpose: import events, users, groups, tables into mixpanel... quickly
 
-//stream stuff
+/*
+-----
+DEPS
+-----
+*/
+
 const { Transform, PassThrough, Readable, Writable } = require('stream');
 const u = require('ak-tools');
 const track = u.tracker('mixpanel-import');
 const runId = u.uid(32);
+const { createReadStream, existsSync, lstatSync, readdirSync } = require('fs');
+const path = require('path');
+const { Agent } = require('https');
+const { pick } = require('underscore');
+const readline = require('readline');
+const { gzip } = require('node-gzip');
+const md5 = require('md5');
+const fetch = require('axios');
+const axiosRetry = require('axios-retry');
 
-
-//https://github.com/uhop/stream-json/wiki
-const { parser } = require('stream-json');
+//https://github.com/uhop/stream-chain/wiki
+const { chain } = require('stream-chain');
 const StreamArray = require('stream-json/streamers/StreamArray');
 const JsonlParser = require('stream-json/jsonl/Parser');
 const Batch = require('stream-json/utils/Batch');
-//https://github.com/uhop/stream-chain/wiki
-const { chain } = require('stream-chain');
-const Chain = require('stream-chain');
-
-const split = require('split2');
-
-//first party
-const { createReadStream, existsSync, lstatSync, readdirSync } = require('fs');
-const path = require('path');
-const { pick } = require('underscore');
-const readline = require('readline');
-
-//third party
-const { gzip, ungzip } = require('node-gzip');
-const md5 = require('md5');
-const isGzip = require('is-gzip');
-const fetch = require('node-fetch');
-
-//.env (if used)
 require('dotenv').config();
 
-//endpoints
+/*
+-----------
+RETRIES
+-----------
+*/
+
+axiosRetry(fetch, {
+	retries: 5, // number of retries
+	retryDelay: (retryCount) => {
+		log(`	retrying request... attempt: ${retryCount}`);
+		return retryCount * 5000; // time interval between retries
+	},
+	retryCondition: (error) => {
+		// if retry condition is not specified, by default idempotent requests are retried
+		error.response.status === 429;
+	},
+	onRetry: function (retryCount, error, requestConfig) {
+		if (error.response.status === 429) {
+			return requestConfig;
+		}
+		else {
+			track('error', { runId, ...requestConfig.data });
+		}
+	}
+}
+);
+
+/*
+---------
+ENDPOINTS
+---------
+*/
 const ENDPOINTS = {
 	us: {
 		event: `https://api.mixpanel.com/import`,
@@ -53,7 +78,12 @@ const ENDPOINTS = {
 	}
 };
 
-//globals (local to this module)
+/*
+--------
+GLOBALS
+--------
+*/
+
 let logging = false;
 let fileStreamOpts = {};
 let url = ``;
@@ -63,7 +93,14 @@ const supportedTypes = ['.json', '.txt', '.jsonl', '.ndjson'];
 let totalRecordCount = 0;
 let totalReqs = 0;
 
+/*
+----
+MAIN
+----
+*/
+
 async function main(creds = {}, data = [], opts = {}, isStream = false) {
+
 	const defaultOpts = {
 		recordType: `event`, //event, user, group (todo lookup table)
 		streamSize: 27, //power of 2 for highWaterMark in stream  (default 134 MB)
@@ -85,6 +122,21 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 		secret: ``, //api secret (deprecated auth)
 		token: `` //project token        
 	};
+
+	//for strict event imports, make sure they have $insert_id
+	if (options.strict && options.recordType === `event` && options.transformFunc('A') === 'A') {
+		options.transformFunc = function addInsertIfAbsent(event) {
+			if (!event.properties.$insert_id) {
+				let hash = md5(event);
+				event.properties.$insert_id = hash;
+				return event;
+			}
+			else {
+				return event;
+			}
+		};
+
+	}
 
 	//sweep .env to pickup MP_ keys; i guess the .env convention is to use all caps? so be it...
 	const envVars = pick(process.env, `MP_PROJECT`, `MP_ACCT`, `MP_PASS`, `MP_SECRET`, `MP_TOKEN`);
@@ -110,59 +162,14 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 		logging = true;
 	}
 	else if (lastArgument?.toLowerCase()?.includes('help')) {
-		const banner = String.raw`
-        .__                                   .__      .__                              __   
-  _____ |__|__  ______________    ____   ____ |  |     |__| _____ ______   ____________/  |_ 
- /     \|  \  \/  /\____ \__  \  /    \_/ __ \|  |     |  |/     \\____ \ /  _ \_  __ \   __\
-|  Y Y  \  |>    < |  |_> > __ \|   |  \  ___/|  |__   |  |  Y Y  \  |_> >  <_> )  | \/|  |  
-|__|_|  /__/__/\_ \|   __(____  /___|  /\___  >____/   |__|__|_|  /   __/ \____/|__|   |__|  
-      \/         \/|__|       \/     \/     \/                  \/|__|                       
-`;
+
 		console.log(banner);
-		console.log('... streamer of data... to mixpanel!');
-		console.log('by AK');
-		console.log('ak@mixpanel.com');
-		console.log(`
-    QUICK USAGE:
-    
-$ echo 'MP_SECRET=your-project-secret' > .env
-$ mixpanel-import ./pathToData
-
-pathToData can be a .json, .jsonl, .ndjson, or .txt file OR a directory which contains said files.
-    
-    CONFIGURE:
-
-for more options, require() as a module:
-
-$ npm npm i mixpanel-import --save
-const mpImport  =  require('mixpanel-import') 
-const importedData = await mpImport(creds, data, options);
-
-const creds = {
-	acct: 'my-servce-acct',
-	pass: 'my-service-seccret', 
-	project: 'my-project-id', 
-	token: 'my-project-token'  
-}
-
-const options = {
-	recordType: "event", //event, user, OR group
-	streamSize: 27, 
-	region: "US", //US or EU
-	recordsPerBatch: 2000, 
-	bytesPerBatch: 2 * 1024 * 1024, 
-	strict: true, 
-	logs: false, 
-	streamFormat: 'json', //or jsonl	
-	transformFunc: function noop(a) { return a } //called on every record
-}
-
-    DOCS: https://github.com/ak--47/mixpanel-import    
-    `);
+		console.log(helpText);
 		process.exit(0);
 	}
+	const startTime = Date.now();
 	time('ETL', 'start');
-	track('start', {runId, ...options});
+	track('start', { runId, ...options });
 
 	//implemented pipeline
 	let pipeline;
@@ -221,14 +228,24 @@ const options = {
 	}
 
 	time('ETL', 'stop');
-	track('end', {runId, ...options});
+	track('end', { runId, ...options });
+
+	const endTime = Date.now();
+	const duration = (endTime - startTime) / 1000;
+	const total = totalRecordCount;
+	const success = pipeline.map(res => res.num_records_imported).reduce((prev, curr) => prev + curr);
+	const failed = total - success;
+	const batches = totalReqs;
+
 	const summary = {
 		results: {
-			// numSuccess : 0,
-			// numFailed : 0,
-			totalRecordCount,
-			totalReqs,
-			recordType
+			success,
+			failed,
+			total,
+			batches,
+			recordType,
+			duration
+
 		},
 		responses: pipeline
 	};
@@ -236,63 +253,20 @@ const options = {
 
 }
 
-//CORE PIPELINE(S)
-async function filePipeLine(data, project, recordsPerBatch, bytesPerBatch, transformFunc) {
-	return new Promise((resolve, reject) => {
-		//streaming files to mixpanel!       
-		const pipeline = chain([
-			createReadStream(path.resolve(data)),
-			streamParseType(data),
-			//transform func
-			(data) => {
-				return transformFunc(data.value);
-			},
-			new Batch({ batchSize: recordsPerBatch }),
-			async (batch) => {
-
-				records += batch.length;
-				batches += 1;
-
-				if (recordType === `event`) {
-					return await gzip(JSON.stringify(batch));
-				} else {
-					return Promise.resolve(JSON.stringify(batch));
-				}
-
-			},
-			async (batch) => {
-				return await sendDataToMixpanel(project, batch);
-			}
-		]);
-
-		//listening to the pipeline
-		let records = 0;
-		let batches = 0;
-		let responses = [];
-
-		pipeline.on('error', (error) => {
-			reject(error);
-		});
-		pipeline.on('data', (response, f, o) => {
-			totalReqs += 1;
-			showProgress(recordType, records, records, batches, batches);
-			responses.push(response);
-		});
-		pipeline.on('end', () => {
-			totalRecordCount += records;
-			resolve(responses);
-		});
-	});
-}
+/*
+---------
+PIPELINES
+---------
+*/
 
 async function dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType) {
 	time('chunk', 'start');
 	let dataIn = data.map(transformFunc);
 	let batches;
 	if (recordType === `event`) {
-		batches = await zipChunks(chunkSize(chunkEv(dataIn, recordsPerBatch), bytesPerBatch));
+		batches = chunkMaxSize(chunkEv(dataIn, recordsPerBatch), bytesPerBatch);
 	} else {
-		batches = chunkSize(chunkEv(dataIn, recordsPerBatch), bytesPerBatch);
+		batches = chunkEv(dataIn, recordsPerBatch);
 	}
 	time('chunk', 'stop');
 	log(`\nloaded ${addComma(dataIn.length)} ${recordType}s`);
@@ -318,73 +292,28 @@ async function dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, 
 
 }
 
-async function sendDataToMixpanel(proj, batch) {
-	let authString = proj.auth;
+async function filePipeLine(data, project, recordsPerBatch, bytesPerBatch, transformFunc) {
+	let records = 0;
+	let batches = 0;
+	let responses = [];
 
-	let options = {
-		method: 'POST',
-		headers: {
-			'Authorization': authString,
-			'Content-Type': 'application/json',
-
-		},
-		body: batch
-	};
-
-	if (recordType === `event`) options.headers['Content-Encoding'] = 'gzip';
-	else {
-		//only stringify non-stringied records
-		if (typeof options.body !== `string`) {
-			options.body = JSON.stringify(options.body);
-		}
-	}
-
-	try {
-		let req = await fetch(`${url}?ip=0&verbose=1&strict=${Number(strict)}&project_id=${proj.projId}`, options);
-		let res = await req.json();
-		return res;
-
-	} catch (e) {
-		log(`problem with request:\n${e}`);
-	}
-}
-
-async function streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat = 'json') {
-	//needs to .pipe() from data source!
 	return new Promise((resolve, reject) => {
 		//streaming files to mixpanel!       
 		const pipeline = chain([
-			streamParseType(data, streamFormat),
-			//transform func
+			createReadStream(path.resolve(data)),
+			streamParseType(data),
 			(data) => {
-				// debugger;
+				records += 1;
 				return transformFunc(data.value);
 			},
 			new Batch({ batchSize: recordsPerBatch }),
 			async (batch) => {
-
-				records += batch.length;
 				batches += 1;
-
-				if (recordType === `event`) {
-					return await gzip(JSON.stringify(batch));
-				} else {
-					return Promise.resolve(JSON.stringify(batch));
-				}
-
-			},
-			async (batch) => {
 				return await sendDataToMixpanel(project, batch);
 			}
 		]);
 
-		data.pipe(pipeline);
-
 		//listening to the pipeline
-		let records = 0;
-		let batches = 0;
-		let responses = [];
-
 		pipeline.on('error', (error) => {
 			reject(error);
 		});
@@ -399,6 +328,91 @@ async function streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, 
 		});
 	});
 }
+
+async function streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat = 'json') {
+	let records = 0;
+	let batches = 0;
+	let responses = [];
+
+	return new Promise((resolve, reject) => {
+		//streaming files to mixpanel!       
+		const pipeline = chain([
+			streamParseType(data, streamFormat),
+			//transform func
+			(data) => {
+				// debugger;
+				records += 1;
+				return transformFunc(data.value);
+			},
+			new Batch({ batchSize: recordsPerBatch }),
+			async (batch) => {
+				batches += 1;
+				const sent = await sendDataToMixpanel(project, batch);
+				return sent;
+			}
+		]);
+
+		//listening to the pipeline
+		pipeline.on('error', (error) => {
+			reject(error);
+		});
+		pipeline.on('data', (response, f, o) => {
+			totalReqs += 1;
+			showProgress(recordType, records, records, batches, batches);
+			responses.push(response);
+		});
+		pipeline.on('end', () => {
+			totalRecordCount += records;
+			resolve(responses);
+		});
+		
+
+		data.pipe(pipeline);
+	});
+}
+
+/*
+-----
+FLUSH
+-----
+*/
+
+async function sendDataToMixpanel(proj, batch) {
+	const authString = proj.auth;
+
+	const reqConfig = {
+		method: 'POST',
+		headers: {
+			'Authorization': authString,
+			'Content-Type': 'application/json',
+
+		},
+		params: {
+			ip: 0,
+			verbose: 1,
+			strict: Number(strict),
+			project_id: proj.projId
+		},
+		httpsAgent: new Agent({ keepAlive: true }),
+		data: batch
+	};
+	try {
+		const req = await fetch(url, reqConfig);
+		const res = req.data;
+		return res;
+
+	} catch (e) {
+		log(`problem with request: ${e.message}\n${e.response.data.error}\n`);
+		return e.response.data;
+	}
+}
+
+
+/*
+--------------
+IN DEVELOPMENT
+--------------
+*/
 
 const pipeToMixpanelPipeline = new Transform({
 	defaultEncoding: 'utf8',
@@ -419,39 +433,12 @@ pipeToMixpanelPipeline.on('data', async (stream, b, c) => {
 });
 
 
-// const streamPipe = new Chain([
-// 	(stream) => { new Readable().wrap(stream) },
-// 	// (stream) => { return stream.pipe(split())},
-// 	async (stream, enc) => { return await main({}, stream, {}, true) },
-// 		(result) => { debugger; return result }
-// ]).on('end', (res) => {
-// 	debugger;
-// })
+/*
+--------
+HELPERS
+--------
+*/
 
-
-
-
-
-// const pipeToMixpanelPipeline = (data, enc) => {
-//     if (data instanceof Buffer) {
-// 		debugger;
-// 	}
-
-// 	else {
-// 		return ()=>{} //no-op
-// 	}
-
-// }
-
-
-
-//HELPERS
-function calcResults(arrOfResponses) {
-	//for events
-
-
-	//for engage
-}
 
 function streamParseType(fileName, type) {
 	if (type === 'json') {
@@ -504,7 +491,7 @@ function determineData(data, isStream = false) {
 
 		case `object`:
 			//probably structured data; just load it
-			if (!Array.isArray(data)) console.error(`only arrays of events are support`);
+			if (!Array.isArray(data)) console.error(`only arrays of events are supported`);
 			return `inMem`;
 			break;
 
@@ -564,24 +551,59 @@ function chunkEv(arrayOfEvents, chunkSize) {
 	}, []);
 }
 
-function chunkSize(arrayOfBatches, maxBytes) {
-	return arrayOfBatches.reduce((resultArray, item, index) => {
-		const currentLengthInBytes = JSON.stringify(item).length; //assume each character is a byte
+function chunkMaxSize(data, size) {
+	const sizeChunked = data.map((batch) => { return sizeChunker(batch, size); });
+	return sizeChunked.flat();
 
-		//if the batch is too big; cut it in half
-		if (currentLengthInBytes >= maxBytes) {
-			//todo: make this is a little smarter
-			let midPointIndex = Math.ceil(item.length / 2);
-			let firstHalf = item.slice(0, midPointIndex);
-			let secondHalf = item.slice(-midPointIndex);
-			resultArray.push(firstHalf);
-			resultArray.push(secondHalf);
-		} else {
-			resultArray.push(item);
+}
+
+
+function sizeChunker(input, bytesSize = Number.MAX_SAFE_INTEGER, failOnOversize = false) {
+	const output = [];
+	let outputSize = 0;
+	let outputFreeIndex = 0;
+
+	if (!input || input.length === 0 || bytesSize <= 0) {
+		return output;
+	}
+
+	for (let obj of input) {
+		const objSize = getObjectSize(obj);
+		if (objSize > bytesSize && failOnOversize) {
+			throw new Error(`Can't chunk array as item is bigger than the max chunk size`);
 		}
 
-		return resultArray;
-	}, []);
+		const fitsIntoLastChunk = (outputSize + objSize) <= bytesSize;
+
+		if (fitsIntoLastChunk) {
+			if (!Array.isArray(output[outputFreeIndex])) {
+				output[outputFreeIndex] = [];
+			}
+
+			output[outputFreeIndex].push(obj);
+			outputSize += objSize;
+		} else {
+			if (output[outputFreeIndex]) {
+				outputFreeIndex++;
+				outputSize = 0;
+			}
+
+			output[outputFreeIndex] = [];
+			output[outputFreeIndex].push(obj);
+			outputSize += objSize;
+		}
+	}
+
+	return output;
+};
+
+function getObjectSize(obj) {
+	try {
+		const str = stringify(obj);
+		return Buffer.byteLength(str, 'utf8');
+	} catch (error) {
+		return 0;
+	}
 }
 
 async function zipChunks(arrayOfBatches) {
@@ -591,7 +613,12 @@ async function zipChunks(arrayOfBatches) {
 	return Promise.all(allBatches);
 }
 
-//side effects + logging things
+/*
+-------
+LOGGING
+-------
+*/
+
 function log(message) {
 	if (logging) {
 		console.log(`${message}\n`);
@@ -619,8 +646,21 @@ function showProgress(record, ev, evTotal, batch, batchTotal) {
 	}
 }
 
+// THIS IS WEIRD!!!
+
+process.on('uncaughtException', (error, origin) => {
+	return false;
+  });
+
+
+/*
+-------
+EXPORTS
+-------
+*/
+
 const mpImport = module.exports = main;
-mpImport.mpStream = pipeToMixpanelPipeline;
+// mpImport.mpStream = pipeToMixpanelPipeline;
 
 
 //this allows the module to function as a standalone script
@@ -631,3 +671,60 @@ if (require.main === module) {
 	});
 
 }
+
+/*
+-----
+WORDS
+-----
+*/
+
+const banner = String.raw`
+        .__                                   .__      .__                              __   
+  _____ |__|__  ______________    ____   ____ |  |     |__| _____ ______   ____________/  |_ 
+ /     \|  \  \/  /\____ \__  \  /    \_/ __ \|  |     |  |/     \\____ \ /  _ \_  __ \   __\
+|  Y Y  \  |>    < |  |_> > __ \|   |  \  ___/|  |__   |  |  Y Y  \  |_> >  <_> )  | \/|  |  
+|__|_|  /__/__/\_ \|   __(____  /___|  /\___  >____/   |__|__|_|  /   __/ \____/|__|   |__|  
+      \/         \/|__|       \/     \/     \/                  \/|__|                       
+... streamer of data... to mixpanel!
+  by AK
+  ak@mixpanel.com
+`;
+
+
+const helpText = `
+QUICK USAGE:
+
+$ echo 'MP_SECRET=your-project-secret' > .env
+$ mixpanel-import ./pathToData
+
+pathToData can be a .json, .jsonl, .ndjson, or .txt file OR a directory which contains said files.
+
+CONFIGURE:
+
+for more options, require() as a module:
+
+$ npm npm i mixpanel-import --save
+const mpImport  =  require('mixpanel-import') 
+const importedData = await mpImport(creds, data, options);
+
+const creds = {
+acct: 'my-servce-acct',
+pass: 'my-service-seccret', 
+project: 'my-project-id', 
+token: 'my-project-token'  
+}
+
+const options = {
+recordType: "event", //event, user, OR group
+streamSize: 27, 
+region: "US", //US or EU
+recordsPerBatch: 2000, 
+bytesPerBatch: 2 * 1024 * 1024, 
+strict: true, 
+logs: false, 
+streamFormat: 'json', //or jsonl	
+transformFunc: function noop(a) { return a } //called on every record
+}
+
+DOCS: https://github.com/ak--47/mixpanel-import    
+`;
