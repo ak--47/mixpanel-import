@@ -31,23 +31,26 @@ const JsonlParser = require('stream-json/jsonl/Parser');
 const Batch = require('stream-json/utils/Batch');
 require('dotenv').config();
 
+
+
 /*
 -----------
 RETRIES
 -----------
 */
 
+const exponentialBackoff = generateDelays()
 axiosRetry(fetch, {
 	retries: 5, // number of retries
 	retryDelay: (retryCount) => {
 		log(`	retrying request... attempt: ${retryCount}`);
-		return retryCount * 5000; // time interval between retries
+		return exponentialBackoff[retryCount] + u.rand(1000, 5000) // interval between retries
 	},
 	retryCondition: (error) => {
-		// if retry condition is not specified, by default idempotent requests are retried
-		error.response.status === 429;
+		error.response.status === 429; 
 	},
 	onRetry: function (retryCount, error, requestConfig) {
+		retries++
 		if (error.response.status === 429) {
 			return requestConfig;
 		}
@@ -92,6 +95,7 @@ let strict = true;
 const supportedTypes = ['.json', '.txt', '.jsonl', '.ndjson'];
 let totalRecordCount = 0;
 let totalReqs = 0;
+let retries = 0;
 
 /*
 ----
@@ -127,7 +131,8 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 	if (options.strict && options.recordType === `event` && options.transformFunc('A') === 'A') {
 		options.transformFunc = function addInsertIfAbsent(event) {
 			if (!event.properties.$insert_id) {
-				let hash = md5(event);
+				let deDupeTuple = [event.name, event.properties.distinct_id || "", event.properties.time]
+				let hash = md5(deDupeTuple);
 				event.properties.$insert_id = hash;
 				return event;
 			}
@@ -150,11 +155,10 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 	//these a 'globals' set by the caller
 	recordType = options.recordType;
 	logging = options.logs;
-	fileStreamOpts = { highWaterMark: 2 ** streamSize };
+	fileStreamOpts = { highWaterMark: 2 ** streamSize, writableObjectMode: true, readableObjectMode: true };
 	strict = options.strict;
 	url = ENDPOINTS[region.toLowerCase()][recordType];
 
-	//if script is run standalone, use CLI params as source data
 	//if script is run standalone, use CLI params as source data
 	const lastArgument = [...process.argv].pop();
 	if (data?.length === 0 && supportedTypes.some(type => lastArgument.includes(type))) {
@@ -244,7 +248,8 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 			total,
 			batches,
 			recordType,
-			duration
+			duration,
+			retries
 
 		},
 		responses: pipeline
@@ -311,7 +316,7 @@ async function filePipeLine(data, project, recordsPerBatch, bytesPerBatch, trans
 				batches += 1;
 				return await sendDataToMixpanel(project, batch);
 			}
-		]);
+		], fileStreamOpts);
 
 		//listening to the pipeline
 		pipeline.on('error', (error) => {
@@ -350,7 +355,7 @@ async function streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, 
 				const sent = await sendDataToMixpanel(project, batch);
 				return sent;
 			}
-		]);
+		], fileStreamOpts);
 
 		//listening to the pipeline
 		pipeline.on('error', (error) => {
@@ -393,7 +398,7 @@ async function sendDataToMixpanel(proj, batch) {
 			strict: Number(strict),
 			project_id: proj.projId
 		},
-		httpsAgent: new Agent({ keepAlive: true }),
+		httpsAgent: new Agent({ keepAlive: true, maxTotalSockets: 20 }),
 		data: batch
 	};
 	try {
@@ -438,6 +443,19 @@ pipeToMixpanelPipeline.on('data', async (stream, b, c) => {
 HELPERS
 --------
 */
+
+function generateDelays(start = 2000, end = 60000) {
+	// https://developer.mixpanel.com/reference/import-events#rate-limits
+	const result = [start]
+	let current = start
+	while (current < end) {
+		let next = current * 2
+		result.push(current*2)
+		current = next
+	}
+
+	return result;
+}
 
 
 function streamParseType(fileName, type) {
@@ -557,7 +575,6 @@ function chunkMaxSize(data, size) {
 
 }
 
-
 function sizeChunker(input, bytesSize = Number.MAX_SAFE_INTEGER, failOnOversize = false) {
 	const output = [];
 	let outputSize = 0;
@@ -649,7 +666,7 @@ function showProgress(record, ev, evTotal, batch, batchTotal) {
 // THIS IS WEIRD!!!
 
 process.on('uncaughtException', (error, origin) => {
-	return false;
+	if (error.errono === -54)	return false;
   });
 
 
