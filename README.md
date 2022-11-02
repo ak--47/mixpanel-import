@@ -89,6 +89,9 @@ MP_PROJECT={{your-mp-project}}
 MP_ACCT={{your-service-acct}}
 MP_PASS={{your-service-pass}}
 
+# type of records to import; valid options are event, user, group or table
+MP_TYPE=event
+
 # if using secret based auth; only this value is required
 MP_SECRET={{your-api-secret}}
 
