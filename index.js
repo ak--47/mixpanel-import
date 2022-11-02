@@ -21,7 +21,7 @@ const md5 = require('md5');
 
 const { Agent } = require('https');
 const { pick } = require('underscore');
-const { createReadStream, existsSync, readdirSync } = require('fs');
+const { createReadStream, existsSync, readdirSync, lstatSync } = require('fs');
 const { gzip } = require('node-gzip');
 
 
