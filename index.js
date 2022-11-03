@@ -855,7 +855,7 @@ if (require.main === module) {
 	main(undefined, undefined, { logs: true }).then((result) => {
 		const dateTime = new Date().toISOString().split('.')[0].replace('T', '--').replace(/:/g, ".");
 		const fileDir = u.mkdir('./logs');
-		const fileName = `${recordType}-import-log-${dateTime}.txt`;
+		const fileName = `${recordType}-import-log-${dateTime}.json`;
 		const filePath = `${fileDir}/${fileName}`;
 
 		u.touch(filePath, result, true).then(() => {
