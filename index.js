@@ -132,17 +132,17 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 	};
 	let options;
 	if (typeof opts === 'string' && supportedTypes.includes(opts.toLowerCase())) {
-		options = {...defaultOpts, recordType: opts}
+		options = { ...defaultOpts, recordType: opts };
 	}
 	else {
 		options = { ...defaultOpts, ...opts };
 	}
-	
+
 	options.recordType = options.recordType.toLowerCase();
 	options.streamFormat = options.streamFormat.toLowerCase();
 	options.region = options.region.toLowerCase();
 	if (recordType === 'event' && options.compress) compress = true;
-	
+
 
 	const defaultCreds = {
 		acct: ``, //service acct username
@@ -168,7 +168,7 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 	const project = resolveProjInfo({ ...defaultCreds, ...envCreds, ...creds });
 	if (envCreds.recordType) options.recordType = envCreds.recordType;
 	if (envCreds.lookupTableId) project.lookupTableId = envCreds.lookupTableId;
-	Object.freeze(project)
+	Object.freeze(project);
 
 	//for strict event imports, make every record has an $insert_id
 	if (options.strict && options.recordType === `event` && options.transformFunc('A') === 'A') {
@@ -214,7 +214,7 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 		options.recordsPerBatch = 200;
 	}
 
-	Object.freeze(options)
+	Object.freeze(options);
 	const { streamSize, region, recordsPerBatch, bytesPerBatch, transformFunc } = options;
 	let { streamFormat } = options;
 	recordType = options.recordType;
@@ -252,20 +252,54 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 	const dataType = determineData(data, isStream);
 	let pipeline;
 	let files;
+	let fileStream;
 	switch (dataType) {
 		case `file`:
-			log(`streaming ${recordType}s from ${data}...`);
 			//todo lookup table
 			if (recordType === 'table') {
 				pipeline = await prepareLookupTable(data, project, `file`);
 			}
 			else {
-				pipeline = await filePipeLine(data, project, recordsPerBatch, bytesPerBatch, transformFunc);
+				fileStream = createReadStream(path.resolve(data));
+				if (!streamFormat) {
+					streamFormat = inferStreamFormat(fileStream);
+				}
+				log(`streaming ${streamFormat} stream of ${recordType}s from file ${data}...`);
+				pipeline = await streamingPipeline(fileStream, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat);
 			}
 
 			log('\n');
 			break;
 
+		case `directory`:
+			pipeline = [];
+			files = readdirSync(data).map(fileName => {
+				return {
+					name: fileName,
+					path: path.resolve(`${data}/${fileName}`)
+				};
+			});
+			log(`found ${addComma(files.length)} files in ${data}`);
+
+			walkDirectory: for (const file of files) {
+				log(`streaming ${recordType}s from ${file.name}`);
+				try {
+					const localStream = createReadStream(path.resolve(file.path));
+					const localFormat = inferStreamFormat(localStream)					
+					log(`streaming ${localFormat} stream of ${recordType}s from file ${file.path}...`);
+					const result = await streamingPipeline(localStream, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, localFormat);
+					// let result = await filePipeLine(file.path, project, recordsPerBatch, bytesPerBatch, transformFunc);
+					pipeline.push({
+						[file.name]: result
+					});
+					log('\n');
+				} catch (e) {
+					log(`  ${file.name} is not valid ${recordType} JSON or NDJSON; skipping`);
+					continue walkDirectory;
+				}
+			}
+
+			break;
 		case `structString`:
 			log(`parsing ${recordType}s...`);
 			if (recordType === 'table') {
@@ -290,51 +324,10 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 
 		case `stream`:
 			if (!streamFormat) {
-				let formatInferred = false;
-				if (data?.path.endsWith('.json')) {
-					streamFormat = 'json';
-					formatInferred = true;
-				}
-				if (data?.path.endsWith('.jsonl')) {
-					streamFormat = 'jsonl';
-					formatInferred = true;
-				}
-				if (data?.path.endsWith('.ndjson')) {
-					streamFormat = 'jsonl';
-					formatInferred = true;
-				}
-				if (!formatInferred) {
-					throw Error(`no stream format specified for ${data?.path}; please use json or jsonl`);
-				}
+				streamFormat = inferStreamFormat(data);
 			}
 			log(`consuming ${streamFormat} stream of ${recordType}s from ${data?.path}...`);
 			pipeline = await streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat);
-			break;
-
-		case `directory`:
-			pipeline = [];
-			files = readdirSync(data).map(fileName => {
-				return {
-					name: fileName,
-					path: path.resolve(`${data}/${fileName}`)
-				};
-			});
-			log(`found ${addComma(files.length)} files in ${data}`);
-
-			walkDirectory: for (const file of files) {
-				log(`streaming ${recordType}s from ${file.name}`);
-				try {
-					let result = await filePipeLine(file.path, project, recordsPerBatch, bytesPerBatch, transformFunc);
-					pipeline.push({
-						[file.name]: result
-					});
-					log('\n');
-				} catch (e) {
-					log(`  ${file.name} is not valid JSON/NDJSON; skipping`);
-					continue walkDirectory;
-				}
-			}
-
 			break;
 
 		default:
@@ -415,7 +408,7 @@ https://github.com/uhop/stream-chain/wiki
 async function dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType) {
 	time('chunk', 'start');
 	let dataIn = data.map(transformFunc);
-	const batches =  chunkEv(dataIn, recordsPerBatch)	
+	const batches = chunkEv(dataIn, recordsPerBatch);
 	time('chunk', 'stop');
 	log(`\nloaded ${addComma(dataIn.length)} ${recordType}s`);
 
@@ -441,44 +434,6 @@ async function dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, 
 
 }
 
-async function filePipeLine(data, project, recordsPerBatch, bytesPerBatch, transformFunc) {
-	let records = 0;
-	let batches = 0;
-	let responses = [];
-
-	return new Promise((resolve, reject) => {
-		//streaming files to mixpanel!       
-		const pipeline = chain([
-			createReadStream(path.resolve(data)),
-			streamParseType(data),
-			(data) => {
-				records += 1;
-				return transformFunc(data.value);
-			},
-			new Batch({ batchSize: recordsPerBatch }),
-			async (batch) => {
-				batches += 1;
-				if (recordType === `event` && compress) batch = await gzip(JSON.stringify(batch));
-				return await sendDataToMixpanel(project, batch);
-			}
-		], fileStreamOpts);
-
-		//listening to the pipeline
-		pipeline.on('error', (error) => {
-			reject(error);
-		});
-		pipeline.on('data', (response) => {
-			totalReqs += 1;
-			showProgress(recordType, records, records, batches, batches);
-			responses.push(response);
-		});
-		pipeline.on('end', () => {
-			log('');
-			totalRecordCount += records;
-			resolve(responses);
-		});
-	});
-}
 
 async function streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat = 'json') {
 	let records = 0;
@@ -519,7 +474,6 @@ async function streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, 
 			totalRecordCount += records;
 			resolve(responses);
 		});
-
 
 		data.pipe(pipeline);
 	});
@@ -612,6 +566,28 @@ HELPERS
 --------
 */
 
+function inferStreamFormat(data) {
+	let formatInferred = false;
+	let streamFormat = '';
+	if (data?.path.endsWith('.json')) {
+		streamFormat = 'json';
+		formatInferred = true;
+	}
+	if (data?.path.endsWith('.jsonl')) {
+		streamFormat = 'jsonl';
+		formatInferred = true;
+	}
+	if (data?.path.endsWith('.ndjson')) {
+		streamFormat = 'jsonl';
+		formatInferred = true;
+	}
+	if (!formatInferred || !streamFormat) {
+		throw Error(`no stream format could be inferred for ${data?.path}; please specify streamFormat as json or jsonl in your options`);
+	}
+
+	return streamFormat;
+}
+
 function generateDelays(start = 2000, end = 60000) {
 	// https://developer.mixpanel.com/reference/import-events#rate-limits
 	const result = [start];
@@ -688,7 +664,7 @@ function determineData(data, isStream = false) {
 			return `inMem`;
 
 		default:
-			throw Error(`${data} is not an in memory array of objects, a stream, or a string...`);			
+			throw Error(`${data} is not an in memory array of objects, a stream, or a string...`);
 	}
 }
 
@@ -865,3 +841,13 @@ if (require.main === module) {
 	});
 
 }
+
+//bubble all thrown errors to caller
+// process.on('uncaughtException', (err, origin) => {
+// 	console.error(err)
+// 	console.error(origin)
+// })
+
+process.on('unhandledRejection', (err) => {
+	console.error(`\nFAILURE!\n\n${err.stack}`);
+});
