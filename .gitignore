@@ -10,3 +10,5 @@ scratch.js
 node_modules/
 testData/*
 !testData/.gitkeep
+logs/*
+!logs/.gitkeep

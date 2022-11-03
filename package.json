@@ -1,15 +1,23 @@
 {
   "name": "mixpanel-import",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "stream and import to mixpanel from node.js",
   "main": "index.js",
-  "keywords": ["mixpanel", "stream", "analytics", "tracking", "server", "CLI"],
+  "keywords": [
+    "mixpanel",
+    "stream",
+    "analytics",
+    "tracking",
+    "server",
+    "CLI"
+  ],
   "scripts": {
     "dev": "nodemon --inspect --ignore ./testData scratch.js",
     "post": "npm publish",
     "import": "node index.js",
     "generate": "NUMEVENTS=10000 SINCEDAYS=30 node generateFakeData.js",
-    "prune": "rm -rf ./testData/*"
+    "prune logs": "rm -rf ./logs/*",
+    "prune data": "rm -rf ./testData/*"
   },
   "bin": {
     "mixpanel-import": "./index.js"
@@ -32,11 +40,13 @@
     "dotenv": "^10.0.0",
     "md5": "^2.3.0",
     "node-gzip": "^1.1.2",
+    "papaparse": "^5.3.2",
     "stream-chain": "^2.2.5",
     "stream-json": "^1.7.4",
     "underscore": "^1.13.2"
   },
   "devDependencies": {
+    "eslint": "^8.26.0",
     "nodemon": "^2.0.15"
   }
 }

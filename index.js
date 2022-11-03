@@ -18,6 +18,7 @@ const runId = u.uid(32);
 const path = require('path');
 const readline = require('readline');
 const md5 = require('md5');
+const Papa = require('papaparse');
 
 const { Agent } = require('https');
 const { pick } = require('underscore');
@@ -31,11 +32,11 @@ PIPELINE DEPS
 -------------
 */
 
-const { Transform, PassThrough, Readable, Writable } = require('stream');
 const { chain } = require('stream-chain');
 const StreamArray = require('stream-json/streamers/StreamArray');
 const JsonlParser = require('stream-json/jsonl/Parser');
 const Batch = require('stream-json/utils/Batch');
+// const { Transform, PassThrough, Readable, Writable } = require('stream');
 require('dotenv').config();
 
 
@@ -93,12 +94,17 @@ GLOBALS
 --------
 */
 
+const supportedTypes = ['event', 'user', 'group', 'table'];
+const supportedFileTypes = ['.json', '.txt', '.jsonl', '.ndjson', '.csv'];
+let fileStreamOpts = { writableObjectMode: false, readableObjectMode: true };
+
 let logging = false;
-let fileStreamOpts = {};
+let strict = true;
+let compress = false;
+
 let url = ``;
 let recordType = ``;
-let strict = true;
-const supportedTypes = ['.json', '.txt', '.jsonl', '.ndjson', '.csv'];
+
 let totalRecordCount = 0;
 let totalReqs = 0;
 let retries = 0;
@@ -114,6 +120,7 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 
 	const defaultOpts = {
 		recordType: `event`, // event, user, group or table
+		compress: false, //gzip data (events only)
 		streamSize: 27, // power of 2 for highWaterMark in stream  (default 134 MB)
 		region: `US`, // US or EU
 		recordsPerBatch: 2000, // records in each req; max 2000 (200 for groups)
@@ -123,11 +130,19 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 		streamFormat: '', // json or jsonl ... only relevant for streams
 		transformFunc: function noop(a) { return a; } //will be called on every record
 	};
-	const options = { ...defaultOpts, ...opts };
+	let options;
+	if (typeof opts === 'string' && supportedTypes.includes(opts.toLowerCase())) {
+		options = {...defaultOpts, recordType: opts}
+	}
+	else {
+		options = { ...defaultOpts, ...opts };
+	}
+	
 	options.recordType = options.recordType.toLowerCase();
 	options.streamFormat = options.streamFormat.toLowerCase();
 	options.region = options.region.toLowerCase();
-
+	if (recordType === 'event' && options.compress) compress = true;
+	
 
 	const defaultCreds = {
 		acct: ``, //service acct username
@@ -153,6 +168,7 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 	const project = resolveProjInfo({ ...defaultCreds, ...envCreds, ...creds });
 	if (envCreds.recordType) options.recordType = envCreds.recordType;
 	if (envCreds.lookupTableId) project.lookupTableId = envCreds.lookupTableId;
+	Object.freeze(project)
 
 	//for strict event imports, make every record has an $insert_id
 	if (options.strict && options.recordType === `event` && options.transformFunc('A') === 'A') {
@@ -164,7 +180,7 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 					event.properties.$insert_id = hash;
 				}
 				catch (e) {
-
+					event.propertie.$insert_id = event.properties.distinct_id;
 				}
 				return event;
 			}
@@ -195,17 +211,18 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 
 	//for group imports, ensure 200 max size
 	if (options.strict && options.recordType === `group` && options.recordsPerBatch > 200) {
-		options.recordsPerBatch = 200
+		options.recordsPerBatch = 200;
 	}
 
+	Object.freeze(options)
 	const { streamSize, region, recordsPerBatch, bytesPerBatch, transformFunc } = options;
 	let { streamFormat } = options;
 	recordType = options.recordType;
 	logging = options.logs;
-	fileStreamOpts = { highWaterMark: 2 ** streamSize, writableObjectMode: false, readableObjectMode: true };
+	fileStreamOpts = { highWaterMark: 2 ** streamSize, ...fileStreamOpts };
 	strict = options.strict;
 	url = ENDPOINTS[region][recordType];
-	
+
 	if (recordType === `table`) {
 		if (project.lookupTableId) {
 			url += project.lookupTableId;
@@ -218,7 +235,7 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 
 	//if script is run standalone, use CLI params as source data
 	const lastArgument = [...process.argv].pop();
-	if (data?.length === 0 && supportedTypes.some(type => lastArgument.includes(type))) {
+	if (data?.length === 0 && supportedFileTypes.some(type => lastArgument.includes(type))) {
 		data = lastArgument;
 		logging = true;
 	}
@@ -228,16 +245,16 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 		process.exit(0);
 	}
 	const startTime = Date.now();
-	time('ETL', 'start');
+	time('pipeline', 'start');
 	track('start', { runId, ...options });
 
 	//CORE PIPELINES
 	const dataType = determineData(data, isStream);
 	let pipeline;
+	let files;
 	switch (dataType) {
 		case `file`:
 			log(`streaming ${recordType}s from ${data}...`);
-			time('stream pipeline', 'start');
 			//todo lookup table
 			if (recordType === 'table') {
 				pipeline = await prepareLookupTable(data, project, `file`);
@@ -247,7 +264,17 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 			}
 
 			log('\n');
-			time('stream pipeline', 'stop');
+			break;
+
+		case `structString`:
+			log(`parsing ${recordType}s...`);
+			if (recordType === 'table') {
+				pipeline = await prepareLookupTable(data, project, `memory`);
+			}
+			else {
+				data = JSON.parse(data);
+				pipeline = await dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType);
+			}
 			break;
 
 		case `inMem`:
@@ -256,7 +283,6 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 			if (recordType === 'table') {
 				pipeline = await prepareLookupTable(data, project, `memory`);
 			}
-
 			else {
 				pipeline = await dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType);
 			}
@@ -287,14 +313,13 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 
 		case `directory`:
 			pipeline = [];
-			const files = readdirSync(data).map(fileName => {
+			files = readdirSync(data).map(fileName => {
 				return {
 					name: fileName,
 					path: path.resolve(`${data}/${fileName}`)
 				};
 			});
 			log(`found ${addComma(files.length)} files in ${data}`);
-			time('stream pipeline', 'start');
 
 			walkDirectory: for (const file of files) {
 				log(`streaming ${recordType}s from ${file.name}`);
@@ -310,16 +335,14 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 				}
 			}
 
-			time('stream pipeline', 'stop');
 			break;
 
 		default:
 			log(`could not determine data source`);
 			throw Error(`mixpanel-import was not able to import: ${data}`);
-			break;
 	}
 
-	time('ETL', 'stop');
+	time('pipeline', 'stop');
 	track('end', { runId, ...options });
 
 	// summary of pipeline results
@@ -392,12 +415,7 @@ https://github.com/uhop/stream-chain/wiki
 async function dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType) {
 	time('chunk', 'start');
 	let dataIn = data.map(transformFunc);
-	let batches;
-	if (recordType === `event`) {
-		batches = chunkMaxSize(chunkEv(dataIn, recordsPerBatch), bytesPerBatch);
-	} else {
-		batches = chunkEv(dataIn, recordsPerBatch);
-	}
+	const batches =  chunkEv(dataIn, recordsPerBatch)	
 	time('chunk', 'stop');
 	log(`\nloaded ${addComma(dataIn.length)} ${recordType}s`);
 
@@ -405,11 +423,12 @@ async function dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, 
 	time('flush');
 	let responses = [];
 	let iter = 0;
-	for (const batch of batches) {
+	for (let batch of batches) {
 		iter += 1;
 		totalReqs += 1;
 
 		showProgress(recordType, recordsPerBatch * iter, dataIn.length, iter, batches.length);
+		if (recordType === `event` && compress) batch = await gzip(JSON.stringify(batch));
 		let res = await sendDataToMixpanel(project, batch);
 		responses.push(res);
 	}
@@ -439,6 +458,7 @@ async function filePipeLine(data, project, recordsPerBatch, bytesPerBatch, trans
 			new Batch({ batchSize: recordsPerBatch }),
 			async (batch) => {
 				batches += 1;
+				if (recordType === `event` && compress) batch = await gzip(JSON.stringify(batch));
 				return await sendDataToMixpanel(project, batch);
 			}
 		], fileStreamOpts);
@@ -447,12 +467,13 @@ async function filePipeLine(data, project, recordsPerBatch, bytesPerBatch, trans
 		pipeline.on('error', (error) => {
 			reject(error);
 		});
-		pipeline.on('data', (response, f, o) => {
+		pipeline.on('data', (response) => {
 			totalReqs += 1;
 			showProgress(recordType, records, records, batches, batches);
 			responses.push(response);
 		});
 		pipeline.on('end', () => {
+			log('');
 			totalRecordCount += records;
 			resolve(responses);
 		});
@@ -478,6 +499,7 @@ async function streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, 
 			//load
 			async (batch) => {
 				batches += 1;
+				if (recordType === `event` && compress) batch = await gzip(JSON.stringify(batch));
 				const sent = await sendDataToMixpanel(project, batch);
 				return sent;
 			}
@@ -487,12 +509,13 @@ async function streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, 
 		pipeline.on('error', (error) => {
 			reject(error);
 		});
-		pipeline.on('data', (response, f, o) => {
+		pipeline.on('data', (response) => {
 			totalReqs += 1;
 			showProgress(recordType, records, records, batches, batches);
 			responses.push(response);
 		});
 		pipeline.on('end', () => {
+			log('');
 			totalRecordCount += records;
 			resolve(responses);
 		});
@@ -540,13 +563,19 @@ async function sendDataToMixpanel(proj, batch, contentType = 'application/json')
 		httpsAgent: new Agent({ keepAlive: true, maxTotalSockets: 20 }),
 		data: batch
 	};
+
+	//events are gzipped
+	if (recordType === `event` && compress) {
+		reqConfig.headers['Content-Encoding'] = 'gzip';
+	}
+
 	try {
 		const req = await fetch(url, reqConfig);
 		const res = req.data;
 		return res;
 
 	} catch (e) {
-		log(`problem with request: ${e.message}\n${e.response.data.error}\n`);
+		log(`\nproblem with request: ${e.message}\n${e.response.data.error}\n`);
 		return e.response.data;
 	}
 }
@@ -558,23 +587,23 @@ IN DEVELOPMENT
 --------------
 */
 
-const pipeToMixpanelPipeline = new Transform({
-	defaultEncoding: 'utf8',
-	transform(chunk, encoding, cb) {
-		this.push(chunk.toString('utf8'));
-		cb();
-	},
-	flush(cb) {
-		this.push(null);
-		cb();
-	}
+// const pipeToMixpanelPipeline = new Transform({
+// 	defaultEncoding: 'utf8',
+// 	transform(chunk, encoding, cb) {
+// 		this.push(chunk.toString('utf8'));
+// 		cb();
+// 	},
+// 	flush(cb) {
+// 		this.push(null);
+// 		cb();
+// 	}
 
-});
+// });
 
-pipeToMixpanelPipeline.on('data', async (stream, b, c) => {
-	let pipeData = await main({}, stream, {}, true);
-	return pipeData;
-});
+// pipeToMixpanelPipeline.on('data', async (stream, b, c) => {
+// 	let pipeData = await main({}, stream, {}, true);
+// 	return pipeData;
+// });
 
 
 /*
@@ -629,32 +658,37 @@ function determineData(data, isStream = false) {
 				//could be stringified data
 				JSON.parse(data);
 				return `structString`;
-			} catch (error) {
-				//data is not stringified
+			} catch (e) {
+				//data is not already json
+			}
+
+			try {
+				const csv = Papa.parse(data, { header: true, skipEmptyLines: true });
+				if (csv.errors.length === 0) return `structString`;
+			}
+
+			catch (e) {
+				//csv parser failed
 			}
 
 			//probably a file or directory; stream it
-			let dataPath = path.resolve(data);
-			if (!existsSync(dataPath)) {
-				console.error(`could not find ${data} ... does it exist?`);
+			data = path.resolve(data);
+			if (!existsSync(data)) {
+				throw Error(`could not find ${data} ... does it exist?`);
 			} else {
-				let fileMeta = lstatSync(dataPath);
+				let fileMeta = lstatSync(data);
 				if (fileMeta.isDirectory()) return `directory`;
 				if (fileMeta.isFile()) return `file`;
 				return `file`;
 			}
-			break;
 
 		case `object`:
 			//probably structured data; just load it
 			if (!Array.isArray(data)) console.error(`only arrays of events are supported`);
 			return `inMem`;
-			break;
 
 		default:
-			console.error(`${data} is not an Array or string...`);
-			return `unknown`;
-			break;
+			throw Error(`${data} is not an in memory array of objects, a stream, or a string...`);			
 	}
 }
 
@@ -707,66 +741,7 @@ function chunkEv(arrayOfEvents, chunkSize) {
 	}, []);
 }
 
-function chunkMaxSize(data, size) {
-	const sizeChunked = data.map((batch) => { return sizeChunker(batch, size); });
-	return sizeChunked.flat();
 
-}
-
-function sizeChunker(input, bytesSize = Number.MAX_SAFE_INTEGER, failOnOversize = false) {
-	const output = [];
-	let outputSize = 0;
-	let outputFreeIndex = 0;
-
-	if (!input || input.length === 0 || bytesSize <= 0) {
-		return output;
-	}
-
-	for (let obj of input) {
-		const objSize = getObjectSize(obj);
-		if (objSize > bytesSize && failOnOversize) {
-			throw new Error(`Can't chunk array as item is bigger than the max chunk size`);
-		}
-
-		const fitsIntoLastChunk = (outputSize + objSize) <= bytesSize;
-
-		if (fitsIntoLastChunk) {
-			if (!Array.isArray(output[outputFreeIndex])) {
-				output[outputFreeIndex] = [];
-			}
-
-			output[outputFreeIndex].push(obj);
-			outputSize += objSize;
-		} else {
-			if (output[outputFreeIndex]) {
-				outputFreeIndex++;
-				outputSize = 0;
-			}
-
-			output[outputFreeIndex] = [];
-			output[outputFreeIndex].push(obj);
-			outputSize += objSize;
-		}
-	}
-
-	return output;
-};
-
-function getObjectSize(obj) {
-	try {
-		const str = stringify(obj);
-		return Buffer.byteLength(str, 'utf8');
-	} catch (error) {
-		return 0;
-	}
-}
-
-async function zipChunks(arrayOfBatches) {
-	const allBatches = arrayOfBatches.map(async function (batch) {
-		return await gzip(JSON.stringify(batch));
-	});
-	return Promise.all(allBatches);
-}
 
 /*
 -------
@@ -783,9 +758,9 @@ function log(message) {
 function time(label = `foo`, directive = `start`) {
 	if (logging) {
 		if (directive === `start`) {
-			console.time(label);
+			console.time(`${label} took`);
 		} else if (directive === `stop`) {
-			console.timeEnd(label);
+			console.timeEnd(`${label} took`);
 		}
 	}
 }
@@ -797,13 +772,13 @@ function addComma(x) {
 function showProgress(record, ev, evTotal, batch, batchTotal) {
 	if (logging) {
 		readline.cursorTo(process.stdout, 0);
-		process.stdout.write(`  ${record}s sent: ${addComma(ev)}/${addComma(evTotal)} | batches sent: ${addComma(batch)}/${addComma(batchTotal)}\n\n`);
+		process.stdout.write(`\t${record}s processed: ${addComma(ev)}/${addComma(evTotal)} | batches sent: ${addComma(batch)}/${addComma(batchTotal)}`);
 	}
 }
 
 // THIS IS WEIRD!!!
 
-process.on('uncaughtException', (error, origin) => {
+process.on('uncaughtException', (error) => {
 	if (error.errono === -54) return false; //axios keeps throwing these for no reason :(
 });
 
@@ -871,15 +846,22 @@ EXPORTS
 -------
 */
 
-const mpImport = module.exports = main;
+module.exports = main;
 // mpImport.mpStream = pipeToMixpanelPipeline;
-
 
 //this allows the module to function as a standalone script
 if (require.main === module) {
-	main(undefined, undefined, {logs: true}).then((result) => {
-		console.log(`RESULTS:\n\n`);
-		console.log(JSON.stringify(result, null, 2));
+	console.log(banner);
+	main(undefined, undefined, { logs: true }).then((result) => {
+		const dateTime = new Date().toISOString().split('.')[0].replace('T', '--').replace(/:/g, ".");
+		const fileDir = u.mkdir('./logs');
+		const fileName = `${recordType}-import-log-${dateTime}.txt`;
+		const filePath = `${fileDir}/${fileName}`;
+
+		u.touch(filePath, result, true).then(() => {
+			console.log(`results written to: ./${fileName}\n`);
+		});
+
 	});
 
 }
