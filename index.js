@@ -36,7 +36,7 @@ const { chain } = require('stream-chain');
 const StreamArray = require('stream-json/streamers/StreamArray');
 const JsonlParser = require('stream-json/jsonl/Parser');
 const Batch = require('stream-json/utils/Batch');
-// const { Transform, PassThrough, Readable, Writable } = require('stream');
+const stream = require('stream');
 require('dotenv').config();
 
 
@@ -137,6 +137,9 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 	else {
 		options = { ...defaultOpts, ...opts };
 	}
+	if (opts.log) options.logs = true;
+	if (opts.logging) options.logs = true;
+	if (opts.verbose) options.logs = true;
 
 	options.recordType = options.recordType.toLowerCase();
 	options.streamFormat = options.streamFormat.toLowerCase();
@@ -285,7 +288,7 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 				log(`streaming ${recordType}s from ${file.name}`);
 				try {
 					const localStream = createReadStream(path.resolve(file.path));
-					const localFormat = inferStreamFormat(localStream)					
+					const localFormat = inferStreamFormat(localStream);
 					log(`streaming ${localFormat} stream of ${recordType}s from file ${file.path}...`);
 					const result = await streamingPipeline(localStream, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, localFormat);
 					// let result = await filePipeLine(file.path, project, recordsPerBatch, bytesPerBatch, transformFunc);
@@ -434,6 +437,60 @@ async function dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, 
 
 }
 
+// https://medium.com/florence-development/working-with-node-js-stream-api-60c12437a1be
+function pipeToMixpanel(creds = {}, opts = {}) {
+	const { recordsPerBatch = 10 } = opts;
+	const logs = [];
+	const interface = new Batch({ batchSize: recordsPerBatch, ...fileStreamOpts });
+	const piped = new stream.Writable({ objectMode: true, highWaterMark: recordsPerBatch });
+	interface.on('pipe', (inputStream) => {
+		inputStream.on('end', () => {
+			debugger;
+		});
+		inputStream.on('finish', () => {
+			debugger;
+		});
+
+		inputStream.on('destroy', () => {
+			debugger;
+		});
+
+		stream.finished(inputStream, (err) => {
+			debugger;
+		});
+	});
+
+	stream.finished(interface, (err) => {
+		debugger;
+	});
+	
+	interface.on('end', ()=>{
+		logs;
+		debugger;
+	})
+
+	interface.on('finish', ()=>{
+		logs;
+		debugger;
+	})
+
+	interface.on('data', (a,b, c)=>{
+		logs;
+		debugger;
+	})
+	piped._write = (batch, encoding, callback) => {
+		main(creds, batch, opts).then((results) => {
+			logs.push(results);			
+			callback(undefined, logs);
+		});
+
+	};
+
+	interface.pipe(piped);
+
+	return interface;
+
+}
 
 async function streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat = 'json') {
 	let records = 0;
@@ -478,6 +535,9 @@ async function streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, 
 		data.pipe(pipeline);
 	});
 }
+
+
+
 
 async function prepareLookupTable(data, project, type = `file`) {
 	if (type === 'memory') {
@@ -534,30 +594,6 @@ async function sendDataToMixpanel(proj, batch, contentType = 'application/json')
 	}
 }
 
-
-/*
---------------
-IN DEVELOPMENT
---------------
-*/
-
-// const pipeToMixpanelPipeline = new Transform({
-// 	defaultEncoding: 'utf8',
-// 	transform(chunk, encoding, cb) {
-// 		this.push(chunk.toString('utf8'));
-// 		cb();
-// 	},
-// 	flush(cb) {
-// 		this.push(null);
-// 		cb();
-// 	}
-
-// });
-
-// pipeToMixpanelPipeline.on('data', async (stream, b, c) => {
-// 	let pipeData = await main({}, stream, {}, true);
-// 	return pipeData;
-// });
 
 
 /*
@@ -822,7 +858,8 @@ EXPORTS
 -------
 */
 
-module.exports = main;
+const mpImport = module.exports = main;
+mpImport.mpStream = pipeToMixpanel;
 // mpImport.mpStream = pipeToMixpanelPipeline;
 
 //this allows the module to function as a standalone script
