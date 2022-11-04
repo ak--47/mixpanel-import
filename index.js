@@ -438,56 +438,47 @@ async function dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, 
 }
 
 // https://medium.com/florence-development/working-with-node-js-stream-api-60c12437a1be
-function pipeToMixpanel(creds = {}, opts = {}) {
-	const { recordsPerBatch = 10 } = opts;
+function pipeToMixpanel(creds = {}, opts = {}, finish = () => { }) {
+	const { recordsPerBatch = 2000 } = opts;
+	let inCounter = 0;
+	let outCounter = 0;
 	const logs = [];
 	const interface = new Batch({ batchSize: recordsPerBatch, ...fileStreamOpts });
 	const piped = new stream.Writable({ objectMode: true, highWaterMark: recordsPerBatch });
+
+	//early termination
 	interface.on('pipe', (inputStream) => {
-		inputStream.on('end', () => {
-			debugger;
-		});
-		inputStream.on('finish', () => {
-			debugger;
-		});
-
-		inputStream.on('destroy', () => {
-			debugger;
-		});
-
-		stream.finished(inputStream, (err) => {
-			debugger;
-		});
+		stream.finished(inputStream, (err) => { });
 	});
 
-	stream.finished(interface, (err) => {
-		debugger;
+	stream.finished(interface, (err, data) => { });
+
+	interface.on('finish', () => {
+		const consumerLogs = aggregateLogs(logs);
+		finish(consumerLogs);
 	});
-	
-	interface.on('end', ()=>{
-		logs;
-		debugger;
-	})
 
-	interface.on('finish', ()=>{
-		logs;
-		debugger;
-	})
+	interface.on('data', (a, b, c) => {
+		inCounter++;
+	});
 
-	interface.on('data', (a,b, c)=>{
-		logs;
-		debugger;
-	})
 	piped._write = (batch, encoding, callback) => {
 		main(creds, batch, opts).then((results) => {
-			logs.push(results);			
-			callback(undefined, logs);
+			outCounter++;
+			logs.push(results);
+			if (inCounter !== outCounter) {
+				callback();
+			}
+
+			else {
+				interface.end();
+				piped.end();
+			}
 		});
 
 	};
 
 	interface.pipe(piped);
-
 	return interface;
 
 }
@@ -535,8 +526,6 @@ async function streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, 
 		data.pipe(pipeline);
 	});
 }
-
-
 
 
 async function prepareLookupTable(data, project, type = `file`) {
@@ -786,6 +775,28 @@ function showProgress(record, ev, evTotal, batch, batchTotal) {
 		readline.cursorTo(process.stdout, 0);
 		process.stdout.write(`\t${record}s processed: ${addComma(ev)}/${addComma(evTotal)} | batches sent: ${addComma(batch)}/${addComma(batchTotal)}`);
 	}
+}
+
+function aggregateLogs(logs = []) {
+	const finalLog = {
+		results: {},
+		responses: []
+	};
+
+	for (const log of logs) {
+		finalLog.responses.push(log.responses[0]);
+		
+		for (let key in log.results) {
+			if (!finalLog.results[key]) {
+				finalLog.results[key] = log.results[key];
+			}
+			else if (typeof log.results[key] === 'number') {
+				finalLog.results[key] += log.results[key];
+			}
+		}
+	}
+
+	return finalLog;
 }
 
 // THIS IS WEIRD!!!
