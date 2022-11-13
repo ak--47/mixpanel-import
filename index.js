@@ -260,7 +260,6 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 					continue walkDirectory;
 				}
 			}
-
 			break;
 		case `structString`:
 			log(`parsing ${recordType}s...`);
@@ -401,20 +400,19 @@ function pipeToMixpanel(creds = {}, opts = {}, finish = () => { }) {
 	const { recordsPerBatch = 2000 } = opts;
 	const logs = [];
 	const interface = new Batch({ batchSize: recordsPerBatch, ...fileStreamOpts });
-	const piped = new stream.Writable({ objectMode: true, highWaterMark: recordsPerBatch });
+	const piped = new stream.Transform({ objectMode: true, highWaterMark: recordsPerBatch });
 
 	piped.on('finish', () => {
 		const consumerLogs = aggregateLogs(logs);
 		finish(consumerLogs);
 	});
 
-
-	piped._write = (batch, encoding, callback) => {
+	piped._transform = (batch, encoding, callback) => {
 		main(creds, batch, opts).then((results) => {
 			logs.push(results);
-			callback();
+			interface.push(null, results);
+			callback(null, results);
 		});
-
 	};
 
 	interface.pipe(piped);
