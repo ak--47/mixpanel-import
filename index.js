@@ -26,6 +26,7 @@ const { createReadStream, existsSync, readdirSync, lstatSync } = require('fs');
 const { gzip } = require('node-gzip');
 
 
+
 /*
 -------------
 PIPELINE DEPS
@@ -37,6 +38,7 @@ const StreamArray = require('stream-json/streamers/StreamArray');
 const JsonlParser = require('stream-json/jsonl/Parser');
 const Batch = require('stream-json/utils/Batch');
 const stream = require('stream');
+const highland = require('highland');
 require('dotenv').config();
 
 
@@ -127,6 +129,7 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 		bytesPerBatch: 2 * 1024 * 1024, // max bytes in each req
 		strict: true, // use strict mode?
 		logs: false, // print to stdout?
+		fixData: false, //apply transforms on the data
 		streamFormat: '', // json or jsonl ... only relevant for streams
 		transformFunc: function noop(a) { return a; } //will be called on every record
 	};
@@ -172,51 +175,7 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 	if (envCreds.recordType) options.recordType = envCreds.recordType;
 	if (envCreds.lookupTableId) project.lookupTableId = envCreds.lookupTableId;
 	Object.freeze(project);
-
-	//for strict event imports, make every record has an $insert_id
-	if (options.strict && options.recordType === `event` && options.transformFunc('A') === 'A') {
-		options.transformFunc = function addInsertIfAbsent(event) {
-			if (!event?.properties?.$insert_id) {
-				try {
-					let deDupeTuple = [event.name, event.properties.distinct_id || "", event.properties.time];
-					let hash = md5(deDupeTuple);
-					event.properties.$insert_id = hash;
-				}
-				catch (e) {
-					event.propertie.$insert_id = event.properties.distinct_id;
-				}
-				return event;
-			}
-			else {
-				return event;
-			}
-		};
-
-	}
-
-	//for strict user imports, make sure every record has a $token and the right shape
-	if (options.strict && options.recordType === `user` && options.transformFunc('A') === 'A') {
-		options.transformFunc = function addUserTokenIfAbsent(user) {
-			//wrong shape; fix it
-			if (!user.$set || !user.$set_once || !user.$add || !user.$union || !user.$append || !user.$remove || !user.$unset) {
-				user = { $set: { ...user } };
-				user.$distinct_id = user.$set.$distinct_id;
-				delete user.$set.$distinct_id;
-				delete user.$set.$token;
-			}
-
-			//catch missing token
-			if ((!user.$token) && project.token) user.$token = project.token;
-
-			return user;
-		};
-	}
-
-	//for group imports, ensure 200 max size
-	if (options.strict && options.recordType === `group` && options.recordsPerBatch > 200) {
-		options.recordsPerBatch = 200;
-	}
-
+	if (options.fixData) ezTransforms(options, project);
 	Object.freeze(options);
 	const { streamSize, region, recordsPerBatch, bytesPerBatch, transformFunc } = options;
 	let { streamFormat } = options;
@@ -440,40 +399,20 @@ async function dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, 
 // https://medium.com/florence-development/working-with-node-js-stream-api-60c12437a1be
 function pipeToMixpanel(creds = {}, opts = {}, finish = () => { }) {
 	const { recordsPerBatch = 2000 } = opts;
-	let inCounter = 0;
-	let outCounter = 0;
 	const logs = [];
 	const interface = new Batch({ batchSize: recordsPerBatch, ...fileStreamOpts });
 	const piped = new stream.Writable({ objectMode: true, highWaterMark: recordsPerBatch });
 
-	//early termination
-	interface.on('pipe', (inputStream) => {
-		stream.finished(inputStream, (err) => { });
-	});
-
-	stream.finished(interface, (err, data) => { });
-
-	interface.on('finish', () => {
+	piped.on('finish', () => {
 		const consumerLogs = aggregateLogs(logs);
 		finish(consumerLogs);
 	});
 
-	interface.on('data', (a, b, c) => {
-		inCounter++;
-	});
 
 	piped._write = (batch, encoding, callback) => {
 		main(creds, batch, opts).then((results) => {
-			outCounter++;
 			logs.push(results);
-			if (inCounter !== outCounter) {
-				callback();
-			}
-
-			else {
-				interface.end();
-				piped.end();
-			}
+			callback();
 		});
 
 	};
@@ -742,6 +681,53 @@ function chunkEv(arrayOfEvents, chunkSize) {
 	}, []);
 }
 
+function ezTransforms(options, project) {
+	//for strict event imports, make every record has an $insert_id
+	if (options.fixData && options.recordType === `event` && options.transformFunc('A') === 'A') {
+		options.transformFunc = function addInsertIfAbsent(event) {
+			if (!event?.properties?.$insert_id) {
+				try {
+					let deDupeTuple = [event.name, event.properties.distinct_id || "", event.properties.time];
+					let hash = md5(deDupeTuple);
+					event.properties.$insert_id = hash;
+				}
+				catch (e) {
+					event.propertie.$insert_id = event.properties.distinct_id;
+				}
+				return event;
+			}
+			else {
+				return event;
+			}
+		};
+
+	}
+
+	//for strict user imports, make sure every record has a $token and the right shape
+	if (options.fixData && options.recordType === `user` && options.transformFunc('A') === 'A') {
+		options.transformFunc = function addUserTokenIfAbsent(user) {
+			//wrong shape; fix it
+			if (!user.$set || !user.$set_once || !user.$add || !user.$union || !user.$append || !user.$remove || !user.$unset) {
+				user = { $set: { ...user } };
+				user.$distinct_id = user.$set.$distinct_id;
+				delete user.$set.$distinct_id;
+				delete user.$set.$token;
+			}
+
+			//catch missing token
+			if ((!user.$token) && project.token) user.$token = project.token;
+
+			return user;
+		};
+	}
+
+	//for group imports, ensure 200 max size
+	if (options.fixData && options.recordType === `group` && options.recordsPerBatch > 200) {
+		options.recordsPerBatch = 200;
+	}
+
+}
+
 
 
 /*
@@ -785,7 +771,7 @@ function aggregateLogs(logs = []) {
 
 	for (const log of logs) {
 		finalLog.responses.push(log.responses[0]);
-		
+
 		for (let key in log.results) {
 			if (!finalLog.results[key]) {
 				finalLog.results[key] = log.results[key];
@@ -799,11 +785,6 @@ function aggregateLogs(logs = []) {
 	return finalLog;
 }
 
-// THIS IS WEIRD!!!
-
-process.on('uncaughtException', (error) => {
-	if (error.errono === -54) return false; //axios keeps throwing these for no reason :(
-});
 
 
 /*
@@ -842,22 +823,23 @@ const mpImport  =  require('mixpanel-import')
 const importedData = await mpImport(creds, data, options);
 
 const creds = {
-acct: 'my-servce-acct',
-pass: 'my-service-seccret', 
-project: 'my-project-id', 
-token: 'my-project-token'  
+	acct: 'my-servce-acct',
+	pass: 'my-service-seccret', 
+	project: 'my-project-id', 
+	token: 'my-project-token'  
 }
 
 const options = {
-recordType: "event", //event, user, OR group
-streamSize: 27, 
-region: "US", //US or EU
-recordsPerBatch: 2000, 
-bytesPerBatch: 2 * 1024 * 1024, 
-strict: true, 
-logs: false, 
-streamFormat: 'json', //or jsonl	
-transformFunc: function noop(a) { return a } //called on every record
+	recordType: "event", //event, user, OR group
+	streamSize: 27, 
+	region: "US", //US or EU
+	recordsPerBatch: 2000, 
+	bytesPerBatch: 2 * 1024 * 1024, 
+	strict: true, 
+	logs: false,
+	fixData: false, //apply simple transforms 
+	streamFormat: 'json', //or jsonl	
+	transformFunc: function noop(a) { return a } //called on every record
 }
 
 DOCS: https://github.com/ak--47/mixpanel-import    
@@ -870,7 +852,7 @@ EXPORTS
 */
 
 const mpImport = module.exports = main;
-mpImport.mpStream = pipeToMixpanel;
+mpImport.createMpStream = pipeToMixpanel;
 // mpImport.mpStream = pipeToMixpanelPipeline;
 
 //this allows the module to function as a standalone script
@@ -890,11 +872,16 @@ if (require.main === module) {
 
 }
 
-//bubble all thrown errors to caller
-// process.on('uncaughtException', (err, origin) => {
-// 	console.error(err)
-// 	console.error(origin)
-// })
+/*
+---
+CYA
+---
+*/
+
+process.on('uncaughtException', (error) => {
+	if (error.errono === -54) return false; //axios keeps throwing these for no reason :(
+});
+
 
 process.on('unhandledRejection', (err) => {
 	console.error(`\nFAILURE!\n\n${err.stack}`);
