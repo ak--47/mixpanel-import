@@ -156,11 +156,12 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 		project: ``, //project id
 		secret: ``, //api secret (deprecated auth)
 		token: ``, //project token 
-		lookupTableId: `` //lookup table id       
+		lookupTableId: ``, //lookup table id
+		groupKey: `` //group key id       
 	};
 
 	//sweep .env to pickup MP_ keys
-	const envVars = pick(process.env, `MP_PROJECT`, `MP_ACCT`, `MP_PASS`, `MP_SECRET`, `MP_TOKEN`, `MP_TYPE`, `MP_TABLE_ID`);
+	const envVars = pick(process.env, `MP_PROJECT`, `MP_ACCT`, `MP_PASS`, `MP_SECRET`, `MP_TOKEN`, `MP_TYPE`, `MP_TABLE_ID`, `MP_GROUP_KEY`);
 	const envKeyNames = {
 		MP_PROJECT: "project",
 		MP_ACCT: "acct",
@@ -168,7 +169,8 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 		MP_SECRET: "secret",
 		MP_TOKEN: "token",
 		recordType: "MP_TYPE",
-		lookupTableId: "MP_TABLE_ID"
+		lookupTableId: "MP_TABLE_ID",
+		groupKey: "MP_GROUP_KEY"
 	};
 	const envCreds = renameKeys(envVars, envKeyNames);
 	const project = resolveProjInfo({ ...defaultCreds, ...envCreds, ...creds });
@@ -302,7 +304,7 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 	// summary of pipeline results
 	const endTime = Date.now();
 	const duration = (endTime - startTime) / 1000;
-	const total = totalRecordCount;
+	let total = totalRecordCount;
 	const batches = totalReqs;
 	let success, failed;
 	if (recordType === `event`) {
@@ -337,8 +339,19 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 	}
 
 	if (recordType === `table`) {
-		success = pipeline.filter(res => res.code === 200).length;
-		failed = pipeline.filter(res => res.code !== 200).length;
+		success = 0;
+		failed = 0;
+		if (pipeline.code === 200) {
+			success++;
+		}
+		else {
+			failed++;
+		}
+
+		try {
+			total = data.split('\n').length - 1;
+		}
+		catch (e) { }
 	}
 
 	const summary = {
@@ -399,24 +412,39 @@ async function dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, 
 function pipeToMixpanel(creds = {}, opts = {}, finish = () => { }) {
 	const { recordsPerBatch = 2000 } = opts;
 	const logs = [];
-	const interface = new Batch({ batchSize: recordsPerBatch, ...fileStreamOpts });
 	const piped = new stream.Transform({ objectMode: true, highWaterMark: recordsPerBatch });
 
 	piped.on('finish', () => {
 		const consumerLogs = aggregateLogs(logs);
 		finish(consumerLogs);
 	});
+	piped.batch = [];
 
-	piped._transform = (batch, encoding, callback) => {
-		main(creds, batch, opts).then((results) => {
-			logs.push(results);
-			interface.push(null, results);
-			callback(null, results);
-		});
+	piped._transform = (data, encoding, callback) => {
+		piped.batch.push(data);
+		if (piped.batch.length >= recordsPerBatch) {
+			main(creds, piped.batch, opts).then((results) => {
+				logs.push(results);
+				piped.batch = [];
+				callback(null, results);
+			});
+		}
+		else {
+			callback();
+		}
 	};
 
-	interface.pipe(piped);
-	return interface;
+	piped._flush = function (callback) {
+		if (piped.batch.length) {
+			piped.push(piped.batch);
+			piped.batch = [];
+		}
+		callback(null, aggregateLogs(logs));
+	};
+
+	return piped;
+
+
 
 }
 
@@ -466,6 +494,7 @@ async function streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, 
 
 
 async function prepareLookupTable(data, project, type = `file`) {
+	totalReqs++
 	if (type === 'memory') {
 		return await sendDataToMixpanel(project, data, 'text/csv');
 	}
@@ -488,7 +517,7 @@ async function sendDataToMixpanel(proj, batch, contentType = 'application/json')
 	const authString = proj.auth;
 
 	const reqConfig = {
-		method: 'POST',
+		method: contentType === 'application/json' ? 'POST' : "PUT",
 		headers: {
 			'Authorization': authString,
 			'Content-Type': contentType,
@@ -662,6 +691,8 @@ function resolveProjInfo(auth) {
 
 	result.token = auth.token;
 	result.projId = auth.project;
+	result.lookupTableId = auth.lookupTableId;
+	result.groupKey = auth.groupKey;
 	return result;
 }
 
@@ -779,6 +810,8 @@ function aggregateLogs(logs = []) {
 			}
 		}
 	}
+
+	finalLog.results.batches = logs.length;
 
 	return finalLog;
 }
