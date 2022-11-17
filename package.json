@@ -17,7 +17,7 @@
     "import": "node index.js",
     "generate": "NUMEVENTS=10000 SINCEDAYS=30 node generateFakeData.js",
     "prune logs": "rm -rf ./logs/*",
-    "prune data": "rm -rf ./testData/*"
+    "test": "nodemon --inspect --ignore ./logs test.js"
   },
   "bin": {
     "mixpanel-import": "./index.js"

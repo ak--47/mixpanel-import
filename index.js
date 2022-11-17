@@ -1,8 +1,46 @@
 #! /usr/bin/env node
 
+
+
 // mixpanel-import
 // by AK
 // purpose: stream events, users, groups, tables into mixpanel... with best practices!
+
+/*
+-----
+TYPES
+-----
+*/
+
+/**
+ * @typedef {Object} Creds - mixpanel project credentilas
+ * @property {string} acct - service account username
+ * @property {string} pass - service account password
+ * @property {(string | number)} project - project id
+ * @property {string} [token] - project token (for importing user profiles)
+ * @property {string} [lookupTableId] - lookup table ID (for importing lookup tables)
+ * @property {string} [groupKey] - group identifier (for importing group profiles)
+ */
+
+/**
+ * @typedef {Object} Options
+ * @property {string} [recordType=event] - type of record to import (event, user, group, or table)
+ * @property {boolean} [compress=false] - use gzip compression (events only)
+ * @property {number} [streamSize=27] - 2^N; highWaterMark value for stream
+ * @property {string} [region=US] - US or EU (data residency)
+ * @property {number} [recordsPerBatch=2000] - max # of records in each payload (max 2000; max 200 for group profiles) 
+ * @property {number} [bytesPerBatch=2*1024*1024] - max # of bytes in each payload (max 2MB)
+ * @property {boolean} [strict=true] - validate data on send (events only)
+ * @property {boolean} [logs=true] - log data to console
+ * @property {boolean} [fixData=false] - apply transformations to ensure data is properly ingested
+ * @property {string} [streamFormat] - format of underlying data stream; json or jsonl
+ * @property {function} [transformFunc=()=>{}] - a function to apply to every record before sending
+ */
+
+/**
+ * @typedef {string | Array<{event: string, properties: {Object}}>} Data
+ */
+
 
 /*
 ---------
@@ -38,7 +76,6 @@ const StreamArray = require('stream-json/streamers/StreamArray');
 const JsonlParser = require('stream-json/jsonl/Parser');
 const Batch = require('stream-json/utils/Batch');
 const stream = require('stream');
-const highland = require('highland');
 require('dotenv').config();
 
 
@@ -118,6 +155,15 @@ MAIN
 ----
 */
 
+
+/**
+ * import data to mixpanel
+ * @async
+ * @param {Creds} creds 
+ * @param {Data} data - data to import
+ * @param {Options} [opts]
+ * @param {boolean} [isStream] - used when data is a stream; can also be inferred or supplied in options
+ */
 async function main(creds = {}, data = [], opts = {}, isStream = false) {
 
 	const defaultOpts = {
@@ -168,9 +214,9 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 		MP_PASS: "pass",
 		MP_SECRET: "secret",
 		MP_TOKEN: "token",
-		recordType: "MP_TYPE",
-		lookupTableId: "MP_TABLE_ID",
-		groupKey: "MP_GROUP_KEY"
+		MP_TYPE: "recordType",
+		MP_TABLE_ID: "lookupTableId",
+		MP_GROUP_KEY: "groupKey"
 	};
 	const envCreds = renameKeys(envVars, envKeyNames);
 	const project = resolveProjInfo({ ...defaultCreds, ...envCreds, ...creds });
@@ -351,7 +397,9 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 		try {
 			total = data.split('\n').length - 1;
 		}
-		catch (e) { }
+		catch (e) { 
+			//noop
+		}
 	}
 
 	const summary = {
@@ -378,7 +426,14 @@ PIPELINES
 https://github.com/uhop/stream-chain/wiki
 
 */
-
+/**
+ * @param  {} data
+ * @param  {} project
+ * @param  {} recordsPerBatch
+ * @param  {} bytesPerBatch
+ * @param  {} transformFunc
+ * @param  {} recordType
+ */
 async function dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType) {
 	time('chunk', 'start');
 	let dataIn = data.map(transformFunc);
@@ -447,7 +502,15 @@ function pipeToMixpanel(creds = {}, opts = {}, finish = () => { }) {
 
 
 }
-
+/**
+ * @param  {ReadableStream} data
+ * @param  {number} project
+ * @param  {number} recordsPerBatch
+ * @param  {number} bytesPerBatch
+ * @param  {function} transformFunc
+ * @param  {string} recordType
+ * @param  {string} streamFormat='json'
+ */
 async function streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat = 'json') {
 	let records = 0;
 	let batches = 0;
@@ -492,9 +555,13 @@ async function streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, 
 	});
 }
 
-
+/**
+ * @param  {string} data
+ * @param  {number} project
+ * @param  {string} type=`file`
+ */
 async function prepareLookupTable(data, project, type = `file`) {
-	totalReqs++
+	totalReqs++;
 	if (type === 'memory') {
 		return await sendDataToMixpanel(project, data, 'text/csv');
 	}
@@ -513,6 +580,11 @@ FLUSH
 -----
 */
 
+/**
+ * @param  {number} proj
+ * @param  {unknown} batch
+ * @param  {string} contentType='application/json'
+ */
 async function sendDataToMixpanel(proj, batch, contentType = 'application/json') {
 	const authString = proj.auth;
 
@@ -556,7 +628,9 @@ async function sendDataToMixpanel(proj, batch, contentType = 'application/json')
 HELPERS
 --------
 */
-
+/**
+ * @param  {string | Data | ReadableStream} data
+ */
 function inferStreamFormat(data) {
 	let formatInferred = false;
 	let streamFormat = '';
@@ -579,6 +653,10 @@ function inferStreamFormat(data) {
 	return streamFormat;
 }
 
+/**
+ * @param  {number} start=2000
+ * @param  {number} end=60000
+ */
 function generateDelays(start = 2000, end = 60000) {
 	// https://developer.mixpanel.com/reference/import-events#rate-limits
 	const result = [start];
@@ -592,6 +670,10 @@ function generateDelays(start = 2000, end = 60000) {
 	return result;
 }
 
+/**
+ * @param  {string} fileName
+ * @param  {string} type
+ */
 function streamParseType(fileName, type) {
 	if (type === 'json') {
 		return StreamArray.withParser();
@@ -612,6 +694,10 @@ function streamParseType(fileName, type) {
 
 }
 
+/**
+ * @param  {} data
+ * @param  {} isStream=false
+ */
 function determineData(data, isStream = false) {
 	//identify streams?
 	//some duck typing right here
@@ -659,6 +745,10 @@ function determineData(data, isStream = false) {
 	}
 }
 
+/**
+ * @param  {Object} obj
+ * @param  {Object} newKeys
+ */
 function renameKeys(obj, newKeys) {
 	//https://stackoverflow.com/a/45287523
 	const keyValues = Object.keys(obj).map(key => {
@@ -670,23 +760,32 @@ function renameKeys(obj, newKeys) {
 	return Object.assign({}, ...keyValues);
 }
 
+/**
+ * @param  {Creds} auth
+ */
 function resolveProjInfo(auth) {
 	let result = {
 		auth: `Basic `,
 		method: ``
 	};
-	//fallback method: secret auth
-	if (auth.secret) {
-		result.auth += Buffer.from(auth.secret + ':', 'binary').toString('base64');
-		result.method = `secret`;
-
-	}
 
 	//preferred method: service acct
 	if (auth.acct && auth.pass && auth.project) {
 		result.auth += Buffer.from(auth.acct + ':' + auth.pass, 'binary').toString('base64');
 		result.method = `serviceAcct`;
 
+	}
+
+	//fallback method: secret auth
+	else if (auth.secret) {
+		result.auth += Buffer.from(auth.secret + ':', 'binary').toString('base64');
+		result.method = `secret`;
+	}
+
+
+	else {
+		console.error('no secret or service account provided! quitting...')
+		process.exit(0)
 	}
 
 	result.token = auth.token;
@@ -696,6 +795,10 @@ function resolveProjInfo(auth) {
 	return result;
 }
 
+/**
+ * @param  {Data} arrayOfEvents
+ * @param  {number} chunkSize
+ */
 function chunkEv(arrayOfEvents, chunkSize) {
 	return arrayOfEvents.reduce((resultArray, item, index) => {
 		const chunkIndex = Math.floor(index / chunkSize);
@@ -710,7 +813,21 @@ function chunkEv(arrayOfEvents, chunkSize) {
 	}, []);
 }
 
+/**
+ * @param  {Options} options
+ * @param  {number} project
+ */
 function ezTransforms(options, project) {
+	//for group imports, ensure 200 max size
+	if (options.fixData && options.recordType === `group` && options.recordsPerBatch > 200) {
+		options.recordsPerBatch = 200;
+	}
+
+	//for user + event imports, ensure 2000 max size
+	if (options.fixData && (options.recordType === `user` || options.recordType === `event`) && options.recordsPerBatch > 2000) {
+		options.recordsPerBatch = 2000;
+	}
+
 	//for strict event imports, make every record has an $insert_id
 	if (options.fixData && options.recordType === `event` && options.transformFunc('A') === 'A') {
 		options.transformFunc = function addInsertIfAbsent(event) {
@@ -721,7 +838,7 @@ function ezTransforms(options, project) {
 					event.properties.$insert_id = hash;
 				}
 				catch (e) {
-					event.propertie.$insert_id = event.properties.distinct_id;
+					event.properties.$insert_id = event.properties.distinct_id;
 				}
 				return event;
 			}
@@ -732,11 +849,11 @@ function ezTransforms(options, project) {
 
 	}
 
-	//for strict user imports, make sure every record has a $token and the right shape
+	//for user imports, make sure every record has a $token and the right shape
 	if (options.fixData && options.recordType === `user` && options.transformFunc('A') === 'A') {
 		options.transformFunc = function addUserTokenIfAbsent(user) {
 			//wrong shape; fix it
-			if (!user.$set || !user.$set_once || !user.$add || !user.$union || !user.$append || !user.$remove || !user.$unset) {
+			if (!(user.$set || user.$set_once || user.$add || user.$union || user.$append || user.$remove || user.$unset)) {
 				user = { $set: { ...user } };
 				user.$distinct_id = user.$set.$distinct_id;
 				delete user.$set.$distinct_id;
@@ -750,10 +867,31 @@ function ezTransforms(options, project) {
 		};
 	}
 
-	//for group imports, ensure 200 max size
-	if (options.fixData && options.recordType === `group` && options.recordsPerBatch > 200) {
-		options.recordsPerBatch = 200;
+
+	//for group imports, make sure every record has a $token and the right shape
+	if (options.fixData && options.recordType === `group` && options.transformFunc('A') === 'A') {
+		options.transformFunc = function addGroupKeysIfAbsent(group) {
+			//wrong shape; fix it
+			if (!(group.$set || group.$set_once || group.$add || group.$union || group.$append || group.$remove || group.$unset)) {
+				group = { $set: { ...group } };
+				if (group.$set?.$group_key) group.$group_key = group.$set.$group_key
+				if (group.$set?.$distinct_id) group.$group_id = group.$set.$distinct_id
+				if (group.$set?.$group_id) group.$group_id = group.$set.$group_id
+				delete group.$set.$distinct_id;
+				delete group.$set.$group_id;
+				delete group.$set.$token;
+			}
+
+			//catch missing token
+			if ((!group.$token) && project.token) group.$token = project.token;
+
+			//catch group key
+			if ((!group.$group_key) && project.groupKey) group.$group_key = project.groupKey;
+
+			return group;
+		};
 	}
+
 
 }
 
@@ -884,12 +1022,11 @@ EXPORTS
 
 const mpImport = module.exports = main;
 mpImport.createMpStream = pipeToMixpanel;
-// mpImport.mpStream = pipeToMixpanelPipeline;
 
 //this allows the module to function as a standalone script
 if (require.main === module) {
 	console.log(banner);
-	main(undefined, undefined, { logs: true }).then((result) => {
+	main(undefined, undefined, { logs: true, fixData: true }).then((result) => {
 		const dateTime = new Date().toISOString().split('.')[0].replace('T', '--').replace(/:/g, ".");
 		const fileDir = u.mkdir('./logs');
 		const fileName = `${recordType}-import-log-${dateTime}.json`;
