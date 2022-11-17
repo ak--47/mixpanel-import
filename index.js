@@ -397,7 +397,7 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 		try {
 			total = data.split('\n').length - 1;
 		}
-		catch (e) { 
+		catch (e) {
 			//noop
 		}
 	}
@@ -492,9 +492,20 @@ function pipeToMixpanel(creds = {}, opts = {}, finish = () => { }) {
 	piped._flush = function (callback) {
 		if (piped.batch.length) {
 			piped.push(piped.batch);
+			
+			//data is still left in the stream; flush it!
+			main(creds, piped.batch, opts).then((results) => {
+				logs.push(results);
+				piped.batch = [];
+				callback(null, results);
+			});
+			
 			piped.batch = [];
 		}
-		callback(null, aggregateLogs(logs));
+
+		else {
+			callback(null, aggregateLogs(logs));
+		}
 	};
 
 	return piped;
@@ -784,8 +795,8 @@ function resolveProjInfo(auth) {
 
 
 	else {
-		console.error('no secret or service account provided! quitting...')
-		process.exit(0)
+		console.error('no secret or service account provided! quitting...');
+		process.exit(0);
 	}
 
 	result.token = auth.token;
@@ -874,9 +885,9 @@ function ezTransforms(options, project) {
 			//wrong shape; fix it
 			if (!(group.$set || group.$set_once || group.$add || group.$union || group.$append || group.$remove || group.$unset)) {
 				group = { $set: { ...group } };
-				if (group.$set?.$group_key) group.$group_key = group.$set.$group_key
-				if (group.$set?.$distinct_id) group.$group_id = group.$set.$distinct_id
-				if (group.$set?.$group_id) group.$group_id = group.$set.$group_id
+				if (group.$set?.$group_key) group.$group_key = group.$set.$group_key;
+				if (group.$set?.$distinct_id) group.$group_id = group.$set.$distinct_id;
+				if (group.$set?.$group_id) group.$group_id = group.$set.$group_id;
 				delete group.$set.$distinct_id;
 				delete group.$set.$group_id;
 				delete group.$set.$token;

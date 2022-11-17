@@ -15,7 +15,7 @@
     "dev": "nodemon --inspect --ignore ./testData scratch.js",
     "post": "npm publish",
     "import": "node index.js",
-    "generate": "NUMEVENTS=10000 SINCEDAYS=30 node generateFakeData.js",
+    "generate": "NUMEVENTS=9999 SINCEDAYS=30 node generateFakeData.js",
     "prune logs": "rm -rf ./logs/*",
     "test": "nodemon --inspect --ignore ./logs test.js"
   },

@@ -28,7 +28,9 @@ $ npx --yes mixpanel-import ./pathToData
 
 when running stand-alone, `pathToData` can be a `.json`, `.jsonl`, `.ndjson`, or `.txt` file OR a directory which contains said files.
 
-you will also need to supply a [`.env` configuration file](#environment-variables) for authentication.
+for CLI usage, you will also need to supply a [`.env` configuration file](#environment-variables) to provide your project credentials.
+
+the CLI will write response logs to a `./logs` directory by default.
 
 ### module usage
 install `mixpanel-import` as a dependency
@@ -37,11 +39,27 @@ npm i mixpanel-import --save
 ```
 
 use it in code:
-```
+```javascript
 const mpImport  =  require('mixpanel-import') 
-	...
-const importedData = await mp(credentials, data, options);
-console.log(importedData) // array of responses from Mixpanel
+const importedData = await mpImport(credentials, data, options);
+
+console.log(importedData)
+/* 
+
+{
+	results: {
+		success: 5003,
+		failed: 0,
+		total: 5003,
+		batches: 3,
+		recordType: "event",
+		duration: 1.299,
+		retries: 0,
+	},
+	responses: [ ... ]    
+}
+
+*/
 ```
 
 read more about [`credentials`](#credentials), [`data`](#data), and [`options`](#options) 
@@ -107,10 +125,8 @@ MP_GROUP_KEY={{your-group-key}}
 
 # required for lookup tables
 MP_TABLE_ID={{your-lookup-id}}
-
 ```
-
-when using environment variables for authentication in non-CLI mode, pass `null` as the `creds` (first argument) to the module:
+`.env` variables are **required** in [CLI mode](#cli-usage); in [non-CLI mode](#module-usage), pass `null` as the `creds` (first argument) to the module to use `.env` varaibles:
 
 ```javascript
 const importedData = await mpImport(null, data, options);
@@ -155,12 +171,12 @@ const mixpanelStream = createMpStream(creds, options, (results) => { ... })
 const myStream = new Readable.from(data, { objectMode: true });
 myStream.pipe(mixpanelStream)
 ```
-(object mode streams use a different import... `createMpStream`)
+(note that object mode streams use a different import... **`createMpStream`** )
 
-**important note**: you will use the  [`options`](#options) (below) to specify what type of records you are importing; `event` is the default type
+**important**: you will use the **[`options`](#options)** (below) to specify what type of records you are importing; `event` is the default type
 
 ### options
-`options` is an object that allows you to configure the behavior of this module. 
+`options` is an object that allows you to configure the behavior of this module. it is only available in [module mode](#module-usage).
 
 Below, the default values are given, but you can override them with your own values:
 
@@ -181,7 +197,7 @@ const options = {
 	transformFunc: function noop(a) { return a; } 
 }
 ```
-**note**: the `recordType` param is very important; by default this module assumes you wish to import `event` records but change this value to `user` or `group` if you are importing other entities. you may also specify the `recordType` as `MP_TYPE` in your [`.env` configuration](#environment-variables) when [using this module as a CLI](#cli-usage)
+**note**: the `recordType` param is very important; by default this module assumes you wish to import `event` records. change this value to `user`, `group`, or `table` if you are importing other entities. you may also specify the `recordType` as `MP_TYPE` in your [`.env` configuration](#environment-variables) when [using this module as a CLI](#cli-usage)
 
 ## recipies
 the `transformFunc` is useful because it can preprocess records in the pipeline using arbitrary javascript. 
