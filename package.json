@@ -1,6 +1,6 @@
 {
   "name": "mixpanel-import",
-  "version": "2.0.5",
+  "version": "2.1.0",
   "description": "stream and import to mixpanel from node.js",
   "main": "index.js",
   "keywords": [
@@ -15,9 +15,9 @@
     "dev": "nodemon --inspect --ignore ./testData scratch.js",
     "post": "npm publish",
     "import": "node index.js",
-    "generate": "NUMEVENTS=10000 SINCEDAYS=30 node generateFakeData.js",
+    "generate": "NUMEVENTS=9999 SINCEDAYS=30 node generateFakeData.js",
     "prune logs": "rm -rf ./logs/*",
-    "prune data": "rm -rf ./testData/*"
+    "test": "nodemon --inspect --ignore ./logs test.js"
   },
   "bin": {
     "mixpanel-import": "./index.js"
@@ -38,6 +38,7 @@
     "axios-retry": "^3.3.1",
     "chance": "^1.1.7",
     "dotenv": "^10.0.0",
+    "highland": "^2.13.5",
     "md5": "^2.3.0",
     "node-gzip": "^1.1.2",
     "papaparse": "^5.3.2",

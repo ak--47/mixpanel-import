@@ -12,3 +12,4 @@ testData/*
 !testData/.gitkeep
 logs/*
 !logs/.gitkeep
+test.js
