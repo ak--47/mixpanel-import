@@ -145,7 +145,6 @@ let url = ``;
 let recordType = ``;
 
 let totalRecordCount = 0;
-let totalReqs = 0;
 let retries = 0;
 
 
@@ -351,7 +350,6 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 	const endTime = Date.now();
 	const duration = (endTime - startTime) / 1000;
 	let total = totalRecordCount;
-	const batches = totalReqs;
 	let success, failed;
 	if (recordType === `event`) {
 		if (dataType === `directory`) {
@@ -359,14 +357,16 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 			for (const [index, fileRes] of pipeline.entries()) {
 				flatRes.push(pipeline[index][Object.keys(fileRes)[0]]);
 			}
-			success = flatRes.flat().map(res => res.num_records_imported).reduce((prev, curr) => prev + curr);
+			success = flatRes.flat().map(res => res.num_records_imported).reduce((prev, curr) => prev + curr, 0);
 			failed = total - success;
 		}
 
 		else {
-			success = pipeline.map(res => res.num_records_imported).reduce((prev, curr) => prev + curr);
+			success = pipeline.map(res => res.num_records_imported).reduce((prev, curr) => prev + curr, 0);
 			failed = total - success;
 		}
+
+
 	}
 
 	if (recordType === `user` || recordType === `group`) {
@@ -407,7 +407,7 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 			success,
 			failed,
 			total,
-			batches,
+			batches: pipeline.length,
 			recordType,
 			duration,
 			retries
@@ -447,7 +447,6 @@ async function dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, 
 	let iter = 0;
 	for (let batch of batches) {
 		iter += 1;
-		totalReqs += 1;
 
 		showProgress(recordType, recordsPerBatch * iter, dataIn.length, iter, batches.length);
 		if (recordType === `event` && compress) batch = await gzip(JSON.stringify(batch));
@@ -552,7 +551,6 @@ async function streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, 
 			reject(error);
 		});
 		pipeline.on('data', (response) => {
-			totalReqs += 1;
 			showProgress(recordType, records, records, batches, batches);
 			responses.push(response);
 		});
@@ -572,7 +570,6 @@ async function streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, 
  * @param  {string} type=`file`
  */
 async function prepareLookupTable(data, project, type = `file`) {
-	totalReqs++;
 	if (type === 'memory') {
 		return await sendDataToMixpanel(project, data, 'text/csv');
 	}
