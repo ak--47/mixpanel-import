@@ -87,8 +87,9 @@ RETRIES
 
 const exponentialBackoff = generateDelays();
 axiosRetry(fetch, {
-	retries: 5, // number of retries
+	retries: 6, // number of retries
 	retryDelay: (retryCount) => {
+		if (retryCount > 5) throw Error('failed afer 5 retries')
 		log(`	retrying request... attempt: ${retryCount}`);
 		return exponentialBackoff[retryCount] + u.rand(1000, 5000); // interval between retries
 	},
