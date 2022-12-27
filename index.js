@@ -1,4 +1,5 @@
 #! /usr/bin/env node
+/* eslint-disable no-unused-vars */
 
 
 
@@ -57,13 +58,17 @@ const path = require('path');
 const readline = require('readline');
 const md5 = require('md5');
 const Papa = require('papaparse');
+const fs = require('fs');
+
 
 const { Agent } = require('https');
 const { pick } = require('underscore');
 const { createReadStream, existsSync, readdirSync, lstatSync } = require('fs');
 const { gzip } = require('node-gzip');
 
-
+const _ = require('highland');
+const got = require('got');
+const yargs = require('yargs');
 
 /*
 -------------
@@ -78,6 +83,108 @@ const Batch = require('stream-json/utils/Batch');
 const stream = require('stream');
 require('dotenv').config();
 
+/*
+----
+PARAM GATHERING
+----
+*/
+
+class importJob {
+	constructor(creds, opts) {
+		// * credentials
+		this.acct = creds.acct || ``; //service acct username
+		this.pass = creds.pass || ``; //service acct secret
+		this.project = creds.project || ``; //project id
+		this.secret = creds.secret || ``; //api secret (deprecated auth)
+		this.token = creds.token || ``; //project token 
+		this.lookupTableId = creds.lookupTableId || ``; //lookup table id
+		this.groupKey = creds.groupKey || ``; //group key id    
+
+		// * options
+		this.recordType = opts.recordType || `event`; // event, user, group or table
+		this.compress = opts.compress || false; //gzip data (events only)
+		this.streamSize = opts.streamSize || 27; // power of 2 for highWaterMark in stream  (default 134 MB)
+		this.region = opts.region || `US`; // US or EU
+		this.recordsPerBatch = opts.recordsPerBatch || 2000; // records in each req; max 2000 (200 for groups)
+		this.bytesPerBatch = opts.bytesPerBatch || 2 * 1024 * 1024; // max bytes in each req
+		this.strict = opts.strict || true; // use strict mode?
+		this.logs = opts.logs || true; // print to stdout?
+		this.fixData = opts.fixData || false; //apply transforms on the data
+		this.streamFormat = opts.streamFormat || ''; // json or jsonl ... only relevant for streams
+		this.transformFunc = opts.transformFunc || function noop(a) { return a; }; //will be called on every record
+
+		// * counters
+		this.recordsProcessed = 0;
+		this.success = 0;
+		this.failed = 0;
+		this.retries = 0;
+		this.time = 0;
+
+	}
+
+	static supportedTypes() {
+		return ['event', 'user', 'group', 'table'];
+	}
+
+	static supportedFileExt() {
+		return ['.json', '.txt', '.jsonl', '.ndjson', '.csv'];
+	}
+
+	static urls() {
+		return {
+			us: {
+				event: `https://api.mixpanel.com/import`,
+				user: `https://api.mixpanel.com/engage`,
+				group: `https://api.mixpanel.com/groups`,
+				table: `https://api.mixpanel.com/lookup-tables/`
+			},
+			eu: {
+				event: `https://api-eu.mixpanel.com/import`,
+				user: `https://api-eu.mixpanel.com/engage`,
+				group: `https://api-eu.mixpanel.com/groups`,
+				table: `https://api-eu.mixpanel.com/lookup-tables/`
+			}
+		};
+	}
+
+	get auth() {
+		return {};
+	}
+
+
+	get dataType() {
+		return this.recordType;
+	}
+
+	get url() {
+		return this.urls[this.region.toLowerCase()[this.recordType.toLowerCase()]];
+	}
+
+	get fileStreamOpts() {
+		return { writableObjectMode: false, readableObjectMode: true };
+	}
+}
+
+function getEnvVars() {
+	const envVars = pick(process.env, `MP_PROJECT`, `MP_ACCT`, `MP_PASS`, `MP_SECRET`, `MP_TOKEN`, `MP_TYPE`, `MP_TABLE_ID`, `MP_GROUP_KEY`);
+	const envKeyNames = {
+		MP_PROJECT: "project",
+		MP_ACCT: "acct",
+		MP_PASS: "pass",
+		MP_SECRET: "secret",
+		MP_TOKEN: "token",
+		MP_TYPE: "recordType",
+		MP_TABLE_ID: "lookupTableId",
+		MP_GROUP_KEY: "groupKey"
+	};
+	const envCreds = renameKeys(envVars, envKeyNames);
+}
+
+function getCLIParams() {
+	const argv = yargs(process.argv.splice(2))
+		.usage(`Usage: $0 --project [pid] --acct [serviceAcct] --pass [servicePass] --secret [secret] --token [token] --type [recordType] --table [lookuptableId] --group [groupKey]`);
+}
+
 
 /*
 -----------
@@ -89,7 +196,7 @@ const exponentialBackoff = generateDelays();
 axiosRetry(fetch, {
 	retries: 6, // number of retries
 	retryDelay: (retryCount) => {
-		if (retryCount > 5) throw Error('failed afer 5 retries')
+		if (retryCount > 5) throw Error('failed afer 5 retries');
 		log(`	retrying request... attempt: ${retryCount}`);
 		return exponentialBackoff[retryCount] + u.rand(1000, 5000); // interval between retries
 	},
@@ -133,6 +240,7 @@ const ENDPOINTS = {
 GLOBALS
 --------
 */
+
 
 const supportedTypes = ['event', 'user', 'group', 'table'];
 const supportedFileTypes = ['.json', '.txt', '.jsonl', '.ndjson', '.csv'];
@@ -421,12 +529,52 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 }
 
 /*
+----
+STREAMERS
+----
+*/
+function lineByLineStream(filePath) {
+	const rl = readline.createInterface({
+		input: fs.createReadStream(filePath),
+		crlfDelay: Infinity,
+	});
+
+	const generator = (push, next) => {
+		rl.on('line', line => {
+			push(null, line);
+		});
+		rl.on('close', () => {
+			push(null, _.nil);
+		});
+	};
+
+	return generator;
+}
+
+
+
+
+/*
 ---------
 PIPELINES
 ---------
 https://github.com/uhop/stream-chain/wiki
 
 */
+
+
+
+async function corePipeline(stream, infos, fileType) {
+	_(generator)
+		.map(JSON.parse)
+		.batch(2000)
+		.toArray(function (xs) {
+			debugger;
+		});
+
+}
+
+
 /**
  * @param  {} data
  * @param  {} project
@@ -492,14 +640,14 @@ function pipeToMixpanel(creds = {}, opts = {}, finish = () => { }) {
 	piped._flush = function (callback) {
 		if (piped.batch.length) {
 			piped.push(piped.batch);
-			
+
 			//data is still left in the stream; flush it!
 			main(creds, piped.batch, opts).then((results) => {
 				logs.push(results);
 				piped.batch = [];
 				callback(null, results);
 			});
-			
+
 			piped.batch = [];
 		}
 

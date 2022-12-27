@@ -1,6 +1,6 @@
 {
   "name": "mixpanel-import",
-  "version": "2.1.2",
+  "version": "2.2.2",
   "description": "stream and import to mixpanel from node.js",
   "main": "index.js",
   "keywords": [
@@ -38,13 +38,15 @@
     "axios-retry": "^3.3.1",
     "chance": "^1.1.7",
     "dotenv": "^10.0.0",
+    "got": "^11.8.6",
     "highland": "^2.13.5",
     "md5": "^2.3.0",
     "node-gzip": "^1.1.2",
     "papaparse": "^5.3.2",
     "stream-chain": "^2.2.5",
     "stream-json": "^1.7.4",
-    "underscore": "^1.13.2"
+    "underscore": "^1.13.2",
+    "yargs": "^17.6.2"
   },
   "devDependencies": {
     "eslint": "^8.26.0",
