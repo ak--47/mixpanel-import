@@ -98,7 +98,8 @@ class importJob {
 		this.secret = creds.secret || ``; //api secret (deprecated auth)
 		this.token = creds.token || ``; //project token 
 		this.lookupTableId = creds.lookupTableId || ``; //lookup table id
-		this.groupKey = creds.groupKey || ``; //group key id    
+		this.groupKey = creds.groupKey || ``; //group key id
+		this.auth = resolveProjInfo(this);
 
 		// * options
 		this.recordType = opts.recordType || `event`; // event, user, group or table
@@ -118,53 +119,70 @@ class importJob {
 		this.success = 0;
 		this.failed = 0;
 		this.retries = 0;
-		this.time = 0;
+		this.timer = u.time('etl')
+
+		// ! apply EZ transforms: this will mutate the instance when called
+		if (this.fixData) ezTransforms(this);
 
 	}
 
-	static supportedTypes() {
-		return ['event', 'user', 'group', 'table'];
-	}
+	// ? private props
+	#supportedTypes = ['event', 'user', 'group', 'table'];
+	#supportedFileExt = ['.json', '.txt', '.jsonl', '.ndjson', '.csv'];
+	#endpoints = {
+		us: {
+			event: `https://api.mixpanel.com/import`,
+			user: `https://api.mixpanel.com/engage`,
+			group: `https://api.mixpanel.com/groups`,
+			table: `https://api.mixpanel.com/lookup-tables/`
+		},
+		eu: {
+			event: `https://api-eu.mixpanel.com/import`,
+			user: `https://api-eu.mixpanel.com/engage`,
+			group: `https://api-eu.mixpanel.com/groups`,
+			table: `https://api-eu.mixpanel.com/lookup-tables/`
+		}
 
-	static supportedFileExt() {
-		return ['.json', '.txt', '.jsonl', '.ndjson', '.csv'];
-	}
+	};
 
-	static urls() {
-		return {
-			us: {
-				event: `https://api.mixpanel.com/import`,
-				user: `https://api.mixpanel.com/engage`,
-				group: `https://api.mixpanel.com/groups`,
-				table: `https://api.mixpanel.com/lookup-tables/`
-			},
-			eu: {
-				event: `https://api-eu.mixpanel.com/import`,
-				user: `https://api-eu.mixpanel.com/engage`,
-				group: `https://api-eu.mixpanel.com/groups`,
-				table: `https://api-eu.mixpanel.com/lookup-tables/`
-			}
-		};
-	}
-
-	get auth() {
-		return {};
-	}
-
-
-	get dataType() {
+	// ? getter methods
+	get type() {
 		return this.recordType;
 	}
 
 	get url() {
-		return this.urls[this.region.toLowerCase()[this.recordType.toLowerCase()]];
+		return this.endpoints[this.region.toLowerCase()][this.recordType.toLowerCase()];
 	}
 
-	get fileStreamOpts() {
+	get streamOpts() {
 		return { writableObjectMode: false, readableObjectMode: true };
+	}
+
+	get opts() {
+		const { recordType, compress, streamSize, region, recordsPerBatch, bytesPerBatch, strict, logs, fixData, streamFormat, transformFunc } = this;
+		return { recordType, compress, streamSize, region, recordsPerBatch, bytesPerBatch, strict, logs, fixData, streamFormat, transformFunc };
+	}
+
+	get creds() {
+		const { acct, pass, project, secret, token, lookupTableId, groupKey, auth } = this;
+		return { acct, pass, project, secret, token, lookupTableId, groupKey, auth };
+	}
+
+	// ? setter methods
+	set batchSize(chunkSize) {
+		this.recordsPerBatch = chunkSize;
+	}
+
+	set transform(fn) {
+		this.transformFunc = fn;
+	}
+
+	report() {
+		return Object.assign(this);
 	}
 }
 
+// only resolves credentials
 function getEnvVars() {
 	const envVars = pick(process.env, `MP_PROJECT`, `MP_ACCT`, `MP_PASS`, `MP_SECRET`, `MP_TOKEN`, `MP_TYPE`, `MP_TABLE_ID`, `MP_GROUP_KEY`);
 	const envKeyNames = {
@@ -178,13 +196,341 @@ function getEnvVars() {
 		MP_GROUP_KEY: "groupKey"
 	};
 	const envCreds = renameKeys(envVars, envKeyNames);
+	return envCreds;
 }
+
 
 function getCLIParams() {
-	const argv = yargs(process.argv.splice(2))
-		.usage(`Usage: $0 --project [pid] --acct [serviceAcct] --pass [servicePass] --secret [secret] --token [token] --type [recordType] --table [lookuptableId] --group [groupKey]`);
+	const args = yargs(process.argv.splice(2))
+		.argv;
+	return args;
 }
 
+/**
+ * @param  {Creds} auth
+ */
+function resolveProjInfo(auth) {
+	let authString = `Basic `;
+	//preferred method: service acct
+	if (auth.acct && auth.pass && auth.project) {
+		authString += Buffer.from(auth.acct + ':' + auth.pass, 'binary').toString('base64');
+		return authString;
+
+	}
+
+	//fallback method: secret auth
+	else if (auth.secret) {
+		authString += Buffer.from(auth.secret + ':', 'binary').toString('base64');
+		return authString;
+	}
+
+	else {
+		console.error('no secret or service account provided! quitting...');
+		process.exit(0);
+	}
+
+}
+
+/**
+ * @param  {Options} config
+ * @param  {number} config
+ */
+function ezTransforms(config) {
+	//for group imports, ensure 200 max size
+	if (config.recordType === `group` && config.recordsPerBatch > 200) {
+		config.batchSize = 200;
+	}
+
+	//for user + event imports, ensure 2000 max size
+	if ((config.recordType === `user` || config.recordType === `event`) && config.recordsPerBatch > 2000) {
+		config.batchSize = 2000;
+	}
+
+	//for strict event imports, make every record has an $insert_id
+	if (config.recordType === `event` && config.transformFunc('A') === 'A') {
+		config.transform = function addInsertIfAbsent(event) {
+			if (!event?.properties?.$insert_id) {
+				try {
+					let deDupeTuple = [event.name, event.properties.distinct_id || "", event.properties.time];
+					let hash = md5(deDupeTuple);
+					event.properties.$insert_id = hash;
+				}
+				catch (e) {
+					event.properties.$insert_id = event.properties.distinct_id;
+				}
+				return event;
+			}
+			else {
+				return event;
+			}
+		};
+
+	}
+
+	//for user imports, make sure every record has a $token and the right shape
+	if (config.recordType === `user` && config.transformFunc('A') === 'A') {
+		config.transform = function addUserTokenIfAbsent(user) {
+			//wrong shape; fix it
+			if (!(user.$set || user.$set_once || user.$add || user.$union || user.$append || user.$remove || user.$unset)) {
+				user = { $set: { ...user } };
+				user.$distinct_id = user.$set.$distinct_id;
+				delete user.$set.$distinct_id;
+				delete user.$set.$token;
+			}
+
+			//catch missing token
+			if ((!user.$token) && config.token) user.$token = config.token;
+
+			return user;
+		};
+	}
+
+
+	//for group imports, make sure every record has a $token and the right shape
+	if (config.recordType === `group` && config.transformFunc('A') === 'A') {
+		config.transform = function addGroupKeysIfAbsent(group) {
+			//wrong shape; fix it
+			if (!(group.$set || group.$set_once || group.$add || group.$union || group.$append || group.$remove || group.$unset)) {
+				group = { $set: { ...group } };
+				if (group.$set?.$group_key) group.$group_key = group.$set.$group_key;
+				if (group.$set?.$distinct_id) group.$group_id = group.$set.$distinct_id;
+				if (group.$set?.$group_id) group.$group_id = group.$set.$group_id;
+				delete group.$set.$distinct_id;
+				delete group.$set.$group_id;
+				delete group.$set.$token;
+			}
+
+			//catch missing token
+			if ((!group.$token) && config.token) group.$token = config.token;
+
+			//catch group key
+			if ((!group.$group_key) && config.groupKey) group.$group_key = config.groupKey;
+
+			return group;
+		};
+	}
+
+}
+
+/**
+ * Mixpanel Importer
+ * @example
+ * mpImport(creds, data, opts)
+ * @param {Creds} creds 
+ * @param {Data} data 
+ * @param {Options} opts 
+ * @param {boolean} isStream 
+ * @returns API reciepts of imported data
+ */
+async function newMain(creds = {}, data = [], opts = {}, isStream = false) {
+	const envVar = getEnvVars();
+	const cli = getCLIParams();
+	const cliData = cli._
+	const config = new importJob({ ...envVar, ...cli, ...creds }, { ...envVar, ...cli, ...opts });
+	config.timer.start();
+	const dataType = determineData(data)
+
+	
+	return [];
+	
+
+
+	// if (options.fixData) ezTransforms(options, project);
+	// Object.freeze(options);
+	// const { streamSize, region, recordsPerBatch, bytesPerBatch, transformFunc } = options;
+	// let { streamFormat } = options;
+	// recordType = options.recordType;
+	// logging = options.logs;
+	// fileStreamOpts = { highWaterMark: 2 ** streamSize, ...fileStreamOpts };
+	// strict = options.strict;
+	// url = ENDPOINTS[region][recordType];
+
+	// if (recordType === `table`) {
+	// 	if (project.lookupTableId) {
+	// 		url += project.lookupTableId;
+	// 	}
+	// 	else {
+	// 		throw Error('saw type table, but no lookup table id was supplied');
+	// 	}
+
+	// }
+
+	// //if script is run standalone, use CLI params as source data
+	// const lastArgument = [...process.argv].pop();
+	// if (data?.length === 0 && supportedFileTypes.some(type => lastArgument.includes(type))) {
+	// 	data = lastArgument;
+	// 	logging = true;
+	// }
+	// else if (lastArgument?.toLowerCase()?.includes('help')) {
+	// 	console.log(banner);
+	// 	console.log(helpText);
+	// 	process.exit(0);
+	// }
+	// const startTime = Date.now();
+	// time('pipeline', 'start');
+	// track('start', { runId, ...options });
+
+	// //CORE PIPELINES
+	// const dataType = determineData(data, isStream);
+	// let pipeline;
+	// let files;
+	// let fileStream;
+	// switch (dataType) {
+	// 	case `file`:
+	// 		//todo lookup table
+	// 		if (recordType === 'table') {
+	// 			pipeline = await prepareLookupTable(data, project, `file`);
+	// 		}
+	// 		else {
+	// 			fileStream = createReadStream(path.resolve(data));
+	// 			if (!streamFormat) {
+	// 				streamFormat = inferStreamFormat(fileStream);
+	// 			}
+	// 			log(`streaming ${streamFormat} stream of ${recordType}s from file ${data}...`);
+	// 			pipeline = await streamingPipeline(fileStream, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat);
+	// 		}
+
+	// 		log('\n');
+	// 		break;
+
+	// 	case `directory`:
+	// 		pipeline = [];
+	// 		files = readdirSync(data).map(fileName => {
+	// 			return {
+	// 				name: fileName,
+	// 				path: path.resolve(`${data}/${fileName}`)
+	// 			};
+	// 		});
+	// 		log(`found ${addComma(files.length)} files in ${data}`);
+
+	// 		walkDirectory: for (const file of files) {
+	// 			log(`streaming ${recordType}s from ${file.name}`);
+	// 			try {
+	// 				const localStream = createReadStream(path.resolve(file.path));
+	// 				const localFormat = inferStreamFormat(localStream);
+	// 				log(`streaming ${localFormat} stream of ${recordType}s from file ${file.path}...`);
+	// 				const result = await streamingPipeline(localStream, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, localFormat);
+	// 				// let result = await filePipeLine(file.path, project, recordsPerBatch, bytesPerBatch, transformFunc);
+	// 				pipeline.push({
+	// 					[file.name]: result
+	// 				});
+	// 				log('\n');
+	// 			} catch (e) {
+	// 				log(`  ${file.name} is not valid ${recordType} JSON or NDJSON; skipping`);
+	// 				continue walkDirectory;
+	// 			}
+	// 		}
+	// 		break;
+	// 	case `structString`:
+	// 		log(`parsing ${recordType}s...`);
+	// 		if (recordType === 'table') {
+	// 			pipeline = await prepareLookupTable(data, project, `memory`);
+	// 		}
+	// 		else {
+	// 			data = JSON.parse(data);
+	// 			pipeline = await dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType);
+	// 		}
+	// 		break;
+
+	// 	case `inMem`:
+	// 		log(`parsing ${recordType}s...`);
+	// 		//todo lookup table
+	// 		if (recordType === 'table') {
+	// 			pipeline = await prepareLookupTable(data, project, `memory`);
+	// 		}
+	// 		else {
+	// 			pipeline = await dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType);
+	// 		}
+	// 		break;
+
+	// 	case `stream`:
+	// 		if (!streamFormat) {
+	// 			streamFormat = inferStreamFormat(data);
+	// 		}
+	// 		log(`consuming ${streamFormat} stream of ${recordType}s from ${data?.path}...`);
+	// 		pipeline = await streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat);
+	// 		break;
+
+	// 	default:
+	// 		log(`could not determine data source`);
+	// 		throw Error(`mixpanel-import was not able to import: ${data}`);
+	// }
+
+	// time('pipeline', 'stop');
+	// track('end', { runId, ...options });
+
+	// // summary of pipeline results
+	// const endTime = Date.now();
+	// const duration = (endTime - startTime) / 1000;
+	// let total = totalRecordCount;
+	// let success, failed;
+	// if (recordType === `event`) {
+	// 	if (dataType === `directory`) {
+	// 		const flatRes = [];
+	// 		for (const [index, fileRes] of pipeline.entries()) {
+	// 			flatRes.push(pipeline[index][Object.keys(fileRes)[0]]);
+	// 		}
+	// 		success = flatRes.flat().map(res => res.num_records_imported).reduce((prev, curr) => prev + curr, 0);
+	// 		failed = total - success;
+	// 	}
+
+	// 	else {
+	// 		success = pipeline.map(res => res.num_records_imported).reduce((prev, curr) => prev + curr, 0);
+	// 		failed = total - success;
+	// 	}
+
+
+	// }
+
+	// if (recordType === `user` || recordType === `group`) {
+	// 	if (dataType === `directory`) {
+	// 		const flatRes = [];
+	// 		for (const [index, fileRes] of pipeline.entries()) {
+	// 			flatRes.push(pipeline[index][Object.keys(fileRes)[0]]);
+	// 		}
+	// 		success = flatRes.flat().filter(res => res.error === null).length * recordsPerBatch;
+	// 		failed = flatRes.flat().filter(res => res.error !== null).length * recordsPerBatch;
+	// 	}
+	// 	else {
+	// 		success = pipeline.filter(res => res.error === null).length * recordsPerBatch;
+	// 		failed = pipeline.filter(res => res.error !== null).length * recordsPerBatch;
+	// 	}
+	// }
+
+	// if (recordType === `table`) {
+	// 	success = 0;
+	// 	failed = 0;
+	// 	if (pipeline.code === 200) {
+	// 		success++;
+	// 	}
+	// 	else {
+	// 		failed++;
+	// 	}
+
+	// 	try {
+	// 		total = data.split('\n').length - 1;
+	// 	}
+	// 	catch (e) {
+	// 		//noop
+	// 	}
+	// }
+
+	// const summary = {
+	// 	results: {
+	// 		success,
+	// 		failed,
+	// 		total,
+	// 		batches: pipeline.length,
+	// 		recordType,
+	// 		duration,
+	// 		retries
+
+	// 	},
+	// 	responses: pipeline
+	// };
+	// return summary;
+
+}
 
 /*
 -----------
@@ -528,6 +874,8 @@ async function main(creds = {}, data = [], opts = {}, isStream = false) {
 
 }
 
+
+
 /*
 ----
 STREAMERS
@@ -565,7 +913,7 @@ https://github.com/uhop/stream-chain/wiki
 
 
 async function corePipeline(stream, infos, fileType) {
-	_(generator)
+	_([])
 		.map(JSON.parse)
 		.batch(2000)
 		.toArray(function (xs) {
@@ -917,40 +1265,7 @@ function renameKeys(obj, newKeys) {
 	return Object.assign({}, ...keyValues);
 }
 
-/**
- * @param  {Creds} auth
- */
-function resolveProjInfo(auth) {
-	let result = {
-		auth: `Basic `,
-		method: ``
-	};
 
-	//preferred method: service acct
-	if (auth.acct && auth.pass && auth.project) {
-		result.auth += Buffer.from(auth.acct + ':' + auth.pass, 'binary').toString('base64');
-		result.method = `serviceAcct`;
-
-	}
-
-	//fallback method: secret auth
-	else if (auth.secret) {
-		result.auth += Buffer.from(auth.secret + ':', 'binary').toString('base64');
-		result.method = `secret`;
-	}
-
-
-	else {
-		console.error('no secret or service account provided! quitting...');
-		process.exit(0);
-	}
-
-	result.token = auth.token;
-	result.projId = auth.project;
-	result.lookupTableId = auth.lookupTableId;
-	result.groupKey = auth.groupKey;
-	return result;
-}
 
 /**
  * @param  {Data} arrayOfEvents
@@ -970,87 +1285,7 @@ function chunkEv(arrayOfEvents, chunkSize) {
 	}, []);
 }
 
-/**
- * @param  {Options} options
- * @param  {number} project
- */
-function ezTransforms(options, project) {
-	//for group imports, ensure 200 max size
-	if (options.fixData && options.recordType === `group` && options.recordsPerBatch > 200) {
-		options.recordsPerBatch = 200;
-	}
 
-	//for user + event imports, ensure 2000 max size
-	if (options.fixData && (options.recordType === `user` || options.recordType === `event`) && options.recordsPerBatch > 2000) {
-		options.recordsPerBatch = 2000;
-	}
-
-	//for strict event imports, make every record has an $insert_id
-	if (options.fixData && options.recordType === `event` && options.transformFunc('A') === 'A') {
-		options.transformFunc = function addInsertIfAbsent(event) {
-			if (!event?.properties?.$insert_id) {
-				try {
-					let deDupeTuple = [event.name, event.properties.distinct_id || "", event.properties.time];
-					let hash = md5(deDupeTuple);
-					event.properties.$insert_id = hash;
-				}
-				catch (e) {
-					event.properties.$insert_id = event.properties.distinct_id;
-				}
-				return event;
-			}
-			else {
-				return event;
-			}
-		};
-
-	}
-
-	//for user imports, make sure every record has a $token and the right shape
-	if (options.fixData && options.recordType === `user` && options.transformFunc('A') === 'A') {
-		options.transformFunc = function addUserTokenIfAbsent(user) {
-			//wrong shape; fix it
-			if (!(user.$set || user.$set_once || user.$add || user.$union || user.$append || user.$remove || user.$unset)) {
-				user = { $set: { ...user } };
-				user.$distinct_id = user.$set.$distinct_id;
-				delete user.$set.$distinct_id;
-				delete user.$set.$token;
-			}
-
-			//catch missing token
-			if ((!user.$token) && project.token) user.$token = project.token;
-
-			return user;
-		};
-	}
-
-
-	//for group imports, make sure every record has a $token and the right shape
-	if (options.fixData && options.recordType === `group` && options.transformFunc('A') === 'A') {
-		options.transformFunc = function addGroupKeysIfAbsent(group) {
-			//wrong shape; fix it
-			if (!(group.$set || group.$set_once || group.$add || group.$union || group.$append || group.$remove || group.$unset)) {
-				group = { $set: { ...group } };
-				if (group.$set?.$group_key) group.$group_key = group.$set.$group_key;
-				if (group.$set?.$distinct_id) group.$group_id = group.$set.$distinct_id;
-				if (group.$set?.$group_id) group.$group_id = group.$set.$group_id;
-				delete group.$set.$distinct_id;
-				delete group.$set.$group_id;
-				delete group.$set.$token;
-			}
-
-			//catch missing token
-			if ((!group.$token) && project.token) group.$token = project.token;
-
-			//catch group key
-			if ((!group.$group_key) && project.groupKey) group.$group_key = project.groupKey;
-
-			return group;
-		};
-	}
-
-
-}
 
 
 
@@ -1140,6 +1375,25 @@ $ mixpanel-import ./pathToData
 
 pathToData can be a .json, .jsonl, .ndjson, or .txt file OR a directory which contains said files.
 
+--project [pid] 
+--acct [serviceAcct] 
+--pass [servicePass] 
+--secret [secret] 
+--token [token] 
+--type [recordType] 
+--table [lookuptableId] 
+--group [groupKey] 
+--recordType [event, user, group, table] 
+--compress 
+--strict 
+--logs 
+--fixData 
+--streamFormat [jsonl] 
+--streamSize [27] 
+--region [US] 
+--recordsPerBatch [2000] 
+--bytesPerBatch [1024*1024*8]
+
 CONFIGURE:
 
 for more options, require() as a module:
@@ -1179,6 +1433,7 @@ EXPORTS
 
 const mpImport = module.exports = main;
 mpImport.createMpStream = pipeToMixpanel;
+mpImport.newMain = newMain;
 
 //this allows the module to function as a standalone script
 if (require.main === module) {
