@@ -59,7 +59,7 @@ const readline = require('readline');
 const md5 = require('md5');
 const Papa = require('papaparse');
 const fs = require('fs');
-
+const { Readable } = require('stream');
 
 const { Agent } = require('https');
 const { pick } = require('underscore');
@@ -69,6 +69,8 @@ const { gzip } = require('node-gzip');
 const _ = require('highland');
 const got = require('got');
 const yargs = require('yargs');
+const Parser = require('stream-json/Parser');
+
 
 /*
 -------------
@@ -119,7 +121,8 @@ class importJob {
 		this.success = 0;
 		this.failed = 0;
 		this.retries = 0;
-		this.timer = u.time('etl')
+		this.batches = 0;
+		this.timer = u.time('etl');
 
 		// ! apply EZ transforms: this will mutate the instance when called
 		if (this.fixData) ezTransforms(this);
@@ -127,9 +130,11 @@ class importJob {
 	}
 
 	// ? private props
-	#supportedTypes = ['event', 'user', 'group', 'table'];
-	#supportedFileExt = ['.json', '.txt', '.jsonl', '.ndjson', '.csv'];
-	#endpoints = {
+	supportedTypes = ['event', 'user', 'group', 'table'];
+	lineByLineFileExt = ['.txt', '.jsonl', '.ndjson'];
+	objectModeFileExt = ['.json'];
+	supportedFileExt = [...this.lineByLineFileExt, ...this.objectModeFileExt, '.csv'];
+	endpoints = {
 		us: {
 			event: `https://api.mixpanel.com/import`,
 			user: `https://api.mixpanel.com/engage`,
@@ -151,7 +156,9 @@ class importJob {
 	}
 
 	get url() {
-		return this.endpoints[this.region.toLowerCase()][this.recordType.toLowerCase()];
+		let url = this.endpoints[this.region.toLowerCase()][this.recordType.toLowerCase()];
+		if (this.recordType === "table") url += this.lookupTableId;
+		return url;
 	}
 
 	get streamOpts() {
@@ -210,18 +217,14 @@ function getCLIParams() {
  * @param  {Creds} auth
  */
 function resolveProjInfo(auth) {
-	let authString = `Basic `;
 	//preferred method: service acct
 	if (auth.acct && auth.pass && auth.project) {
-		authString += Buffer.from(auth.acct + ':' + auth.pass, 'binary').toString('base64');
-		return authString;
-
+		return Buffer.from(auth.acct + ':' + auth.pass, 'binary').toString('base64');
 	}
 
 	//fallback method: secret auth
 	else if (auth.secret) {
-		authString += Buffer.from(auth.secret + ':', 'binary').toString('base64');
-		return authString;
+		return Buffer.from(auth.secret + ':', 'binary').toString('base64');
 	}
 
 	else {
@@ -322,215 +325,227 @@ function ezTransforms(config) {
  * @param {boolean} isStream 
  * @returns API reciepts of imported data
  */
-async function newMain(creds = {}, data = [], opts = {}, isStream = false) {
+async function main(creds = {}, data = null, opts = {}, isStream = false) {
 	const envVar = getEnvVars();
 	const cli = getCLIParams();
-	const cliData = cli._
+	const cliData = cli._[0];
 	const config = new importJob({ ...envVar, ...cli, ...creds }, { ...envVar, ...cli, ...opts });
 	config.timer.start();
-	const dataType = determineData(data)
+	const stream = determineData(data || cliData, config);
+	const imported = await corePipeline(stream, config);
+	config.timer.end(false);
+	const summary = aggregateResults(config, imported);
+	return summary;
+}
 
-	
-	return [];
-	
+function aggregateResults(config, responses = []) {
+	const summary = {
+		success: config.success,
+		failed: config.failed,
+		total: config.recordsProcessed,
+		requests: responses.length,
+		recordType: config.recordType,
+		duration: config.timer.report(false).delta,
+		human: config.timer.report(false).human,
+		retries: 0,
+		responses
+	};
 
+	return summary;
+}
 
-	// if (options.fixData) ezTransforms(options, project);
-	// Object.freeze(options);
-	// const { streamSize, region, recordsPerBatch, bytesPerBatch, transformFunc } = options;
-	// let { streamFormat } = options;
-	// recordType = options.recordType;
-	// logging = options.logs;
-	// fileStreamOpts = { highWaterMark: 2 ** streamSize, ...fileStreamOpts };
-	// strict = options.strict;
-	// url = ENDPOINTS[region][recordType];
+/**
+ * figure out what type of data is passed in...
+ * @param  {} data
+ * @param  {} isStream=false
+ */
+function determineData(data, config) {
+	//data is already a stream
+	if (data.pipe || data instanceof stream.Stream) {
+		return data;
+	}
 
-	// if (recordType === `table`) {
-	// 	if (project.lookupTableId) {
-	// 		url += project.lookupTableId;
-	// 	}
-	// 	else {
-	// 		throw Error('saw type table, but no lookup table id was supplied');
-	// 	}
+	//data is an object in memory
+	if (Array.isArray(data)) {
+		return Readable.from(data, { objectMode: true });
+	}
 
-	// }
+	//data refers to file/folder on disk
+	if (fs.existsSync(path.resolve(data))) {
 
-	// //if script is run standalone, use CLI params as source data
-	// const lastArgument = [...process.argv].pop();
-	// if (data?.length === 0 && supportedFileTypes.some(type => lastArgument.includes(type))) {
-	// 	data = lastArgument;
-	// 	logging = true;
-	// }
-	// else if (lastArgument?.toLowerCase()?.includes('help')) {
-	// 	console.log(banner);
-	// 	console.log(helpText);
-	// 	process.exit(0);
-	// }
-	// const startTime = Date.now();
-	// time('pipeline', 'start');
-	// track('start', { runId, ...options });
+		const fileOrDir = fs.lstatSync(path.resolve(data));
 
-	// //CORE PIPELINES
-	// const dataType = determineData(data, isStream);
-	// let pipeline;
-	// let files;
-	// let fileStream;
-	// switch (dataType) {
-	// 	case `file`:
-	// 		//todo lookup table
-	// 		if (recordType === 'table') {
-	// 			pipeline = await prepareLookupTable(data, project, `file`);
-	// 		}
-	// 		else {
-	// 			fileStream = createReadStream(path.resolve(data));
-	// 			if (!streamFormat) {
-	// 				streamFormat = inferStreamFormat(fileStream);
-	// 			}
-	// 			log(`streaming ${streamFormat} stream of ${recordType}s from file ${data}...`);
-	// 			pipeline = await streamingPipeline(fileStream, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat);
-	// 		}
+		if (fileOrDir.isFile()) {
+			if (config.streamFormat === 'jsonl' || config.lineByLineFileExt.includes(path.extname(data))) {
+				return lineByLineStream(path.resolve(data));
+			}
 
-	// 		log('\n');
-	// 		break;
+			if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(data))) {
+				return fs.createReadStream(path.resolve(data))
+					.pipe(StreamArray.withParser())
+					.map(token => token.value);
+			}
+		}
 
-	// 	case `directory`:
-	// 		pipeline = [];
-	// 		files = readdirSync(data).map(fileName => {
-	// 			return {
-	// 				name: fileName,
-	// 				path: path.resolve(`${data}/${fileName}`)
-	// 			};
-	// 		});
-	// 		log(`found ${addComma(files.length)} files in ${data}`);
+		if (fileOrDir.isDirectory()) {
+			// todo: figure this out!
+		}
+	}
 
-	// 		walkDirectory: for (const file of files) {
-	// 			log(`streaming ${recordType}s from ${file.name}`);
-	// 			try {
-	// 				const localStream = createReadStream(path.resolve(file.path));
-	// 				const localFormat = inferStreamFormat(localStream);
-	// 				log(`streaming ${localFormat} stream of ${recordType}s from file ${file.path}...`);
-	// 				const result = await streamingPipeline(localStream, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, localFormat);
-	// 				// let result = await filePipeLine(file.path, project, recordsPerBatch, bytesPerBatch, transformFunc);
-	// 				pipeline.push({
-	// 					[file.name]: result
-	// 				});
-	// 				log('\n');
-	// 			} catch (e) {
-	// 				log(`  ${file.name} is not valid ${recordType} JSON or NDJSON; skipping`);
-	// 				continue walkDirectory;
-	// 			}
-	// 		}
-	// 		break;
-	// 	case `structString`:
-	// 		log(`parsing ${recordType}s...`);
-	// 		if (recordType === 'table') {
-	// 			pipeline = await prepareLookupTable(data, project, `memory`);
-	// 		}
-	// 		else {
-	// 			data = JSON.parse(data);
-	// 			pipeline = await dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType);
-	// 		}
-	// 		break;
+	if (typeof data === 'string') {
+		//stringified JSON
+		try {
+			return Readable.from(JSON.parse(data), { objectMode: true });
+		}
+		catch (e) {
+			//noop
+		}
 
-	// 	case `inMem`:
-	// 		log(`parsing ${recordType}s...`);
-	// 		//todo lookup table
-	// 		if (recordType === 'table') {
-	// 			pipeline = await prepareLookupTable(data, project, `memory`);
-	// 		}
-	// 		else {
-	// 			pipeline = await dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType);
-	// 		}
-	// 		break;
+		//CSV or TSV
+		try {
+			return Readable.from(Papa.parse(data, { header: true, skipEmptyLines: true }));
+		}
+		catch (e) {
+			//noop
+		}
+	}
 
-	// 	case `stream`:
-	// 		if (!streamFormat) {
-	// 			streamFormat = inferStreamFormat(data);
-	// 		}
-	// 		log(`consuming ${streamFormat} stream of ${recordType}s from ${data?.path}...`);
-	// 		pipeline = await streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat);
-	// 		break;
-
-	// 	default:
-	// 		log(`could not determine data source`);
-	// 		throw Error(`mixpanel-import was not able to import: ${data}`);
-	// }
-
-	// time('pipeline', 'stop');
-	// track('end', { runId, ...options });
-
-	// // summary of pipeline results
-	// const endTime = Date.now();
-	// const duration = (endTime - startTime) / 1000;
-	// let total = totalRecordCount;
-	// let success, failed;
-	// if (recordType === `event`) {
-	// 	if (dataType === `directory`) {
-	// 		const flatRes = [];
-	// 		for (const [index, fileRes] of pipeline.entries()) {
-	// 			flatRes.push(pipeline[index][Object.keys(fileRes)[0]]);
-	// 		}
-	// 		success = flatRes.flat().map(res => res.num_records_imported).reduce((prev, curr) => prev + curr, 0);
-	// 		failed = total - success;
-	// 	}
-
-	// 	else {
-	// 		success = pipeline.map(res => res.num_records_imported).reduce((prev, curr) => prev + curr, 0);
-	// 		failed = total - success;
-	// 	}
-
-
-	// }
-
-	// if (recordType === `user` || recordType === `group`) {
-	// 	if (dataType === `directory`) {
-	// 		const flatRes = [];
-	// 		for (const [index, fileRes] of pipeline.entries()) {
-	// 			flatRes.push(pipeline[index][Object.keys(fileRes)[0]]);
-	// 		}
-	// 		success = flatRes.flat().filter(res => res.error === null).length * recordsPerBatch;
-	// 		failed = flatRes.flat().filter(res => res.error !== null).length * recordsPerBatch;
-	// 	}
-	// 	else {
-	// 		success = pipeline.filter(res => res.error === null).length * recordsPerBatch;
-	// 		failed = pipeline.filter(res => res.error !== null).length * recordsPerBatch;
-	// 	}
-	// }
-
-	// if (recordType === `table`) {
-	// 	success = 0;
-	// 	failed = 0;
-	// 	if (pipeline.code === 200) {
-	// 		success++;
-	// 	}
-	// 	else {
-	// 		failed++;
-	// 	}
-
-	// 	try {
-	// 		total = data.split('\n').length - 1;
-	// 	}
-	// 	catch (e) {
-	// 		//noop
-	// 	}
-	// }
-
-	// const summary = {
-	// 	results: {
-	// 		success,
-	// 		failed,
-	// 		total,
-	// 		batches: pipeline.length,
-	// 		recordType,
-	// 		duration,
-	// 		retries
-
-	// 	},
-	// 	responses: pipeline
-	// };
-	// return summary;
+	console.error(`${data} is not a file, a folder, an array, a stream, or a string...`);
+	return null;
 
 }
+
+async function flushToMixpanel(batch, config) {
+	try {
+		const options = {
+			url: config.url,
+			searchParams: {
+				project_id: config.project,
+				verbose: 1,
+				strict: Number(config.strict)
+			},
+			method: "POST",
+			headers: {
+				Authorization: `Basic ${config.auth}`
+			},
+			json: batch
+		};
+		const res = await got(options).json();
+		if (config.recordType === 'event') {
+			config.success += res.num_records_imported || 0;
+			config.failed += res?.failed_records?.length || 0;
+		}
+		return res;
+	}
+
+	catch (e) {
+		batch;
+		config;
+		console.error(`request failed! ${e.message}`);
+		console.error(u.json(JSON.parse(e.response.body)));
+		debugger;
+	}
+}
+
+async function corePipeline(stream, config, exposeStream = false) {
+
+	const pipeline = _(stream)
+		// * transform source data
+		.map((data) => {
+			config.recordsProcessed++;
+			return config.transformFunc(data);
+		})
+
+		// * batch for # of itmes
+		.batch(config.recordsPerBatch)
+
+		// * batch for req size
+		.consume(chunkForSize(config))
+
+		// * send to mixpanel
+		.map(async (batch) => {
+			config.batches++;
+			const res = await flushToMixpanel(batch, config);
+			return res;
+		})
+
+		.doto(() => {
+			showProgress(config.recordType, config.recordsProcessed, config.recordsProcessed, config.batches, config.batches);
+		})
+
+		// * consume stream
+		.collect();
+
+	// for consumers to pipe()
+	if (exposeStream) {
+		return pipeline.toNodeStream({ objectMode: true });
+	}
+
+	// what gets used mode of the time
+	else {
+		return await Promise.all(await pipeline.toPromise(Promise));
+	}
+
+}
+
+function showProgress(record, ev, evTotal, batch, batchTotal) {
+	readline.cursorTo(process.stdout, 0);
+	process.stdout.write(`\t${record}s processed: ${addComma(ev)}/${addComma(evTotal)} | batches sent: ${addComma(batch)}/${addComma(batchTotal)}`);
+}
+
+function chunkForSize(config) {
+	return (err, batch, push, next) => {
+		const maxBatchSize = config.bytesPerBatch;
+
+		if (err) {
+			// pass errors along the stream and consume next value
+			push(err);
+			next();
+		}
+
+		else if (batch === _.nil) {
+			// pass nil (end event) along the stream
+			push(null, batch);
+		}
+
+		else {
+			// if batch is below max size, continue
+			if (JSON.stringify(batch).length <= maxBatchSize) {
+				push(null, batch);
+			}
+
+			// if batch is above max size, chop into smaller chunks
+			else {
+				let tempArr = [];
+				let runningSize = 0;
+				const sizedChunks = batch.reduce(function (accum, curr, index, source) {
+					//catch leftovers at the end
+					if (index === source.length - 1) {
+						accum.push(tempArr);
+					}
+					//fill each batch 95%
+					if (runningSize >= maxBatchSize * .95) {
+						accum.push(tempArr);
+						runningSize = 0;
+						tempArr = [];
+					}
+
+					runningSize += JSON.stringify(curr).length;
+					tempArr.push(curr);
+					return accum;
+
+				}, []);
+
+				for (const chunk of sizedChunks) {
+					push(null, chunk);
+				}
+
+			}
+			next();
+		}
+	};
+}
+
 
 /*
 -----------
@@ -618,7 +633,7 @@ MAIN
  * @param {Options} [opts]
  * @param {boolean} [isStream] - used when data is a stream; can also be inferred or supplied in options
  */
-async function main(creds = {}, data = [], opts = {}, isStream = false) {
+async function OldMain(creds = {}, data = [], opts = {}, isStream = false) {
 
 	const defaultOpts = {
 		recordType: `event`, // event, user, group or table
@@ -889,7 +904,7 @@ function lineByLineStream(filePath) {
 
 	const generator = (push, next) => {
 		rl.on('line', line => {
-			push(null, line);
+			push(null, JSON.parse(line));
 		});
 		rl.on('close', () => {
 			push(null, _.nil);
@@ -899,6 +914,7 @@ function lineByLineStream(filePath) {
 	return generator;
 }
 
+function objectModeStream() { }
 
 
 
@@ -911,16 +927,6 @@ https://github.com/uhop/stream-chain/wiki
 */
 
 
-
-async function corePipeline(stream, infos, fileType) {
-	_([])
-		.map(JSON.parse)
-		.batch(2000)
-		.toArray(function (xs) {
-			debugger;
-		});
-
-}
 
 
 /**
@@ -1199,56 +1205,6 @@ function streamParseType(fileName, type) {
 
 }
 
-/**
- * @param  {} data
- * @param  {} isStream=false
- */
-function determineData(data, isStream = false) {
-	//identify streams?
-	//some duck typing right here
-	if (data.pipe || isStream) {
-		return `stream`;
-	}
-
-	switch (typeof data) {
-		case `string`:
-			try {
-				//could be stringified data
-				JSON.parse(data);
-				return `structString`;
-			} catch (e) {
-				//data is not already json
-			}
-
-			try {
-				const csv = Papa.parse(data, { header: true, skipEmptyLines: true });
-				if (csv.errors.length === 0) return `structString`;
-			}
-
-			catch (e) {
-				//csv parser failed
-			}
-
-			//probably a file or directory; stream it
-			data = path.resolve(data);
-			if (!existsSync(data)) {
-				throw Error(`could not find ${data} ... does it exist?`);
-			} else {
-				let fileMeta = lstatSync(data);
-				if (fileMeta.isDirectory()) return `directory`;
-				if (fileMeta.isFile()) return `file`;
-				return `file`;
-			}
-
-		case `object`:
-			//probably structured data; just load it
-			if (!Array.isArray(data)) console.error(`only arrays of events are supported`);
-			return `inMem`;
-
-		default:
-			throw Error(`${data} is not an in memory array of objects, a stream, or a string...`);
-	}
-}
 
 /**
  * @param  {Object} obj
@@ -1315,12 +1271,7 @@ function addComma(x) {
 	return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
-function showProgress(record, ev, evTotal, batch, batchTotal) {
-	if (logging) {
-		readline.cursorTo(process.stdout, 0);
-		process.stdout.write(`\t${record}s processed: ${addComma(ev)}/${addComma(evTotal)} | batches sent: ${addComma(batch)}/${addComma(batchTotal)}`);
-	}
-}
+
 
 function aggregateLogs(logs = []) {
 	const finalLog = {
@@ -1433,7 +1384,6 @@ EXPORTS
 
 const mpImport = module.exports = main;
 mpImport.createMpStream = pipeToMixpanel;
-mpImport.newMain = newMain;
 
 //this allows the module to function as a standalone script
 if (require.main === module) {
