@@ -59,12 +59,19 @@ CORE DEPS
 // * parsers
 const readline = require('readline');
 const Papa = require('papaparse');
+const { parser: jsonlParser } = require('stream-json/jsonl/Parser');
+const StreamArray = require('stream-json/streamers/StreamArray'); //json parser
 
 //* streamers
 const _ = require('highland');
 const stream = require('stream');
-const StreamArray = require('stream-json/streamers/StreamArray');
+
 const got = require('got');
+
+const MultiStream = require('multistream');
+const CombinedStream = require('combined-stream');
+const StreamConcat = require('stream-concat');
+const merge2 = require('merge2');
 
 // * file system
 const path = require('path');
@@ -143,9 +150,10 @@ class importJob {
 		if (this.recordType === 'tables') this.recordType === 'table';
 
 		//! apply correct headers
-		if (this.recordType === "tables") {
-			this.reqMethod === 'PUT';
-			this.mimeType === 'text/csv';
+		if (this.recordType === "table") {
+			this.reqMethod = 'PUT';
+			this.mimeType = 'text/csv';
+			this.transformFunc = (a) => { return a; };
 		}
 
 	}
@@ -203,6 +211,11 @@ class importJob {
 
 	set transform(fn) {
 		this.transformFunc = fn;
+	}
+
+	set results(response) {
+		this.responses.push(response);
+		this.responses = this.responses.flat();
 	}
 
 	//methods
@@ -305,19 +318,28 @@ async function main(creds = {}, data = null, opts = {}, isStream = false) {
 
 	// ETL
 	config.timer.start();
-	const stream = determineData(data || cliData, config);
-	const imported = await corePipeline(stream, config);
-	config.responses = imported;
+	const streams = await determineData(data || cliData, config);
+	for (const stream of streams) {
+		const imported = await corePipeline(stream, config);
+		config.results = imported;
+	}
+
 	config.timer.end(false);
 
 	// clean up
 	const summary = config.summary();
 	console.log('\n');
-	debugger;
 	return summary;
 }
 
 async function corePipeline(stream, config, exposeStream = false) {
+	if (config.recordType === 'table') {
+		// todo ERROR HANDLING
+		const res = await flushToMixpanel(stream, config);
+		config.recordsProcessed = stream.split('\n').length - 1;
+		config.success = config.recordsProcessed;
+		return res;
+	}
 
 	const pipeline = _(stream)
 		// * transform source data
@@ -326,12 +348,12 @@ async function corePipeline(stream, config, exposeStream = false) {
 			return config.transformFunc(data);
 		})
 
-		// * batch for # of itmes
+		// * batch for # of items
 		.batch(config.recordsPerBatch)
+
 
 		// * batch for req size
 		.consume(chunkForSize(config))
-
 
 		// * send to mixpanel
 		.map(async (batch) => {
@@ -345,8 +367,13 @@ async function corePipeline(stream, config, exposeStream = false) {
 			showProgress(config.recordType, config.recordsProcessed, config.requests);
 		})
 
+		// .errors((e) => {
+		// 	debugger;
+		// })
+
 		// * consume stream
 		.collect();
+
 
 	// for consumers to pipe()
 	if (exposeStream) {
@@ -416,15 +443,19 @@ async function flushToMixpanel(batch, config) {
 }
 
 
-function determineData(data, config) {
+async function determineData(data, config) {
+	if (config.recordType === 'table') {
+		return [data];
+	}
+
 	//data is already a stream
 	if (data.pipe || data instanceof stream.Stream) {
-		return data;
+		return [existingStream(data)];
 	}
 
 	//data is an object in memory
 	if (Array.isArray(data)) {
-		return stream.Readable.from(data, { objectMode: true });
+		return [stream.Readable.from(data, { objectMode: true })];
 	}
 
 	//data refers to file/folder on disk
@@ -443,14 +474,21 @@ function determineData(data, config) {
 		}
 
 		if (fileOrDir.isDirectory()) {
-			// todo: figure this out!
+			const enumDir = await u.ls(path.resolve(data));
+			const files = enumDir.filter(filePath => config.supportedFileExt.includes(path.extname(filePath)));
+			if (config.streamFormat === 'jsonl' || config.lineByLineFileExt.includes(path.extname(files[0]))) {
+				return lineByLineStream(files);
+			}
+			if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(files[0]))) {
+				return objectModeStream(files);
+			}
 		}
 	}
 
 	if (typeof data === 'string') {
 		//stringified JSON
 		try {
-			return stream.Readable.from(JSON.parse(data), { objectMode: true });
+			return [stream.Readable.from(JSON.parse(data), { objectMode: true })];
 		}
 		catch (e) {
 			//noop
@@ -458,7 +496,7 @@ function determineData(data, config) {
 
 		//CSV or TSV
 		try {
-			return stream.Readable.from(Papa.parse(data, { header: true, skipEmptyLines: true }));
+			return [stream.Readable.from(Papa.parse(data, { header: true, skipEmptyLines: true }))];
 		}
 		catch (e) {
 			//noop
@@ -470,9 +508,9 @@ function determineData(data, config) {
 
 }
 
-function lineByLineStream(filePath) {
+function existingStream(stream) {
 	const rl = readline.createInterface({
-		input: fs.createReadStream(filePath),
+		input: stream,
 		crlfDelay: Infinity,
 	});
 
@@ -488,10 +526,31 @@ function lineByLineStream(filePath) {
 	return generator;
 }
 
+function lineByLineStream(filePath) {
+	let stream;
+	if (Array.isArray(filePath)) {
+		stream = filePath.map((file) => fs.createReadStream(file));
+	}
+	else {
+		stream = [fs.createReadStream(filePath)];
+	}
+
+	return stream.map(s => s.pipe(jsonlParser()).map(token => token.value));
+}
+
 function objectModeStream(filePath) {
-	return fs.createReadStream(filePath)
-		.pipe(StreamArray.withParser())
-		.map(token => token.value);
+	let stream;
+	if (Array.isArray(filePath)) {
+		stream = filePath.map((file) => fs.createReadStream(file));
+	}
+	else {
+		stream = [fs.createReadStream(filePath)];
+	}
+
+	return stream.map(s => {
+		s.pipe(StreamArray.withParser())
+			.map(token => token.value);
+	});
 }
 
 
@@ -658,7 +717,7 @@ async function writeLogs(data) {
 	const fileDir = u.mkdir('./logs');
 	const fileName = `${data.recordType}-import-log-${dateTime}.json`;
 	const filePath = `${fileDir}/${fileName}`;
-	const file = await u.touch(filePath, data, true)
+	const file = await u.touch(filePath, data, true);
 	console.log(`results written to: ./${file}\n`);
 }
 
