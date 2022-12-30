@@ -1,11 +1,20 @@
 #! /usr/bin/env node
 /* eslint-disable no-unused-vars */
 
-
-
 // mixpanel-import
 // by AK
 // purpose: stream events, users, groups, tables into mixpanel... with best practices!
+
+// todos:
+/*
+- lookup tables
+- directories
+- cool banners
+- CLI interface
+- streaming interface
+- retries
+
+*/
 
 /*
 -----
@@ -14,7 +23,7 @@ TYPES
 */
 
 /**
- * @typedef {Object} Creds - mixpanel project credentilas
+ * @typedef {Object} Creds - mixpanel project credentials
  * @property {string} acct - service account username
  * @property {string} pass - service account password
  * @property {(string | number)} project - project id
@@ -24,7 +33,7 @@ TYPES
  */
 
 /**
- * @typedef {Object} Options
+ * @typedef {Object} Options - import options
  * @property {string} [recordType=event] - type of record to import (event, user, group, or table)
  * @property {boolean} [compress=false] - use gzip compression (events only)
  * @property {number} [streamSize=27] - 2^N; highWaterMark value for stream
@@ -36,11 +45,9 @@ TYPES
  * @property {boolean} [fixData=false] - apply transformations to ensure data is properly ingested
  * @property {string} [streamFormat] - format of underlying data stream; json or jsonl
  * @property {function} [transformFunc=()=>{}] - a function to apply to every record before sending
+
  */
 
-/**
- * @typedef {string | Array<{event: string, properties: {Object}}>} Data
- */
 
 
 /*
@@ -49,46 +56,40 @@ CORE DEPS
 ---------
 */
 
-const fetch = require('axios');
-const axiosRetry = require('axios-retry');
+// * parsers
+const readline = require('readline');
+const Papa = require('papaparse');
+
+//* streamers
+const _ = require('highland');
+const stream = require('stream');
+const StreamArray = require('stream-json/streamers/StreamArray');
+const got = require('got');
+
+// * file system
+const path = require('path');
+const fs = require('fs');
+
+// * CLI
+const yargs = require('yargs');
+require('dotenv').config();
+
+
+// * utils
 const u = require('ak-tools');
 const track = u.tracker('mixpanel-import');
 const runId = u.uid(32);
-const path = require('path');
-const readline = require('readline');
 const md5 = require('md5');
-const Papa = require('papaparse');
-const fs = require('fs');
-const { Readable } = require('stream');
-
-const { Agent } = require('https');
 const { pick } = require('underscore');
-const { createReadStream, existsSync, readdirSync, lstatSync } = require('fs');
 const { gzip } = require('node-gzip');
 
-const _ = require('highland');
-const got = require('got');
-const yargs = require('yargs');
-const Parser = require('stream-json/Parser');
+
 
 
 /*
--------------
-PIPELINE DEPS
--------------
-*/
-
-const { chain } = require('stream-chain');
-const StreamArray = require('stream-json/streamers/StreamArray');
-const JsonlParser = require('stream-json/jsonl/Parser');
-const Batch = require('stream-json/utils/Batch');
-const stream = require('stream');
-require('dotenv').config();
-
-/*
-----
-PARAM GATHERING
-----
+-------
+CONFIG
+-------
 */
 
 class importJob {
@@ -101,7 +102,7 @@ class importJob {
 		this.token = creds.token || ``; //project token 
 		this.lookupTableId = creds.lookupTableId || ``; //lookup table id
 		this.groupKey = creds.groupKey || ``; //group key id
-		this.auth = resolveProjInfo(this);
+		this.auth = this.resolveProjInfo();
 
 		// * options
 		this.recordType = opts.recordType || `event`; // event, user, group or table
@@ -112,6 +113,7 @@ class importJob {
 		this.bytesPerBatch = opts.bytesPerBatch || 2 * 1024 * 1024; // max bytes in each req
 		this.strict = opts.strict || true; // use strict mode?
 		this.logs = opts.logs || true; // print to stdout?
+		this.verbose = opts.verbose || true;
 		this.fixData = opts.fixData || false; //apply transforms on the data
 		this.streamFormat = opts.streamFormat || ''; // json or jsonl ... only relevant for streams
 		this.transformFunc = opts.transformFunc || function noop(a) { return a; }; //will be called on every record
@@ -122,10 +124,29 @@ class importJob {
 		this.failed = 0;
 		this.retries = 0;
 		this.batches = 0;
+		this.requests = 0;
+		this.responses = [];
 		this.timer = u.time('etl');
+
+		// * request stuff
+		this.reqMethod = "POST";
+		this.mimeType = "application/json";
+		this.encoding = "";
 
 		// ! apply EZ transforms: this will mutate the instance when called
 		if (this.fixData) ezTransforms(this);
+
+		// ! fix plurals
+		if (this.recordType === 'events') this.recordType === 'event';
+		if (this.recordType === 'users') this.recordType === 'user';
+		if (this.recordType === 'groups') this.recordType === 'group';
+		if (this.recordType === 'tables') this.recordType === 'table';
+
+		//! apply correct headers
+		if (this.recordType === "tables") {
+			this.reqMethod === 'PUT';
+			this.mimeType === 'text/csv';
+		}
 
 	}
 
@@ -150,7 +171,7 @@ class importJob {
 
 	};
 
-	// ? getter methods
+	// getters
 	get type() {
 		return this.recordType;
 	}
@@ -184,13 +205,57 @@ class importJob {
 		this.transformFunc = fn;
 	}
 
+	//methods
 	report() {
 		return Object.assign(this);
 	}
+
+	resolveProjInfo() {
+		//preferred method: service acct
+		if (this.acct && this.pass && this.project) {
+			return Buffer.from(this.acct + ':' + this.pass, 'binary').toString('base64');
+		}
+
+		//fallback method: secret auth
+		else if (this.secret) {
+			return Buffer.from(this.secret + ':', 'binary').toString('base64');
+		}
+
+		else {
+			console.error('no secret or service account provided! quitting...');
+			process.exit(0);
+		}
+
+	}
+
+	validate() {
+		// todo
+	}
+
+	summary() {
+		const summary = {
+			success: this.success,
+			failed: this.failed,
+			total: this.recordsProcessed,
+			requests: this.responses.length,
+			recordType: this.recordType,
+			duration: this.timer.report(false).delta,
+			human: this.timer.report(false).human,
+			retries: 0,
+			responses: this.responses
+		};
+
+		return summary;
+	}
 }
 
-// only resolves credentials
+/*
+----------
+EXT PARAMS
+----------
+*/
 function getEnvVars() {
+	// * only resolves credentials
 	const envVars = pick(process.env, `MP_PROJECT`, `MP_ACCT`, `MP_PASS`, `MP_SECRET`, `MP_TOKEN`, `MP_TYPE`, `MP_TABLE_ID`, `MP_GROUP_KEY`);
 	const envKeyNames = {
 		MP_PROJECT: "project",
@@ -202,42 +267,234 @@ function getEnvVars() {
 		MP_TABLE_ID: "lookupTableId",
 		MP_GROUP_KEY: "groupKey"
 	};
-	const envCreds = renameKeys(envVars, envKeyNames);
+	const envCreds = u.rnKeys(envVars, envKeyNames);
+
 	return envCreds;
 }
 
-
 function getCLIParams() {
+	// todo
 	const args = yargs(process.argv.splice(2))
 		.argv;
 	return args;
 }
 
+
+/*
+----
+CORE
+----
+*/
+
 /**
- * @param  {Creds} auth
+ * Mixpanel Importer
+ * @example
+ * mpImport(creds, data, opts)
+ * @param {Creds} creds 
+ * @param {*} data 
+ * @param {Options} opts 
+ * @param {boolean} isStream 
+ * @returns API reciepts of imported data
  */
-function resolveProjInfo(auth) {
-	//preferred method: service acct
-	if (auth.acct && auth.pass && auth.project) {
-		return Buffer.from(auth.acct + ':' + auth.pass, 'binary').toString('base64');
+async function main(creds = {}, data = null, opts = {}, isStream = false) {
+	// gathering params
+	const envVar = getEnvVars();
+	const cli = getCLIParams();
+	const cliData = cli._[0];
+	const config = new importJob({ ...envVar, ...cli, ...creds }, { ...envVar, ...cli, ...opts });
+
+	// ETL
+	config.timer.start();
+	const stream = determineData(data || cliData, config);
+	const imported = await corePipeline(stream, config);
+	config.responses = imported;
+	config.timer.end(false);
+
+	// clean up
+	const summary = config.summary();
+	console.log('\n');
+	debugger;
+	return summary;
+}
+
+async function corePipeline(stream, config, exposeStream = false) {
+
+	const pipeline = _(stream)
+		// * transform source data
+		.map((data) => {
+			config.recordsProcessed++;
+			return config.transformFunc(data);
+		})
+
+		// * batch for # of itmes
+		.batch(config.recordsPerBatch)
+
+		// * batch for req size
+		.consume(chunkForSize(config))
+
+
+		// * send to mixpanel
+		.map(async (batch) => {
+			config.requests++;
+			const res = await flushToMixpanel(batch, config);
+			return res;
+		})
+
+		// * verbose
+		.doto(() => {
+			showProgress(config.recordType, config.recordsProcessed, config.requests);
+		})
+
+		// * consume stream
+		.collect();
+
+	// for consumers to pipe()
+	if (exposeStream) {
+		return pipeline.toNodeStream({ objectMode: true });
 	}
 
-	//fallback method: secret auth
-	else if (auth.secret) {
-		return Buffer.from(auth.secret + ':', 'binary').toString('base64');
-	}
-
+	// for consumers to await
 	else {
-		console.error('no secret or service account provided! quitting...');
-		process.exit(0);
+		return await Promise.all(await pipeline.toPromise(Promise));
 	}
 
 }
 
-/**
- * @param  {Options} config
- * @param  {number} config
- */
+
+/*
+----
+HELPERS
+----
+*/
+
+async function flushToMixpanel(batch, config) {
+	try {
+		let body = typeof batch === 'string' ? batch : JSON.stringify(batch);
+		if (config.recordType === 'event' && config.compress) {
+			body = await gzip(body);
+			config.encoding = 'gzip';
+		}
+		const options = {
+			url: config.url,
+			searchParams: {
+				ip: 0,
+				project_id: config.project,
+				verbose: 1,
+				strict: Number(config.strict)
+			},
+			method: config.reqMethod,
+			headers: {
+				"Authorization": `Basic ${config.auth}`,
+				"Content-Type": config.mimeType,
+				"Content-Encoding": config.encoding
+			},
+			body
+		};
+		const req = await got(options);
+		const res = JSON.parse(req.body);
+		if (config.recordType === 'event') {
+			config.success += res.num_records_imported || 0;
+			config.failed += res?.failed_records?.length || 0;
+		}
+		if (config.recordType === 'user' || config.recordType === 'group') {
+			if (!res.error || res.status) config.success += batch.length;
+			if (res.error || !res.status) config.failed += batch.length;
+		}
+		return res;
+	}
+
+	catch (e) {
+		if (config.recordType === 'user' || config.recordType === 'group') {
+			config.failed += batch.length;
+		}
+		batch;
+		config;
+		console.error(`request failed! ${e.message}`);
+		console.error(u.json(JSON.parse(e.response.body)));
+		debugger;
+	}
+}
+
+
+function determineData(data, config) {
+	//data is already a stream
+	if (data.pipe || data instanceof stream.Stream) {
+		return data;
+	}
+
+	//data is an object in memory
+	if (Array.isArray(data)) {
+		return stream.Readable.from(data, { objectMode: true });
+	}
+
+	//data refers to file/folder on disk
+	if (fs.existsSync(path.resolve(data))) {
+
+		const fileOrDir = fs.lstatSync(path.resolve(data));
+
+		if (fileOrDir.isFile()) {
+			if (config.streamFormat === 'jsonl' || config.lineByLineFileExt.includes(path.extname(data))) {
+				return lineByLineStream(path.resolve(data));
+			}
+
+			if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(data))) {
+				return objectModeStream(path.resolve(data));
+			}
+		}
+
+		if (fileOrDir.isDirectory()) {
+			// todo: figure this out!
+		}
+	}
+
+	if (typeof data === 'string') {
+		//stringified JSON
+		try {
+			return stream.Readable.from(JSON.parse(data), { objectMode: true });
+		}
+		catch (e) {
+			//noop
+		}
+
+		//CSV or TSV
+		try {
+			return stream.Readable.from(Papa.parse(data, { header: true, skipEmptyLines: true }));
+		}
+		catch (e) {
+			//noop
+		}
+	}
+
+	console.error(`ERROR: NOT FOUND\n\t${data} is not a file, a folder, an array, a stream, or a string...`);
+	process.exit();
+
+}
+
+function lineByLineStream(filePath) {
+	const rl = readline.createInterface({
+		input: fs.createReadStream(filePath),
+		crlfDelay: Infinity,
+	});
+
+	const generator = (push, next) => {
+		rl.on('line', line => {
+			push(null, JSON.parse(line));
+		});
+		rl.on('close', () => {
+			push(null, _.nil);
+		});
+	};
+
+	return generator;
+}
+
+function objectModeStream(filePath) {
+	return fs.createReadStream(filePath)
+		.pipe(StreamArray.withParser())
+		.map(token => token.value);
+}
+
+
 function ezTransforms(config) {
 	//for group imports, ensure 200 max size
 	if (config.recordType === `group` && config.recordsPerBatch > 200) {
@@ -315,184 +572,6 @@ function ezTransforms(config) {
 
 }
 
-/**
- * Mixpanel Importer
- * @example
- * mpImport(creds, data, opts)
- * @param {Creds} creds 
- * @param {Data} data 
- * @param {Options} opts 
- * @param {boolean} isStream 
- * @returns API reciepts of imported data
- */
-async function main(creds = {}, data = null, opts = {}, isStream = false) {
-	const envVar = getEnvVars();
-	const cli = getCLIParams();
-	const cliData = cli._[0];
-	const config = new importJob({ ...envVar, ...cli, ...creds }, { ...envVar, ...cli, ...opts });
-	config.timer.start();
-	const stream = determineData(data || cliData, config);
-	const imported = await corePipeline(stream, config);
-	config.timer.end(false);
-	const summary = aggregateResults(config, imported);
-	return summary;
-}
-
-function aggregateResults(config, responses = []) {
-	const summary = {
-		success: config.success,
-		failed: config.failed,
-		total: config.recordsProcessed,
-		requests: responses.length,
-		recordType: config.recordType,
-		duration: config.timer.report(false).delta,
-		human: config.timer.report(false).human,
-		retries: 0,
-		responses
-	};
-
-	return summary;
-}
-
-/**
- * figure out what type of data is passed in...
- * @param  {} data
- * @param  {} isStream=false
- */
-function determineData(data, config) {
-	//data is already a stream
-	if (data.pipe || data instanceof stream.Stream) {
-		return data;
-	}
-
-	//data is an object in memory
-	if (Array.isArray(data)) {
-		return Readable.from(data, { objectMode: true });
-	}
-
-	//data refers to file/folder on disk
-	if (fs.existsSync(path.resolve(data))) {
-
-		const fileOrDir = fs.lstatSync(path.resolve(data));
-
-		if (fileOrDir.isFile()) {
-			if (config.streamFormat === 'jsonl' || config.lineByLineFileExt.includes(path.extname(data))) {
-				return lineByLineStream(path.resolve(data));
-			}
-
-			if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(data))) {
-				return fs.createReadStream(path.resolve(data))
-					.pipe(StreamArray.withParser())
-					.map(token => token.value);
-			}
-		}
-
-		if (fileOrDir.isDirectory()) {
-			// todo: figure this out!
-		}
-	}
-
-	if (typeof data === 'string') {
-		//stringified JSON
-		try {
-			return Readable.from(JSON.parse(data), { objectMode: true });
-		}
-		catch (e) {
-			//noop
-		}
-
-		//CSV or TSV
-		try {
-			return Readable.from(Papa.parse(data, { header: true, skipEmptyLines: true }));
-		}
-		catch (e) {
-			//noop
-		}
-	}
-
-	console.error(`${data} is not a file, a folder, an array, a stream, or a string...`);
-	return null;
-
-}
-
-async function flushToMixpanel(batch, config) {
-	try {
-		const options = {
-			url: config.url,
-			searchParams: {
-				project_id: config.project,
-				verbose: 1,
-				strict: Number(config.strict)
-			},
-			method: "POST",
-			headers: {
-				Authorization: `Basic ${config.auth}`
-			},
-			json: batch
-		};
-		const res = await got(options).json();
-		if (config.recordType === 'event') {
-			config.success += res.num_records_imported || 0;
-			config.failed += res?.failed_records?.length || 0;
-		}
-		return res;
-	}
-
-	catch (e) {
-		batch;
-		config;
-		console.error(`request failed! ${e.message}`);
-		console.error(u.json(JSON.parse(e.response.body)));
-		debugger;
-	}
-}
-
-async function corePipeline(stream, config, exposeStream = false) {
-
-	const pipeline = _(stream)
-		// * transform source data
-		.map((data) => {
-			config.recordsProcessed++;
-			return config.transformFunc(data);
-		})
-
-		// * batch for # of itmes
-		.batch(config.recordsPerBatch)
-
-		// * batch for req size
-		.consume(chunkForSize(config))
-
-		// * send to mixpanel
-		.map(async (batch) => {
-			config.batches++;
-			const res = await flushToMixpanel(batch, config);
-			return res;
-		})
-
-		.doto(() => {
-			showProgress(config.recordType, config.recordsProcessed, config.recordsProcessed, config.batches, config.batches);
-		})
-
-		// * consume stream
-		.collect();
-
-	// for consumers to pipe()
-	if (exposeStream) {
-		return pipeline.toNodeStream({ objectMode: true });
-	}
-
-	// what gets used mode of the time
-	else {
-		return await Promise.all(await pipeline.toPromise(Promise));
-	}
-
-}
-
-function showProgress(record, ev, evTotal, batch, batchTotal) {
-	readline.cursorTo(process.stdout, 0);
-	process.stdout.write(`\t${record}s processed: ${addComma(ev)}/${addComma(evTotal)} | batches sent: ${addComma(batch)}/${addComma(batchTotal)}`);
-}
-
 function chunkForSize(config) {
 	return (err, batch, push, next) => {
 		const maxBatchSize = config.bytesPerBatch;
@@ -511,6 +590,7 @@ function chunkForSize(config) {
 		else {
 			// if batch is below max size, continue
 			if (JSON.stringify(batch).length <= maxBatchSize) {
+				config.batches++;
 				push(null, batch);
 			}
 
@@ -521,10 +601,12 @@ function chunkForSize(config) {
 				const sizedChunks = batch.reduce(function (accum, curr, index, source) {
 					//catch leftovers at the end
 					if (index === source.length - 1) {
+						config.batches++;
 						accum.push(tempArr);
 					}
 					//fill each batch 95%
 					if (runningSize >= maxBatchSize * .95) {
+						config.batches++;
 						accum.push(tempArr);
 						runningSize = 0;
 						tempArr = [];
@@ -546,628 +628,6 @@ function chunkForSize(config) {
 	};
 }
 
-
-/*
------------
-RETRIES
------------
-*/
-
-const exponentialBackoff = generateDelays();
-axiosRetry(fetch, {
-	retries: 6, // number of retries
-	retryDelay: (retryCount) => {
-		if (retryCount > 5) throw Error('failed afer 5 retries');
-		log(`	retrying request... attempt: ${retryCount}`);
-		return exponentialBackoff[retryCount] + u.rand(1000, 5000); // interval between retries
-	},
-	retryCondition: (error) => {
-		error.response.status === 429;
-	},
-	onRetry: function (retryCount, error, requestConfig) {
-		retries++;
-		if (error.response.status === 429) {
-			return requestConfig;
-		}
-		else {
-			track('error', { runId, ...requestConfig.data });
-		}
-	}
-}
-);
-
-/*
----------
-ENDPOINTS
----------
-*/
-const ENDPOINTS = {
-	us: {
-		event: `https://api.mixpanel.com/import`,
-		user: `https://api.mixpanel.com/engage`,
-		group: `https://api.mixpanel.com/groups`,
-		table: `https://api.mixpanel.com/lookup-tables/`
-	},
-	eu: {
-		event: `https://api-eu.mixpanel.com/import`,
-		user: `https://api-eu.mixpanel.com/engage`,
-		group: `https://api-eu.mixpanel.com/groups`,
-		table: `https://api-eu.mixpanel.com/lookup-tables/`
-	}
-};
-
-/*
---------
-GLOBALS
---------
-*/
-
-
-const supportedTypes = ['event', 'user', 'group', 'table'];
-const supportedFileTypes = ['.json', '.txt', '.jsonl', '.ndjson', '.csv'];
-let fileStreamOpts = { writableObjectMode: false, readableObjectMode: true };
-
-let logging = false;
-let strict = true;
-let compress = false;
-
-let url = ``;
-let recordType = ``;
-
-let totalRecordCount = 0;
-let retries = 0;
-
-
-/*
-----
-MAIN
-----
-*/
-
-
-/**
- * import data to mixpanel
- * @async
- * @param {Creds} creds 
- * @param {Data} data - data to import
- * @param {Options} [opts]
- * @param {boolean} [isStream] - used when data is a stream; can also be inferred or supplied in options
- */
-async function OldMain(creds = {}, data = [], opts = {}, isStream = false) {
-
-	const defaultOpts = {
-		recordType: `event`, // event, user, group or table
-		compress: false, //gzip data (events only)
-		streamSize: 27, // power of 2 for highWaterMark in stream  (default 134 MB)
-		region: `US`, // US or EU
-		recordsPerBatch: 2000, // records in each req; max 2000 (200 for groups)
-		bytesPerBatch: 2 * 1024 * 1024, // max bytes in each req
-		strict: true, // use strict mode?
-		logs: false, // print to stdout?
-		fixData: false, //apply transforms on the data
-		streamFormat: '', // json or jsonl ... only relevant for streams
-		transformFunc: function noop(a) { return a; } //will be called on every record
-	};
-	let options;
-	if (typeof opts === 'string' && supportedTypes.includes(opts.toLowerCase())) {
-		options = { ...defaultOpts, recordType: opts };
-	}
-	else {
-		options = { ...defaultOpts, ...opts };
-	}
-	if (opts.log) options.logs = true;
-	if (opts.logging) options.logs = true;
-	if (opts.verbose) options.logs = true;
-
-	options.recordType = options.recordType.toLowerCase();
-	options.streamFormat = options.streamFormat.toLowerCase();
-	options.region = options.region.toLowerCase();
-	if (recordType === 'event' && options.compress) compress = true;
-
-
-	const defaultCreds = {
-		acct: ``, //service acct username
-		pass: ``, //service acct secret
-		project: ``, //project id
-		secret: ``, //api secret (deprecated auth)
-		token: ``, //project token 
-		lookupTableId: ``, //lookup table id
-		groupKey: `` //group key id       
-	};
-
-	//sweep .env to pickup MP_ keys
-	const envVars = pick(process.env, `MP_PROJECT`, `MP_ACCT`, `MP_PASS`, `MP_SECRET`, `MP_TOKEN`, `MP_TYPE`, `MP_TABLE_ID`, `MP_GROUP_KEY`);
-	const envKeyNames = {
-		MP_PROJECT: "project",
-		MP_ACCT: "acct",
-		MP_PASS: "pass",
-		MP_SECRET: "secret",
-		MP_TOKEN: "token",
-		MP_TYPE: "recordType",
-		MP_TABLE_ID: "lookupTableId",
-		MP_GROUP_KEY: "groupKey"
-	};
-	const envCreds = renameKeys(envVars, envKeyNames);
-	const project = resolveProjInfo({ ...defaultCreds, ...envCreds, ...creds });
-	if (envCreds.recordType) options.recordType = envCreds.recordType;
-	if (envCreds.lookupTableId) project.lookupTableId = envCreds.lookupTableId;
-	Object.freeze(project);
-	if (options.fixData) ezTransforms(options, project);
-	Object.freeze(options);
-	const { streamSize, region, recordsPerBatch, bytesPerBatch, transformFunc } = options;
-	let { streamFormat } = options;
-	recordType = options.recordType;
-	logging = options.logs;
-	fileStreamOpts = { highWaterMark: 2 ** streamSize, ...fileStreamOpts };
-	strict = options.strict;
-	url = ENDPOINTS[region][recordType];
-
-	if (recordType === `table`) {
-		if (project.lookupTableId) {
-			url += project.lookupTableId;
-		}
-		else {
-			throw Error('saw type table, but no lookup table id was supplied');
-		}
-
-	}
-
-	//if script is run standalone, use CLI params as source data
-	const lastArgument = [...process.argv].pop();
-	if (data?.length === 0 && supportedFileTypes.some(type => lastArgument.includes(type))) {
-		data = lastArgument;
-		logging = true;
-	}
-	else if (lastArgument?.toLowerCase()?.includes('help')) {
-		console.log(banner);
-		console.log(helpText);
-		process.exit(0);
-	}
-	const startTime = Date.now();
-	time('pipeline', 'start');
-	track('start', { runId, ...options });
-
-	//CORE PIPELINES
-	const dataType = determineData(data, isStream);
-	let pipeline;
-	let files;
-	let fileStream;
-	switch (dataType) {
-		case `file`:
-			//todo lookup table
-			if (recordType === 'table') {
-				pipeline = await prepareLookupTable(data, project, `file`);
-			}
-			else {
-				fileStream = createReadStream(path.resolve(data));
-				if (!streamFormat) {
-					streamFormat = inferStreamFormat(fileStream);
-				}
-				log(`streaming ${streamFormat} stream of ${recordType}s from file ${data}...`);
-				pipeline = await streamingPipeline(fileStream, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat);
-			}
-
-			log('\n');
-			break;
-
-		case `directory`:
-			pipeline = [];
-			files = readdirSync(data).map(fileName => {
-				return {
-					name: fileName,
-					path: path.resolve(`${data}/${fileName}`)
-				};
-			});
-			log(`found ${addComma(files.length)} files in ${data}`);
-
-			walkDirectory: for (const file of files) {
-				log(`streaming ${recordType}s from ${file.name}`);
-				try {
-					const localStream = createReadStream(path.resolve(file.path));
-					const localFormat = inferStreamFormat(localStream);
-					log(`streaming ${localFormat} stream of ${recordType}s from file ${file.path}...`);
-					const result = await streamingPipeline(localStream, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, localFormat);
-					// let result = await filePipeLine(file.path, project, recordsPerBatch, bytesPerBatch, transformFunc);
-					pipeline.push({
-						[file.name]: result
-					});
-					log('\n');
-				} catch (e) {
-					log(`  ${file.name} is not valid ${recordType} JSON or NDJSON; skipping`);
-					continue walkDirectory;
-				}
-			}
-			break;
-		case `structString`:
-			log(`parsing ${recordType}s...`);
-			if (recordType === 'table') {
-				pipeline = await prepareLookupTable(data, project, `memory`);
-			}
-			else {
-				data = JSON.parse(data);
-				pipeline = await dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType);
-			}
-			break;
-
-		case `inMem`:
-			log(`parsing ${recordType}s...`);
-			//todo lookup table
-			if (recordType === 'table') {
-				pipeline = await prepareLookupTable(data, project, `memory`);
-			}
-			else {
-				pipeline = await dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType);
-			}
-			break;
-
-		case `stream`:
-			if (!streamFormat) {
-				streamFormat = inferStreamFormat(data);
-			}
-			log(`consuming ${streamFormat} stream of ${recordType}s from ${data?.path}...`);
-			pipeline = await streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat);
-			break;
-
-		default:
-			log(`could not determine data source`);
-			throw Error(`mixpanel-import was not able to import: ${data}`);
-	}
-
-	time('pipeline', 'stop');
-	track('end', { runId, ...options });
-
-	// summary of pipeline results
-	const endTime = Date.now();
-	const duration = (endTime - startTime) / 1000;
-	let total = totalRecordCount;
-	let success, failed;
-	if (recordType === `event`) {
-		if (dataType === `directory`) {
-			const flatRes = [];
-			for (const [index, fileRes] of pipeline.entries()) {
-				flatRes.push(pipeline[index][Object.keys(fileRes)[0]]);
-			}
-			success = flatRes.flat().map(res => res.num_records_imported).reduce((prev, curr) => prev + curr, 0);
-			failed = total - success;
-		}
-
-		else {
-			success = pipeline.map(res => res.num_records_imported).reduce((prev, curr) => prev + curr, 0);
-			failed = total - success;
-		}
-
-
-	}
-
-	if (recordType === `user` || recordType === `group`) {
-		if (dataType === `directory`) {
-			const flatRes = [];
-			for (const [index, fileRes] of pipeline.entries()) {
-				flatRes.push(pipeline[index][Object.keys(fileRes)[0]]);
-			}
-			success = flatRes.flat().filter(res => res.error === null).length * recordsPerBatch;
-			failed = flatRes.flat().filter(res => res.error !== null).length * recordsPerBatch;
-		}
-		else {
-			success = pipeline.filter(res => res.error === null).length * recordsPerBatch;
-			failed = pipeline.filter(res => res.error !== null).length * recordsPerBatch;
-		}
-	}
-
-	if (recordType === `table`) {
-		success = 0;
-		failed = 0;
-		if (pipeline.code === 200) {
-			success++;
-		}
-		else {
-			failed++;
-		}
-
-		try {
-			total = data.split('\n').length - 1;
-		}
-		catch (e) {
-			//noop
-		}
-	}
-
-	const summary = {
-		results: {
-			success,
-			failed,
-			total,
-			batches: pipeline.length,
-			recordType,
-			duration,
-			retries
-
-		},
-		responses: pipeline
-	};
-	return summary;
-
-}
-
-
-
-/*
-----
-STREAMERS
-----
-*/
-function lineByLineStream(filePath) {
-	const rl = readline.createInterface({
-		input: fs.createReadStream(filePath),
-		crlfDelay: Infinity,
-	});
-
-	const generator = (push, next) => {
-		rl.on('line', line => {
-			push(null, JSON.parse(line));
-		});
-		rl.on('close', () => {
-			push(null, _.nil);
-		});
-	};
-
-	return generator;
-}
-
-function objectModeStream() { }
-
-
-
-/*
----------
-PIPELINES
----------
-https://github.com/uhop/stream-chain/wiki
-
-*/
-
-
-
-
-/**
- * @param  {} data
- * @param  {} project
- * @param  {} recordsPerBatch
- * @param  {} bytesPerBatch
- * @param  {} transformFunc
- * @param  {} recordType
- */
-async function dataInMemPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType) {
-	time('chunk', 'start');
-	let dataIn = data.map(transformFunc);
-	const batches = chunkEv(dataIn, recordsPerBatch);
-	time('chunk', 'stop');
-	log(`\nloaded ${addComma(dataIn.length)} ${recordType}s`);
-
-	//flush to mixpanel
-	time('flush');
-	let responses = [];
-	let iter = 0;
-	for (let batch of batches) {
-		iter += 1;
-
-		showProgress(recordType, recordsPerBatch * iter, dataIn.length, iter, batches.length);
-		if (recordType === `event` && compress) batch = await gzip(JSON.stringify(batch));
-		let res = await sendDataToMixpanel(project, batch);
-		responses.push(res);
-	}
-	totalRecordCount = dataIn.length;
-	log('\n');
-	time('flush', 'stop');
-	log('\n');
-
-	return responses;
-
-}
-
-// https://medium.com/florence-development/working-with-node-js-stream-api-60c12437a1be
-function pipeToMixpanel(creds = {}, opts = {}, finish = () => { }) {
-	const { recordsPerBatch = 2000 } = opts;
-	const logs = [];
-	const piped = new stream.Transform({ objectMode: true, highWaterMark: recordsPerBatch });
-
-	piped.on('finish', () => {
-		const consumerLogs = aggregateLogs(logs);
-		finish(consumerLogs);
-	});
-	piped.batch = [];
-
-	piped._transform = (data, encoding, callback) => {
-		piped.batch.push(data);
-		if (piped.batch.length >= recordsPerBatch) {
-			main(creds, piped.batch, opts).then((results) => {
-				logs.push(results);
-				piped.batch = [];
-				callback(null, results);
-			});
-		}
-		else {
-			callback();
-		}
-	};
-
-	piped._flush = function (callback) {
-		if (piped.batch.length) {
-			piped.push(piped.batch);
-
-			//data is still left in the stream; flush it!
-			main(creds, piped.batch, opts).then((results) => {
-				logs.push(results);
-				piped.batch = [];
-				callback(null, results);
-			});
-
-			piped.batch = [];
-		}
-
-		else {
-			callback(null, aggregateLogs(logs));
-		}
-	};
-
-	return piped;
-
-
-
-}
-/**
- * @param  {ReadableStream} data
- * @param  {number} project
- * @param  {number} recordsPerBatch
- * @param  {number} bytesPerBatch
- * @param  {function} transformFunc
- * @param  {string} recordType
- * @param  {string} streamFormat='json'
- */
-async function streamingPipeline(data, project, recordsPerBatch, bytesPerBatch, transformFunc, recordType, streamFormat = 'json') {
-	let records = 0;
-	let batches = 0;
-	let responses = [];
-
-	return new Promise((resolve, reject) => {
-		const pipeline = chain([
-			//parse stream as JSON
-			streamParseType(data, streamFormat),
-			//transform
-			(data) => {
-				records += 1;
-				return transformFunc(data.value);
-			},
-			//batch
-			new Batch({ batchSize: recordsPerBatch }),
-			//load
-			async (batch) => {
-				batches += 1;
-				if (recordType === `event` && compress) batch = await gzip(JSON.stringify(batch));
-				const sent = await sendDataToMixpanel(project, batch);
-				return sent;
-			}
-		], fileStreamOpts);
-
-		//listening to pipeline
-		pipeline.on('error', (error) => {
-			reject(error);
-		});
-		pipeline.on('data', (response) => {
-			showProgress(recordType, records, records, batches, batches);
-			responses.push(response);
-		});
-		pipeline.on('end', () => {
-			log('');
-			totalRecordCount += records;
-			resolve(responses);
-		});
-
-		data.pipe(pipeline);
-	});
-}
-
-/**
- * @param  {string} data
- * @param  {number} project
- * @param  {string} type=`file`
- */
-async function prepareLookupTable(data, project, type = `file`) {
-	if (type === 'memory') {
-		return await sendDataToMixpanel(project, data, 'text/csv');
-	}
-
-	if (type === 'file') {
-		const file = await u.load(data);
-		return await sendDataToMixpanel(project, file, 'text/csv');
-	}
-
-	throw Error('could not determine lookup table type');
-}
-
-/*
------
-FLUSH
------
-*/
-
-/**
- * @param  {number} proj
- * @param  {unknown} batch
- * @param  {string} contentType='application/json'
- */
-async function sendDataToMixpanel(proj, batch, contentType = 'application/json') {
-	const authString = proj.auth;
-
-	const reqConfig = {
-		method: contentType === 'application/json' ? 'POST' : "PUT",
-		headers: {
-			'Authorization': authString,
-			'Content-Type': contentType,
-
-		},
-		params: {
-			ip: 0,
-			verbose: 1,
-			strict: Number(strict),
-			project_id: proj.projId
-		},
-		httpsAgent: new Agent({ keepAlive: true, maxTotalSockets: 20 }),
-		data: batch
-	};
-
-	//events are gzipped
-	if (recordType === `event` && compress) {
-		reqConfig.headers['Content-Encoding'] = 'gzip';
-	}
-
-	try {
-		const req = await fetch(url, reqConfig);
-		const res = req.data;
-		return res;
-
-	} catch (e) {
-		log(`\nproblem with request: ${e.message}\n${e.response.data.error}\n`);
-		return e.response.data;
-	}
-}
-
-
-
-/*
---------
-HELPERS
---------
-*/
-/**
- * @param  {string | Data | ReadableStream} data
- */
-function inferStreamFormat(data) {
-	let formatInferred = false;
-	let streamFormat = '';
-	if (data?.path.endsWith('.json')) {
-		streamFormat = 'json';
-		formatInferred = true;
-	}
-	if (data?.path.endsWith('.jsonl')) {
-		streamFormat = 'jsonl';
-		formatInferred = true;
-	}
-	if (data?.path.endsWith('.ndjson')) {
-		streamFormat = 'jsonl';
-		formatInferred = true;
-	}
-	if (!formatInferred || !streamFormat) {
-		throw Error(`no stream format could be inferred for ${data?.path}; please specify streamFormat as json or jsonl in your options`);
-	}
-
-	return streamFormat;
-}
-
-/**
- * @param  {number} start=2000
- * @param  {number} end=60000
- */
 function generateDelays(start = 2000, end = 60000) {
 	// https://developer.mixpanel.com/reference/import-events#rate-limits
 	const result = [start];
@@ -1181,121 +641,79 @@ function generateDelays(start = 2000, end = 60000) {
 	return result;
 }
 
-/**
- * @param  {string} fileName
- * @param  {string} type
- */
-function streamParseType(fileName, type) {
-	if (type === 'json') {
-		return StreamArray.withParser();
-	}
-
-	if (type === 'jsonl') {
-		return new JsonlParser();
-	}
-
-	if (fileName?.endsWith('.json')) {
-		return StreamArray.withParser();
-	} else if (fileName?.endsWith('.ndjson') || fileName?.endsWith('.jsonl') || fileName?.endsWith('.txt')) {
-		const jsonlParser = new JsonlParser();
-		return jsonlParser;
-	} else {
-		throw Error(`could not identify data; it does not end with: .json, .ndjson, .jsonl, .txt\nif you are .pipe() a stream to this module, specify streamFormat`);
-	}
-
-}
-
-
-/**
- * @param  {Object} obj
- * @param  {Object} newKeys
- */
-function renameKeys(obj, newKeys) {
-	//https://stackoverflow.com/a/45287523
-	const keyValues = Object.keys(obj).map(key => {
-		const newKey = newKeys[key] || key;
-		return {
-			[newKey]: obj[key]
-		};
-	});
-	return Object.assign({}, ...keyValues);
-}
-
-
-
-/**
- * @param  {Data} arrayOfEvents
- * @param  {number} chunkSize
- */
-function chunkEv(arrayOfEvents, chunkSize) {
-	return arrayOfEvents.reduce((resultArray, item, index) => {
-		const chunkIndex = Math.floor(index / chunkSize);
-
-		if (!resultArray[chunkIndex]) {
-			resultArray[chunkIndex] = []; // start a new chunk
-		}
-
-		resultArray[chunkIndex].push(item);
-
-		return resultArray;
-	}, []);
-}
-
-
-
-
 
 /*
--------
+----
 LOGGING
--------
+----
 */
 
-function log(message) {
-	if (logging) {
-		console.log(`${message}\n`);
-	}
+function showProgress(record, processed, requests,) {
+	readline.cursorTo(process.stdout, 0);
+	process.stdout.write(`\t${record}s processed: ${u.comma(processed)} | batches sent: ${u.comma(requests)}`);
 }
 
-function time(label = `foo`, directive = `start`) {
-	if (logging) {
-		if (directive === `start`) {
-			console.time(`${label} took`);
-		} else if (directive === `stop`) {
-			console.timeEnd(`${label} took`);
-		}
-	}
-}
-
-function addComma(x) {
-	return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+async function writeLogs(data) {
+	const dateTime = new Date().toISOString().split('.')[0].replace('T', '--').replace(/:/g, ".");
+	const fileDir = u.mkdir('./logs');
+	const fileName = `${data.recordType}-import-log-${dateTime}.json`;
+	const filePath = `${fileDir}/${fileName}`;
+	const file = await u.touch(filePath, data, true)
+	console.log(`results written to: ./${file}\n`);
 }
 
 
+// // https://medium.com/florence-development/working-with-node-js-stream-api-60c12437a1be
+// function pipeToMixpanel(creds = {}, opts = {}, finish = () => { }) {
+// 	const { recordsPerBatch = 2000 } = opts;
+// 	const logs = [];
+// 	const piped = new stream.Transform({ objectMode: true, highWaterMark: recordsPerBatch });
 
-function aggregateLogs(logs = []) {
-	const finalLog = {
-		results: {},
-		responses: []
-	};
+// 	piped.on('finish', () => {
+// 		const consumerLogs = aggregateLogs(logs);
+// 		finish(consumerLogs);
+// 	});
+// 	piped.batch = [];
 
-	for (const log of logs) {
-		finalLog.responses.push(log.responses[0]);
+// 	piped._transform = (data, encoding, callback) => {
+// 		piped.batch.push(data);
+// 		if (piped.batch.length >= recordsPerBatch) {
+// 			main(creds, piped.batch, opts).then((results) => {
+// 				logs.push(results);
+// 				piped.batch = [];
+// 				callback(null, results);
+// 			});
+// 		}
+// 		else {
+// 			callback();
+// 		}
+// 	};
 
-		for (let key in log.results) {
-			if (!finalLog.results[key]) {
-				finalLog.results[key] = log.results[key];
-			}
-			else if (typeof log.results[key] === 'number') {
-				finalLog.results[key] += log.results[key];
-			}
-		}
-	}
+// 	piped._flush = function (callback) {
+// 		if (piped.batch.length) {
+// 			piped.push(piped.batch);
 
-	finalLog.results.batches = logs.length;
+// 			//data is still left in the stream; flush it!
+// 			main(creds, piped.batch, opts).then((results) => {
+// 				logs.push(results);
+// 				piped.batch = [];
+// 				callback(null, results);
+// 			});
 
-	return finalLog;
-}
+// 			piped.batch = [];
+// 		}
+
+// 		else {
+// 			callback(null, aggregateLogs(logs));
+// 		}
+// 	};
+
+// 	return piped;
+
+
+
+// }
+
 
 
 
@@ -1383,15 +801,16 @@ EXPORTS
 */
 
 const mpImport = module.exports = main;
-mpImport.createMpStream = pipeToMixpanel;
+// todo
+// mpImport.createMpStream = pipeToMixpanel;
 
-//this allows the module to function as a standalone script
+// todo
 if (require.main === module) {
 	console.log(banner);
-	main(undefined, undefined, { logs: true, fixData: true }).then((result) => {
+	main().then((result) => {
 		const dateTime = new Date().toISOString().split('.')[0].replace('T', '--').replace(/:/g, ".");
 		const fileDir = u.mkdir('./logs');
-		const fileName = `${recordType}-import-log-${dateTime}.json`;
+		const fileName = `${result.recordType}-import-log-${dateTime}.json`;
 		const filePath = `${fileDir}/${fileName}`;
 
 		u.touch(filePath, result, true).then(() => {
