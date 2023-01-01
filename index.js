@@ -562,11 +562,11 @@ async function determineData(data, config) {
 		//file case
 		if (fileOrDir.isFile()) {
 			if (config.streamFormat === 'jsonl' || config.lineByLineFileExt.includes(path.extname(data))) {
-				return lineByLineStream(path.resolve(data));
+				return itemStream(path.resolve(data), "jsonl");
 			}
 
 			if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(data))) {
-				return objectModeStream(path.resolve(data));
+				return itemStream(path.resolve(data), "json");
 			}
 		}
 
@@ -575,10 +575,10 @@ async function determineData(data, config) {
 			const enumDir = await u.ls(path.resolve(data));
 			const files = enumDir.filter(filePath => config.supportedFileExt.includes(path.extname(filePath)));
 			if (config.streamFormat === 'jsonl' || config.lineByLineFileExt.includes(path.extname(files[0]))) {
-				return lineByLineStream(files);
+				return itemStream(files, "jsonl");
 			}
 			if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(files[0]))) {
-				return objectModeStream(files);
+				return itemStream(files, "json");
 			}
 		}
 	}
@@ -635,9 +635,8 @@ function existingStream(stream) {
 	return generator;
 }
 
-// todo: these basically do the same thing; 
 
-function lineByLineStream(filePath) {
+function itemStream(filePath, type = "jsonl") {
 	let stream;
 	if (Array.isArray(filePath)) {
 		stream = filePath.map((file) => fs.createReadStream(file));
@@ -646,20 +645,9 @@ function lineByLineStream(filePath) {
 		stream = [fs.createReadStream(filePath)];
 	}
 
-	return stream.map(s => s.pipe(jsonlParser()).map(token => token.value));
-}
-
-function objectModeStream(filePath) {
-	let stream;
-	if (Array.isArray(filePath)) {
-		stream = filePath.map((file) => fs.createReadStream(file));
-	}
-	else {
-		stream = [fs.createReadStream(filePath)];
-	}
-
-	return stream.map(s => s.pipe(StreamArray.withParser()).map(token => token.value));
-
+	//use the right parser based on the type of file
+	const parser = type === "jsonl" ? jsonlParser : StreamArray.withParser
+	return stream.map(s => s.pipe(parser()).map(token => token.value));
 }
 
 async function flushLookupTable(stream, config) {

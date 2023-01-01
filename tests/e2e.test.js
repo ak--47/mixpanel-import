@@ -1,3 +1,19 @@
+/* NOTE: to make tests work, you need a .env file of the form
+
+MP_PROJECT=project
+MP_ACCT=acct
+MP_PASS=password
+MP_SECRET=secret
+MP_TOKEN=token
+
+and then download the test data here:
+
+unzip it in ./testData
+
+*/
+
+
+
 /* eslint-disable no-undef */
 /* eslint-disable no-debugger */
 /* eslint-disable no-unused-vars */
@@ -80,7 +96,7 @@ describe('filenames', () => {
 describe('folders', () => { 
 	test('jsonl', async () => { 
 	
-		const data = await mp({}, folderjsonl, { ...opts});		
+		const data = await mp({}, folderjsonl, { ...opts, streamFormat: "jsonl"});		
 		expect(data.success).toBe(3009);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
