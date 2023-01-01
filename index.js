@@ -103,7 +103,18 @@ CONFIG
 -------
 */
 
+/**
+ * a singleton to hold state about the imported data
+ * @example
+ * const config = new importJob(creds, opts)
+ * @class
+ */
 class importJob {
+	/**
+	 * create a configuration
+	 * @param {Creds} creds - mixpanel project credentials
+	 * @param {Options} opts - options for import
+	 */
 	constructor(creds, opts) {
 		// * credentials
 		this.acct = creds.acct || ``; //service acct username
@@ -277,8 +288,12 @@ CORE
 async function main(creds = {}, data = null, opts = {}, isCLI = false) {
 	// gathering params
 	const envVar = getEnvVars();
-	const cli = getCLIParams();
-	const cliData = cli._[0];
+	let cli = {};
+	let cliData = {};
+	if (isCLI) {
+		cli = getCLIParams();
+		cliData = cli._[0];
+	}
 	const config = new importJob({ ...envVar, ...cli, ...creds }, { ...envVar, ...cli, ...opts });
 	if (isCLI) config.verbose = true;
 	const l = logger(config);
@@ -291,7 +306,7 @@ async function main(creds = {}, data = null, opts = {}, isCLI = false) {
 	for (const stream of streams) {
 		await corePipeline(stream, config);
 	}
-	l('\n')
+	l('\n');
 
 	// clean up
 	config.timer.end(false);
@@ -315,62 +330,75 @@ async function main(creds = {}, data = null, opts = {}, isCLI = false) {
  */
 function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 
-	const { recordsPerBatch = 2000 } = opts;
-	opts.verbose = false;
-	const logs = [];
-	let recordsProcessed = 0;
-	let batchesSent = 0;
-
-	const interface = new stream.Transform({ objectMode: true, highWaterMark: recordsPerBatch });
-	interface.batch = [];
-
-	interface.on('finish', () => {
-		finish(null, logs);
+	// ! WORKS BUT DOESN'T FORWARD
+	const envVar = getEnvVars();
+	const config = new importJob({...envVar, ...creds}, {...envVar, ...opts});
+	const passThrough = new stream.PassThrough({objectMode: true});
+	const pipeline = corePipeline(passThrough, config, true)
+	passThrough.on('finish', () => {
+		finish(null, config.summary());
 	});
+	return passThrough;
+	
 
-	interface._transform = (data, encoding, callback) => {
-		recordsProcessed++;
-		showProgress(opts.recordType, recordsProcessed, batchesSent);
-		interface.batch.push(data);
-		if (interface.batch.length >= recordsPerBatch) {
-			main(creds, interface.batch, opts, false).then((results) => {
-				batchesSent++;
-				logs.push(results);
-				interface.batch = [];
-				callback(null, results);
-			});
-		}
-		else {
-			callback();
-		}
-	};
+	// ! WORKS BUT IS WEIRD
 
-	interface._flush = function (callback) {
-		if (interface.batch.length) {
-			interface.push(interface.batch);
-			//data is still left in the stream; flush it!
-			main(creds, interface.batch, opts, false).then((results) => {
-				batchesSent++;
-				showProgress(opts.recordType, recordsProcessed, batchesSent);
-				logs.push(results);
-				interface.batch = [];
-				callback(null, results);
-			});
+	// const { recordsPerBatch = 2000 } = opts;
+	// opts.verbose = false;
+	// const logs = [];
+	// let recordsProcessed = 0;
+	// let batchesSent = 0;
 
-			interface.batch = [];
-		}
+	// const interface = new stream.Transform({ objectMode: true, highWaterMark: recordsPerBatch });
+	// interface.batch = [];
 
-		else {
-			batchesSent++;
-			callback(null);
-		}
-	};
+	// interface.on('finish', () => {
+	// 	finish(null, logs);
+	// });
 
-	return interface;
+	// interface._transform = (data, encoding, callback) => {
+	// 	recordsProcessed++;
+	// 	showProgress(opts.recordType, recordsProcessed, batchesSent);
+	// 	interface.batch.push(data);
+	// 	if (interface.batch.length >= recordsPerBatch) {
+	// 		main(creds, interface.batch, opts, false).then((results) => {
+	// 			batchesSent++;
+	// 			logs.push(results);
+	// 			interface.batch = [];
+	// 			callback(null, results);
+	// 		});
+	// 	}
+	// 	else {
+	// 		callback();
+	// 	}
+	// };
+
+	// interface._flush = function (callback) {
+	// 	if (interface.batch.length) {
+	// 		interface.push(interface.batch);
+	// 		//data is still left in the stream; flush it!
+	// 		main(creds, interface.batch, opts, false).then((results) => {
+	// 			batchesSent++;
+	// 			showProgress(opts.recordType, recordsProcessed, batchesSent);
+	// 			logs.push(results);
+	// 			interface.batch = [];
+	// 			callback(null, results);
+	// 		});
+
+	// 		interface.batch = [];
+	// 	}
+
+	// 	else {
+	// 		batchesSent++;
+	// 		callback(null);
+	// 	}
+	// };
+
+	// return interface;
 
 }
 
-async function corePipeline(stream, config) {
+async function corePipeline(stream, config, isPipe = false) {
 	// todo ERROR HANDLING
 
 
@@ -398,7 +426,7 @@ async function corePipeline(stream, config) {
 		})
 
 		// * verbose
-		.doto(() => {
+		.doto((res) => {
 			if (config.verbose) showProgress(config.recordType, config.recordsProcessed, config.requests);
 		})
 
@@ -409,6 +437,8 @@ async function corePipeline(stream, config) {
 
 		// * consume stream
 		.collect();
+	
+	if (isPipe) return pipeline.toNodeStream({objectMode: true})
 
 	return Promise.all(await pipeline.toPromise(Promise));
 
@@ -555,7 +585,7 @@ async function determineData(data, config) {
 
 	// data is a string, and we have to guess what it is
 	if (typeof data === 'string') {
-		
+
 		//stringified JSON
 		try {
 			return [stream.Readable.from(JSON.parse(data), { objectMode: true })];
@@ -566,7 +596,7 @@ async function determineData(data, config) {
 
 		//stringified JSONL
 		try {
-			return [stream.Readable.from(data.split('\n').map(JSON.parse), {objectMode: true})]
+			return [stream.Readable.from(data.split('\n').map(JSON.parse), { objectMode: true })];
 		}
 
 		catch (e) {
@@ -902,7 +932,7 @@ mpImport.createMpStream = pipeInterface;
 // todo
 if (require.main === module) {
 	console.log(banner);
-	main(undefined, undefined, undefined, true).then(() => {console.log('\nFINISHED!\n')});
+	main(undefined, undefined, undefined, true).then(() => { console.log('\nFINISHED!\n'); });
 }
 
 /*
@@ -913,9 +943,11 @@ CYA
 
 process.on('uncaughtException', (err) => {
 	console.error(`\nUNCAUGHT FAILURE!\n\n${err.stack}\n\n${err.message}`);
+	debugger;
 });
 
 
 process.on('unhandledRejection', (err) => {
 	console.error(`\nUNHANDLED REJECTION!\n\n${err.stack}\n\n${err.message}`);
+	debugger;
 });
