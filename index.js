@@ -1,5 +1,5 @@
 #! /usr/bin/env node
-/* eslint-disable no-unused-vars */
+
 
 // mixpanel-import
 // by AK
@@ -8,66 +8,18 @@
 // todos:
 /*
 - CLI interface
-- retries
+- docs
 */
-
-/*
------
-TYPES
------
-*/
-
-/**
- * @typedef {Object} Creds - mixpanel project credentials
- * @property {string} acct - service account username
- * @property {string} pass - service account password
- * @property {(string | number)} project - project id
- * @property {string} [token] - project token (for importing user profiles)
- * @property {string} [lookupTableId] - lookup table ID (for importing lookup tables)
- * @property {string} [groupKey] - group identifier (for importing group profiles)
- */
-
-/**
- * @typedef {Object} Options - import options
- * @property {string} [recordType=event] - type of record to import (event, user, group, or table)
- * @property {boolean} [compress=false] - use gzip compression (events only)
- * @property {number} [streamSize=27] - 2^N; highWaterMark value for stream [DEPRECATED]
- * @property {string} [region=US] - US or EU (data residency)
- * @property {number} [recordsPerBatch=2000] - max # of records in each payload (max 2000; max 200 for group profiles) 
- * @property {number} [bytesPerBatch=2*1024*1024] - max # of bytes in each payload (max 2MB)
- * @property {boolean} [strict=true] - validate data on send (events only)
- * @property {boolean} [logs=true] - log data to console
- * @property {boolean} [fixData=false] - apply transformations to ensure data is properly ingested
- * @property {string} [streamFormat] - format of underlying data stream; json or jsonl
- * @property {function} [transformFunc=()=>{}] - a function to apply to every record before sending
- */
-
-/**
- * @typedef {string | Array<mpEvent> | ReadableStream } Data - a path to a file/folder, objects in memory, or a readable object/file stream that contains data you wish to import
- */
-
-/**
- * @typedef {Object} mpEvent - a mixpanel event
- * @property {string} event - the event name
- * @property {mpProperties} properties - the event's properties
- */
-
-/**
- * @typedef {Object} mpProperties - mixpanel event properties
- * @property {string} distinct_id - uuid of the end user
- * @property {string} time - the UTC time of the event
- * @property {string} $insert_id - 
- */
-
-/**
- * @typedef {import('fs').ReadStream} ReadableStream
- */
 
 /*
 -----
 DEPS
 -----
 */
+
+// * types
+// eslint-disable-next-line no-unused-vars
+const types = require("./types.js");
 
 // * parsers
 const readline = require('readline');
@@ -79,6 +31,7 @@ const StreamArray = require('stream-json/streamers/StreamArray'); //json parser
 const _ = require('highland');
 const stream = require('stream');
 const got = require('got');
+const https = require('https');
 
 // * file system
 const path = require('path');
@@ -89,10 +42,10 @@ const yargs = require('yargs');
 require('dotenv').config();
 
 // * utils
+const transforms = require('./transforms.js');
 const u = require('ak-tools');
 const track = u.tracker('mixpanel-import');
 const runId = u.uid(32);
-const md5 = require('md5');
 const { pick } = require('underscore');
 const { gzip } = require('node-gzip');
 
@@ -107,14 +60,12 @@ CONFIG
  * a singleton to hold state about the imported data
  * @example
  * const config = new importJob(creds, opts)
- * @class
- */
+ * @class 
+ * @param {types.Creds} creds - mixpanel project credentials
+ * @param {types.Options} opts - options for import
+ * @method summary summarize state of import
+*/
 class importJob {
-	/**
-	 * create a configuration
-	 * @param {Creds} creds - mixpanel project credentials
-	 * @param {Options} opts - options for import
-	 */
 	constructor(creds, opts) {
 		// * credentials
 		this.acct = creds.acct || ``; //service acct username
@@ -126,23 +77,25 @@ class importJob {
 		this.groupKey = creds.groupKey || ``; //group key id
 		this.auth = this.resolveProjInfo();
 
-		// * options
+		// * string options
 		this.recordType = opts.recordType || `event`; // event, user, group or table		
 		this.streamFormat = opts.streamFormat || ''; // json or jsonl ... only relevant for streams
 		this.region = opts.region || `US`; // US or EU
 
+		// * number options
 		this.streamSize = opts.streamSize || 27; // power of 2 for highWaterMark in stream  (default 134 MB)		
 		this.recordsPerBatch = opts.recordsPerBatch || 2000; // records in each req; max 2000 (200 for groups)
 		this.bytesPerBatch = opts.bytesPerBatch || 2 * 1024 * 1024; // max bytes in each req
 
+		// * transform options
 		this.transformFunc = opts.transformFunc || function noop(a) { return a; }; //will be called on every record
 
+		// * boolean options
 		this.compress = u.is(undefined, opts.compress) ? false : opts.compress; //gzip data (events only)
 		this.strict = u.is(undefined, opts.strict) ? true : opts.strict; // use strict mode?
 		this.logs = u.is(undefined, opts.logs) ? true : opts.logs; // print to stdout?
 		this.verbose = u.is(undefined, opts.verbose) ? true : opts.verbose;
 		this.fixData = u.is(undefined, opts.fixData) ? false : opts.fixData; //apply transforms on the data
-
 
 		// * counters
 		this.recordsProcessed = 0;
@@ -160,8 +113,8 @@ class importJob {
 		this.contentType = "application/json";
 		this.encoding = "";
 
-		// ! apply EZ transforms: this will mutate the instance when called
-		if (this.fixData) ezTransforms(this);
+		// ! apply EZ transforms
+		if (this.fixData) transforms(this);
 
 		// ! fix plurals
 		if (this.recordType === 'events') this.recordType === 'event';
@@ -248,6 +201,10 @@ class importJob {
 		}
 
 	}
+	/**
+	 * a function to summerize the results of an import
+	 * @returns {...types.ImportResults}
+	 */
 	summary() {
 		const summary = {
 			success: this.success,
@@ -279,13 +236,14 @@ CORE
  * // using promises
  * const mp = require('mixpanel-import')
  * const imported = await mp(creds, data, options)
- * @param {Creds} creds 
- * @param {Data} data 
- * @param {Options} opts 
+ * @param {types.Creds} creds 
+ * @param {types.Data} data 
+ * @param {types.Options} opts 
  * @param {boolean} isCLI 
  * @returns API reciepts of imported data
  */
 async function main(creds = {}, data = null, opts = {}, isCLI = false, existingConfig) {
+	track('run', { runId });
 	let config = {};
 	let cliData = {};
 	if (existingConfig) {
@@ -294,14 +252,14 @@ async function main(creds = {}, data = null, opts = {}, isCLI = false, existingC
 	else {
 		// gathering params
 		const envVar = getEnvVars();
-		let cli = {};		
+		let cli = {};
 		if (isCLI) {
 			cli = getCLIParams();
 			cliData = cli._[0];
 		}
 		config = new importJob({ ...envVar, ...cli, ...creds }, { ...envVar, ...cli, ...opts });
 	}
-	
+
 	if (isCLI) config.verbose = true;
 	const l = logger(config);
 	l(banner);
@@ -311,7 +269,13 @@ async function main(creds = {}, data = null, opts = {}, isCLI = false, existingC
 	config.timer.start();
 	const streams = await determineData(data || cliData, config); // always stream[]
 	for (const stream of streams) {
-		await corePipeline(stream, config);
+		try {
+			await corePipeline(stream, config);
+		}
+
+		catch (e) {
+			l(`ERROR: ${e.message}`)
+		}
 	}
 	l('\n');
 
@@ -329,27 +293,17 @@ async function main(creds = {}, data = null, opts = {}, isCLI = false, existingC
  * // pipe a stream to mixpanel
  * const { mpStream } = require('mixpanel-import')
  * const mpStream = createMpStream(creds, opts, callback);
- * myStream.pipe(mpStream);
- * @param {Creds} creds
- * @param {Options} opts
- * @param {callback} finish 
- * @returns API reciepts of imported data
+ * const observer = new PassThrough({objectMode: true})
+ * observer.on('data', (response)=> { })
+ * // create a pipeline
+ * myStream.pipe(mpStream).pipe(observer);
+ * @param {types.Creds} creds - mixpanel project credentials
+ * @param {types.Options} opts - import options
+ * @param {function(): importJob} finish - end of pipelines
+ * @returns a transform stream
  */
 function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
-
-	// // ! WORKS BUT DOESN'T FORWARD
-	// const envVar = getEnvVars();
-	// const config = new importJob({...envVar, ...creds}, {...envVar, ...opts});
-	// const passThrough = new stream.Transform({objectMode: true});
-	// const pipeline = corePipeline(passThrough, config, true)
-	// passThrough.pipe(pipeline)
-	// passThrough.on('finish', () => {
-	// 	finish(null, config.summary());
-	// });
-	// return passThrough;
-
-
-	// ! WORKS BUT IS WEIRD
+	// ! figure out how to use corePipeline() instead of main()
 	const envVar = getEnvVars();
 	const config = new importJob({ ...envVar, ...creds }, { ...envVar, ...opts });
 	const { recordsPerBatch = 2000 } = opts;
@@ -363,12 +317,17 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 		finish(null, config.summary());
 	});
 
+	extStream.on('error', (e) => {
+		throw e;
+	});
+
 	extStream._transform = (data, encoding, callback) => {
 		extStream.batch.push(data);
 		if (extStream.batch.length === recordsPerBatch) {
 			main(null, extStream.batch, null, false, config).then((results) => {
 				extStream.batch = [];
-				callback(null, [...results.responses.slice(-1), ...results.errors.slice(-1)]);
+				const result = [...results.responses.slice(-1), ...results.errors.slice(-1)][0];
+				callback(null, result);
 			});
 		}
 
@@ -379,11 +338,11 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 
 	extStream._flush = function (callback) {
 		if (extStream.batch.length) {
-			extStream.push(extStream.batch);
 			//data is still left in the stream; flush it!
 			main(null, extStream.batch, null, false, config).then((results) => {
 				extStream.batch = [];
-				callback(null, [...results.responses.slice(-1), ...results.errors.slice(-1)]);
+				const result = [...results.responses.slice(-1), ...results.errors.slice(-1)][0];
+				callback(null, result);
 			});
 
 			extStream.batch = [];
@@ -398,6 +357,12 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 
 }
 
+/**
+ * the core pipeline 
+ * @param {types.ReadableStream} stream 
+ * @param {importJob} config 
+ * @returns {Promise<types.ImportResults>} a promise
+ */
 async function corePipeline(stream, config) {
 
 	if (config.recordType === 'table') return await flushLookupTable(stream, config);
@@ -424,13 +389,13 @@ async function corePipeline(stream, config) {
 		})
 
 		// * verbose
-		.doto((res) => {
+		.doto(() => {
 			if (config.verbose) showProgress(config.recordType, config.recordsProcessed, config.requests);
 		})
 
 		// * errors
 		.errors((e) => {
-			debugger;
+			throw e;
 		});
 
 
@@ -492,15 +457,37 @@ async function flushToMixpanel(batch, config) {
 				strict: Number(config.strict)
 			},
 			method: config.reqMethod,
+			retry: { limit: 50 },
 			headers: {
 				"Authorization": `Basic ${config.auth}`,
 				"Content-Type": config.contentType,
 				"Content-Encoding": config.encoding
+
+			},
+			agent: {
+				https: new https.Agent({ keepAlive: true })
+			},
+			hooks: {
+				beforeRetry: [(err, count) => {
+					l(`retrying request...#${count}`);
+					config.retries++;
+				}]
 			},
 			body
 		};
-		const req = await got(options);
-		const res = JSON.parse(req.body);
+
+		let req, res, success;
+		try {
+			req = await got(options);
+			res = JSON.parse(req.body);
+			success = true;
+		}
+
+		catch (e) {
+			res = JSON.parse(e.response.body);
+			success = false;
+		}
+
 		if (config.recordType === 'event') {
 			config.success += res.num_records_imported || 0;
 			config.failed += res?.failed_records?.length || 0;
@@ -509,25 +496,12 @@ async function flushToMixpanel(batch, config) {
 			if (!res.error || res.status) config.success += batch.length;
 			if (res.error || !res.status) config.failed += batch.length;
 		}
-		config.store(res, true);
+
+		config.store(res, success);
 		return res;
 	}
 
 	catch (e) {
-		if (config.recordType === 'user' || config.recordType === 'group') {
-			config.failed += batch.length;
-		}
-		if (config.recordType === 'event') {
-			try {
-				const res = JSON.parse(e.response.body);
-				config.failed += res?.failed_records?.length;
-				config.store(res, false);
-			}
-			catch (e) {
-				//noop
-			}
-
-		}
 		l(`\nBATCH FAILED: ${e.message}\n`);
 	}
 }
@@ -628,7 +602,9 @@ function existingStream(stream) {
 			push(null, JSON.parse(line));
 		});
 		rl.on('close', () => {
+			next()
 			push(null, _.nil); //end of stream
+			
 		});
 	};
 
@@ -705,96 +681,6 @@ function chunkForSize(config) {
 	};
 }
 
-function generateDelays(start = 2000, end = 60000) {
-	// https://developer.mixpanel.com/reference/import-events#rate-limits
-	const result = [start];
-	let current = start;
-	while (current < end) {
-		let next = current * 2;
-		result.push(current * 2);
-		current = next;
-	}
-
-	return result;
-}
-
-function ezTransforms(config) {
-	//for group imports, ensure 200 max size
-	if (config.recordType === `group` && config.recordsPerBatch > 200) {
-		config.batchSize = 200;
-	}
-
-	//for user + event imports, ensure 2000 max size
-	if ((config.recordType === `user` || config.recordType === `event`) && config.recordsPerBatch > 2000) {
-		config.batchSize = 2000;
-	}
-
-	//for strict event imports, make every record has an $insert_id
-	if (config.recordType === `event` && config.transformFunc('A') === 'A') {
-		config.transform = function addInsertIfAbsent(event) {
-			if (!event?.properties?.$insert_id) {
-				try {
-					let deDupeTuple = [event.name, event.properties.distinct_id || "", event.properties.time];
-					let hash = md5(deDupeTuple);
-					event.properties.$insert_id = hash;
-				}
-				catch (e) {
-					event.properties.$insert_id = event.properties.distinct_id;
-				}
-				return event;
-			}
-			else {
-				return event;
-			}
-		};
-
-	}
-
-	//for user imports, make sure every record has a $token and the right shape
-	if (config.recordType === `user` && config.transformFunc('A') === 'A') {
-		config.transform = function addUserTokenIfAbsent(user) {
-			//wrong shape; fix it
-			if (!(user.$set || user.$set_once || user.$add || user.$union || user.$append || user.$remove || user.$unset)) {
-				user = { $set: { ...user } };
-				user.$distinct_id = user.$set.$distinct_id;
-				delete user.$set.$distinct_id;
-				delete user.$set.$token;
-			}
-
-			//catch missing token
-			if ((!user.$token) && config.token) user.$token = config.token;
-
-			return user;
-		};
-	}
-
-
-	//for group imports, make sure every record has a $token and the right shape
-	if (config.recordType === `group` && config.transformFunc('A') === 'A') {
-		config.transform = function addGroupKeysIfAbsent(group) {
-			//wrong shape; fix it
-			if (!(group.$set || group.$set_once || group.$add || group.$union || group.$append || group.$remove || group.$unset)) {
-				group = { $set: { ...group } };
-				if (group.$set?.$group_key) group.$group_key = group.$set.$group_key;
-				if (group.$set?.$distinct_id) group.$group_id = group.$set.$distinct_id;
-				if (group.$set?.$group_id) group.$group_id = group.$set.$group_id;
-				delete group.$set.$distinct_id;
-				delete group.$set.$group_id;
-				delete group.$set.$token;
-			}
-
-			//catch missing token
-			if ((!group.$token) && config.token) group.$token = config.token;
-
-			//catch group key
-			if ((!group.$group_key) && config.groupKey) group.$group_key = config.groupKey;
-
-			return group;
-		};
-	}
-
-}
-
 
 /*
 ----
@@ -829,12 +715,10 @@ WORDS
 */
 
 const banner = String.raw`
-        .__                                   .__      .__                              __   
-  _____ |__|__  ______________    ____   ____ |  |     |__| _____ ______   ____________/  |_ 
- /     \|  \  \/  /\____ \__  \  /    \_/ __ \|  |     |  |/     \\____ \ /  _ \_  __ \   __\
-|  Y Y  \  |>    < |  |_> > __ \|   |  \  ___/|  |__   |  |  Y Y  \  |_> >  <_> )  | \/|  |  
-|__|_|  /__/__/\_ \|   __(____  /___|  /\___  >____/   |__|__|_|  /   __/ \____/|__|   |__|  
-      \/         \/|__|       \/     \/     \/                  \/|__|                       
+            __             ___                  __   __   __  ___ 
+|\/| | \_/ |__)  /\  |\ | |__  |       |  |\/| |__) /  \ |__)  |  
+|  | | / \ |    /~~\ | \| |___ |___    |  |  | |    \__/ |  \  |  
+																  
 ... streamer of data... to mixpanel!
   by AK
   ak@mixpanel.com
@@ -921,13 +805,12 @@ CYA
 ---
 */
 
+//for some reason, vscode throws this when --inspect is on...
 process.on('uncaughtException', (err) => {
-	console.error(`\nUNCAUGHT FAILURE!\n\n${err.stack}\n\n${err.message}`);
-	debugger;
+	l(`\nFAILURE!\n\n${err.stack}\n\n${err.message}`);
 });
 
 
 process.on('unhandledRejection', (err) => {
-	console.error(`\nUNHANDLED REJECTION!\n\n${err.stack}\n\n${err.message}`);
-	debugger;
+	l(`\nREJECTION!\n\n${err.stack}\n\n${err.message}`);
 });

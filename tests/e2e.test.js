@@ -37,6 +37,7 @@ const folderjson = `./testData/multijson`;
 const moarEvents = require('../testData/moarEvents.json');
 const moarPpl = require('../testData/tenkppl.json');
 const eventNinetyNine = require('../testData/events-nine.json');
+const twoFiftyK = `./testData/big.ndjson`
 
 
 const opts = {
@@ -163,5 +164,15 @@ describe('object streams', () => {
 		expect(results.duration).toBeGreaterThan(0);	
 	});
 	streamInMem.pipe(mpStream)		
+	})
+})
+
+
+describe('big files', () => { 
+	test('250k events', async () => { 
+		const data = await mp({}, twoFiftyK, { ...opts, streamFormat: `jsonl` });		
+		expect(data.success).toBe(250000);
+		expect(data.failed).toBe(0);
+		expect(data.duration).toBeGreaterThan(0);
 	})
 })
