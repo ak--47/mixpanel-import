@@ -263,7 +263,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false, existingConfig) 
 	const l = logger(config);
 	l(hero.concat(banner));
 	global.l = l;
-
+	
 	// ETL
 	config.timer.start();
 	const streams = await determineData(data || cliData, config); // always stream[]
@@ -429,7 +429,7 @@ function getEnvVars() {
 
 function getCLIParams() {
 	//! not working!
-	require('yargonaut')
+	require('@jercle/yargonaut')
 		.style('blue')
 		.helpStyle('green')
 		.errorsStyle('red');
@@ -552,6 +552,10 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 		})
 		.help()
 		.argv;
+	if (args._.length === 0) {
+		yargs.showHelp();
+		process.exit()
+	}
 	return args;
 }
 
@@ -835,6 +839,7 @@ WORDS
 */
 
 const hero = String.raw`
+
             __             ___                  __   __   __  ___ 
 |\/| | \_/ |__)  /\  |\ | |__  |       |  |\/| |__) /  \ |__)  |  
 |  | | / \ |    /~~\ | \| |___ |___    |  |  | |    \__/ |  \  |  
