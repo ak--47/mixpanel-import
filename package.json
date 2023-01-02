@@ -11,14 +11,15 @@
     "server",
     "CLI"
   ],
-  "scripts": {
-    "cli": "nodemon --inspect --ignore ./testData scratch.js --ignore ./logs foo.ndjson bar.ndjson --project 1234 --acct cliService --pass cliPass --secret cliSec --token cliToken --table lookuptableId --group grpKey --recordType event --compress --strict --logs --fixData --streamFormat strFrmt --streamSize 42 --region reg --recordsPerBatch 999999 --bytesPerBatch 9999",
+  "scripts": {   
     "dev": "nodemon --inspect --ignore ./testData scratch.js --ignore ./logs",
     "post": "npm publish",
     "import": "node index.js",
     "generate": "NUMEVENTS=9999 SINCEDAYS=30 node generateFakeData.js",
     "prune logs": "rm -rf ./logs/*",
-    "test": "jest --watch"
+    "test": "jest --watch",
+	"cliTest": "node index.js ./testData/moarEvents.json",
+	"cliHelp": "node index.js --help"
   },
   "bin": {
     "mixpanel-import": "./index.js"

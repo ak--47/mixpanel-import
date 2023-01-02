@@ -242,7 +242,7 @@ CORE
  * @param {boolean} isCLI 
  * @returns API reciepts of imported data
  */
-async function main(creds = {}, data = null, opts = {}, isCLI = false, existingConfig) {
+async function main(creds = {}, data, opts = {}, isCLI = false, existingConfig) {
 	track('run', { runId });
 	let config = {};
 	let cliData = {};
@@ -262,7 +262,7 @@ async function main(creds = {}, data = null, opts = {}, isCLI = false, existingC
 
 	if (isCLI) config.verbose = true;
 	const l = logger(config);
-	l(banner);
+	l(hero.concat(banner));
 	global.l = l;
 
 	// ETL
@@ -274,7 +274,7 @@ async function main(creds = {}, data = null, opts = {}, isCLI = false, existingC
 		}
 
 		catch (e) {
-			l(`ERROR: ${e.message}`)
+			l(`ERROR: ${e.message}`);
 		}
 	}
 	l('\n');
@@ -282,6 +282,7 @@ async function main(creds = {}, data = null, opts = {}, isCLI = false, existingC
 	// clean up
 	config.timer.end(false);
 	const summary = config.summary();
+	l(`import complete in ${summary.human}`);
 	if (config.logs) await writeLogs(summary);
 	return summary;
 }
@@ -430,6 +431,96 @@ function getEnvVars() {
 function getCLIParams() {
 	// todo
 	const args = yargs(process.argv.splice(2))
+		.scriptName("mixpanel-import")
+		.usage('npx $0 --yes file [options]\n\nex:\nnpx $0 --yes ./events.ndjson --secret 1234 --streamFormat jsonl')
+		.command('$0', 'import data to mixpanel', () => { })
+		.option("project", {
+			demandOption: false,
+			describe: 'mixpanel project id',
+			type: 'number'
+		}).option("acct", {
+			demandOption: false,
+			describe: 'service account username',
+			type: 'string'
+		}).option("pass", {
+			demandOption: false,
+			describe: 'service account password',
+			type: 'string'
+		}).option("secret", {
+			demandOption: false,
+			describe: 'project API secret (deprecated auth)',
+			type: 'string'
+		}).option("token", {
+			demandOption: false,
+			describe: 'project token',
+			type: 'string'
+		}).option("table", {
+			demandOption: false,
+			describe: "existing lookup table's key",
+			type: 'string'
+		}).option("group", {
+			demandOption: false,
+			describe: 'the group analytics group key',
+			type: 'string'
+		}).option("recordType", {
+			demandOption: false,
+			alias: "type",
+			default: 'event',
+			describe: 'event or user or group or table',
+			type: 'string'
+		}).option("compress", {
+			demandOption: false,
+			alias: "gzip",
+			default: false,
+			describe: 'gzip on egress (events only)',
+			type: 'boolean'
+		}).option("strict", {
+			demandOption: false,
+			default: true,
+			describe: 'use strict mode when sending events',
+			type: 'boolean'
+		}).option("logs", {
+			demandOption: false,
+			default: true,
+			describe: 'log import results to file',
+			type: 'boolean'
+		}).option("verbose", {
+			demandOption: false,
+			default: true,
+			describe: 'show progress bar and debug messages',
+			type: 'boolean'
+		}).option("fixData", {
+			demandOption: false,
+			default: false,
+			describe: 'apply transforms to fix common mistakes',
+			type: 'boolean'
+		}).option("streamFormat", {
+			demandOption: false,
+			default: 'jsonl',
+			describe: 'either json or jsonl',
+			type: 'string'
+		}).option("streamSize", {
+			demandOption: false,
+			default: 27,
+			describe: '2^n value of highWaterMark',
+			type: 'number'
+		}).option("region", {
+			demandOption: false,
+			default: 'US',
+			describe: 'either US or EU',
+			type: 'string'
+		}).option("recordsPerBatch", {
+			demandOption: false,
+			default: 2000,
+			describe: 'how many records in each request?',
+			type: 'number'
+		}).option("bytesPerBatch", {
+			demandOption: false,
+			default: 1024*1024*2,
+			describe: 'max size (on disk) of each batch',
+			type: 'number'
+		})
+		.help()
 		.argv;
 	return args;
 }
@@ -528,12 +619,11 @@ async function determineData(data, config) {
 
 		//file case
 		if (fileOrDir.isFile()) {
-			if (config.streamFormat === 'jsonl' || config.lineByLineFileExt.includes(path.extname(data))) {
-				return itemStream(path.resolve(data), "jsonl");
-			}
-
 			if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(data))) {
 				return itemStream(path.resolve(data), "json");
+			}
+			if (config.streamFormat === 'jsonl' || config.lineByLineFileExt.includes(path.extname(data))) {
+				return itemStream(path.resolve(data), "jsonl");
 			}
 		}
 
@@ -602,9 +692,9 @@ function existingStream(stream) {
 			push(null, JSON.parse(line));
 		});
 		rl.on('close', () => {
-			next()
+			next();
 			push(null, _.nil); //end of stream
-			
+
 		});
 	};
 
@@ -714,12 +804,13 @@ WORDS
 -----
 */
 
-const banner = String.raw`
+const hero = String.raw`
             __             ___                  __   __   __  ___ 
 |\/| | \_/ |__)  /\  |\ | |__  |       |  |\/| |__) /  \ |__)  |  
 |  | | / \ |    /~~\ | \| |___ |___    |  |  | |    \__/ |  \  |  
-																  
-... streamer of data... to mixpanel!
+`;
+const banner = `																  
+... streamer of data... to mixpanel! (v${process.env.npm_package_version})
   by AK
   ak@mixpanel.com
 `;
@@ -795,7 +886,6 @@ mpImport.createMpStream = pipeInterface;
 // * this allows the program to run as a CLI
 // todo
 if (require.main === module) {
-	console.log(banner);
 	main(undefined, undefined, undefined, true).then(() => { console.log('\nFINISHED!\n'); });
 }
 
