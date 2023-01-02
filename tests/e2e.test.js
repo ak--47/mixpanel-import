@@ -153,15 +153,15 @@ describe('file streams', () => {
 	});
 })
 
-// ! not working!
-// describe('object streams', () => { 
-// 	test('events', () => { 
-// 	const streamInMem = new Readable.from(eventNinetyNine, { objectMode: true });
-// 	const mpStream = createMpStream({}, { ...opts }, (err, results)=> {
-// 		expect(results.success).toBe(1860);
-// 		expect(results.failed).toBe(0);
-// 		expect(results.duration).toBeGreaterThan(0);	
-// 	});
-// 	streamInMem.pipe(mpStream)		
-// 	})
-// })
+
+describe('object streams', () => { 
+	test('events', () => { 
+	const streamInMem = new Readable.from(eventNinetyNine, { objectMode: true });
+	const mpStream = createMpStream({}, { ...opts }, (err, results)=> {
+		expect(results.success).toBe(9999);
+		expect(results.failed).toBe(0);
+		expect(results.duration).toBeGreaterThan(0);	
+	});
+	streamInMem.pipe(mpStream)		
+	})
+})

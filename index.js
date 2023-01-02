@@ -285,16 +285,23 @@ CORE
  * @param {boolean} isCLI 
  * @returns API reciepts of imported data
  */
-async function main(creds = {}, data = null, opts = {}, isCLI = false) {
-	// gathering params
-	const envVar = getEnvVars();
-	let cli = {};
+async function main(creds = {}, data = null, opts = {}, isCLI = false, existingConfig) {
+	let config = {};
 	let cliData = {};
-	if (isCLI) {
-		cli = getCLIParams();
-		cliData = cli._[0];
+	if (existingConfig) {
+		config = existingConfig;
 	}
-	const config = new importJob({ ...envVar, ...cli, ...creds }, { ...envVar, ...cli, ...opts });
+	else {
+		// gathering params
+		const envVar = getEnvVars();
+		let cli = {};		
+		if (isCLI) {
+			cli = getCLIParams();
+			cliData = cli._[0];
+		}
+		config = new importJob({ ...envVar, ...cli, ...creds }, { ...envVar, ...cli, ...opts });
+	}
+	
 	if (isCLI) config.verbose = true;
 	const l = logger(config);
 	l(banner);
@@ -330,77 +337,68 @@ async function main(creds = {}, data = null, opts = {}, isCLI = false) {
  */
 function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 
-	// ! WORKS BUT DOESN'T FORWARD
-	const envVar = getEnvVars();
-	const config = new importJob({...envVar, ...creds}, {...envVar, ...opts});
-	const passThrough = new stream.PassThrough({objectMode: true});
-	const pipeline = corePipeline(passThrough, config, true)
-	passThrough.on('finish', () => {
-		finish(null, config.summary());
-	});
-	return passThrough;
-	
+	// // ! WORKS BUT DOESN'T FORWARD
+	// const envVar = getEnvVars();
+	// const config = new importJob({...envVar, ...creds}, {...envVar, ...opts});
+	// const passThrough = new stream.Transform({objectMode: true});
+	// const pipeline = corePipeline(passThrough, config, true)
+	// passThrough.pipe(pipeline)
+	// passThrough.on('finish', () => {
+	// 	finish(null, config.summary());
+	// });
+	// return passThrough;
+
 
 	// ! WORKS BUT IS WEIRD
+	const envVar = getEnvVars();
+	const config = new importJob({ ...envVar, ...creds }, { ...envVar, ...opts });
+	const { recordsPerBatch = 2000 } = opts;
+	config.logs = false;
+	config.verbose = false;
 
-	// const { recordsPerBatch = 2000 } = opts;
-	// opts.verbose = false;
-	// const logs = [];
-	// let recordsProcessed = 0;
-	// let batchesSent = 0;
+	const extStream = new stream.Transform({ objectMode: true, highWaterMark: recordsPerBatch });
+	extStream.batch = [];
 
-	// const interface = new stream.Transform({ objectMode: true, highWaterMark: recordsPerBatch });
-	// interface.batch = [];
+	extStream.on('finish', () => {
+		finish(null, config.summary());
+	});
 
-	// interface.on('finish', () => {
-	// 	finish(null, logs);
-	// });
+	extStream._transform = (data, encoding, callback) => {
+		extStream.batch.push(data);
+		if (extStream.batch.length === recordsPerBatch) {
+			main(null, extStream.batch, null, false, config).then((results) => {
+				extStream.batch = [];
+				callback(null, [...results.responses.slice(-1), ...results.errors.slice(-1)]);
+			});
+		}
 
-	// interface._transform = (data, encoding, callback) => {
-	// 	recordsProcessed++;
-	// 	showProgress(opts.recordType, recordsProcessed, batchesSent);
-	// 	interface.batch.push(data);
-	// 	if (interface.batch.length >= recordsPerBatch) {
-	// 		main(creds, interface.batch, opts, false).then((results) => {
-	// 			batchesSent++;
-	// 			logs.push(results);
-	// 			interface.batch = [];
-	// 			callback(null, results);
-	// 		});
-	// 	}
-	// 	else {
-	// 		callback();
-	// 	}
-	// };
+		else {
+			callback();
+		}
+	};
 
-	// interface._flush = function (callback) {
-	// 	if (interface.batch.length) {
-	// 		interface.push(interface.batch);
-	// 		//data is still left in the stream; flush it!
-	// 		main(creds, interface.batch, opts, false).then((results) => {
-	// 			batchesSent++;
-	// 			showProgress(opts.recordType, recordsProcessed, batchesSent);
-	// 			logs.push(results);
-	// 			interface.batch = [];
-	// 			callback(null, results);
-	// 		});
+	extStream._flush = function (callback) {
+		if (extStream.batch.length) {
+			extStream.push(extStream.batch);
+			//data is still left in the stream; flush it!
+			main(null, extStream.batch, null, false, config).then((results) => {
+				extStream.batch = [];
+				callback(null, [...results.responses.slice(-1), ...results.errors.slice(-1)]);
+			});
 
-	// 		interface.batch = [];
-	// 	}
+			extStream.batch = [];
+		}
 
-	// 	else {
-	// 		batchesSent++;
-	// 		callback(null);
-	// 	}
-	// };
+		else {
+			callback(null);
+		}
+	};
 
-	// return interface;
+	return extStream;
 
 }
 
-async function corePipeline(stream, config, isPipe = false) {
-	// todo ERROR HANDLING
-
+async function corePipeline(stream, config) {
 
 	if (config.recordType === 'table') return await flushLookupTable(stream, config);
 
@@ -433,17 +431,12 @@ async function corePipeline(stream, config, isPipe = false) {
 		// * errors
 		.errors((e) => {
 			debugger;
-		})
+		});
 
-		// * consume stream
-		.collect();
-	
-	if (isPipe) return pipeline.toNodeStream({objectMode: true})
 
-	return Promise.all(await pipeline.toPromise(Promise));
+	return Promise.all(await pipeline.collect().toPromise(Promise));
 
 }
-
 
 
 /*
@@ -617,6 +610,13 @@ async function determineData(data, config) {
 
 }
 
+async function flushLookupTable(stream, config) {
+	const res = await flushToMixpanel(stream, config);
+	config.recordsProcessed = stream.split('\n').length - 1;
+	config.success = config.recordsProcessed;
+	return res;
+}
+
 function existingStream(stream) {
 	const rl = readline.createInterface({
 		input: stream,
@@ -635,7 +635,6 @@ function existingStream(stream) {
 	return generator;
 }
 
-
 function itemStream(filePath, type = "jsonl") {
 	let stream;
 	if (Array.isArray(filePath)) {
@@ -646,15 +645,8 @@ function itemStream(filePath, type = "jsonl") {
 	}
 
 	//use the right parser based on the type of file
-	const parser = type === "jsonl" ? jsonlParser : StreamArray.withParser
+	const parser = type === "jsonl" ? jsonlParser : StreamArray.withParser;
 	return stream.map(s => s.pipe(parser()).map(token => token.value));
-}
-
-async function flushLookupTable(stream, config) {
-	const res = await flushToMixpanel(stream, config);
-	config.recordsProcessed = stream.split('\n').length - 1;
-	config.success = config.recordsProcessed;
-	return res;
 }
 
 function chunkForSize(config) {
