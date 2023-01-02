@@ -11,15 +11,15 @@
     "server",
     "CLI"
   ],
-  "scripts": {   
+  "scripts": {
     "dev": "nodemon --inspect --ignore ./testData scratch.js --ignore ./logs",
     "post": "npm publish",
     "import": "node index.js",
     "generate": "NUMEVENTS=9999 SINCEDAYS=30 node generateFakeData.js",
     "prune logs": "rm -rf ./logs/*",
     "test": "jest --watch",
-	"cliTest": "node index.js ./testData/moarEvents.json",
-	"cliHelp": "node index.js --help"
+    "cliTest": "node index.js ./testData/moarEvents.json",
+    "cliHelp": "node index.js --help"
   },
   "bin": {
     "mixpanel-import": "./index.js"
@@ -45,6 +45,7 @@
     "papaparse": "^5.3.2",
     "stream-json": "^1.7.4",
     "underscore": "^1.13.2",
+    "yargonaut": "^1.1.4",
     "yargs": "^17.6.2"
   },
   "devDependencies": {

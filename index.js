@@ -37,8 +37,7 @@ const https = require('https');
 const path = require('path');
 const fs = require('fs');
 
-// * CLI
-const yargs = require('yargs');
+// * env
 require('dotenv').config();
 
 // * utils
@@ -429,95 +428,126 @@ function getEnvVars() {
 }
 
 function getCLIParams() {
-	// todo
+	//! not working!
+	require('yargonaut')
+		.style('blue')
+		.helpStyle('green')
+		.errorsStyle('red');
+	const yargs = require('yargs');
 	const args = yargs(process.argv.splice(2))
 		.scriptName("mixpanel-import")
-		.usage('npx $0 --yes file [options]\n\nex:\nnpx $0 --yes ./events.ndjson --secret 1234 --streamFormat jsonl')
+		.usage(`${hero.concat(banner)}
+		
+usage:\nnpx $0 --yes [file or folder] [options]
+
+ex:
+npx $0 --yes ./events.ndjson --secret 1234 --format jsonl
+npx $0 --yes ./pathToData/ --secret 1234 --format json
+
+DOCS: https://github.com/ak--47/mixpanel-import`)
 		.command('$0', 'import data to mixpanel', () => { })
 		.option("project", {
 			demandOption: false,
 			describe: 'mixpanel project id',
 			type: 'number'
-		}).option("acct", {
+		})
+		.option("acct", {
 			demandOption: false,
 			describe: 'service account username',
 			type: 'string'
-		}).option("pass", {
+		})
+		.option("pass", {
 			demandOption: false,
 			describe: 'service account password',
 			type: 'string'
-		}).option("secret", {
+		})
+		.option("secret", {
 			demandOption: false,
 			describe: 'project API secret (deprecated auth)',
 			type: 'string'
-		}).option("token", {
+		})
+		.option("token", {
 			demandOption: false,
 			describe: 'project token',
 			type: 'string'
-		}).option("table", {
+		})
+		.option("table", {
 			demandOption: false,
 			describe: "existing lookup table's key",
 			type: 'string'
-		}).option("group", {
+		})
+		.option("group", {
 			demandOption: false,
 			describe: 'the group analytics group key',
 			type: 'string'
-		}).option("recordType", {
+		})
+		.option("type", {
 			demandOption: false,
-			alias: "type",
+			alias: "recordType",
 			default: 'event',
-			describe: 'event or user or group or table',
+			describe: 'event, user, group, or table',
 			type: 'string'
-		}).option("compress", {
+		})
+		.option("compress", {
 			demandOption: false,
 			alias: "gzip",
 			default: false,
-			describe: 'gzip on egress (events only)',
+			describe: 'gzip on egress',
 			type: 'boolean'
-		}).option("strict", {
+		})
+		.option("strict", {
 			demandOption: false,
 			default: true,
-			describe: 'use strict mode when sending events',
+			describe: '/import strict mode',
 			type: 'boolean'
-		}).option("logs", {
+		})
+		.option("logs", {
 			demandOption: false,
 			default: true,
 			describe: 'log import results to file',
 			type: 'boolean'
-		}).option("verbose", {
+		})
+		.option("verbose", {
 			demandOption: false,
 			default: true,
-			describe: 'show progress bar and debug messages',
+			describe: 'show progress bar',
 			type: 'boolean'
-		}).option("fixData", {
+		})
+		.option("streamFormat", {
 			demandOption: false,
-			default: false,
-			describe: 'apply transforms to fix common mistakes',
-			type: 'boolean'
-		}).option("streamFormat", {
-			demandOption: false,
+			alias: 'format',
 			default: 'jsonl',
 			describe: 'either json or jsonl',
 			type: 'string'
-		}).option("streamSize", {
-			demandOption: false,
-			default: 27,
-			describe: '2^n value of highWaterMark',
-			type: 'number'
-		}).option("region", {
+		})
+		.option("region", {
 			demandOption: false,
 			default: 'US',
 			describe: 'either US or EU',
 			type: 'string'
-		}).option("recordsPerBatch", {
+		})
+		.option("fixData", {
+			demandOption: false,
+			default: false,
+			describe: 'fix common mistakes',
+			type: 'boolean'
+		})
+		.option("streamSize", {
+			demandOption: false,
+			default: 27,
+			describe: '2^n value of highWaterMark',
+			type: 'number'
+		})
+		.option("recordsPerBatch", {
 			demandOption: false,
 			default: 2000,
-			describe: 'how many records in each request?',
+			describe: '# records in each request',
 			type: 'number'
-		}).option("bytesPerBatch", {
+		})
+		.option("bytesPerBatch", {
 			demandOption: false,
-			default: 1024*1024*2,
-			describe: 'max size (on disk) of each batch',
+			default: '2MB',
+			describe: 'max size of each request',
 			type: 'number'
 		})
 		.help()
@@ -810,68 +840,9 @@ const hero = String.raw`
 |  | | / \ |    /~~\ | \| |___ |___    |  |  | |    \__/ |  \  |  
 `;
 const banner = `																  
-... streamer of data... to mixpanel! (v${process.env.npm_package_version})
+... streamer of data... to mixpanel! (v${process.env.npm_package_version || 2})
   by AK
   ak@mixpanel.com
-`;
-
-
-const helpText = `
-QUICK USAGE:
-
-$ echo 'MP_SECRET=your-project-secret' > .env
-$ mixpanel-import ./pathToData
-
-pathToData can be a .json, .jsonl, .ndjson, or .txt file OR a directory which contains said files.
-
---project [pid] 
---acct [serviceAcct] 
---pass [servicePass] 
---secret [secret] 
---token [token] 
---type [recordType] 
---table [lookuptableId] 
---group [groupKey] 
---recordType [event, user, group, table] 
---compress 
---strict 
---logs 
---fixData 
---streamFormat [jsonl] 
---streamSize [27] 
---region [US] 
---recordsPerBatch [2000] 
---bytesPerBatch [1024*1024*8]
-
-CONFIGURE:
-
-for more options, require() as a module:
-
-$ npm npm i mixpanel-import --save
-const mpImport  =  require('mixpanel-import') 
-const importedData = await mpImport(creds, data, options);
-
-const creds = {
-	acct: 'my-servce-acct',
-	pass: 'my-service-seccret', 
-	project: 'my-project-id', 
-	token: 'my-project-token'  
-}
-
-const options = {
-	recordType: "event", //event, user, OR group
-	streamSize: 27, 
-	region: "US", //US or EU
-	recordsPerBatch: 2000, 
-	bytesPerBatch: 2 * 1024 * 1024, 
-	strict: true, 
-	logs: false,
-	fixData: false, //apply simple transforms 
-	streamFormat: 'json', //or jsonl	
-	transformFunc: function noop(a) { return a } //called on every record
-}
-
-DOCS: https://github.com/ak--47/mixpanel-import    
 `;
 
 /*
