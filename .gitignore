@@ -13,3 +13,4 @@ testData/*
 logs/*
 !logs/.gitkeep
 test.js
+quick.js

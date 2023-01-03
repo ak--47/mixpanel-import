@@ -12,5 +12,8 @@
         "ecmaVersion": "latest"
     },
     "rules": {
-    }
+    },
+	"globals": {
+		"l" : true
+	}
 }
