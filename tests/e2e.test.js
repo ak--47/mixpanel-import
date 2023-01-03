@@ -18,7 +18,7 @@ unzip it in ./testData
 /* eslint-disable no-debugger */
 /* eslint-disable no-unused-vars */
 require('dotenv').config();
-
+const { execSync } = require("child_process");
 
 
 
@@ -28,8 +28,8 @@ const { createReadStream } = require('fs');
 const { Readable, Transform, Writable, PassThrough } = require('stream');
 const u = require('ak-tools');
 
-const people = `./testData/people.ndjson`;
 const events = `./testData/events.ndjson`;
+const people = `./testData/people.ndjson`;
 const groups = `./testData/groups.ndjson`;
 const table = `./testData/table.csv`;
 const folderjsonl = `./testData/multi`;
@@ -169,10 +169,43 @@ describe('object streams', () => {
 
 
 describe('big files', () => { 
+	jest.setTimeout(10000)
 	test('250k events', async () => { 
 		const data = await mp({}, twoFiftyK, { ...opts, streamFormat: `jsonl` });		
 		expect(data.success).toBe(250000);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
 	})
+})
+
+describe('cli', () => { 
+	test('events', async () => { 
+		const output =  execSync(`node ./index.js ${events} --fixData`).toString().trim().split('\n').pop();
+		const result = await u.load(output, true);
+		expect(result.success).toBe(5003)
+	})
+
+
+	test('users', async () => { 
+		const output =  execSync(`node ./index.js ${people} --type user --fixData`).toString().trim().split('\n').pop();
+		const result = await u.load(output, true);
+		expect(result.success).toBe(5000)
+	})
+
+
+	test('groups', async () => { 
+		const output =  execSync(`node ./index.js ${groups} --type group --fixData`).toString().trim().split('\n').pop();
+		const result = await u.load(output, true);
+		expect(result.success).toBe(1860)
+	})
+
+	// test('tables', async () => { 
+	// 	const output =  execSync(`node ./index.js ${table} --type table --fixData`).toString().trim().split('\n').pop();
+	// 	const result = await u.load(output, true);
+	// 	expect(result.success).toBe(5003)
+	// })
+})
+
+afterAll(async ()=>{
+	execSync(`npm run prune`)
 })
