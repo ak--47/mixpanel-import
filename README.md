@@ -243,9 +243,9 @@ const options = {
 ##### cli options
 
 ```
-	option, alias			description					default
-	-----------------------------------------------------------
-  --type, --recordType      event/user/group/table		"event"
+option, alias			description		default
+----------------------------------------------------------------
+  --type, --recordType      event/user/group/table	"event"
   --compress, --gzip        gzip on egress             	false
   --strict                  /import strict mode         true
   --logs                    log import results to file  true
