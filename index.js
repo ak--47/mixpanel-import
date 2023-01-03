@@ -1,15 +1,13 @@
 #! /usr/bin/env node
 
-
-// mixpanel-import
-// by AK
-// purpose: stream events, users, groups, tables into mixpanel... with best practices!
-
-// todos:
 /*
-- CLI interface
-- docs
+----
+MIXPANEL IMPORT
+by AK
+purpose: stream events, users, groups, tables into mixpanel... with best practices!
+----
 */
+
 
 /*
 -----
@@ -67,7 +65,7 @@ CONFIG
 */
 class importJob {
 	constructor(creds, opts) {
-		// * credentials
+		// ? credentials
 		this.acct = creds.acct || ``; //service acct username
 		this.pass = creds.pass || ``; //service acct secret
 		this.project = creds.project || ``; //project id
@@ -77,52 +75,52 @@ class importJob {
 		this.groupKey = creds.groupKey || ``; //group key id
 		this.auth = this.resolveProjInfo();
 
-		// * string options
+		// ? string options
 		this.recordType = opts.recordType || `event`; // event, user, group or table		
 		this.streamFormat = opts.streamFormat || ''; // json or jsonl ... only relevant for streams
 		this.region = opts.region || `US`; // US or EU
 
-		// * number options
+		// ? number options
 		this.streamSize = opts.streamSize || 27; // power of 2 for highWaterMark in stream  (default 134 MB)		
 		this.recordsPerBatch = opts.recordsPerBatch || 2000; // records in each req; max 2000 (200 for groups)
 		this.bytesPerBatch = opts.bytesPerBatch || 2 * 1024 * 1024; // max bytes in each req
 
-		// * transform options
+		// ? transform options
 		this.transformFunc = opts.transformFunc || function noop(a) { return a; }; //will be called on every record
 
-		// * boolean options
+		// ? boolean options
 		this.compress = u.is(undefined, opts.compress) ? false : opts.compress; //gzip data (events only)
 		this.strict = u.is(undefined, opts.strict) ? true : opts.strict; // use strict mode?
 		this.logs = u.is(undefined, opts.logs) ? true : opts.logs; // print to stdout?
 		this.verbose = u.is(undefined, opts.verbose) ? true : opts.verbose;
 		this.fixData = u.is(undefined, opts.fixData) ? false : opts.fixData; //apply transforms on the data
 
-		// * counters
+		// ? counters
 		this.recordsProcessed = 0;
 		this.success = 0;
 		this.failed = 0;
 		this.retries = 0;
 		this.batches = 0;
 		this.requests = 0;
-		this.responses = [];
-		this.errors = [];
 		this.timer = u.time('etl');
 
-		// * request stuff
+		// ? requests
 		this.reqMethod = "POST";
 		this.contentType = "application/json";
 		this.encoding = "";
+		this.responses = [];
+		this.errors = [];
 
-		// ! apply EZ transforms
+		// ? transforms
 		if (this.fixData) transforms(this);
 
-		// ! fix plurals
+		// ? allow plurals
 		if (this.recordType === 'events') this.recordType === 'event';
 		if (this.recordType === 'users') this.recordType === 'user';
 		if (this.recordType === 'groups') this.recordType === 'group';
 		if (this.recordType === 'tables') this.recordType === 'table';
 
-		//! apply correct headers
+		// ? headers for lookup tables
 		if (this.recordType === "table") {
 			this.reqMethod = 'PUT';
 			this.contentType = 'text/csv';
@@ -131,7 +129,8 @@ class importJob {
 
 	}
 
-	// * props
+	// ? props
+	version = this.getVersion();
 	supportedTypes = ['event', 'user', 'group', 'table'];
 	lineByLineFileExt = ['.txt', '.jsonl', '.ndjson'];
 	objectModeFileExt = ['.json'];
@@ -152,6 +151,7 @@ class importJob {
 
 	};
 
+	// ? get/set	
 	get type() {
 		return this.recordType;
 	}
@@ -168,7 +168,6 @@ class importJob {
 		const { acct, pass, project, secret, token, lookupTableId, groupKey, auth } = this;
 		return { acct, pass, project, secret, token, lookupTableId, groupKey, auth };
 	}
-
 	set batchSize(chunkSize) {
 		this.recordsPerBatch = chunkSize;
 	}
@@ -176,13 +175,19 @@ class importJob {
 		this.transformFunc = fn;
 	}
 
-
+	// ? methods
 	report() {
 		return Object.assign(this);
 	}
 	store(response, success = true) {
 		if (success) this.responses.push(response);
 		if (!success) this.errors.push(response);
+	}
+	getVersion() {
+		const { version } = require('./package.json');
+		if (version) return version;		
+		if (process.env.npm_package_version) return process.env.npm_package_version
+		return 'unknown'
 	}
 	resolveProjInfo() {
 		//preferred method: service acct
@@ -202,10 +207,11 @@ class importJob {
 
 	}
 	/**
-	 * a function to summerize the results of an import
-	 * @returns {...types.ImportResults}
+	 * summary of the results of an import
+	 * @param {boolean} includeResponses - should `errors` and `responses` be included in summary
+	 * @returns {types.ImportResults} `{success, failed, total, requests, duration}`
 	 */
-	summary() {
+	summary(includeResponses = true) {
 		const summary = {
 			success: this.success,
 			failed: this.failed,
@@ -214,10 +220,14 @@ class importJob {
 			recordType: this.recordType,
 			duration: this.timer.report(false).delta,
 			human: this.timer.report(false).human,
-			retries: 0,
-			responses: this.responses,
-			errors: this.errors
+			retries: this.retries,
+			version: this.version
 		};
+
+		if (includeResponses) {
+			summary.responses = this.responses;
+			summary.errors = this.errors;
+		}
 
 		return summary;
 	}
@@ -233,17 +243,17 @@ CORE
  * Mixpanel Importer
  * stream `events`, `users`, `groups`, and `tables` to mixpanel!
  * @example
- * // using promises
  * const mp = require('mixpanel-import')
  * const imported = await mp(creds, data, options)
- * @param {types.Creds} creds 
- * @param {types.Data} data 
- * @param {types.Options} opts 
- * @param {boolean} isCLI 
- * @returns API reciepts of imported data
+ * @param {types.Creds} creds - mixpanel project credentials
+ * @param {types.Data} data - data to import
+ * @param {types.Options} opts - import options
+ * @param {boolean} isCLI - `true` when run as CLI
+ * @param {importJob} existingConfig - used to recycle a config for `.pipe()` streams
+ * @returns {Promise<types.ImportResults>} API receipts of imported data
  */
 async function main(creds = {}, data, opts = {}, isCLI = false, existingConfig) {
-	track('run', { runId });
+	track('start', { runId });
 	let config = {};
 	let cliData = {};
 	if (existingConfig) {
@@ -265,16 +275,6 @@ async function main(creds = {}, data, opts = {}, isCLI = false, existingConfig) 
 	l(cliParams.welcome);
 	global.l = l;
 
-	//for some reason, vscode throws this when --inspect is on...
-	process.on('uncaughtException', (err) => {
-		l(`\nFAILURE!\n\n${err.stack}\n\n${err.message}`);
-	});
-
-
-	process.on('unhandledRejection', (err) => {
-		l(`\nREJECTION!\n\n${err.stack}\n\n${err.message}`);
-	});
-
 	// ETL
 	config.timer.start();
 	const streams = await determineData(data || cliData, config); // always stream[]
@@ -294,6 +294,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false, existingConfig) 
 	const summary = config.summary();
 	l(`import complete in ${summary.human}`);
 	if (config.logs) await writeLogs(summary);
+	track('end', { runId, ...config.summary(false) });
 	return summary;
 }
 
@@ -514,6 +515,7 @@ async function flushToMixpanel(batch, config) {
 async function determineData(data, config) {
 	// lookup tables are not streamed
 	if (config.recordType === 'table') {
+		if (fs.existsSync(path.resolve(data))) return [await u.load(data)];
 		return [data];
 	}
 
@@ -724,5 +726,15 @@ mpImport.createMpStream = pipeInterface;
 
 // * this allows the program to run as a CLI
 if (require.main === module) {
-	main(undefined, undefined, undefined, true).then(() => {  });
+	main(undefined, undefined, undefined, true).then(() => { });
 }
+
+//for some reason, vscode throws this when --inspect is on...
+process.on('uncaughtException', (err) => {
+	l(`\nFAILURE!\n\n${err.stack}\n\n${err.message}`);
+});
+
+
+process.on('unhandledRejection', (err) => {
+	l(`\nREJECTION!\n\n${err.stack}\n\n${err.message}`);
+});
