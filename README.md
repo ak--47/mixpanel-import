@@ -6,13 +6,13 @@
     
 ## wat.
 
-![stream events, users, and groups into mixpanel](https://aktunes.neocities.org/mixpanel-import.gif)
+![stream events, users, and groups into mixpanel](https://aktunes.neocities.org/bigImport.gif)
 
 This module is designed for streaming large amounts of event or object data to Mixpanel from a node.js environment. 
 
 It implements Mixpanel's  [`/import`](https://developer.mixpanel.com/reference/events#import-events),  [`/engage`](https://developer.mixpanel.com/reference/profile-set), [`/groups`](https://developer.mixpanel.com/reference/group-set-property), and [`/lookup`](https://developer.mixpanel.com/reference/replace-lookup-table) APIs, providing an interface to stream JSON/NDJSON files compliant with Mixpanel's [data model](https://developer.mixpanel.com/docs/data-structure-deep-dive).
 
-This utility is built with to provide high-throughput backfills, streaming larget sets of data into Mixpanel from cloud-based data pipelines where RETL is not available.
+This utility uses streams to provide high-throughput backfills, streaming larget sets of data into Mixpanel from cloud-based data pipelines where RETL is not available.
   
 
 ## tldr;
@@ -28,7 +28,19 @@ $ npx --yes mixpanel-import ./pathToData
 
 when running stand-alone, `pathToData` can be a `.json`, `.jsonl`, `.ndjson`, or `.txt` file OR a directory which contains said files.
 
-for CLI usage, you will also need to supply a [`.env` configuration file](#environment-variables) to provide your project credentials.
+for CLI usage, you may supply a [`.env` configuration file](#environment-variables) to provide your project credentials.
+
+alternatively you may specific credentials as params:
+
+```
+$ npx --yes mixpanel-import ./data --secret foo 
+```
+
+to see a full list of CLI params, run `--help` :
+
+```
+$ npx --yes mixpanel-import --help
+```
 
 the CLI will write response logs to a `./logs` directory by default.
 
@@ -47,16 +59,15 @@ console.log(importedData)
 /* 
 
 {
-	results: {
-		success: 5003,
-		failed: 0,
-		total: 5003,
-		batches: 3,
-		recordType: "event",
-		duration: 1.299,
-		retries: 0,
-	},
-	responses: [ ... ]    
+	success: 5003,
+	failed: 0,
+	total: 5003,
+	batches: 3,
+	recordType: "event",
+	duration: 1.299,
+	retries: 0,	
+	responses: [ ... ],
+	errors: [ ... ]    
 }
 
 */
@@ -126,7 +137,7 @@ MP_GROUP_KEY={{your-group-key}}
 # required for lookup tables
 MP_TABLE_ID={{your-lookup-id}}
 ```
-`.env` variables are **required** in [CLI mode](#cli-usage); in [non-CLI mode](#module-usage), pass `null` as the `creds` (first argument) to the module to use `.env` varaibles:
+note: pass `null` as the `creds` (first argument) to the module to use `.env` varaibles:
 
 ```javascript
 const importedData = await mpImport(null, data, options);
@@ -184,20 +195,20 @@ Below, the default values are given, but you can override them with your own val
 const options = {
 	recordType: `event`, // event, user, group or table
 	compress: false, //gzip payload on egress (events only)
-	streamSize: 27, // power of 2 for highWaterMark in stream
 	region: `US`, // US or EU
 	recordsPerBatch: 2000, // records in each req; max 2000 
 	bytesPerBatch: 2 * 1024 * 1024, // max bytes in each req
 	strict: true, // use strict mode
-	logs: false, // print logs to stdout
+	logs: false, // write results to a log file
+	verbose: true, // show progress bar
 	fixData: false, //apply transforms on the data to fix common mistakes
-	streamFormat: '', // json or jsonl ... only relevant for streams
+	streamFormat: 'jsonl', // json or jsonl ... only relevant for streams
 	
 	//will be called on every record
 	transformFunc: function noop(a) { return a; } 
 }
 ```
-**note**: the `recordType` param is very important; by default this module assumes you wish to import `event` records. change this value to `user`, `group`, or `table` if you are importing other entities. you may also specify the `recordType` as `MP_TYPE` in your [`.env` configuration](#environment-variables) when [using this module as a CLI](#cli-usage)
+**note**: the `recordType` param is very important; by default this module assumes you wish to import `event` records. change this value to `user`, `group`, or `table` if you are importing other entities. you may also specify the `recordType` as `MP_TYPE` in your [`.env` configuration](#environment-variables) or as a `--type` when [using this module as a CLI](#cli-usage)
 
 ## recipies
 the `transformFunc` is useful because it can preprocess records in the pipeline using arbitrary javascript. 

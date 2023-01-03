@@ -6,8 +6,8 @@ function cliParams() {
 		.usage(`${welcome}\n\nusage:\nnpx $0 --yes [file or folder] [options]
 
 ex:
-npx $0 --yes ./events.ndjson --secret 1234 --format jsonl
-npx $0 --yes ./pathToData/ --secret 1234 --type user --format json
+npx  --yes  $0 ./events.ndjson --secret 1234 --format jsonl
+npx  --yes  $0 ./pathToData/ --secret 1234 --type user --format json
 
 DOCS: https://github.com/ak--47/mixpanel-import`)
 		.command('$0', 'import data to mixpanel', () => { })
