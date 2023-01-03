@@ -6,7 +6,7 @@
 
 this module is designed for streaming large amounts of event or object data to Mixpanel from a node.js environment; it can backfill millions of events in seconds:
 
-![stream events, users, and groups into mixpanel](https://aktunes.neocities.org/bigImport.gif)
+![stream events, users, and groups into mixpanel](https://aktunes.neocities.org/mp-import.gif)
 
 `mixpanel-import` implements Mixpanel's [`/import`](https://developer.mixpanel.com/reference/events#import-events), [`/engage`](https://developer.mixpanel.com/reference/profile-set), [`/groups`](https://developer.mixpanel.com/reference/group-set-property), and [`/lookup`](https://developer.mixpanel.com/reference/replace-lookup-table) APIs, providing an interface to stream JSON (or NDJSON) files compliant with Mixpanel's [data model](https://developer.mixpanel.com/docs/data-structure-deep-dive).
 

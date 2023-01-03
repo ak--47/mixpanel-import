@@ -1,16 +1,6 @@
 const md5 = require('md5');
 
-function ezTransforms(config) {
-	//for group imports, ensure 200 max size
-	if (config.recordType === `group` && config.recordsPerBatch > 200) {
-		config.batchSize = 200;
-	}
-
-	//for user + event imports, ensure 2000 max size
-	if ((config.recordType === `user` || config.recordType === `event`) && config.recordsPerBatch > 2000) {
-		config.batchSize = 2000;
-	}
-
+function ezTransforms(config) {	
 	//for strict event imports, make every record has an $insert_id
 	if (config.recordType === `event` && config.transformFunc('A') === 'A') {
 		config.transform = function addInsertIfAbsent(event) {

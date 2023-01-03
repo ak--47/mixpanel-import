@@ -85,6 +85,11 @@ class importJob {
 		this.recordsPerBatch = opts.recordsPerBatch || 2000; // records in each req; max 2000 (200 for groups)
 		this.bytesPerBatch = opts.bytesPerBatch || 2 * 1024 * 1024; // max bytes in each req
 
+		// ? don't allow batches bigger than API limits
+		if (this.type === 'event' && this.recordsPerBatch > 2000) this.recordsPerBatch = 2000;
+		if (this.type === 'user' && this.recordsPerBatch > 2000) this.recordsPerBatch = 2000;
+		if (this.type === 'group' && this.recordsPerBatch > 200) this.recordsPerBatch = 200;
+
 		// ? transform options
 		this.transformFunc = opts.transformFunc || function noop(a) { return a; }; //will be called on every record
 
@@ -185,9 +190,9 @@ class importJob {
 	}
 	getVersion() {
 		const { version } = require('./package.json');
-		if (version) return version;		
-		if (process.env.npm_package_version) return process.env.npm_package_version
-		return 'unknown'
+		if (version) return version;
+		if (process.env.npm_package_version) return process.env.npm_package_version;
+		return 'unknown';
 	}
 	resolveProjInfo() {
 		//preferred method: service acct
@@ -414,31 +419,6 @@ async function corePipeline(stream, config) {
 	return Promise.all(await pipeline.collect().toPromise(Promise));
 
 }
-
-
-/*
-----------
-EXT PARAMS
-----------
-*/
-
-function getEnvVars() {
-	const envVars = pick(process.env, `MP_PROJECT`, `MP_ACCT`, `MP_PASS`, `MP_SECRET`, `MP_TOKEN`, `MP_TYPE`, `MP_TABLE_ID`, `MP_GROUP_KEY`);
-	const envKeyNames = {
-		MP_PROJECT: "project",
-		MP_ACCT: "acct",
-		MP_PASS: "pass",
-		MP_SECRET: "secret",
-		MP_TOKEN: "token",
-		MP_TYPE: "recordType",
-		MP_TABLE_ID: "lookupTableId",
-		MP_GROUP_KEY: "groupKey"
-	};
-	const envCreds = u.rnKeys(envVars, envKeyNames);
-
-	return envCreds;
-}
-
 
 
 /*
@@ -685,6 +665,23 @@ function chunkForSize(config) {
 			next();
 		}
 	};
+}
+
+function getEnvVars() {
+	const envVars = pick(process.env, `MP_PROJECT`, `MP_ACCT`, `MP_PASS`, `MP_SECRET`, `MP_TOKEN`, `MP_TYPE`, `MP_TABLE_ID`, `MP_GROUP_KEY`);
+	const envKeyNames = {
+		MP_PROJECT: "project",
+		MP_ACCT: "acct",
+		MP_PASS: "pass",
+		MP_SECRET: "secret",
+		MP_TOKEN: "token",
+		MP_TYPE: "recordType",
+		MP_TABLE_ID: "lookupTableId",
+		MP_GROUP_KEY: "groupKey"
+	};
+	const envCreds = u.rnKeys(envVars, envKeyNames);
+
+	return envCreds;
 }
 
 
