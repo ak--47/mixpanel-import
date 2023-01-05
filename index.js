@@ -726,12 +726,16 @@ if (require.main === module) {
 	main(undefined, undefined, undefined, true).then(() => { });
 }
 
-//for some reason, vscode throws this when --inspect is on...
-process.on('uncaughtException', (err) => {
-	l(`\nFAILURE!\n\n${err.stack}\n\n${err.message}`);
-});
+// //for some reason, vscode throws this when --inspect is on...
+// process.on('uncaughtException', (err) => {
+// 	if (global.l) {
+// 		l(`\nFAILURE!\n\n${err.stack}\n\n${err.message}`);
+// 	}
+// });
 
 
-process.on('unhandledRejection', (err) => {
-	l(`\nREJECTION!\n\n${err.stack}\n\n${err.message}`);
-});
+// process.on('unhandledRejection', (err) => {
+// 	if (global.l) {
+// 		l(`\nREJECTION!\n\n${err.stack}\n\n${err.message}`);
+// 	}
+// });
