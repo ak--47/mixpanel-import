@@ -1,4 +1,7 @@
 const yargs = require('yargs');
+const dayjs = require('dayjs');
+const dateFormat = `YYYY-MM-DD`;
+
 
 function cliParams() {
 	const args = yargs(process.argv.splice(2))
@@ -31,6 +34,11 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'project API secret (deprecated auth)',
 			type: 'string'
 		})
+		.option("bearer", {
+			demandOption: false,
+			describe: 'bearer token (staff auth)',
+			type: 'string'
+		})
 		.option("token", {
 			demandOption: false,
 			describe: 'project token',
@@ -50,7 +58,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			demandOption: false,
 			alias: "recordType",
 			default: 'event',
-			describe: 'event, user, group, or table',
+			describe: 'event, user, group, table, export, or peopleExport',
 			type: 'string'
 		})
 		.option("compress", {
@@ -115,6 +123,18 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'max size of each request',
 			type: 'number'
 		})
+		.option("start", {
+			demandOption: false,
+			default: dayjs().subtract(30, 'd').format(dateFormat),
+			describe: 'start date for exports',
+			type: 'string'
+		})
+		.option("end", {
+			demandOption: false,
+			default: dayjs().format(dateFormat),
+			describe: 'end date for exports',
+			type: 'string'
+		})	
 		.help()
 		.argv;
 	if (args._.length === 0) {

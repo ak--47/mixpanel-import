@@ -14,7 +14,7 @@
 
 /**
  * @typedef {Object} Options - import options
- * @property {('event' | 'user' | 'group' | 'table')} [recordType=event] - type of record to import (`event`, `user`, `group`, or `table`)
+ * @property {('event' | 'user' | 'group' | 'table' | 'export' | 'peopleExport')} [recordType=event] - type of record to import (`event`, `user`, `group`, or `table`)
  * @property {('US' | 'EU')} [region=US] - US or EU (data residency)
  * @property {('json' | 'jsonl')} [streamFormat] - format of underlying data stream; json or jsonl
  * @property {boolean} [compress=false] - use gzip compression (events only)

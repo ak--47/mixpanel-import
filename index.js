@@ -35,6 +35,7 @@ const https = require('https');
 const path = require('path');
 const fs = require('fs');
 
+
 // * env
 require('dotenv').config();
 const cliParams = require('./cli');
@@ -46,6 +47,9 @@ const track = u.tracker('mixpanel-import');
 const runId = u.uid(32);
 const { pick } = require('underscore');
 const { gzip } = require('node-gzip');
+const dayjs = require('dayjs');
+const dateFormat = `YYYY-MM-DD`;
+const { promisify } = require('util');
 
 
 /*
@@ -70,10 +74,28 @@ class importJob {
 		this.pass = creds.pass || ``; //service acct secret
 		this.project = creds.project || ``; //project id
 		this.secret = creds.secret || ``; //api secret (deprecated auth)
+		this.bearer = creds.bearer || ``;
 		this.token = creds.token || ``; //project token 
 		this.lookupTableId = creds.lookupTableId || ``; //lookup table id
 		this.groupKey = creds.groupKey || ``; //group key id
 		this.auth = this.resolveProjInfo();
+		this.ezTransform = function noop(a) { return a; };
+
+		//? dates
+		if (opts.start) {
+			this.start = dayjs(opts.start).format(dateFormat);
+		}
+		else {
+			this.start = dayjs().subtract(30, 'd').format(dateFormat);
+
+		}
+		if (opts.end) {
+			this.end = dayjs(opts.end).format(dateFormat);
+		}
+
+		else {
+			this.end = dayjs().format(dateFormat);
+		}
 
 		// ? string options
 		this.recordType = opts.recordType || `event`; // event, user, group or table		
@@ -116,8 +138,10 @@ class importJob {
 		this.responses = [];
 		this.errors = [];
 
-		// ? transforms
-		if (this.fixData) transforms(this);
+		// ? ezTransforms
+		if (this.fixData) {
+			this.ezTransform = transforms(this);
+		}
 
 		// ? allow plurals
 		if (this.recordType === 'events') this.recordType === 'event';
@@ -130,6 +154,11 @@ class importJob {
 			this.reqMethod = 'PUT';
 			this.contentType = 'text/csv';
 			this.fixData = false;
+		}
+
+		// ? headers for exports
+		if (this.recordType === "export") {
+			this.reqMethod = 'GET';
 		}
 
 	}
@@ -145,13 +174,17 @@ class importJob {
 			event: `https://api.mixpanel.com/import`,
 			user: `https://api.mixpanel.com/engage`,
 			group: `https://api.mixpanel.com/groups`,
-			table: `https://api.mixpanel.com/lookup-tables/`
+			table: `https://api.mixpanel.com/lookup-tables/`,
+			export: `https://data.mixpanel.com/api/2.0/export`,
+			peopleexport: `https://mixpanel.com/api/2.0/engage`
 		},
 		eu: {
 			event: `https://api-eu.mixpanel.com/import`,
 			user: `https://api-eu.mixpanel.com/engage`,
 			group: `https://api-eu.mixpanel.com/groups`,
-			table: `https://api-eu.mixpanel.com/lookup-tables/`
+			table: `https://api-eu.mixpanel.com/lookup-tables/`,
+			export: `https://data-eu.mixpanel.com/api/2.0/export`,
+			peopleexport: `https://eu.mixpanel.com/api/2.0/engage`
 		}
 
 	};
@@ -197,12 +230,16 @@ class importJob {
 	resolveProjInfo() {
 		//preferred method: service acct
 		if (this.acct && this.pass && this.project) {
-			return Buffer.from(this.acct + ':' + this.pass, 'binary').toString('base64');
+			return `Basic ${Buffer.from(this.acct + ':' + this.pass, 'binary').toString('base64')}`;
 		}
 
 		//fallback method: secret auth
 		else if (this.secret) {
-			return Buffer.from(this.secret + ':', 'binary').toString('base64');
+			return `Basic ${Buffer.from(this.secret + ':', 'binary').toString('base64')}`;
+		}
+
+		else if (this.bearer) {
+			return `Bearer ${this.bearer}`;
 		}
 
 		else {
@@ -232,6 +269,14 @@ class importJob {
 		if (includeResponses) {
 			summary.responses = this.responses;
 			summary.errors = this.errors;
+		}
+
+		if (this.file) {
+			summary.file = this.file
+		}
+
+		if (this.folder) {
+			summary.folder = this.folder
 		}
 
 		return summary;
@@ -297,7 +342,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false, existingConfig) 
 	// clean up
 	config.timer.end(false);
 	const summary = config.summary();
-	l(`import complete in ${summary.human}`);
+	l(`${config.type === 'export' ? 'export' : 'import'} complete in ${summary.human}`);
 	if (config.logs) await writeLogs(summary);
 	track('end', { runId, ...config.summary(false) });
 	return summary;
@@ -380,15 +425,25 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
  * @param {importJob} config 
  * @returns {Promise<types.ImportResults>} a promise
  */
-async function corePipeline(stream, config) {
+async function corePipeline(stream, config, streamInterface = false) {
 
 	if (config.recordType === 'table') return await flushLookupTable(stream, config);
+	if (config.recordType === 'export') return await exportEvents(stream, config);
+	if (config.recordType === 'peopleExport') return await exportProfiles(stream, config);
 
 	const pipeline = _(stream)
-		// * transform source data
+		// * transform source data w/user entered function
 		.map((data) => {
 			config.recordsProcessed++;
 			return config.transformFunc(data);
+		})
+
+		// * transform source data w/ezTransforms
+		.map((data) => {
+			if (config.fixData) {
+				return config.ezTransform(data);
+			}
+			return data;
 		})
 
 		// * batch for # of items
@@ -399,6 +454,7 @@ async function corePipeline(stream, config) {
 		.consume(chunkForSize(config))
 
 		// * send to mixpanel
+		// ! see https://github.com/caolan/highland/issues/290#issuecomment-96676999
 		.map(async (batch) => {
 			config.requests++;
 			const res = await flushToMixpanel(batch, config);
@@ -415,6 +471,9 @@ async function corePipeline(stream, config) {
 			throw e;
 		});
 
+	if (streamInterface) {
+		return pipeline.toNodeStream();
+	}
 
 	return Promise.all(await pipeline.collect().toPromise(Promise));
 
@@ -445,7 +504,7 @@ async function flushToMixpanel(batch, config) {
 			method: config.reqMethod,
 			retry: { limit: 50 },
 			headers: {
-				"Authorization": `Basic ${config.auth}`,
+				"Authorization": `${config.auth}`,
 				"Content-Type": config.contentType,
 				"Content-Encoding": config.encoding
 
@@ -492,7 +551,197 @@ async function flushToMixpanel(batch, config) {
 	}
 }
 
+async function exportEvents(filename, config) {
+	const pipeline = promisify(stream.pipeline);
+
+	const options = {
+		url: config.url,
+		searchParams: {
+			from_date: config.start,
+			to_date: config.end,
+			project_id: config.project,
+		},
+		method: config.reqMethod,
+		retry: { limit: 50 },
+		headers: {
+			"Authorization": `${config.auth}`
+
+		},
+		agent: {
+			https: new https.Agent({ keepAlive: true })
+		},
+		hooks: {
+			beforeRetry: [(err, count) => {
+				l(`retrying request...#${count}`);
+				config.retries++;
+			}]
+		},
+
+	};
+
+	const request = got.stream(options);
+
+	request.on('response', (res) => {
+		config.requests++;
+		config.responses.push({
+			status: res.statusCode,
+			ip: res.ip,
+			url: res.requestUrl,
+			...res.headers
+		});
+	});
+
+	request.on('error', (e) => {
+		config.failed++;
+		config.responses.push({
+			status: e.statusCode,
+			ip: e.ip,
+			url: e.requestUrl,
+			...e.headers,
+			message: e.message
+		});
+	});
+
+	request.on('downloadProgress', (progress) => {
+		downloadProgress(progress.transferred);
+	});
+
+	const exportedData = await pipeline(
+		request,
+		fs.createWriteStream(filename)
+	);
+
+	const lines = await countFileLines(filename);
+	config.recordsProcessed += lines;
+	config.success += lines;
+	config.file = filename;
+
+	return exportedData;
+}
+
+async function exportProfiles(folder, config) {
+	const auth = config.auth;
+	const allFiles = [];
+
+	let iterations = 0;
+	let fileName = `people-${iterations}.json`;
+	let file = path.resolve(`${folder}/${fileName}`);
+	const options = {
+		method: 'POST',
+		url: config.url,
+		headers: {
+			Authorization: auth
+		},
+		searchParams: {
+			project_id: config.project
+		},
+		responseType: 'json'
+	};
+
+	let request = await got(options).catch(e => {
+		config.failed++;
+		config.responses.push({
+			status: e.statusCode,
+			ip: e.ip,
+			url: e.requestUrl,
+			...e.headers,
+			message: e.message
+		});
+	});
+	let response = request.body;
+
+
+
+	//grab values for recursion
+	let { page, page_size, session_id } = response;
+	let lastNumResults = response.results.length;
+
+	// write first page of profiles
+	let profiles = response.results;
+	const firstFile = await u.touch(file, profiles, true);
+	let nextFile;
+	allFiles.push(firstFile);
+
+	//update config
+	config.recordsProcessed += profiles.length;
+	config.success += profiles.length;
+	config.requests++;
+	config.responses.push({
+		status: request.statusCode,
+		ip: request.ip,
+		url: request.requestUrl,
+		...request.headers
+	});
+
+	showProgress("profile", config.success, iterations + 1);
+
+
+	// recursively consume all profiles
+	// https://developer.mixpanel.com/reference/engage-query
+	while (lastNumResults >= page_size) {
+		page++;
+		iterations++;
+
+		fileName = `people-${iterations}.json`;
+		file = path.resolve(`${folder}/${fileName}`);
+		options.searchParams.page = page;
+		options.searchParams.session_id = session_id;
+
+		request = await got(options).catch(e => {
+			config.failed++;
+			config.responses.push({
+				status: e.statusCode,
+				ip: e.ip,
+				url: e.requestUrl,
+				...e.headers,
+				message: e.message
+			});
+		});
+		response = request.body;
+
+		//update config
+		config.requests++;
+		config.responses.push({
+			status: request.statusCode,
+			ip: request.ip,
+			url: request.requestUrl,
+			...request.headers
+		});
+		config.success += profiles.length;
+		config.recordsProcessed += profiles.length;
+		showProgress("profile", config.success, iterations + 1);
+
+		profiles = response.results;
+
+		nextFile = await u.touch(file, profiles, true);
+		allFiles.push(nextFile);
+
+		// update recursion
+		lastNumResults = response.results.length;
+
+	}
+
+	config.file = allFiles;
+	config.folder = folder;
+
+	return folder;
+
+}
+
 async function determineData(data, config) {
+	//exports are saved locally
+	if (config.recordType === 'export') {
+		const folder = u.mkdir('./mixpanel-exports');
+		const filename = path.resolve(`${folder}/export-${dayjs().format(dateFormat)}-${u.rand()}.ndjson`);
+		await u.touch(filename);
+		return [filename];
+	}
+
+	if (config.recordType === 'peopleExport') {
+		const folder = u.mkdir('./mixpanel-exports');
+		return [folder];
+	}
+
 	// lookup tables are not streamed
 	if (config.recordType === 'table') {
 		if (fs.existsSync(path.resolve(data))) return [await u.load(data)];
@@ -668,7 +917,7 @@ function chunkForSize(config) {
 }
 
 function getEnvVars() {
-	const envVars = pick(process.env, `MP_PROJECT`, `MP_ACCT`, `MP_PASS`, `MP_SECRET`, `MP_TOKEN`, `MP_TYPE`, `MP_TABLE_ID`, `MP_GROUP_KEY`);
+	const envVars = pick(process.env, `MP_PROJECT`, `MP_ACCT`, `MP_PASS`, `MP_SECRET`, `MP_TOKEN`, `MP_TYPE`, `MP_TABLE_ID`, `MP_GROUP_KEY`, `MP_START`, `MP_END`);
 	const envKeyNames = {
 		MP_PROJECT: "project",
 		MP_ACCT: "acct",
@@ -677,7 +926,9 @@ function getEnvVars() {
 		MP_TOKEN: "token",
 		MP_TYPE: "recordType",
 		MP_TABLE_ID: "lookupTableId",
-		MP_GROUP_KEY: "groupKey"
+		MP_GROUP_KEY: "groupKey",
+		MP_START: "start",
+		MP_END: "end"
 	};
 	const envCreds = u.rnKeys(envVars, envKeyNames);
 
@@ -691,9 +942,36 @@ LOGGING
 ----
 */
 
+async function countFileLines(filePath) {
+	return new Promise((resolve, reject) => {
+		let lineCount = 0;
+		fs.createReadStream(filePath)
+			.on("data", (buffer) => {
+				let idx = -1;
+				lineCount--; // Because the loop will run once for idx=-1
+				do {
+					idx = buffer.indexOf(10, idx + 1);
+					lineCount++;
+				} while (idx !== -1);
+			}).on("end", () => {
+				resolve(lineCount);
+			}).on("error", reject);
+	});
+}
+
 function showProgress(record, processed, requests,) {
 	readline.cursorTo(process.stdout, 0);
 	process.stdout.write(`\t${record}s processed: ${u.comma(processed)} | batches sent: ${u.comma(requests)}`);
+}
+
+function downloadProgress(amount) {
+	if (amount < 1000000) {
+		//noop
+	}
+	else {
+		readline.cursorTo(process.stdout, 0);
+		process.stdout.write(`\tdownloaded: ${u.bytesHuman(amount, 2, true)}`);
+	}
 }
 
 function logger(config) {

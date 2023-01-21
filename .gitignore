@@ -10,6 +10,8 @@ scratch.js
 node_modules/
 testData/*
 !testData/.gitkeep
+mixpanel-exports/*
+!mixpanel-exports/.gitkeep
 logs/*
 !logs/.gitkeep
 test.js
