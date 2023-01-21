@@ -12,7 +12,7 @@
     "CLI"
   ],
   "scripts": {
-    "dev": "nodemon --inspect --ignore ./testData scratch.js --ignore ./logs",
+    "dev": "npm run prune && nodemon --inspect scratch.js --ignore ./testData --ignore ./mixpanel-exports --ignore ./logs",
     "post": "npm publish",
     "generate": "NUMEVENTS=9999 SINCEDAYS=30 node generateFakeData.js",
     "prune": "rm -rf ./logs/* && rm -rf ./mixpanel-exports/*",

@@ -176,7 +176,7 @@ class importJob {
 			group: `https://api.mixpanel.com/groups`,
 			table: `https://api.mixpanel.com/lookup-tables/`,
 			export: `https://data.mixpanel.com/api/2.0/export`,
-			peopleExport: `https://mixpanel.com/api/2.0/engage`
+			peopleexport: `https://mixpanel.com/api/2.0/engage`
 		},
 		eu: {
 			event: `https://api-eu.mixpanel.com/import`,
@@ -184,7 +184,7 @@ class importJob {
 			group: `https://api-eu.mixpanel.com/groups`,
 			table: `https://api-eu.mixpanel.com/lookup-tables/`,
 			export: `https://data-eu.mixpanel.com/api/2.0/export`,
-			peopleExport: `https://eu.mixpanel.com/api/2.0/engage`			
+			peopleexport: `https://eu.mixpanel.com/api/2.0/engage`
 		}
 
 	};
@@ -269,6 +269,14 @@ class importJob {
 		if (includeResponses) {
 			summary.responses = this.responses;
 			summary.errors = this.errors;
+		}
+
+		if (this.file) {
+			summary.file = this.file
+		}
+
+		if (this.folder) {
+			summary.folder = this.folder
 		}
 
 		return summary;
@@ -421,7 +429,7 @@ async function corePipeline(stream, config, streamInterface = false) {
 
 	if (config.recordType === 'table') return await flushLookupTable(stream, config);
 	if (config.recordType === 'export') return await exportEvents(stream, config);
-	if (config.recordType === 'peopleExport') return await exportProfiles(stream, config)
+	if (config.recordType === 'peopleExport') return await exportProfiles(stream, config);
 
 	const pipeline = _(stream)
 		// * transform source data w/user entered function
@@ -611,32 +619,61 @@ async function exportEvents(filename, config) {
 	return exportedData;
 }
 
-// ! TODO: integrateProfiles
 async function exportProfiles(folder, config) {
-	const auth = config.auth
+	const auth = config.auth;
+	const allFiles = [];
+
 	let iterations = 0;
 	let fileName = `people-${iterations}.json`;
 	let file = path.resolve(`${folder}/${fileName}`);
-	let response = (await got({
+	const options = {
 		method: 'POST',
 		url: config.url,
 		headers: {
 			Authorization: auth
 		},
 		searchParams: {
-			project_id : config.project
-		}
-	})).data;
-	const allFiles = [];
+			project_id: config.project
+		},
+		responseType: 'json'
+	};
 
-	// @ts-ignore
-	let { page, page_size, session_id, total } = response;
+	let request = await got(options).catch(e => {
+		config.failed++;
+		config.responses.push({
+			status: e.statusCode,
+			ip: e.ip,
+			url: e.requestUrl,
+			...e.headers,
+			message: e.message
+		});
+	});
+	let response = request.body;
+
+
+
+	//grab values for recursion
+	let { page, page_size, session_id } = response;
 	let lastNumResults = response.results.length;
-	let profiles = response.results;
+
 	// write first page of profiles
+	let profiles = response.results;
 	const firstFile = await u.touch(file, profiles, true);
 	let nextFile;
 	allFiles.push(firstFile);
+
+	//update config
+	config.recordsProcessed += profiles.length;
+	config.success += profiles.length;
+	config.requests++;
+	config.responses.push({
+		status: request.statusCode,
+		ip: request.ip,
+		url: request.requestUrl,
+		...request.headers
+	});
+
+	showProgress("profile", config.success, iterations + 1);
 
 
 	// recursively consume all profiles
@@ -647,22 +684,35 @@ async function exportProfiles(folder, config) {
 
 		fileName = `people-${iterations}.json`;
 		file = path.resolve(`${folder}/${fileName}`);
+		options.searchParams.page = page;
+		options.searchParams.session_id = session_id;
 
+		request = await got(options).catch(e => {
+			config.failed++;
+			config.responses.push({
+				status: e.statusCode,
+				ip: e.ip,
+				url: e.requestUrl,
+				...e.headers,
+				message: e.message
+			});
+		});
+		response = request.body;
 
-		response = (await got({
-			method: 'POST',
-			url: config.url,
-			headers: {
-				Authorization: auth
-			},
-			searchParams: {
-				project_id : config.project,
-				page,
-				session_id
-			}
-		})).data;
+		//update config
+		config.requests++;
+		config.responses.push({
+			status: request.statusCode,
+			ip: request.ip,
+			url: request.requestUrl,
+			...request.headers
+		});
+		config.success += profiles.length;
+		config.recordsProcessed += profiles.length;
+		showProgress("profile", config.success, iterations + 1);
 
 		profiles = response.results;
+
 		nextFile = await u.touch(file, profiles, true);
 		allFiles.push(nextFile);
 
@@ -670,6 +720,9 @@ async function exportProfiles(folder, config) {
 		lastNumResults = response.results.length;
 
 	}
+
+	config.file = allFiles;
+	config.folder = folder;
 
 	return folder;
 

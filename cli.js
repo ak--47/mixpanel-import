@@ -58,7 +58,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			demandOption: false,
 			alias: "recordType",
 			default: 'event',
-			describe: 'event, user, group, or table',
+			describe: 'event, user, group, table, export, or peopleExport',
 			type: 'string'
 		})
 		.option("compress", {

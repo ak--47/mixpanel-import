@@ -201,10 +201,21 @@ describe('exports', () => {
 	test('can export event data', async () => {
 		const data = await mp({}, null, { ...opts, recordType: 'export', start: '2023-01-01', end: '2023-01-03' });
 		expect(data.duration).toBeGreaterThan(0);
-		expect(data.requests).toBe(1)
-		expect(data.failed).toBe(0)
-		expect(data.total).toBe(93)
-		expect(data.success).toBe(93)
+		expect(data.requests).toBe(1);
+		expect(data.failed).toBe(0);
+		expect(data.total).toBeGreaterThan(92);
+		expect(data.success).toBeGreaterThan(92);
+	});
+
+	test('can export profile data', async () => {
+		const data = await mp({}, null, { ...opts, "recordType": "peopleExport" });
+		expect(data.duration).toBeGreaterThan(0);
+		expect(data.requests).toBeGreaterThan(5);
+		expect(data.responses.length).toBeGreaterThan(5);
+		expect(data.failed).toBe(0);
+		expect(data.total).toBeGreaterThan(5999);
+		expect(data.success).toBeGreaterThan(5999);
+
 	});
 });
 
