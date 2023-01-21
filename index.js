@@ -175,14 +175,16 @@ class importJob {
 			user: `https://api.mixpanel.com/engage`,
 			group: `https://api.mixpanel.com/groups`,
 			table: `https://api.mixpanel.com/lookup-tables/`,
-			export: `https://data.mixpanel.com/api/2.0/export`
+			export: `https://data.mixpanel.com/api/2.0/export`,
+			peopleExport: `https://mixpanel.com/api/2.0/engage`
 		},
 		eu: {
 			event: `https://api-eu.mixpanel.com/import`,
 			user: `https://api-eu.mixpanel.com/engage`,
 			group: `https://api-eu.mixpanel.com/groups`,
 			table: `https://api-eu.mixpanel.com/lookup-tables/`,
-			export: `https://data-eu.mixpanel.com/api/2.0/export`
+			export: `https://data-eu.mixpanel.com/api/2.0/export`,
+			peopleExport: `https://eu.mixpanel.com/api/2.0/engage`			
 		}
 
 	};
@@ -418,7 +420,8 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 async function corePipeline(stream, config, streamInterface = false) {
 
 	if (config.recordType === 'table') return await flushLookupTable(stream, config);
-	if (config.recordType === 'export') return await exportFromMixpanel(stream, config);
+	if (config.recordType === 'export') return await exportEvents(stream, config);
+	if (config.recordType === 'peopleExport') return await exportProfiles(stream, config)
 
 	const pipeline = _(stream)
 		// * transform source data w/user entered function
@@ -540,7 +543,7 @@ async function flushToMixpanel(batch, config) {
 	}
 }
 
-async function exportFromMixpanel(filename, config) {
+async function exportEvents(filename, config) {
 	const pipeline = promisify(stream.pipeline);
 
 	const options = {
@@ -608,13 +611,82 @@ async function exportFromMixpanel(filename, config) {
 	return exportedData;
 }
 
+// ! TODO: integrateProfiles
+async function exportProfiles(folder, config) {
+	const auth = config.auth
+	let iterations = 0;
+	let fileName = `people-${iterations}.json`;
+	let file = path.resolve(`${folder}/${fileName}`);
+	let response = (await got({
+		method: 'POST',
+		url: config.url,
+		headers: {
+			Authorization: auth
+		},
+		searchParams: {
+			project_id : config.project
+		}
+	})).data;
+	const allFiles = [];
+
+	// @ts-ignore
+	let { page, page_size, session_id, total } = response;
+	let lastNumResults = response.results.length;
+	let profiles = response.results;
+	// write first page of profiles
+	const firstFile = await u.touch(file, profiles, true);
+	let nextFile;
+	allFiles.push(firstFile);
+
+
+	// recursively consume all profiles
+	// https://developer.mixpanel.com/reference/engage-query
+	while (lastNumResults >= page_size) {
+		page++;
+		iterations++;
+
+		fileName = `people-${iterations}.json`;
+		file = path.resolve(`${folder}/${fileName}`);
+
+
+		response = (await got({
+			method: 'POST',
+			url: config.url,
+			headers: {
+				Authorization: auth
+			},
+			searchParams: {
+				project_id : config.project,
+				page,
+				session_id
+			}
+		})).data;
+
+		profiles = response.results;
+		nextFile = await u.touch(file, profiles, true);
+		allFiles.push(nextFile);
+
+		// update recursion
+		lastNumResults = response.results.length;
+
+	}
+
+	return folder;
+
+}
+
 async function determineData(data, config) {
 	//exports are saved locally
 	if (config.recordType === 'export') {
 		const folder = u.mkdir('./mixpanel-exports');
 		const filename = path.resolve(`${folder}/export-${dayjs().format(dateFormat)}-${u.rand()}.ndjson`);
-		await u.touch(filename)
+		await u.touch(filename);
 		return [filename];
+	}
+
+	if (config.recordType === 'peopleExport') {
+		const folder = u.mkdir('./mixpanel-exports');
+		return [folder];
 	}
 
 	// lookup tables are not streamed
