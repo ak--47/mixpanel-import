@@ -603,6 +603,7 @@ async function exportFromMixpanel(filename, config) {
 	const lines = await countFileLines(filename);
 	config.recordsProcessed += lines;
 	config.success += lines;
+	config.file = filename;
 
 	return exportedData;
 }
@@ -612,6 +613,7 @@ async function determineData(data, config) {
 	if (config.recordType === 'export') {
 		const folder = u.mkdir('./mixpanel-exports');
 		const filename = path.resolve(`${folder}/export-${dayjs().format(dateFormat)}-${u.rand()}.ndjson`);
+		await u.touch(filename)
 		return [filename];
 	}
 
@@ -790,7 +792,7 @@ function chunkForSize(config) {
 }
 
 function getEnvVars() {
-	const envVars = pick(process.env, `MP_PROJECT`, `MP_ACCT`, `MP_PASS`, `MP_SECRET`, `MP_TOKEN`, `MP_TYPE`, `MP_TABLE_ID`, `MP_GROUP_KEY`);
+	const envVars = pick(process.env, `MP_PROJECT`, `MP_ACCT`, `MP_PASS`, `MP_SECRET`, `MP_TOKEN`, `MP_TYPE`, `MP_TABLE_ID`, `MP_GROUP_KEY`, `MP_START`, `MP_END`);
 	const envKeyNames = {
 		MP_PROJECT: "project",
 		MP_ACCT: "acct",
@@ -799,7 +801,9 @@ function getEnvVars() {
 		MP_TOKEN: "token",
 		MP_TYPE: "recordType",
 		MP_TABLE_ID: "lookupTableId",
-		MP_GROUP_KEY: "groupKey"
+		MP_GROUP_KEY: "groupKey",
+		MP_START: "start",
+		MP_END: "end"
 	};
 	const envCreds = u.rnKeys(envVars, envKeyNames);
 

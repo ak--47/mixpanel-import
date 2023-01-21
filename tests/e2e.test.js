@@ -197,6 +197,17 @@ describe('object streams', () => {
 
 });
 
+describe('exports', () => {
+	test('can export event data', async () => {
+		const data = await mp({}, null, { ...opts, recordType: 'export', start: '2023-01-01', end: '2023-01-03' });
+		expect(data.duration).toBeGreaterThan(0);
+		expect(data.requests).toBe(1)
+		expect(data.failed).toBe(0)
+		expect(data.total).toBe(93)
+		expect(data.success).toBe(93)
+	});
+});
+
 
 describe('big files', () => {
 	jest.setTimeout(10000);
