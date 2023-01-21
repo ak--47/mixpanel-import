@@ -36,7 +36,8 @@ const moarEvents = require('../testData/moarEvents.json');
 const moarPpl = require('../testData/tenkppl.json');
 const eventNinetyNine = require('../testData/events-nine.json');
 const twoFiftyK = `./testData/big.ndjson`;
-
+const needTransform = `./testData/needDateTransform.ndjson`;
+const dayjs = require('dayjs');
 
 const opts = {
 	recordType: `event`,
@@ -152,6 +153,24 @@ describe('file streams', () => {
 	});
 });
 
+describe('transform', () => {
+	test('can use custom transform', async () => {
+		const data = await mp({}, createReadStream(needTransform), {
+			...opts, transformFunc: (ev) => {
+				const eventModel = {
+					event: ev.event,
+					properties: { ...ev }
+				};
+
+				eventModel.properties.time = dayjs(eventModel.properties.time).unix();
+
+				return eventModel;
+			}
+		});
+		expect(data.success).toBeGreaterThan(1004);
+		expect(data.duration).toBeGreaterThan(0);
+	});
+});
 
 describe('object streams', () => {
 	test('events', (done) => {

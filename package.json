@@ -1,6 +1,6 @@
 {
   "name": "mixpanel-import",
-  "version": "2.2.23",
+  "version": "2.2.25",
   "description": "stream and import data to mixpanel from node.js",
   "main": "index.js",
   "keywords": [
@@ -15,7 +15,7 @@
     "dev": "nodemon --inspect --ignore ./testData scratch.js --ignore ./logs",
     "post": "npm publish",
     "generate": "NUMEVENTS=9999 SINCEDAYS=30 node generateFakeData.js",
-    "prune": "rm -rf ./logs/*",
+    "prune": "rm -rf ./logs/* && rm -rf ./mixpanel-exports/*",
     "test": "jest --watch",
     "cliTest": "node index.js ./testData/moarEvents.json",
     "cliHelp": "node index.js --help"
@@ -34,8 +34,9 @@
   },
   "homepage": "https://github.com/ak--47/mixpanel-import#readme",
   "dependencies": {
-    "ak-tools": "^1.0.214",
+    "ak-tools": "^1.0.215",
     "chance": "^1.1.7",
+    "dayjs": "^1.11.7",
     "dotenv": "^10.0.0",
     "got": "^11.8.6",
     "highland": "^2.13.5",
