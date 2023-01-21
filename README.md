@@ -112,7 +112,7 @@ if you are importing `user` profiles, `group` profiles, or `lookup tables`, you 
 ```javascript
 const creds = {
 		token: `my-project-token`, //for user/group profiles
-		groupKey: `my-group-key` //for group profiles
+		groupKey: `my-group-key`, //for group profiles
 		lookupTableId: `my-lookup-table-id`, //for lookup tables
 	}
 ```
