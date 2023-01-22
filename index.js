@@ -272,11 +272,11 @@ class importJob {
 		}
 
 		if (this.file) {
-			summary.file = this.file
+			summary.file = this.file;
 		}
 
 		if (this.folder) {
-			summary.folder = this.folder
+			summary.folder = this.folder;
 		}
 
 		return summary;
@@ -758,31 +758,38 @@ async function determineData(data, config) {
 		return [stream.Readable.from(data, { objectMode: true })];
 	}
 
-	// data refers to file/folder on disk
-	if (fs.existsSync(path.resolve(data))) {
-		const fileOrDir = fs.lstatSync(path.resolve(data));
+	try {
 
-		//file case
-		if (fileOrDir.isFile()) {
-			if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(data))) {
-				return itemStream(path.resolve(data), "json");
+		// data refers to file/folder on disk
+		if (fs.existsSync(path.resolve(data))) {
+			const fileOrDir = fs.lstatSync(path.resolve(data));
+
+			//file case
+			if (fileOrDir.isFile()) {
+				if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(data))) {
+					return itemStream(path.resolve(data), "json");
+				}
+				if (config.streamFormat === 'jsonl' || config.lineByLineFileExt.includes(path.extname(data))) {
+					return itemStream(path.resolve(data), "jsonl");
+				}
 			}
-			if (config.streamFormat === 'jsonl' || config.lineByLineFileExt.includes(path.extname(data))) {
-				return itemStream(path.resolve(data), "jsonl");
+
+			//folder case
+			if (fileOrDir.isDirectory()) {
+				const enumDir = await u.ls(path.resolve(data));
+				const files = enumDir.filter(filePath => config.supportedFileExt.includes(path.extname(filePath)));
+				if (config.streamFormat === 'jsonl' || config.lineByLineFileExt.includes(path.extname(files[0]))) {
+					return itemStream(files, "jsonl");
+				}
+				if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(files[0]))) {
+					return itemStream(files, "json");
+				}
 			}
 		}
+	}
 
-		//folder case
-		if (fileOrDir.isDirectory()) {
-			const enumDir = await u.ls(path.resolve(data));
-			const files = enumDir.filter(filePath => config.supportedFileExt.includes(path.extname(filePath)));
-			if (config.streamFormat === 'jsonl' || config.lineByLineFileExt.includes(path.extname(files[0]))) {
-				return itemStream(files, "jsonl");
-			}
-			if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(files[0]))) {
-				return itemStream(files, "json");
-			}
-		}
+	catch (e) {
+		//noop
 	}
 
 	// data is a string, and we have to guess what it is
