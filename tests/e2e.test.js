@@ -18,7 +18,7 @@ unzip it in ./testData
 /* cSpell:disable */
 require('dotenv').config();
 const { execSync } = require("child_process");
-
+const longTimeout = 60000
 
 
 const mp = require('../index.js');
@@ -53,6 +53,8 @@ const opts = {
 	streamFormat: 'jsonl',
 	transformFunc: function noop(a) { return a; }
 };
+
+
 
 describe('do tests work?', () => {
 	test('a = a', () => {
@@ -173,7 +175,6 @@ describe('transform', () => {
 });
 
 describe('object streams', () => {
-	jest.setTimeout(60000)
 	test('events', (done) => {
 		const streamInMem = new Readable.from(eventNinetyNine, { objectMode: true });
 		const mpStream = createMpStream({}, { ...opts }, (err, results) => {
@@ -198,8 +199,7 @@ describe('object streams', () => {
 
 });
 
-describe('exports', () => {
-	
+describe('exports', () => {	
 	test('can export event data', async () => {
 		const data = await mp({}, null, { ...opts, recordType: 'export', start: '2023-01-01', end: '2023-01-03' });
 		expect(data.duration).toBeGreaterThan(0);
@@ -207,10 +207,10 @@ describe('exports', () => {
 		expect(data.failed).toBe(0);
 		expect(data.total).toBeGreaterThan(92);
 		expect(data.success).toBeGreaterThan(92);
-	});
+	}, longTimeout);
 
 	test('can export profile data', async () => {
-		jest.setTimeout(600000)
+		
 		const data = await mp({}, null, { ...opts, "recordType": "peopleExport" });
 		expect(data.duration).toBeGreaterThan(0);
 		expect(data.requests).toBeGreaterThan(5);
@@ -219,7 +219,7 @@ describe('exports', () => {
 		expect(data.total).toBeGreaterThan(5999);
 		expect(data.success).toBeGreaterThan(5999);
 
-	});
+	}, longTimeout);
 });
 
 

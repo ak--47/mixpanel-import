@@ -43,8 +43,8 @@ const cliParams = require('./cli');
 // * utils
 const transforms = require('./transforms.js');
 const u = require('ak-tools');
-const track = u.tracker('mixpanel-import');
-const runId = u.uid(32);
+// const track = u.tracker('mixpanel-import');
+// const runId = u.uid(32);
 const { pick } = require('underscore');
 const { gzip } = require('node-gzip');
 const dayjs = require('dayjs');
@@ -302,23 +302,21 @@ CORE
  * @param {importJob} existingConfig - used to recycle a config for `.pipe()` streams
  * @returns {Promise<types.ImportResults>} API receipts of imported data
  */
-async function main(creds = {}, data, opts = {}, isCLI = false, existingConfig) {
-	track('start', { runId });
+async function main(creds = {}, data, opts = {}, isCLI = false) {
+	//track('start', { runId });
 	let config = {};
 	let cliData = {};
-	if (existingConfig) {
-		config = existingConfig;
+
+
+	// gathering params
+	const envVar = getEnvVars();
+	let cli = {};
+	if (isCLI) {
+		cli = cliParams();
+		cliData = cli._[0];
 	}
-	else {
-		// gathering params
-		const envVar = getEnvVars();
-		let cli = {};
-		if (isCLI) {
-			cli = cliParams();
-			cliData = cli._[0];
-		}
-		config = new importJob({ ...envVar, ...cli, ...creds }, { ...envVar, ...cli, ...opts });
-	}
+	config = new importJob({ ...envVar, ...cli, ...creds }, { ...envVar, ...cli, ...opts });
+
 
 	if (isCLI) config.verbose = true;
 	const l = logger(config);
@@ -344,7 +342,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false, existingConfig) 
 	const summary = config.summary();
 	l(`${config.type === 'export' ? 'export' : 'import'} complete in ${summary.human}`);
 	if (config.logs) await writeLogs(summary);
-	track('end', { runId, ...config.summary(false) });
+	// track('end', { runId, ...config.summary(false) });
 	return summary;
 }
 
@@ -354,7 +352,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false, existingConfig) 
  * @param {importJob} config 
  * @returns {Promise<types.ImportResults>} a promise
  */
-async function corePipeline(stream, config, streamInterface = false) {
+async function corePipeline(stream, config) {
 
 	if (config.recordType === 'table') return await flushLookupTable(stream, config);
 	if (config.recordType === 'export') return await exportEvents(stream, config);
@@ -378,10 +376,9 @@ async function corePipeline(stream, config, streamInterface = false) {
 		// * batch for # of items
 		.batch(config.recordsPerBatch)
 
-
 		// * batch for req size
 		.consume(chunkForSize(config))
-
+		
 		// * send to mixpanel
 		// ! see https://github.com/caolan/highland/issues/290#issuecomment-96676999
 		.map(async (batch) => {
@@ -389,7 +386,7 @@ async function corePipeline(stream, config, streamInterface = false) {
 			const res = await flushToMixpanel(batch, config);
 			return res;
 		})
-
+				
 		// * verbose
 		.doto(() => {
 			if (config.verbose) showProgress(config.recordType, config.recordsProcessed, config.requests);
@@ -400,11 +397,8 @@ async function corePipeline(stream, config, streamInterface = false) {
 			throw e;
 		});
 
-	if (streamInterface) {
-		return pipeline.toNodeStream();
-	}
-
 	return Promise.all(await pipeline.collect().toPromise(Promise));
+
 
 }
 
@@ -424,7 +418,7 @@ async function corePipeline(stream, config, streamInterface = false) {
  * @param {function(): importJob} finish - end of pipelines
  * @returns a transform stream
  */
-function pipeInterface(creds = {}, opts = {}, finish = () => { }) {	
+function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 	const envVar = getEnvVars();
 	const config = new importJob({ ...envVar, ...creds }, { ...envVar, ...opts });
 	config.timer.start();
@@ -459,6 +453,8 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 		// * promise back to stream
 		_.flatMap(_),
 
+
+
 		// * verbose
 		_.doto(() => {
 			if (config.verbose) showProgress(config.recordType, config.recordsProcessed, config.requests);
@@ -469,18 +465,18 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 			finish(e);
 		})
 	);
-	
+
 	// * handlers
-	pipeToMe.on('end', () => { 
+	pipeToMe.on('end', () => {
 		config.timer.end(false);
 		finish(null, config.summary());
-	})
+	});
 
-	pipeToMe.on('pipe', () => { 
-		pipeToMe.resume()
-	})
+	pipeToMe.on('pipe', () => {
+		pipeToMe.resume();
+	});
 
-	return pipeToMe
+	return pipeToMe;
 
 }
 
@@ -511,7 +507,8 @@ async function flushToMixpanel(batch, config) {
 			headers: {
 				"Authorization": `${config.auth}`,
 				"Content-Type": config.contentType,
-				"Content-Encoding": config.encoding
+				"Content-Encoding": config.encoding,
+				'Connection': 'keep-alive'
 
 			},
 			agent: {
