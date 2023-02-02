@@ -173,6 +173,7 @@ describe('transform', () => {
 });
 
 describe('object streams', () => {
+	jest.setTimeout(60000)
 	test('events', (done) => {
 		const streamInMem = new Readable.from(eventNinetyNine, { objectMode: true });
 		const mpStream = createMpStream({}, { ...opts }, (err, results) => {
@@ -198,6 +199,7 @@ describe('object streams', () => {
 });
 
 describe('exports', () => {
+	
 	test('can export event data', async () => {
 		const data = await mp({}, null, { ...opts, recordType: 'export', start: '2023-01-01', end: '2023-01-03' });
 		expect(data.duration).toBeGreaterThan(0);
@@ -208,6 +210,7 @@ describe('exports', () => {
 	});
 
 	test('can export profile data', async () => {
+		jest.setTimeout(600000)
 		const data = await mp({}, null, { ...opts, "recordType": "peopleExport" });
 		expect(data.duration).toBeGreaterThan(0);
 		expect(data.requests).toBeGreaterThan(5);

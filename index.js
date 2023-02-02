@@ -349,77 +349,6 @@ async function main(creds = {}, data, opts = {}, isCLI = false, existingConfig) 
 }
 
 /**
- * Mixpanel Importer Stream
- * stream `events`, `users`, `groups`, and `tables` to mixpanel!
- * @example
- * // pipe a stream to mixpanel
- * const { mpStream } = require('mixpanel-import')
- * const mpStream = createMpStream(creds, opts, callback);
- * const observer = new PassThrough({objectMode: true})
- * observer.on('data', (response)=> { })
- * // create a pipeline
- * myStream.pipe(mpStream).pipe(observer);
- * @param {types.Creds} creds - mixpanel project credentials
- * @param {types.Options} opts - import options
- * @param {function(): importJob} finish - end of pipelines
- * @returns a transform stream
- */
-function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
-	// ! figure out how to use corePipeline() instead of main()
-	const envVar = getEnvVars();
-	const config = new importJob({ ...envVar, ...creds }, { ...envVar, ...opts });
-	const { recordsPerBatch = 2000 } = opts;
-	config.logs = false;
-	config.verbose = false;
-
-	const extStream = new stream.Transform({ objectMode: true, highWaterMark: recordsPerBatch });
-	extStream.batch = [];
-
-	extStream.on('finish', () => {
-		finish(null, config.summary());
-	});
-
-	extStream.on('error', (e) => {
-		throw e;
-	});
-
-	extStream._transform = (data, encoding, callback) => {
-		extStream.batch.push(data);
-		if (extStream.batch.length === recordsPerBatch) {
-			main(null, extStream.batch, null, false, config).then((results) => {
-				extStream.batch = [];
-				const result = [...results.responses.slice(-1), ...results.errors.slice(-1)][0];
-				callback(null, result);
-			});
-		}
-
-		else {
-			callback();
-		}
-	};
-
-	extStream._flush = function (callback) {
-		if (extStream.batch.length) {
-			//data is still left in the stream; flush it!
-			main(null, extStream.batch, null, false, config).then((results) => {
-				extStream.batch = [];
-				const result = [...results.responses.slice(-1), ...results.errors.slice(-1)][0];
-				callback(null, result);
-			});
-
-			extStream.batch = [];
-		}
-
-		else {
-			callback(null);
-		}
-	};
-
-	return extStream;
-
-}
-
-/**
  * the core pipeline 
  * @param {types.ReadableStream} stream 
  * @param {importJob} config 
@@ -476,6 +405,82 @@ async function corePipeline(stream, config, streamInterface = false) {
 	}
 
 	return Promise.all(await pipeline.collect().toPromise(Promise));
+
+}
+
+/**
+ * Mixpanel Importer Stream
+ * stream `events`, `users`, `groups`, and `tables` to mixpanel!
+ * @example
+ * // pipe a stream to mixpanel
+ * const { mpStream } = require('mixpanel-import')
+ * const mpStream = createMpStream(creds, opts, callback);
+ * const observer = new PassThrough({objectMode: true})
+ * observer.on('data', (response)=> { })
+ * // create a pipeline
+ * myStream.pipe(mpStream).pipe(observer);
+ * @param {types.Creds} creds - mixpanel project credentials
+ * @param {types.Options} opts - import options
+ * @param {function(): importJob} finish - end of pipelines
+ * @returns a transform stream
+ */
+function pipeInterface(creds = {}, opts = {}, finish = () => { }) {	
+	const envVar = getEnvVars();
+	const config = new importJob({ ...envVar, ...creds }, { ...envVar, ...opts });
+	config.timer.start();
+	// ! todo: make this DRY!!!
+	const pipeToMe = _.pipeline(
+		_.map((data) => {
+			config.recordsProcessed++;
+			return config.transformFunc(data);
+		}),
+
+		// * transform source data w/ezTransforms
+		_.map((data) => {
+			if (config.fixData) {
+				return config.ezTransform(data);
+			}
+			return data;
+		}),
+
+		// * batch for # of items
+		_.batch(config.recordsPerBatch),
+
+		// * batch for req size
+		_.consume(chunkForSize(config)),
+
+		// * send to mixpanel
+		_.map(async (batch) => {
+			config.requests++;
+			const res = await flushToMixpanel(batch, config);
+			return res;
+		}),
+
+		// * promise back to stream
+		_.flatMap(_),
+
+		// * verbose
+		_.doto(() => {
+			if (config.verbose) showProgress(config.recordType, config.recordsProcessed, config.requests);
+		}),
+
+		// * errors
+		_.errors((e) => {
+			finish(e);
+		})
+	);
+	
+	// * handlers
+	pipeToMe.on('end', () => { 
+		config.timer.end(false);
+		finish(null, config.summary());
+	})
+
+	pipeToMe.on('pipe', () => { 
+		pipeToMe.resume()
+	})
+
+	return pipeToMe
 
 }
 
@@ -821,7 +826,7 @@ async function determineData(data, config) {
 		}
 	}
 
-	console.error(`ERROR:\n\t${data} is not a file, a folder, an array, a stream, or a string...`);
+	console.error(`ERROR:\n\t${data} is not a file, a folder, an array, a stream, or a string... (i could not determine it's type)`);
 	process.exit();
 
 }
@@ -1010,17 +1015,3 @@ mpImport.createMpStream = pipeInterface;
 if (require.main === module) {
 	main(undefined, undefined, undefined, true).then(() => { });
 }
-
-// //for some reason, vscode throws this when --inspect is on...
-// process.on('uncaughtException', (err) => {
-// 	if (global.l) {
-// 		l(`\nFAILURE!\n\n${err.stack}\n\n${err.message}`);
-// 	}
-// });
-
-
-// process.on('unhandledRejection', (err) => {
-// 	if (global.l) {
-// 		l(`\nREJECTION!\n\n${err.stack}\n\n${err.message}`);
-// 	}
-// });
