@@ -43,8 +43,8 @@ const cliParams = require('./cli');
 // * utils
 const transforms = require('./transforms.js');
 const u = require('ak-tools');
-// const track = u.tracker('mixpanel-import');
-// const runId = u.uid(32);
+const track = u.tracker('mixpanel-import');
+const runId = u.uid(32);
 const { pick } = require('underscore');
 const { gzip } = require('node-gzip');
 const dayjs = require('dayjs');
@@ -303,7 +303,7 @@ CORE
  * @returns {Promise<types.ImportResults>} API receipts of imported data
  */
 async function main(creds = {}, data, opts = {}, isCLI = false) {
-	//track('start', { runId });
+	track('start', { runId });
 	let config = {};
 	let cliData = {};
 
@@ -342,7 +342,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	const summary = config.summary();
 	l(`${config.type === 'export' ? 'export' : 'import'} complete in ${summary.human}`);
 	if (config.logs) await writeLogs(summary);
-	// track('end', { runId, ...config.summary(false) });
+	track('end', { runId, ...config.summary(false) });
 	return summary;
 }
 
@@ -422,6 +422,8 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 	const envVar = getEnvVars();
 	const config = new importJob({ ...envVar, ...creds }, { ...envVar, ...opts });
 	config.timer.start();
+	
+
 	// ! todo: make this DRY!!!
 	const pipeToMe = _.pipeline(
 		_.map((data) => {
@@ -469,10 +471,12 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 	// * handlers
 	pipeToMe.on('end', () => {
 		config.timer.end(false);
+		track('end', { runId, ...config.summary(false) });
 		finish(null, config.summary());
 	});
 
 	pipeToMe.on('pipe', () => {
+		track('start', { runId });
 		pipeToMe.resume();
 	});
 
