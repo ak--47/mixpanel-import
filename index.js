@@ -524,7 +524,7 @@ async function flushToMixpanel(batch, config) {
 						l(`retrying request...#${count}`);
 					}
 					catch (e) {
-
+						//noop
 					}
 					config.retries++;
 				}]

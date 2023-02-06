@@ -137,7 +137,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 		})	
 		.help()
 		.argv;
-	if (args._.length === 0) {
+	if (args._.length === 0 && !args.type?.toLowerCase()?.includes('export') ) {
 		yargs.showHelp();
 		process.exit()
 	}
