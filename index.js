@@ -116,11 +116,11 @@ class importJob {
 		this.transformFunc = opts.transformFunc || function noop(a) { return a; }; //will be called on every record
 
 		// ? boolean options
-		this.compress = u.is(undefined, opts.compress) ? false : opts.compress; //gzip data (events only)
-		this.strict = u.is(undefined, opts.strict) ? true : opts.strict; // use strict mode?
-		this.logs = u.is(undefined, opts.logs) ? true : opts.logs; // print to stdout?
-		this.verbose = u.is(undefined, opts.verbose) ? true : opts.verbose;
-		this.fixData = u.is(undefined, opts.fixData) ? false : opts.fixData; //apply transforms on the data
+		this.compress = u.isNil(opts.compress) ? false : opts.compress; //gzip data (events only)
+		this.strict = u.isNil(opts.strict) ? true : opts.strict; // use strict mode?
+		this.logs = u.isNil(opts.logs) ? true : opts.logs; // print to stdout?
+		this.verbose = u.isNil(opts.verbose) ? true : opts.verbose;
+		this.fixData = u.isNil(opts.fixData) ? false : opts.fixData; //apply transforms on the data
 
 		// ? counters
 		this.recordsProcessed = 0;
@@ -503,7 +503,6 @@ async function flushToMixpanel(batch, config) {
 			url: config.url,
 			searchParams: {
 				ip: 0,
-				project_id: config.project,
 				verbose: 1,
 				strict: Number(config.strict)
 			},
@@ -532,6 +531,7 @@ async function flushToMixpanel(batch, config) {
 			},
 			body
 		};
+		if (config.project) options.searchParams.project_id = config.project;
 
 		let req, res, success;
 		try {
