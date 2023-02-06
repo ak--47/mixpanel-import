@@ -378,7 +378,7 @@ async function corePipeline(stream, config) {
 
 		// * batch for req size
 		.consume(chunkForSize(config))
-		
+
 		// * send to mixpanel
 		// ! see https://github.com/caolan/highland/issues/290#issuecomment-96676999
 		.map(async (batch) => {
@@ -386,7 +386,7 @@ async function corePipeline(stream, config) {
 			const res = await flushToMixpanel(batch, config);
 			return res;
 		})
-				
+
 		// * verbose
 		.doto(() => {
 			if (config.verbose) showProgress(config.recordType, config.recordsProcessed, config.requests);
@@ -422,7 +422,7 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 	const envVar = getEnvVars();
 	const config = new importJob({ ...envVar, ...creds }, { ...envVar, ...opts });
 	config.timer.start();
-	
+
 
 	// ! todo: make this DRY!!!
 	const pipeToMe = _.pipeline(
@@ -520,7 +520,12 @@ async function flushToMixpanel(batch, config) {
 			},
 			hooks: {
 				beforeRetry: [(err, count) => {
-					l(`retrying request...#${count}`);
+					try {
+						l(`retrying request...#${count}`);
+					}
+					catch (e) {
+
+					}
 					config.retries++;
 				}]
 			},
@@ -553,7 +558,12 @@ async function flushToMixpanel(batch, config) {
 	}
 
 	catch (e) {
-		l(`\nBATCH FAILED: ${e.message}\n`);
+		try {
+			l(`\nBATCH FAILED: ${e.message}\n`);
+		}
+		catch (e) {
+			//noop
+		}
 	}
 }
 
