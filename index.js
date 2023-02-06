@@ -263,7 +263,8 @@ class importJob {
 			duration: this.timer.report(false).delta,
 			human: this.timer.report(false).human,
 			retries: this.retries,
-			version: this.version
+			version: this.version,
+			rps: Math.floor(this.recordsProcessed / this.timer.report(false).delta * 1000)
 		};
 
 		if (includeResponses) {
