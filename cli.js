@@ -93,6 +93,12 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'either json or jsonl',
 			type: 'string'
 		})
+		.option("workers", {
+			demandOption: false,
+			default: 10,
+			describe: 'concurrent connections',
+			type: 'number'
+		})
 		.option("region", {
 			demandOption: false,
 			default: 'US',

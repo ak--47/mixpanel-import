@@ -42,7 +42,7 @@ const dayjs = require('dayjs');
 const opts = {
 	recordType: `event`,
 	compress: false,
-	streamSize: 27,
+	workers: 20,
 	region: `US`,
 	recordsPerBatch: 2000,
 	bytesPerBatch: 2 * 1024 * 1024,
@@ -68,7 +68,7 @@ describe('filenames', () => {
 		expect(data.success).toBe(5003);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
-	});
+	}, longTimeout);
 
 	test('user', async () => {
 		const data = await mp({}, people, { ...opts, recordType: `user` });
@@ -76,14 +76,14 @@ describe('filenames', () => {
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
 
-	});
+	}, longTimeout);
 
 	test('group', async () => {
 		const data = await mp({}, groups, { ...opts, recordType: `group` });
 		expect(data.success).toBe(1860);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
-	});
+	}, longTimeout);
 
 	test('table', async () => {
 		const lookup = await u.load(table);
@@ -91,7 +91,7 @@ describe('filenames', () => {
 		expect(data.success).toBe(1000);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
-	});
+	}, longTimeout);
 
 });
 
@@ -102,7 +102,7 @@ describe('folders', () => {
 		expect(data.success).toBe(3009);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
-	});
+	}, longTimeout);
 
 	test('json', async () => {
 
@@ -110,7 +110,7 @@ describe('folders', () => {
 		expect(data.success).toBe(2664);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
-	});
+	}, longTimeout);
 });
 
 
@@ -120,14 +120,14 @@ describe('in memory', () => {
 		expect(data.success).toBe(666);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
-	});
+	}, longTimeout);
 
 	test('users', async () => {
 		const data = await mp({}, moarPpl, { ...opts, recordType: "user" });
 		expect(data.success).toBe(10000);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
-	});
+	}, longTimeout);
 
 });
 
@@ -137,7 +137,7 @@ describe('file streams', () => {
 		expect(data.success).toBe(5003);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
-	});
+	}, longTimeout);
 
 	test('user', async () => {
 		const data = await mp({}, createReadStream(people), { ...opts, recordType: `user` });
@@ -145,14 +145,14 @@ describe('file streams', () => {
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
 
-	});
+	}, longTimeout);
 
 	test('group', async () => {
 		const data = await mp({}, createReadStream(groups), { ...opts, recordType: `group` });
 		expect(data.success).toBe(1860);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
-	});
+	}, longTimeout);
 });
 
 describe('transform', () => {
@@ -171,7 +171,7 @@ describe('transform', () => {
 		});
 		expect(data.success).toBeGreaterThan(1004);
 		expect(data.duration).toBeGreaterThan(0);
-	});
+	}, longTimeout);
 });
 
 describe('object streams', () => {
@@ -230,7 +230,7 @@ describe('big files', () => {
 		expect(data.success).toBe(250000);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
-	});
+	}, longTimeout);
 });
 
 describe('cli', () => {
@@ -238,27 +238,27 @@ describe('cli', () => {
 		const output = execSync(`node ./index.js ${events} --fixData`).toString().trim().split('\n').pop();
 		const result = await u.load(output, true);
 		expect(result.success).toBe(5003);
-	});
+	}, longTimeout);
 
 
 	test('users', async () => {
 		const output = execSync(`node ./index.js ${people} --type user --fixData`).toString().trim().split('\n').pop();
 		const result = await u.load(output, true);
 		expect(result.success).toBe(5000);
-	});
+	}, longTimeout);
 
 
 	test('groups', async () => {
 		const output = execSync(`node ./index.js ${groups} --type group --fixData`).toString().trim().split('\n').pop();
 		const result = await u.load(output, true);
 		expect(result.success).toBe(1860);
-	});
+	}, longTimeout);
 
 	test('tables', async () => {
 		const output = execSync(`node ./index.js ${table} --type table --fixData`).toString().trim().split('\n').pop();
 		const result = await u.load(output, true);
 		expect(result.success).toBe(1000);
-	});
+	}, longTimeout);
 });
 
 afterAll(async () => {

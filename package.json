@@ -1,6 +1,6 @@
 {
   "name": "mixpanel-import",
-  "version": "2.2.284",
+  "version": "2.2.285",
   "description": "stream and import data to mixpanel from node.js",
   "main": "index.js",
   "keywords": [

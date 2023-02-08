@@ -15,32 +15,32 @@ DEPS
 -----
 */
 
-// * types
+// $ types
 // eslint-disable-next-line no-unused-vars
 const types = require("./types.js");
 
-// * parsers
+// $ parsers
 const readline = require('readline');
 const Papa = require('papaparse');
 const { parser: jsonlParser } = require('stream-json/jsonl/Parser');
 const StreamArray = require('stream-json/streamers/StreamArray'); //json parser
 
-//* streamers
+// $ streamers
 const _ = require('highland');
 const stream = require('stream');
 const got = require('got');
 const https = require('https');
 
-// * file system
+// $ file system
 const path = require('path');
 const fs = require('fs');
 
 
-// * env
+// $ env
 require('dotenv').config();
 const cliParams = require('./cli');
 
-// * utils
+// $ utils
 const transforms = require('./transforms.js');
 const u = require('ak-tools');
 const track = u.tracker('mixpanel-import');
@@ -49,7 +49,8 @@ const { pick } = require('underscore');
 const { gzip } = require('node-gzip');
 const dayjs = require('dayjs');
 const dateFormat = `YYYY-MM-DD`;
-const { promisify } = require('util');
+const { promisify, callbackify } = require('util');
+
 
 
 /*
@@ -79,7 +80,7 @@ class importJob {
 		this.lookupTableId = creds.lookupTableId || ``; //lookup table id
 		this.groupKey = creds.groupKey || ``; //group key id
 		this.auth = this.resolveProjInfo();
-		this.ezTransform = function noop(a) { return a; };
+
 
 		//? dates
 		if (opts.start) {
@@ -112,15 +113,17 @@ class importJob {
 		if (this.type === 'user' && this.recordsPerBatch > 2000) this.recordsPerBatch = 2000;
 		if (this.type === 'group' && this.recordsPerBatch > 200) this.recordsPerBatch = 200;
 
-		// ? transform options
-		this.transformFunc = opts.transformFunc || function noop(a) { return a; }; //will be called on every record
-
 		// ? boolean options
 		this.compress = u.isNil(opts.compress) ? false : opts.compress; //gzip data (events only)
 		this.strict = u.isNil(opts.strict) ? true : opts.strict; // use strict mode?
 		this.logs = u.isNil(opts.logs) ? true : opts.logs; // print to stdout?
 		this.verbose = u.isNil(opts.verbose) ? true : opts.verbose;
 		this.fixData = u.isNil(opts.fixData) ? false : opts.fixData; //apply transforms on the data
+
+		// ? transform options
+		this.transformFunc = opts.transformFunc || function noop(a) { return a; }; //will be called on every record
+		this.ezTransform = function noop(a) { return a; }; //placeholder for ez transforms
+		if (this.fixData) this.ezTransform = transforms(this);
 
 		// ? counters
 		this.recordsProcessed = 0;
@@ -137,11 +140,7 @@ class importJob {
 		this.encoding = "";
 		this.responses = [];
 		this.errors = [];
-
-		// ? ezTransforms
-		if (this.fixData) {
-			this.ezTransform = transforms(this);
-		}
+		this.workers = Number.isInteger(opts.workers) ? opts.workers : 10;
 
 		// ? allow plurals
 		if (this.recordType === 'events') this.recordType === 'event';
@@ -199,8 +198,8 @@ class importJob {
 		return url;
 	}
 	get opts() {
-		const { recordType, compress, streamSize, region, recordsPerBatch, bytesPerBatch, strict, logs, fixData, streamFormat, transformFunc } = this;
-		return { recordType, compress, streamSize, region, recordsPerBatch, bytesPerBatch, strict, logs, fixData, streamFormat, transformFunc };
+		const { recordType, compress, streamSize, workers, region, recordsPerBatch, bytesPerBatch, strict, logs, fixData, streamFormat, transformFunc } = this;
+		return { recordType, compress, streamSize, workers, region, recordsPerBatch, bytesPerBatch, strict, logs, fixData, streamFormat, transformFunc };
 	}
 	get creds() {
 		const { acct, pass, project, secret, token, lookupTableId, groupKey, auth } = this;
@@ -258,14 +257,17 @@ class importJob {
 			success: this.success,
 			failed: this.failed,
 			total: this.recordsProcessed,
-			requests: this.responses.length,
+			requests: this.responses.length + this.errors.length,
 			recordType: this.recordType,
 			duration: this.timer.report(false).delta,
 			human: this.timer.report(false).human,
 			retries: this.retries,
 			version: this.version,
-			rps: Math.floor(this.recordsProcessed / this.timer.report(false).delta * 1000)
+			workers: this.workers
 		};
+
+		summary.eps = Math.floor(this.recordsProcessed / this.timer.report(false).delta * 1000);
+		summary.rps = u.round(summary.requests / this.timer.report(false).delta * 1000, 3);
 
 		if (includeResponses) {
 			summary.responses = this.responses;
@@ -347,6 +349,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	return summary;
 }
 
+
 /**
  * the core pipeline 
  * @param {types.ReadableStream} stream 
@@ -359,19 +362,16 @@ async function corePipeline(stream, config) {
 	if (config.recordType === 'export') return await exportEvents(stream, config);
 	if (config.recordType === 'peopleExport') return await exportProfiles(stream, config);
 
+	const flush = _.wrapCallback(callbackify(flushToMixpanel));
+
 	const pipeline = _(stream)
-		// * transform source data w/user entered function
+		// * transform source data w/user entered function + ezTransforms
 		.map((data) => {
 			config.recordsProcessed++;
-			return config.transformFunc(data);
-		})
-
-		// * transform source data w/ezTransforms
-		.map((data) => {
 			if (config.fixData) {
-				return config.ezTransform(data);
+				return config.ezTransform(config.transformFunc(data));
 			}
-			return data;
+			return config.transformFunc(data);
 		})
 
 		// * batch for # of items
@@ -381,12 +381,13 @@ async function corePipeline(stream, config) {
 		.consume(chunkForSize(config))
 
 		// * send to mixpanel
-		// ! see https://github.com/caolan/highland/issues/290#issuecomment-96676999
-		.map(async (batch) => {
+		// ? https://github.com/caolan/highland/issues/290#issuecomment-96676999
+		// ? https://github.com/caolan/highland/issues/36
+		.map((batch) => {
 			config.requests++;
-			const res = await flushToMixpanel(batch, config);
-			return res;
+			return flush(batch, config);
 		})
+		.mergeWithLimit(config.workers)
 
 		// * verbose
 		.doto(() => {
@@ -402,6 +403,8 @@ async function corePipeline(stream, config) {
 
 
 }
+
+
 
 /**
  * Mixpanel Importer Stream
@@ -423,40 +426,33 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 	const envVar = getEnvVars();
 	const config = new importJob({ ...envVar, ...creds }, { ...envVar, ...opts });
 	config.timer.start();
+	const flush = _.wrapCallback(callbackify(flushToMixpanel));
 
 
-	// ! todo: make this DRY!!!
+	// ! todo: add concurrency
 	const pipeToMe = _.pipeline(
 		_.map((data) => {
 			config.recordsProcessed++;
+			if (config.fixData) {
+				return config.ezTransform(config.transformFunc(data));
+			}
 			return config.transformFunc(data);
 		}),
 
-		// * transform source data w/ezTransforms
-		_.map((data) => {
-			if (config.fixData) {
-				return config.ezTransform(data);
-			}
-			return data;
-		}),
 
 		// * batch for # of items
 		_.batch(config.recordsPerBatch),
 
 		// * batch for req size
 		_.consume(chunkForSize(config)),
-
 		// * send to mixpanel
-		_.map(async (batch) => {
+		_.map((batch) => {
 			config.requests++;
-			const res = await flushToMixpanel(batch, config);
-			return res;
+			return flush(batch, config);
 		}),
 
 		// * promise back to stream
 		_.flatMap(_),
-
-
 
 		// * verbose
 		_.doto(() => {
@@ -772,7 +768,7 @@ async function determineData(data, config) {
 
 	// data is an object in memory
 	if (Array.isArray(data)) {
-		return [stream.Readable.from(data, { objectMode: true })];
+		return [stream.Readable.from(data, { objectMode: true, highWaterMark: config.streamSize })];
 	}
 
 	try {
@@ -814,7 +810,7 @@ async function determineData(data, config) {
 
 		//stringified JSON
 		try {
-			return [stream.Readable.from(JSON.parse(data), { objectMode: true })];
+			return [stream.Readable.from(JSON.parse(data), { objectMode: true, highWaterMark: config.streamSize })];
 		}
 		catch (e) {
 			//noop
@@ -822,7 +818,7 @@ async function determineData(data, config) {
 
 		//stringified JSONL
 		try {
-			return [stream.Readable.from(data.split('\n').map(JSON.parse), { objectMode: true })];
+			return [stream.Readable.from(data.split('\n').map(JSON.parse), { objectMode: true, highWaterMark: config.streamSize })];
 		}
 
 		catch (e) {
@@ -853,7 +849,7 @@ async function flushLookupTable(stream, config) {
 function existingStream(stream) {
 	const rl = readline.createInterface({
 		input: stream,
-		crlfDelay: Infinity,
+		crlfDelay: Infinity
 	});
 
 	const generator = (push, next) => {
