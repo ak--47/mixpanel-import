@@ -365,7 +365,7 @@ async function corePipeline(stream, config) {
 	const flush = _.wrapCallback(callbackify(flushToMixpanel));
 
 	const pipeline = _(stream)
-		// * transform source data w/user entered function + ezTransforms
+		// * transform source
 		.map((data) => {
 			config.recordsProcessed++;
 			if (config.fixData) {
@@ -380,13 +380,13 @@ async function corePipeline(stream, config) {
 		// * batch for req size
 		.consume(chunkForSize(config))
 
-		// * send to mixpanel
-		// ? https://github.com/caolan/highland/issues/290#issuecomment-96676999
-		// ? https://github.com/caolan/highland/issues/36
+		// * send to mixpanel		
 		.map((batch) => {
 			config.requests++;
 			return flush(batch, config);
 		})
+
+		// * concurrency
 		.mergeWithLimit(config.workers)
 
 		// * verbose
@@ -400,7 +400,6 @@ async function corePipeline(stream, config) {
 		});
 
 	return Promise.all(await pipeline.collect().toPromise(Promise));
-
 
 }
 
@@ -428,8 +427,6 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 	config.timer.start();
 	const flush = _.wrapCallback(callbackify(flushToMixpanel));
 
-
-	// ! todo: add concurrency
 	const pipeToMe = _.pipeline(
 		_.map((data) => {
 			config.recordsProcessed++;
@@ -439,20 +436,20 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 			return config.transformFunc(data);
 		}),
 
-
 		// * batch for # of items
 		_.batch(config.recordsPerBatch),
 
 		// * batch for req size
 		_.consume(chunkForSize(config)),
+
 		// * send to mixpanel
 		_.map((batch) => {
 			config.requests++;
 			return flush(batch, config);
 		}),
 
-		// * promise back to stream
-		_.flatMap(_),
+		// * concurrency
+		_.mergeWithLimit(config.workers),
 
 		// * verbose
 		_.doto(() => {
@@ -624,6 +621,8 @@ async function exportEvents(filename, config) {
 		fs.createWriteStream(filename)
 	);
 
+	console.log('\n\ndownload finished\n\n');
+
 	const lines = await countFileLines(filename);
 	config.recordsProcessed += lines;
 	config.success += lines;
@@ -734,6 +733,8 @@ async function exportProfiles(folder, config) {
 
 	}
 
+	console.log('\n\ndownload finished\n\n');
+
 	config.file = allFiles;
 	config.folder = folder;
 
@@ -768,7 +769,7 @@ async function determineData(data, config) {
 
 	// data is an object in memory
 	if (Array.isArray(data)) {
-		return [stream.Readable.from(data, { objectMode: true, highWaterMark: config.streamSize })];
+		return [stream.Readable.from(data, { objectMode: true })];
 	}
 
 	try {
@@ -810,7 +811,7 @@ async function determineData(data, config) {
 
 		//stringified JSON
 		try {
-			return [stream.Readable.from(JSON.parse(data), { objectMode: true, highWaterMark: config.streamSize })];
+			return [stream.Readable.from(JSON.parse(data), { objectMode: true })];
 		}
 		catch (e) {
 			//noop
@@ -818,7 +819,7 @@ async function determineData(data, config) {
 
 		//stringified JSONL
 		try {
-			return [stream.Readable.from(data.split('\n').map(JSON.parse), { objectMode: true, highWaterMark: config.streamSize })];
+			return [stream.Readable.from(data.split('\n').map(JSON.parse), { objectMode: true })];
 		}
 
 		catch (e) {
@@ -979,9 +980,9 @@ async function countFileLines(filePath) {
 	});
 }
 
-function showProgress(record, processed, requests,) {
+function showProgress(record, processed, requests) {
 	readline.cursorTo(process.stdout, 0);
-	process.stdout.write(`\t${record}s processed: ${u.comma(processed)} | batches sent: ${u.comma(requests)}`);
+	process.stdout.write(`\t${record}s processed: ${u.comma(processed)} | batches sent: ${u.comma(requests)}\t`);
 }
 
 function downloadProgress(amount) {
@@ -990,7 +991,7 @@ function downloadProgress(amount) {
 	}
 	else {
 		readline.cursorTo(process.stdout, 0);
-		process.stdout.write(`\tdownloaded: ${u.bytesHuman(amount, 2, true)}`);
+		process.stdout.write(`\tdownloaded: ${u.bytesHuman(amount, 2, true)}\t`);
 	}
 }
 
