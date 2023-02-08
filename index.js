@@ -310,7 +310,6 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	let config = {};
 	let cliData = {};
 
-
 	// gathering params
 	const envVar = getEnvVars();
 	let cli = {};
@@ -319,7 +318,6 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 		cliData = cli._[0];
 	}
 	config = new importJob({ ...envVar, ...cli, ...creds }, { ...envVar, ...cli, ...opts });
-
 
 	if (isCLI) config.verbose = true;
 	const l = logger(config);
@@ -356,78 +354,16 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
  * @param {importJob} config 
  * @returns {Promise<types.ImportResults>} a promise
  */
-async function corePipeline(stream, config) {
+function corePipeline(stream, config, toNodeStream = false) {
 
-	if (config.recordType === 'table') return await flushLookupTable(stream, config);
-	if (config.recordType === 'export') return await exportEvents(stream, config);
-	if (config.recordType === 'peopleExport') return await exportProfiles(stream, config);
+	if (config.recordType === 'table') return flushLookupTable(stream, config);
+	if (config.recordType === 'export') return exportEvents(stream, config);
+	if (config.recordType === 'peopleExport') return exportProfiles(stream, config);
 
 	const flush = _.wrapCallback(callbackify(flushToMixpanel));
 
-	const pipeline = _(stream)
-		// * transform source
-		.map((data) => {
-			config.recordsProcessed++;
-			if (config.fixData) {
-				return config.ezTransform(config.transformFunc(data));
-			}
-			return config.transformFunc(data);
-		})
-
-		// * batch for # of items
-		.batch(config.recordsPerBatch)
-
-		// * batch for req size
-		.consume(chunkForSize(config))
-
-		// * send to mixpanel		
-		.map((batch) => {
-			config.requests++;
-			return flush(batch, config);
-		})
-
-		// * concurrency
-		.mergeWithLimit(config.workers)
-
-		// * verbose
-		.doto(() => {
-			if (config.verbose) showProgress(config.recordType, config.recordsProcessed, config.requests);
-		})
-
-		// * errors
-		.errors((e) => {
-			throw e;
-		});
-
-	return Promise.all(await pipeline.collect().toPromise(Promise));
-
-}
-
-
-
-/**
- * Mixpanel Importer Stream
- * stream `events`, `users`, `groups`, and `tables` to mixpanel!
- * @example
- * // pipe a stream to mixpanel
- * const { mpStream } = require('mixpanel-import')
- * const mpStream = createMpStream(creds, opts, callback);
- * const observer = new PassThrough({objectMode: true})
- * observer.on('data', (response)=> { })
- * // create a pipeline
- * myStream.pipe(mpStream).pipe(observer);
- * @param {types.Creds} creds - mixpanel project credentials
- * @param {types.Options} opts - import options
- * @param {function(): importJob} finish - end of pipelines
- * @returns a transform stream
- */
-function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
-	const envVar = getEnvVars();
-	const config = new importJob({ ...envVar, ...creds }, { ...envVar, ...opts });
-	config.timer.start();
-	const flush = _.wrapCallback(callbackify(flushToMixpanel));
-
-	const pipeToMe = _.pipeline(
+	const mpPipeline = _.pipeline(
+		// * transforms
 		_.map((data) => {
 			config.recordsProcessed++;
 			if (config.fixData) {
@@ -458,9 +394,43 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 
 		// * errors
 		_.errors((e) => {
-			finish(e);
+			throw e;
 		})
 	);
+
+	if (toNodeStream) {
+		return mpPipeline;
+	}
+
+	stream.pipe(mpPipeline);
+	return mpPipeline.collect().toPromise(Promise);
+
+}
+
+
+
+/**
+ * Mixpanel Importer Stream
+ * stream `events`, `users`, `groups`, and `tables` to mixpanel!
+ * @example
+ * // pipe a stream to mixpanel
+ * const { mpStream } = require('mixpanel-import')
+ * const mpStream = createMpStream(creds, opts, callback);
+ * const observer = new PassThrough({objectMode: true})
+ * observer.on('data', (response)=> { })
+ * // create a pipeline
+ * myStream.pipe(mpStream).pipe(observer);
+ * @param {types.Creds} creds - mixpanel project credentials
+ * @param {types.Options} opts - import options
+ * @param {function(): importJob} finish - end of pipelines
+ * @returns a transform stream
+ */
+function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
+	const envVar = getEnvVars();
+	const config = new importJob({ ...envVar, ...creds }, { ...envVar, ...opts });
+	config.timer.start();
+
+	const pipeToMe = corePipeline(null, config, true);
 
 	// * handlers
 	pipeToMe.on('end', () => {
@@ -474,8 +444,13 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 		pipeToMe.resume();
 	});
 
-	return pipeToMe;
+	pipeToMe.on('error', (e) => {
+		if (config.verbose) {
+			console.log(e);
+		}
+	});
 
+	return pipeToMe;
 }
 
 
@@ -500,7 +475,17 @@ async function flushToMixpanel(batch, config) {
 				strict: Number(config.strict)
 			},
 			method: config.reqMethod,
-			retry: { limit: 50 },
+			retry: {
+				limit: 10,
+				calculateDelay: ({ attemptCount, retryOptions }) => {
+					if (attemptCount > retryOptions.limit) return 0;
+					// exp backoff w/jitter
+					// ? https://developer.mixpanel.com/reference/import-events#rate-limits
+					let jitter = 0;
+					if (attemptCount > 1) jitter = u.rand(1000, 5000);
+					return attemptCount * 2000 + jitter;
+				}
+			},
 			headers: {
 				"Authorization": `${config.auth}`,
 				"Content-Type": config.contentType,
@@ -764,7 +749,7 @@ async function determineData(data, config) {
 
 	// data is already a stream
 	if (data.pipe || data instanceof stream.Stream) {
-		return [existingStream(data)];
+		return [_(existingStream(data))];
 	}
 
 	// data is an object in memory
@@ -963,23 +948,6 @@ LOGGING
 ----
 */
 
-async function countFileLines(filePath) {
-	return new Promise((resolve, reject) => {
-		let lineCount = 0;
-		fs.createReadStream(filePath)
-			.on("data", (buffer) => {
-				let idx = -1;
-				lineCount--; // Because the loop will run once for idx=-1
-				do {
-					idx = buffer.indexOf(10, idx + 1);
-					lineCount++;
-				} while (idx !== -1);
-			}).on("end", () => {
-				resolve(lineCount);
-			}).on("error", reject);
-	});
-}
-
 function showProgress(record, processed, requests) {
 	readline.cursorTo(process.stdout, 0);
 	process.stdout.write(`\t${record}s processed: ${u.comma(processed)} | batches sent: ${u.comma(requests)}\t`);
@@ -1008,6 +976,23 @@ async function writeLogs(data) {
 	const filePath = `${fileDir}/${fileName}`;
 	const file = await u.touch(filePath, data, true);
 	l(`\nCOMPLETE\nlog written to:\n${file}`);
+}
+
+async function countFileLines(filePath) {
+	return new Promise((resolve, reject) => {
+		let lineCount = 0;
+		fs.createReadStream(filePath)
+			.on("data", (buffer) => {
+				let idx = -1;
+				lineCount--; // Because the loop will run once for idx=-1
+				do {
+					idx = buffer.indexOf(10, idx + 1);
+					lineCount++;
+				} while (idx !== -1);
+			}).on("end", () => {
+				resolve(lineCount);
+			}).on("error", reject);
+	});
 }
 
 
