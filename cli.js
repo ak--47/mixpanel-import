@@ -1,6 +1,7 @@
 const yargs = require('yargs');
 const dayjs = require('dayjs');
 const dateFormat = `YYYY-MM-DD`;
+const { version } = require('./package.json');
 
 
 function cliParams() {
@@ -156,7 +157,7 @@ _  _ _ _  _ ___  ____ _  _ ____ _       _ _  _ ___  ____ ____ ___
 |  | | _/\_ |    |  | | \| |___ |___    | |  | |    |__| |  \  |                                                                    
 `
 
-const banner = `... streamer of data... to mixpanel! (v${process.env.npm_package_version || 2})
+const banner = `... streamer of data... to mixpanel! (v${version || 2})
 \tby AK (ak@mixpanel.com)`
 
 const welcome = hero.concat('\n').concat(banner)

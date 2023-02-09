@@ -326,6 +326,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 
 	// ETL
 	config.timer.start();
+	
 	const streams = await determineData(data || cliData, config); // always stream[]
 	for (const stream of streams) {
 		try {
@@ -334,6 +335,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 
 		catch (e) {
 			l(`ERROR: ${e.message}`);
+			if(e?.response?.body) l(`RESPONSE: ${u.json(e.response.body)}\n`)
 		}
 	}
 	l('\n');
@@ -553,8 +555,7 @@ async function exportEvents(filename, config) {
 		url: config.url,
 		searchParams: {
 			from_date: config.start,
-			to_date: config.end,
-			project_id: config.project,
+			to_date: config.end
 		},
 		method: config.reqMethod,
 		retry: { limit: 50 },
@@ -573,6 +574,8 @@ async function exportEvents(filename, config) {
 		},
 
 	};
+
+	if (config.project) options.searchParams.project_id = config.project;
 
 	const request = got.stream(options);
 
@@ -595,6 +598,8 @@ async function exportEvents(filename, config) {
 			...e.headers,
 			message: e.message
 		});
+		throw e;
+
 	});
 
 	request.on('downloadProgress', (progress) => {
@@ -629,11 +634,10 @@ async function exportProfiles(folder, config) {
 		headers: {
 			Authorization: auth
 		},
-		searchParams: {
-			project_id: config.project
-		},
+		searchParams: {},
 		responseType: 'json'
 	};
+	if (config.project) options.searchParams.project_id = config.project;
 
 	let request = await got(options).catch(e => {
 		config.failed++;
@@ -644,6 +648,7 @@ async function exportProfiles(folder, config) {
 			...e.headers,
 			message: e.message
 		});
+		throw e;
 	});
 	let response = request.body;
 
