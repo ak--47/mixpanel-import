@@ -116,8 +116,9 @@ class importJob {
 		// ? boolean options
 		this.compress = u.isNil(opts.compress) ? false : opts.compress; //gzip data (events only)
 		this.strict = u.isNil(opts.strict) ? true : opts.strict; // use strict mode?
-		this.logs = u.isNil(opts.logs) ? true : opts.logs; // print to stdout?
-		this.verbose = u.isNil(opts.verbose) ? true : opts.verbose;
+		this.logs = u.isNil(opts.logs) ? true : opts.logs; //create log file
+		this.where = u.isNil(opts.logs) ? '' : opts.where; // where to put logs
+		this.verbose = u.isNil(opts.verbose) ? true : opts.verbose;  // print to stdout?
 		this.fixData = u.isNil(opts.fixData) ? false : opts.fixData; //apply transforms on the data
 
 		// ? transform options
@@ -344,7 +345,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	config.timer.end(false);
 	const summary = config.summary();
 	l(`${config.type === 'export' ? 'export' : 'import'} complete in ${summary.human}`);
-	if (config.logs) await writeLogs(summary);
+	if (config.logs) await writeLogs(summary, config.where);
 	track('end', { runId, ...config.summary(false) });
 	return summary;
 }
@@ -675,7 +676,7 @@ async function exportProfiles(folder, config) {
 		...request.headers
 	});
 
-	showProgress("profile", config.success, iterations + 1);
+	showProgress("profile", config.success, iterations + 1, 'received');
 
 
 	// recursively consume all profiles
@@ -735,15 +736,15 @@ async function exportProfiles(folder, config) {
 async function determineData(data, config) {
 	//exports are saved locally
 	if (config.recordType === 'export') {
-		const folder = u.mkdir('./mixpanel-exports');
+		const folder = u.mkdir(config.where || './mixpanel-exports');
 		const filename = path.resolve(`${folder}/export-${dayjs().format(dateFormat)}-${u.rand()}.ndjson`);
 		await u.touch(filename);
 		return [filename];
 	}
 
 	if (config.recordType === 'peopleExport') {
-		const folder = u.mkdir('./mixpanel-exports');
-		return [folder];
+		const folder = u.mkdir(config.where || './mixpanel-exports');
+		return [path.resolve(folder)];
 	}
 
 	// lookup tables are not streamed
@@ -953,9 +954,9 @@ LOGGING
 ----
 */
 
-function showProgress(record, processed, requests) {
+function showProgress(record, processed, requests, sentOrReceived = 'sent') {
 	readline.cursorTo(process.stdout, 0);
-	process.stdout.write(`\t${record}s processed: ${u.comma(processed)} | batches sent: ${u.comma(requests)}\t`);
+	process.stdout.write(`\t${record}s processed: ${u.comma(processed)} | batches ${sentOrReceived}: ${u.comma(requests)}\t`);
 }
 
 function downloadProgress(amount) {
@@ -964,7 +965,7 @@ function downloadProgress(amount) {
 	}
 	else {
 		readline.cursorTo(process.stdout, 0);
-		process.stdout.write(`\tdownloaded: ${u.bytesHuman(amount, 2, true)}\t`);
+		process.stdout.write(`\tdownloaded: ${u.bytesHuman(amount, 2, true)}    \t`);
 	}
 }
 
@@ -974,9 +975,9 @@ function logger(config) {
 	};
 }
 
-async function writeLogs(data) {
+async function writeLogs(data, where = '') {
 	const dateTime = new Date().toISOString().split('.')[0].replace('T', '--').replace(/:/g, ".");
-	const fileDir = u.mkdir('./logs');
+	const fileDir = u.mkdir( where || './logs');
 	const fileName = `${data.recordType}-import-log-${dateTime}.json`;
 	const filePath = `${fileDir}/${fileName}`;
 	const file = await u.touch(filePath, data, true);

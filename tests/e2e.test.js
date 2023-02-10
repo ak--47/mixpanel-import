@@ -234,8 +234,8 @@ describe('big files', () => {
 });
 
 describe('cli', () => {
-	test('events', async () => {
-		const output = execSync(`node ./index.js ${events} --fixData`).toString().trim().split('\n').pop();
+	test('events', async () => {		const output = execSync(`node ./index.js ${events} --fixData`).toString().trim().split('\n').pop();
+
 		const result = await u.load(output, true);
 		expect(result.success).toBe(5003);
 	}, longTimeout);

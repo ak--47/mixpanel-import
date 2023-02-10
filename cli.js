@@ -81,6 +81,11 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'log import results to file',
 			type: 'boolean'
 		})
+		.option("where", {
+			demandOption: false,
+			describe: 'where to put logs + files',
+			type: 'string'
+		})
 		.option("verbose", {
 			demandOption: false,
 			default: true,

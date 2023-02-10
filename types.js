@@ -25,7 +25,7 @@
  * @property {number} [recordsPerBatch=2000] - max # of records in each payload (max 2000; max 200 for group profiles) 
  * @property {number} [bytesPerBatch=2*1024*1024] - max # of bytes in each payload (max 2MB)
  * @property {number} [workers=10] - # of concurrent workers sending requests
- 
+ * @property {string} [where] - where to put files
  * @property {transFunc} [transformFunc=()=>{}] - a function to apply to every record before sending
  */
 
