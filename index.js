@@ -482,15 +482,19 @@ async function flushToMixpanel(batch, config) {
 			method: config.reqMethod,
 			retry: {
 				limit: 10,
-				calculateDelay: ({ attemptCount, retryOptions }) => {
-					if (attemptCount > retryOptions.limit) return 0;
-					// exp backoff w/jitter
-					// ? https://developer.mixpanel.com/reference/import-events#rate-limits
-					let jitter = 0;
-					if (attemptCount > 1) jitter = u.rand(1000, 5000);
-					return attemptCount * 2000 + jitter;
-				},
-				statusCodes: [429, 500, 501, 503]
+				// 	// exp backoff w/jitter
+				// 	// ? https://developer.mixpanel.com/reference/import-events#rate-limits
+				// calculateDelay: ({ attemptCount, retryOptions }) => {
+				// 	if (attemptCount > retryOptions.limit) return 0;
+				// 	let jitter = 0;
+				// 	if (attemptCount > 1) jitter = u.rand(1000, 5000);
+				// 	return attemptCount * 2000 + jitter;
+				// },
+				statusCodes: [429, 500, 501, 503],
+				errorCodes: [],
+				methods: ['POST'],
+				noise: 2500
+
 			},
 			headers: {
 				"Authorization": `${config.auth}`,
@@ -503,9 +507,9 @@ async function flushToMixpanel(batch, config) {
 				https: new https.Agent({ keepAlive: true })
 			},
 			hooks: {
-				beforeRetry: [(err, count) => {
+				beforeRetry: [(req, resp, count) => {
 					try {
-						l(`retrying request...#${count}`);
+						l(`got ${resp.message}...retrying request...#${count}`);
 					}
 					catch (e) {
 						//noop
