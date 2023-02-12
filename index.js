@@ -327,7 +327,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 
 	// ETL
 	config.timer.start();
-	
+
 	const streams = await determineData(data || cliData, config); // always stream[]
 	for (const stream of streams) {
 		try {
@@ -336,7 +336,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 
 		catch (e) {
 			l(`ERROR: ${e.message}`);
-			if(e?.response?.body) l(`RESPONSE: ${u.json(e.response.body)}\n`)
+			if (e?.response?.body) l(`RESPONSE: ${u.json(e.response.body)}\n`);
 		}
 	}
 	l('\n');
@@ -470,6 +470,8 @@ async function flushToMixpanel(batch, config) {
 			body = await gzip(body);
 			config.encoding = 'gzip';
 		}
+
+		/** @type {got.Options} */
 		const options = {
 			url: config.url,
 			searchParams: {
@@ -487,7 +489,8 @@ async function flushToMixpanel(batch, config) {
 					let jitter = 0;
 					if (attemptCount > 1) jitter = u.rand(1000, 5000);
 					return attemptCount * 2000 + jitter;
-				}
+				},
+				statusCodes: [429, 500, 501, 503]
 			},
 			headers: {
 				"Authorization": `${config.auth}`,
@@ -552,6 +555,7 @@ async function flushToMixpanel(batch, config) {
 async function exportEvents(filename, config) {
 	const pipeline = promisify(stream.pipeline);
 
+	/** @type {got.Options} */
 	const options = {
 		url: config.url,
 		searchParams: {
@@ -562,7 +566,6 @@ async function exportEvents(filename, config) {
 		retry: { limit: 50 },
 		headers: {
 			"Authorization": `${config.auth}`
-
 		},
 		agent: {
 			https: new https.Agent({ keepAlive: true })
@@ -629,6 +632,8 @@ async function exportProfiles(folder, config) {
 	let iterations = 0;
 	let fileName = `people-${iterations}.json`;
 	let file = path.resolve(`${folder}/${fileName}`);
+
+	/** @type {got.Options} */
 	const options = {
 		method: 'POST',
 		url: config.url,
@@ -977,7 +982,7 @@ function logger(config) {
 
 async function writeLogs(data, where = '') {
 	const dateTime = new Date().toISOString().split('.')[0].replace('T', '--').replace(/:/g, ".");
-	const fileDir = u.mkdir( where || './logs');
+	const fileDir = u.mkdir(where || './logs');
 	const fileName = `${data.recordType}-import-log-${dateTime}.json`;
 	const filePath = `${fileDir}/${fileName}`;
 	const file = await u.touch(filePath, data, true);

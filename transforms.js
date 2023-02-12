@@ -25,6 +25,7 @@ function ezTransforms(config) {
 	//for user imports, make sure every record has a $token and the right shape
 	if (config.recordType === `user`) {
 		return function addUserTokenIfAbsent(user) {
+			//todo make it possible to take existing profiles and send them...
 			//wrong shape; fix it
 			if (!(user.$set || user.$set_once || user.$add || user.$union || user.$append || user.$remove || user.$unset)) {
 				user = { $set: { ...user } };

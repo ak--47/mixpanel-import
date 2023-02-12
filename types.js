@@ -10,6 +10,7 @@
  * @property {string} [token] - project token (for importing user profiles)
  * @property {string} [lookupTableId] - lookup table ID (for importing lookup tables)
  * @property {string} [groupKey] - group identifier (for importing group profiles)
+ * @property {string} secret - mixpanel project secret
  */
 
 /**
@@ -20,6 +21,7 @@
  * @property {boolean} [compress=false] - use gzip compression (events only)
  * @property {boolean} [strict=true] - validate data on send (events only)
  * @property {boolean} [logs=true] - log data to console
+ * @property {boolean} [verbose=true] - display verbose output messages
  * @property {boolean} [fixData=false] - apply transformations to ensure data is properly ingested
  * @property {number} [streamSize=27] - 2^N; highWaterMark value for stream [DEPRECATED] ... use workers instead
  * @property {number} [recordsPerBatch=2000] - max # of records in each payload (max 2000; max 200 for group profiles) 
