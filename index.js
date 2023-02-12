@@ -1,5 +1,6 @@
 #! /usr/bin/env node
 
+
 /*
 ----
 MIXPANEL IMPORT
@@ -160,6 +161,8 @@ class importJob {
 		if (this.recordType === "export") {
 			this.reqMethod = 'GET';
 		}
+		this.file = "";
+		this.folder = "";
 
 	}
 
