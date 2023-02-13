@@ -1,6 +1,6 @@
 {
   "name": "mixpanel-import",
-  "version": "2.2.321",
+  "version": "2.2.322",
   "description": "stream and import data to mixpanel from node.js",
   "main": "index.js",
   "keywords": [
@@ -14,6 +14,7 @@
   "scripts": {
     "dev": "npm run prune && nodemon --inspect scratch.js --ignore ./testData --ignore ./mixpanel-exports --ignore ./logs",
     "post": "npm publish",
+	"benchmark": "node --inspect ./benchmarks/main.mjs",
     "generate": "NUMEVENTS=9999 SINCEDAYS=30 node generateFakeData.js",
     "prune": "rm -rf ./logs/* && rm -rf ./mixpanel-exports/*",
     "test": "jest --watch",

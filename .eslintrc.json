@@ -15,5 +15,6 @@
     },
 	"globals": {
 		"l" : true
-	}
+	},
+	"ignorePatterns": ["benchmarks/*"]
 }

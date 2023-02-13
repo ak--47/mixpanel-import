@@ -1,5 +1,5 @@
+/* eslint-disable no-unused-vars */
 // @ts-check
-// eslint-disable-next-line no-unused-vars
 const Types = require("../types.js");
 
 /** @type {Types.mpUser} */
