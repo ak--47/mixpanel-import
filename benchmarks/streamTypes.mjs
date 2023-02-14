@@ -2,13 +2,17 @@
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const mpStream = require('../index.js');
+const stream = require('stream');
 const u = require('ak-tools');
 const Types = require("../types.js");
+
+
 
 export default async function main() {
 	const JSON = `./benchmarks/testData/dnd250.json`;
 	const NDJSON = `./benchmarks/testData/dnd250.ndjson`;
-	const CSV = `./benchmarks/testData/dnd.csv`;
+	const data = require(`.${JSON}`);
+	const objStream = new stream.Readable.from(data, { objectMode: true });
 
 	/** @type {Types.Options} */
 	const opts = {
@@ -18,10 +22,11 @@ export default async function main() {
 
 	const res = {
 		JSON: {},
-		NDJSON: {}
+		NDJSON: {},
+		objMode: {}
 	};
 
-	console.log('JSON v.s. NDJSON');
+	console.log('JSON v.s. NDJSON v.s OBJECT STREAMS');
 
 	// JSON V.S. NDJSON
 	console.log('\tJSON START');
@@ -32,7 +37,7 @@ export default async function main() {
 	res.JSON.workers = jsonImport.workers;
 	res.JSON.human = jsonImport.human;
 	console.log('\tJSON END');
-	console.log('\n\n')
+	console.log('\n\n');
 	console.log('\tNDJSON START');
 	const ndJSONImport = await mpStream({}, NDJSON, { ...opts, streamFormat: 'jsonl' });
 	res.NDJSON.time = ndJSONImport.duration;
@@ -41,6 +46,16 @@ export default async function main() {
 	res.NDJSON.workers = ndJSONImport.workers;
 	res.NDJSON.human = ndJSONImport.human;
 	console.log('\tNDJSON END');
+	console.log('\n\n');
+	console.log('\tSTREAM START');
+	const objMode = await mpStream({}, objStream, { ...opts });
+	res.objMode.time = objMode.duration;
+	res.objMode.eps = objMode.eps;
+	res.objMode.rps = objMode.rps;
+	res.objMode.workers = objMode.workers;
+	res.objMode.human = objMode.human;
+	console.log('\tSTREAM END');
+	console.log('\n\n');
 
 	console.log(`
 ANALYSIS:
@@ -53,13 +68,23 @@ JSON:
 	- EPS: ${u.comma(res.JSON.eps)}
 	- TIME: ${res.JSON.human}
 
+
 NDJSON:
 ------
 	- RPS: ${res.NDJSON.rps}
 	- EPS: ${u.comma(res.NDJSON.eps)}
 	- TIME: ${res.NDJSON.human}
 
+
+OBJECT STREAM:
+------
+	- RPS: ${res.objMode.rps}
+	- EPS: ${u.comma(res.objMode.eps)}
+	- TIME: ${res.objMode.human}
+
+
 NDJSON is ${u.round(100 * ((res.NDJSON.eps - res.JSON.eps) / res.JSON.eps))}% faster than JSON
+OBJECT STREAMS are  ${u.round(100 * ((res.objMode.eps - res.NDJSON.eps) / res.NDJSON.eps))}% faster than NDJSON
 `);
 	return res;
 }

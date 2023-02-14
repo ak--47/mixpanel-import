@@ -35,6 +35,7 @@ const https = require('https');
 // $ file system
 const path = require('path');
 const fs = require('fs');
+const os = require("os");
 
 
 // $ env
@@ -143,6 +144,7 @@ class importJob {
 		this.responses = [];
 		this.errors = [];
 		this.workers = Number.isInteger(opts.workers) ? opts.workers : 10;
+		this.highWater = (this.workers * this.recordsPerBatch) || 2000
 
 		// ? allow plurals
 		if (this.recordType === 'events') this.recordType === 'event';
@@ -773,7 +775,7 @@ async function determineData(data, config) {
 
 	// data is an object in memory
 	if (Array.isArray(data)) {
-		return [stream.Readable.from(data, { objectMode: true, highWaterMark: config.workers * 2000 })];
+		return [stream.Readable.from(data, { objectMode: true, highWaterMark: config.highWater })];
 	}
 
 	try {
@@ -782,13 +784,28 @@ async function determineData(data, config) {
 		if (fs.existsSync(path.resolve(data))) {
 			const fileOrDir = fs.lstatSync(path.resolve(data));
 
-			//file case
+
+			//file case			
 			if (fileOrDir.isFile()) {
 				if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(data))) {
-					return itemStream(path.resolve(data), "json", config.workers);
+					// !! if the file is small enough; just load it into memory (is this ok?)
+					if (fileOrDir.size < os.freemem() * .75) {
+						const file = await u.load(path.resolve(data), true);
+						return [stream.Readable.from(file, { objectMode: true, highWaterMark: config.highWater })];
+					}
+
+					//otherwise, stream it
+					return itemStream(path.resolve(data), "json", config.highWater);
 				}
 				if (config.streamFormat === 'jsonl' || config.lineByLineFileExt.includes(path.extname(data))) {
-					return itemStream(path.resolve(data), "jsonl", config.workers);
+					// !! if the file is small enough; just load it into memory (is this ok?)
+					if (fileOrDir.size < os.freemem() * .75) {
+						const file = await u.load(path.resolve(data));
+						const parsed = file.trim().split('\n').map(JSON.parse);
+						return [stream.Readable.from(parsed, { objectMode: true, highWaterMark: config.highWater })];
+					}
+
+					return itemStream(path.resolve(data), "jsonl", config.highWater);
 				}
 			}
 
@@ -797,10 +814,10 @@ async function determineData(data, config) {
 				const enumDir = await u.ls(path.resolve(data));
 				const files = enumDir.filter(filePath => config.supportedFileExt.includes(path.extname(filePath)));
 				if (config.streamFormat === 'jsonl' || config.lineByLineFileExt.includes(path.extname(files[0]))) {
-					return itemStream(files, "jsonl", config.workers);
+					return itemStream(files, "jsonl", config.highWater);
 				}
 				if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(files[0]))) {
-					return itemStream(files, "json", config.workers);
+					return itemStream(files, "json", config.highWater);
 				}
 			}
 		}
@@ -815,7 +832,7 @@ async function determineData(data, config) {
 
 		//stringified JSON
 		try {
-			return [stream.Readable.from(JSON.parse(data), { objectMode: true, highWaterMark: config.workers * 2000 })];
+			return [stream.Readable.from(JSON.parse(data), { objectMode: true, highWaterMark: config.highWater })];
 		}
 		catch (e) {
 			//noop
@@ -823,7 +840,7 @@ async function determineData(data, config) {
 
 		//stringified JSONL
 		try {
-			return [stream.Readable.from(data.split('\n').map(JSON.parse), { objectMode: true, highWaterMark: config.workers * 2000 })];
+			return [stream.Readable.from(data.trim().split('\n').map(JSON.parse), { objectMode: true, highWaterMark: config.highWater })];
 		}
 
 		catch (e) {
