@@ -767,12 +767,13 @@ async function determineData(data, config) {
 
 	// data is already a stream
 	if (data.pipe || data instanceof stream.Stream) {
+		if (data.readableObjectMode) return [data];
 		return [_(existingStream(data))];
 	}
 
 	// data is an object in memory
 	if (Array.isArray(data)) {
-		return [stream.Readable.from(data, { objectMode: true })];
+		return [stream.Readable.from(data, { objectMode: true, highWaterMark: config.workers * 2000 })];
 	}
 
 	try {
@@ -784,10 +785,10 @@ async function determineData(data, config) {
 			//file case
 			if (fileOrDir.isFile()) {
 				if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(data))) {
-					return itemStream(path.resolve(data), "json");
+					return itemStream(path.resolve(data), "json", config.workers);
 				}
 				if (config.streamFormat === 'jsonl' || config.lineByLineFileExt.includes(path.extname(data))) {
-					return itemStream(path.resolve(data), "jsonl");
+					return itemStream(path.resolve(data), "jsonl", config.workers);
 				}
 			}
 
@@ -796,10 +797,10 @@ async function determineData(data, config) {
 				const enumDir = await u.ls(path.resolve(data));
 				const files = enumDir.filter(filePath => config.supportedFileExt.includes(path.extname(filePath)));
 				if (config.streamFormat === 'jsonl' || config.lineByLineFileExt.includes(path.extname(files[0]))) {
-					return itemStream(files, "jsonl");
+					return itemStream(files, "jsonl", config.workers);
 				}
 				if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(files[0]))) {
-					return itemStream(files, "json");
+					return itemStream(files, "json", config.workers);
 				}
 			}
 		}
@@ -814,7 +815,7 @@ async function determineData(data, config) {
 
 		//stringified JSON
 		try {
-			return [stream.Readable.from(JSON.parse(data), { objectMode: true })];
+			return [stream.Readable.from(JSON.parse(data), { objectMode: true, highWaterMark: config.workers * 2000 })];
 		}
 		catch (e) {
 			//noop
@@ -822,7 +823,7 @@ async function determineData(data, config) {
 
 		//stringified JSONL
 		try {
-			return [stream.Readable.from(data.split('\n').map(JSON.parse), { objectMode: true })];
+			return [stream.Readable.from(data.split('\n').map(JSON.parse), { objectMode: true, highWaterMark: config.workers * 2000 })];
 		}
 
 		catch (e) {
@@ -851,6 +852,7 @@ async function flushLookupTable(stream, config) {
 }
 
 function existingStream(stream) {
+
 	const rl = readline.createInterface({
 		input: stream,
 		crlfDelay: Infinity
@@ -870,7 +872,7 @@ function existingStream(stream) {
 	return generator;
 }
 
-function itemStream(filePath, type = "jsonl") {
+function itemStream(filePath, type = "jsonl", workers) {
 	let stream;
 	if (Array.isArray(filePath)) {
 		stream = filePath.map((file) => fs.createReadStream(file));
@@ -881,7 +883,7 @@ function itemStream(filePath, type = "jsonl") {
 
 	//use the right parser based on the type of file
 	const parser = type === "jsonl" ? jsonlParser : StreamArray.withParser;
-	return stream.map(s => s.pipe(parser()).map(token => token.value));
+	return stream.map(s => s.pipe(parser({ highWaterMark: workers * 2000 })).map(token => token.value));
 }
 
 function chunkForSize(config) {
