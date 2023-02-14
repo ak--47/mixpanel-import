@@ -144,7 +144,7 @@ class importJob {
 		this.responses = [];
 		this.errors = [];
 		this.workers = Number.isInteger(opts.workers) ? opts.workers : 10;
-		this.highWater = (this.workers * this.recordsPerBatch) || 2000
+		this.highWater = (this.workers * this.recordsPerBatch) || 2000;
 
 		// ? allow plurals
 		if (this.recordType === 'events') this.recordType === 'event';
@@ -245,6 +245,10 @@ class importJob {
 
 		else if (this.bearer) {
 			return `Bearer ${this.bearer}`;
+		}
+
+		else if (this.type === 'user' || this.type === 'group') {
+			return ``;
 		}
 
 		else {
