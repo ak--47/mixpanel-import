@@ -109,6 +109,7 @@ class importJob {
 		this.streamSize = opts.streamSize || 27; // power of 2 for highWaterMark in stream  (default 134 MB)		
 		this.recordsPerBatch = opts.recordsPerBatch || 2000; // records in each req; max 2000 (200 for groups)
 		this.bytesPerBatch = opts.bytesPerBatch || 2 * 1024 * 1024; // max bytes in each req
+		this.maxRetries = opts.maxRetries || 10; // number of times to retry a batch
 
 		// ? don't allow batches bigger than API limits
 		if (this.type === 'event' && this.recordsPerBatch > 2000) this.recordsPerBatch = 2000;
@@ -122,6 +123,7 @@ class importJob {
 		this.where = u.isNil(opts.logs) ? '' : opts.where; // where to put logs
 		this.verbose = u.isNil(opts.verbose) ? true : opts.verbose;  // print to stdout?
 		this.fixData = u.isNil(opts.fixData) ? false : opts.fixData; //apply transforms on the data
+		this.abridged = u.isNil(opts.fixData) ? false : opts.abridged; //apply transforms on the data
 
 		// ? transform options
 		this.transformFunc = opts.transformFunc || function noop(a) { return a; }; //will be called on every record
@@ -223,7 +225,10 @@ class importJob {
 		return Object.assign(this);
 	}
 	store(response, success = true) {
-		if (success) this.responses.push(response);
+		if (!this.abridged) {
+			if (success) this.responses.push(response);
+		}
+		
 		if (!success) this.errors.push(response);
 	}
 	getVersion() {
@@ -267,7 +272,8 @@ class importJob {
 			success: this.success,
 			failed: this.failed,
 			total: this.recordsProcessed,
-			requests: this.responses.length + this.errors.length,
+			requests: this.requests,
+			batches: this.batches,
 			recordType: this.recordType,
 			duration: this.timer.report(false).delta,
 			human: this.timer.report(false).human,
@@ -490,15 +496,7 @@ async function flushToMixpanel(batch, config) {
 			},
 			method: config.reqMethod,
 			retry: {
-				limit: 10,
-				// 	// exp backoff w/jitter
-				// 	// ? https://developer.mixpanel.com/reference/import-events#rate-limits
-				// calculateDelay: ({ attemptCount, retryOptions }) => {
-				// 	if (attemptCount > retryOptions.limit) return 0;
-				// 	let jitter = 0;
-				// 	if (attemptCount > 1) jitter = u.rand(1000, 5000);
-				// 	return attemptCount * 2000 + jitter;
-				// },
+				limit: config.maxRetries || 10,
 				statusCodes: [429, 500, 501, 503],
 				errorCodes: [],
 				methods: ['POST'],
@@ -509,8 +507,8 @@ async function flushToMixpanel(batch, config) {
 				"Authorization": `${config.auth}`,
 				"Content-Type": config.contentType,
 				"Content-Encoding": config.encoding,
-				'Connection': 'keep-alive'
-
+				'Connection': 'keep-alive',
+				'Accept': 'application/json'
 			},
 			agent: {
 				https: new https.Agent({ keepAlive: true })
