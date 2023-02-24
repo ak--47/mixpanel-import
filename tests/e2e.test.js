@@ -264,3 +264,15 @@ describe('cli', () => {
 afterAll(async () => {
 	execSync(`npm run prune`);
 });
+
+
+describe('options', () => {
+	test('abridged mode', async () => {
+		const data = await mp({}, events, { ...opts, abridged: true });
+		expect(data.success).toBe(5003);
+		expect(data.failed).toBe(0);
+		expect(data.responses.length).toBe(0)
+		expect(data.duration).toBeGreaterThan(0);
+	}, longTimeout);
+
+});

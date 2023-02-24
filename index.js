@@ -123,7 +123,7 @@ class importJob {
 		this.where = u.isNil(opts.logs) ? '' : opts.where; // where to put logs
 		this.verbose = u.isNil(opts.verbose) ? true : opts.verbose;  // print to stdout?
 		this.fixData = u.isNil(opts.fixData) ? false : opts.fixData; //apply transforms on the data
-		this.abridged = u.isNil(opts.fixData) ? false : opts.abridged; //apply transforms on the data
+		this.abridged = u.isNil(opts.abridged) ? false : opts.abridged; //apply transforms on the data
 
 		// ? transform options
 		this.transformFunc = opts.transformFunc || function noop(a) { return a; }; //will be called on every record
