@@ -163,7 +163,7 @@ _  _ _ _  _ ___  ____ _  _ ____ _       _ _  _ ___  ____ ____ ___
 `
 
 const banner = `... streamer of data... to mixpanel! (v${version || 2})
-\tby AK (ak@mixpanel.com)`
+\tby AK (ak@mixpanel.com)\n\n`
 
 const welcome = hero.concat('\n').concat(banner)
 

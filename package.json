@@ -1,6 +1,6 @@
 {
   "name": "mixpanel-import",
-  "version": "2.2.51",
+  "version": "2.2.52",
   "description": "stream and import data to mixpanel from node.js",
   "main": "index.js",
   "keywords": [
@@ -12,9 +12,9 @@
     "CLI"
   ],
   "scripts": {
-    "dev": "npm run prune && nodemon --inspect scratch.js --ignore ./testData --ignore ./mixpanel-exports --ignore ./logs",
+    "dev": "npm run prune && nodemon --max-old-space-size=8192 --inspect scratch.js --ignore ./testData --ignore ./mixpanel-exports --ignore ./logs",
     "post": "npm publish",
-	"benchmark": "node --inspect ./benchmarks/main.mjs",
+    "benchmark": "node --inspect ./benchmarks/main.mjs",
     "generate": "NUMEVENTS=9999 SINCEDAYS=30 node generateFakeData.js",
     "prune": "rm -rf ./logs/* && rm -rf ./mixpanel-exports/*",
     "test": "jest --watch",
@@ -36,7 +36,7 @@
   "homepage": "https://github.com/ak--47/mixpanel-import#readme",
   "dependencies": {
     "@types/highland": "^2.12.14",
-    "ak-tools": "^1.0.219",
+    "ak-tools": "^1.0.32",
     "chance": "^1.1.7",
     "dayjs": "^1.11.7",
     "dotenv": "^10.0.0",

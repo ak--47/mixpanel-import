@@ -123,7 +123,8 @@ class importJob {
 		this.where = u.isNil(opts.logs) ? '' : opts.where; // where to put logs
 		this.verbose = u.isNil(opts.verbose) ? true : opts.verbose;  // print to stdout?
 		this.fixData = u.isNil(opts.fixData) ? false : opts.fixData; //apply transforms on the data
-		this.abridged = u.isNil(opts.abridged) ? false : opts.abridged; //apply transforms on the data
+		this.abridged = u.isNil(opts.abridged) ? false : opts.abridged; //don't include success responses
+		this.forceStream = u.isNil(opts.forceStream) ? false : opts.forceStream; //don't ever buffer files into memory
 
 		// ? transform options
 		this.transformFunc = opts.transformFunc || function noop(a) { return a; }; //will be called on every record
@@ -228,7 +229,7 @@ class importJob {
 		if (!this.abridged) {
 			if (success) this.responses.push(response);
 		}
-		
+
 		if (!success) this.errors.push(response);
 	}
 	getVersion() {
@@ -536,7 +537,12 @@ async function flushToMixpanel(batch, config) {
 		}
 
 		catch (e) {
-			res = JSON.parse(e.response.body);
+			if (u.isJSONStr(e?.response?.body)) {
+				res = JSON.parse(e.response.body);
+			}
+			else {
+				res = e;
+			}
 			success = false;
 		}
 
@@ -692,7 +698,7 @@ async function exportProfiles(folder, config) {
 		...request.headers
 	});
 
-	showProgress("profile", config.success, iterations + 1, 'received');
+	showProgress("profile", config.success, iterations + 1);
 
 
 	// recursively consume all profiles
@@ -791,7 +797,7 @@ async function determineData(data, config) {
 			if (fileOrDir.isFile()) {
 				if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(data))) {
 					// !! if the file is small enough; just load it into memory (is this ok?)
-					if (fileOrDir.size < os.freemem() * .75) {
+					if (fileOrDir.size < os.freemem() * .75 && !config.forceStream) {
 						const file = await u.load(path.resolve(data), true);
 						return [stream.Readable.from(file, { objectMode: true, highWaterMark: config.highWater })];
 					}
@@ -801,7 +807,7 @@ async function determineData(data, config) {
 				}
 				if (config.streamFormat === 'jsonl' || config.lineByLineFileExt.includes(path.extname(data))) {
 					// !! if the file is small enough; just load it into memory (is this ok?)
-					if (fileOrDir.size < os.freemem() * .75) {
+					if (fileOrDir.size < os.freemem() * .75 && !config.forceStream) {
 						const file = await u.load(path.resolve(data));
 						const parsed = file.trim().split('\n').map(JSON.parse);
 						return [stream.Readable.from(parsed, { objectMode: true, highWaterMark: config.highWater })];
@@ -987,9 +993,13 @@ LOGGING
 ----
 */
 
-function showProgress(record, processed, requests, sentOrReceived = 'sent') {
-	readline.cursorTo(process.stdout, 0);
-	process.stdout.write(`\t${record}s processed: ${u.comma(processed)} | batches ${sentOrReceived}: ${u.comma(requests)}\t`);
+function showProgress(record, processed, requests) {
+	const { rss, heapTotal, heapUsed } = process.memoryUsage();
+	const percentHeap = (heapUsed / heapTotal) * 100;
+	const percentRSS = (heapUsed / rss) * 100;
+	const line = `${record}s: ${u.comma(processed)} | batches: ${u.comma(requests)} | memory: ${u.bytesHuman(heapUsed)} (heap: ${u.round(percentHeap)}% total:${u.round(percentRSS)}%)\t\t`;
+	readline.cursorTo(process.stdout, 0);	
+	process.stdout.write(line);
 }
 
 function downloadProgress(amount) {

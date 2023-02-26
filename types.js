@@ -53,6 +53,7 @@ MODULE STUFF
  * @property {number} [workers=10] - # of concurrent workers sending requests
  * @property {string} [where] - where to put files
  * @property {string} [abridged=false] - included only error responses; not successes
+ * @property {string} [forceStream=false] - don't buffer files into memory (even if they can fit)
  * @property {transFunc} [transformFunc=()=>{}] - a function to apply to every record before sending
  */
 
