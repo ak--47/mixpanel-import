@@ -46,14 +46,14 @@ MODULE STUFF
  * @property {boolean} [logs=true] - log data to console
  * @property {boolean} [verbose=true] - display verbose output messages
  * @property {boolean} [fixData=false] - apply transformations to ensure data is properly ingested
+ * @property {boolean} [abridged=false] - included only error responses; not successes
+ * @property {boolean} [forceStream=false] - don't buffer files into memory (even if they can fit)
  * @property {number} [streamSize=27] - 2^N; highWaterMark value for stream [DEPRECATED] ... use workers instead
  * @property {number} [recordsPerBatch=2000] - max # of records in each payload (max 2000; max 200 for group profiles) 
  * @property {number} [bytesPerBatch=2*1024*1024] - max # of bytes in each payload (max 2MB)
  * @property {number} [maxRetries=10] - maximum # of times to retry
  * @property {number} [workers=10] - # of concurrent workers sending requests
  * @property {string} [where] - where to put files
- * @property {string} [abridged=false] - included only error responses; not successes
- * @property {string} [forceStream=false] - don't buffer files into memory (even if they can fit)
  * @property {transFunc} [transformFunc=()=>{}] - a function to apply to every record before sending
  */
 
