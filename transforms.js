@@ -1,6 +1,6 @@
 const md5 = require('md5');
 
-function ezTransforms(config) {	
+function ezTransforms(config) {
 	//for strict event imports, make every record has an $insert_id
 	if (config.recordType === `event`) {
 		return function addInsertIfAbsent(event) {
@@ -67,4 +67,40 @@ function ezTransforms(config) {
 	}
 }
 
-module.exports = ezTransforms
+// side-effects; for efficiency 
+// removes: null, '', undefined, {}, [] 
+function removeNulls(valuesToRemove = [null, '', undefined]) {
+	return function (record) {
+		const keysToEnum = ['properties', '$set', '$set_once'];
+		for (const recordKey of keysToEnum) {
+			for (const badVal of valuesToRemove) {
+				if (record?.[recordKey]) {
+					for (const p in record[recordKey]) {
+						if (record[recordKey][p] === badVal) {
+							delete record[recordKey][p];
+						}
+						//test for {}
+						try {
+							if (typeof record[recordKey][p] === 'object') {
+								if (Object.keys(record[recordKey][p]).length === 0) {
+									delete record[recordKey][p];
+								}
+							}
+						}
+						catch (e) {
+							//noop
+						}
+					}
+				}
+			}
+		}
+
+		return record;
+	};
+
+}
+
+module.exports = {
+	ezTransforms,
+	removeNulls,
+};

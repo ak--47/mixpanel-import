@@ -45,7 +45,8 @@ MODULE STUFF
  * @property {boolean} [strict=true] - validate data on send (events only)
  * @property {boolean} [logs=true] - log data to console
  * @property {boolean} [verbose=true] - display verbose output messages
- * @property {boolean} [fixData=false] - apply transformations to ensure data is properly ingested
+ * @property {boolean} [fixData=false] - apply various transformations to ensure data is properly ingested
+ * @property {boolean} [removeNulls=false] - remove the following (keys and values) from each record with values = `null`, `''`, `undefined`, `{}`, or `[]` 
  * @property {boolean} [abridged=false] - included only error responses; not successes
  * @property {boolean} [forceStream=false] - don't buffer files into memory (even if they can fit)
  * @property {number} [streamSize=27] - 2^N; highWaterMark value for stream [DEPRECATED] ... use workers instead

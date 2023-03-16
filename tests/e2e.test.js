@@ -18,7 +18,7 @@ unzip it in ./testData
 /* cSpell:disable */
 require('dotenv').config();
 const { execSync } = require("child_process");
-const longTimeout = 60000
+const longTimeout = 60000;
 
 
 const mp = require('../index.js');
@@ -49,6 +49,7 @@ const opts = {
 	strict: true,
 	logs: false,
 	fixData: true,
+
 	verbose: false,
 	streamFormat: 'jsonl',
 	transformFunc: function noop(a) { return a; }
@@ -199,7 +200,7 @@ describe('object streams', () => {
 
 });
 
-describe('exports', () => {	
+describe('exports', () => {
 	test('can export event data', async () => {
 		const data = await mp({}, null, { ...opts, recordType: 'export', start: '2023-01-01', end: '2023-01-03' });
 		expect(data.duration).toBeGreaterThan(0);
@@ -210,7 +211,7 @@ describe('exports', () => {
 	}, longTimeout);
 
 	test('can export profile data', async () => {
-		
+
 		const data = await mp({}, null, { ...opts, "recordType": "peopleExport" });
 		expect(data.duration).toBeGreaterThan(0);
 		expect(data.requests).toBeGreaterThan(5);
@@ -234,7 +235,8 @@ describe('big files', () => {
 });
 
 describe('cli', () => {
-	test('events', async () => {		const output = execSync(`node ./index.js ${events} --fixData`).toString().trim().split('\n').pop();
+	test('events', async () => {
+		const output = execSync(`node ./index.js ${events} --fixData`).toString().trim().split('\n').pop();
 
 		const result = await u.load(output, true);
 		expect(result.success).toBe(5003);
@@ -271,7 +273,30 @@ describe('options', () => {
 		const data = await mp({}, events, { ...opts, abridged: true });
 		expect(data.success).toBe(5003);
 		expect(data.failed).toBe(0);
-		expect(data.responses.length).toBe(0)
+		expect(data.responses.length).toBe(0);
+		expect(data.duration).toBeGreaterThan(0);
+	}, longTimeout);
+
+	test('properly removes nulls', async () => {
+		const data = await mp({}, [{
+			"event": "nullTester",
+			"properties": {
+				"time": 1678931922817,
+				"distinct_id": "foo",
+				"$insert_id": "bar",
+				"actual_null": null,
+				"undef": undefined,
+				"empty str": "",
+				"zero": 0,
+				"bool false": false,
+				"empty array": [],				
+				"empty obj": {},
+				"arr of null": [null, null, null]
+			}
+		}], { ...opts, abridged: true, removeNulls: true });
+		expect(data.success).toBe(1);
+		expect(data.failed).toBe(0);
+		expect(data.responses.length).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
 	}, longTimeout);
 
