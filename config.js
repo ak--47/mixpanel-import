@@ -54,6 +54,7 @@ class importJob {
 		this.recordsPerBatch = opts.recordsPerBatch || 2000; // records in each req; max 2000 (200 for groups)
 		this.bytesPerBatch = opts.bytesPerBatch || 2 * 1024 * 1024; // max bytes in each req
 		this.maxRetries = opts.maxRetries || 10; // number of times to retry a batch
+		this.timeOffset = opts.timeOffset || 0; // utc hours offset
 
 		// ? don't allow batches bigger than API limits
 		if (this.type === 'event' && this.recordsPerBatch > 2000) this.recordsPerBatch = 2000;
@@ -63,7 +64,7 @@ class importJob {
 		// ? boolean options
 		this.compress = u.isNil(opts.compress) ? false : opts.compress; //gzip data (events only)
 		this.strict = u.isNil(opts.strict) ? true : opts.strict; // use strict mode?
-		this.logs = u.isNil(opts.logs) ? true : opts.logs; //create log file
+		this.logs = u.isNil(opts.logs) ? false : opts.logs; //create log file
 		this.where = u.isNil(opts.logs) ? '' : opts.where; // where to put logs
 		this.verbose = u.isNil(opts.verbose) ? true : opts.verbose;  // print to stdout?
 		this.fixData = u.isNil(opts.fixData) ? false : opts.fixData; //apply transforms on the data
@@ -75,8 +76,10 @@ class importJob {
 		this.transformFunc = opts.transformFunc || function noop(a) { return a; }; //will be called on every record
 		this.ezTransform = function noop(a) { return a; }; //placeholder for ez transforms
 		this.nullRemover = function noop(a) { return a; }; //placeholder for null remove
+		this.UTCoffset = function noop(a) { return a; }; //placeholder for null remove
 		if (this.fixData) this.ezTransform = transforms.ezTransforms(this);
 		if (this.removeNulls) this.nullRemover = transforms.removeNulls();
+		if (this.timeOffset) this.UTCoffset = transforms.UTCoffset(this.timeOffset);
 
 		// ? counters
 		this.recordsProcessed = 0;

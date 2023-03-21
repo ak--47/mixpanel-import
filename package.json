@@ -1,6 +1,6 @@
 {
   "name": "mixpanel-import",
-  "version": "2.2.55",
+  "version": "2.2.6",
   "description": "stream and import data to mixpanel from node.js",
   "main": "index.js",
   "keywords": [
@@ -16,7 +16,7 @@
     "post": "npm publish",
     "benchmark": "node --inspect ./benchmarks/main.mjs",
     "generate": "NUMEVENTS=9999 SINCEDAYS=30 node generateFakeData.js",
-    "prune": "rm -rf ./logs/* && rm -rf ./mixpanel-exports/*",
+    "prune": "rm -rf ./logs/* && rm -rf ./mixpanel-exports/* && rm -rf ./tmp/*",
     "test": "jest --watch",
     "cliTest": "node index.js ./testData/moarEvents.json --fixData",
     "cliHelp": "node index.js --help"

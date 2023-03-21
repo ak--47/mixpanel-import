@@ -280,6 +280,8 @@ const options = {
 
 ##### cli options
 
+use `npx mixpanel-import --help` to see the full list.
+
 ```
 option, alias			description		default
 ----------------------------------------------------------------

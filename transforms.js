@@ -1,4 +1,5 @@
 const md5 = require('md5');
+const dayjs = require('dayjs');
 
 function ezTransforms(config) {
 	//for strict event imports, make every record has an $insert_id
@@ -100,7 +101,19 @@ function removeNulls(valuesToRemove = [null, '', undefined]) {
 
 }
 
+function UTCoffset(timeOffset = 0) {
+	return function (record) {
+		if (record?.properties?.time) {
+			const oldTime = dayjs.unix((record.properties.time));
+			const newTime = oldTime.add(timeOffset, 'h').valueOf();
+			record.properties.time = newTime;
+		}
+		return record;
+	};
+}
+
 module.exports = {
 	ezTransforms,
 	removeNulls,
+	UTCoffset
 };

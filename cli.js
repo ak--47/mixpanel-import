@@ -72,7 +72,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 		.option("strict", {
 			demandOption: false,
 			default: true,
-			describe: '/import strict mode',
+			describe: 'validate data on ingestion',
 			type: 'boolean'
 		})
 		.option("logs", {
@@ -138,13 +138,19 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 		.option("start", {
 			demandOption: false,
 			default: dayjs().subtract(30, 'd').format(dateFormat),
-			describe: 'start date for exports',
+			describe: 'start date (exports)',
 			type: 'string'
+		})
+		.option('timeOffset', {
+			demandOption: false,
+			default: 0,
+			describe: 'add or remove hours from data',
+			type: 'number'
 		})
 		.option("end", {
 			demandOption: false,
 			default: dayjs().format(dateFormat),
-			describe: 'end date for exports',
+			describe: 'end date (exports)',
 			type: 'string'
 		})	
 		.help()

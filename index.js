@@ -121,7 +121,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	config.timer.end(false);
 	const summary = config.summary();
 	l(`${config.type === 'export' ? 'export' : 'import'} complete in ${summary.human}`);
-	if (config.logs) await writeLogs(summary, config.where);
+	if (config.logs) await writeLogs(summary);
 	track('end', { runId, ...config.summary(false) });
 	return summary;
 }
@@ -145,10 +145,11 @@ function corePipeline(stream, config, toNodeStream = false) {
 		// * transforms
 		_.map((data) => {
 			config.recordsProcessed++;
-			if (config.transformFunc) data = config.transformFunc(data)
-			if (config.fixData) data = config.ezTransform(data);			
+			if (config.transformFunc) data = config.transformFunc(data);
+			if (config.fixData) data = config.ezTransform(data);
 			if (config.removeNulls) data = config.nullRemover(data);
-			return data
+			if (config.timeOffset) data = config.UTCoffset(data);
+			return data;
 		}),
 
 		// * batch for # of items
@@ -518,14 +519,20 @@ async function exportProfiles(folder, config) {
 async function determineData(data, config) {
 	//exports are saved locally
 	if (config.recordType === 'export') {
-		const folder = u.mkdir(config.where || './mixpanel-exports');
+		if (config.where) {
+			return [path.resolve(config.where)];
+		}
+		const folder = u.mkdir('./mixpanel-exports');
 		const filename = path.resolve(`${folder}/export-${dayjs().format(dateFormat)}-${u.rand()}.ndjson`);
 		await u.touch(filename);
 		return [filename];
 	}
 
 	if (config.recordType === 'peopleExport') {
-		const folder = u.mkdir(config.where || './mixpanel-exports');
+		if (config.where) {
+			return [path.resolve(config.where)];
+		}
+		const folder = u.mkdir('./mixpanel-exports');
 		return [path.resolve(folder)];
 	}
 
@@ -778,9 +785,9 @@ function logger(config) {
 	};
 }
 
-async function writeLogs(data, where = '') {
+async function writeLogs(data) {
 	const dateTime = new Date().toISOString().split('.')[0].replace('T', '--').replace(/:/g, ".");
-	const fileDir = u.mkdir(where || './logs');
+	const fileDir = u.mkdir('./logs');
 	const fileName = `${data.recordType}-import-log-${dateTime}.json`;
 	const filePath = `${fileDir}/${fileName}`;
 	const file = await u.touch(filePath, data, true);
