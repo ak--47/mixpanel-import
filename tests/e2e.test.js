@@ -263,11 +263,6 @@ describe('cli', () => {
 	}, longTimeout);
 });
 
-afterAll(async () => {
-	execSync(`npm run prune`);
-});
-
-
 describe('options', () => {
 	test('abridged mode', async () => {
 		const data = await mp({}, events, { ...opts, abridged: true });
@@ -289,7 +284,7 @@ describe('options', () => {
 				"empty str": "",
 				"zero": 0,
 				"bool false": false,
-				"empty array": [],				
+				"empty array": [],
 				"empty obj": {},
 				"arr of null": [null, null, null]
 			}
@@ -300,4 +295,39 @@ describe('options', () => {
 		expect(data.duration).toBeGreaterThan(0);
 	}, longTimeout);
 
+
+	test('time offsets', async () => {
+		const dataPoint = [{
+			"event": "add to cart 4",
+			"properties":
+			{
+				"time": 1678865417,
+				"distinct_id": "186e5979172b50-05055db7ae8024-1e525634-1fa400-186e59791738d4"
+			}
+		}];
+
+		const data = await mp({}, dataPoint, { ...opts, timeOffset: 7 });
+		expect(data.success).toBe(1);
+		expect(data.failed).toBe(0);
+		expect(data.responses.length).toBe(1);
+		expect(data.duration).toBeGreaterThan(0);
+
+	}, longTimeout);
+
+	test('where clause', async () => {
+		const data = await mp({}, null, { ...opts, recordType: 'export', start: '2023-01-01', end: '2023-01-01', where: './tmp/events.ndjson' });
+		const folder = await u.ls('./tmp');
+		expect(folder[1]).toBe(`/Users/ak/code/mixpanel-import/tmp/events.ndjson`)
+		expect(data.duration).toBeGreaterThan(0);
+		expect(data.requests).toBe(1);
+		expect(data.failed).toBe(0);
+		expect(data.total).toBeGreaterThan(33);
+		expect(data.success).toBeGreaterThan(33);
+	}, longTimeout);
+
+});
+
+
+afterAll(async () => {
+	execSync(`npm run prune`);
 });

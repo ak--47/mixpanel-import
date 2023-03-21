@@ -19,3 +19,5 @@ quick.js
 benchmarks/testData/*
 !benchmarks/testData/.gitkeep
 todos
+tmp/*
+!tmp/.gitkeep

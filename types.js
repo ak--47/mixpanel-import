@@ -43,13 +43,14 @@ MODULE STUFF
  * @property {('json' | 'jsonl')} [streamFormat] - format of underlying data stream; json or jsonl
  * @property {boolean} [compress=false] - use gzip compression (events only)
  * @property {boolean} [strict=true] - validate data on send (events only)
- * @property {boolean} [logs=true] - log data to console
+ * @property {boolean} [logs=false] - log results to `./logs/`
  * @property {boolean} [verbose=true] - display verbose output messages
  * @property {boolean} [fixData=false] - apply various transformations to ensure data is properly ingested
  * @property {boolean} [removeNulls=false] - remove the following (keys and values) from each record with values = `null`, `''`, `undefined`, `{}`, or `[]` 
  * @property {boolean} [abridged=false] - included only error responses; not successes
  * @property {boolean} [forceStream=false] - don't buffer files into memory (even if they can fit)
  * @property {number} [streamSize=27] - 2^N; highWaterMark value for stream [DEPRECATED] ... use workers instead
+ * @property {number} [timeOffset=0] - UTC offset which will add/subtract hours to an event's `time` value; can be a positive or negative number; default `0`
  * @property {number} [recordsPerBatch=2000] - max # of records in each payload (max 2000; max 200 for group profiles) 
  * @property {number} [bytesPerBatch=2*1024*1024] - max # of bytes in each payload (max 2MB)
  * @property {number} [maxRetries=10] - maximum # of times to retry
