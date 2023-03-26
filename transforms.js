@@ -27,16 +27,26 @@ function ezTransforms(config) {
 	if (config.recordType === `user`) {
 		return function addUserTokenIfAbsent(user) {
 			//todo make it possible to take existing profiles and send them...
+
 			//wrong shape; fix it
 			if (!(user.$set || user.$set_once || user.$add || user.$union || user.$append || user.$remove || user.$unset)) {
 				user = { $set: { ...user } };
 				user.$distinct_id = user.$set.$distinct_id;
 				delete user.$set.$distinct_id;
 				delete user.$set.$token;
+				
+				//deal with mp export shape
+				//? https://developer.mixpanel.com/reference/engage-query
+				if (typeof user.$set?.$properties === 'object') {
+					user.$set = { ...user.$set.$properties };
+					delete user.$set.$properties;
+				}
 			}
 
 			//catch missing token
 			if ((!user.$token) && config.token) user.$token = config.token;
+
+
 
 			return user;
 		};

@@ -317,7 +317,7 @@ describe('options', () => {
 	test('where clause', async () => {
 		const data = await mp({}, null, { ...opts, recordType: 'export', start: '2023-01-01', end: '2023-01-01', where: './tmp/events.ndjson' });
 		const folder = await u.ls('./tmp');
-		expect(folder[1]).toBe(`/Users/ak/code/mixpanel-import/tmp/events.ndjson`)
+		expect(folder[1]).toBe(`/Users/ak/code/mixpanel-import/tmp/events.ndjson`);
 		expect(data.duration).toBeGreaterThan(0);
 		expect(data.requests).toBe(1);
 		expect(data.failed).toBe(0);
@@ -327,6 +327,44 @@ describe('options', () => {
 
 });
 
+describe('data fixes', () => {
+	test('deal with /engage payloads', async () => {
+		const data = [{ "$distinct_id": "28e929d8-46aa-5dda-8941-0cb6a6cff1c6", "$properties": { "avatar": "https://randomuser.me/api/portraits/women/18.jpg", "colorTheme": "violet", "created": "2023-03-04T03:12:23", "email": "hemiravaw@udte.vg", "lat": -34.93, "long": -67.11, "luckyNumber": 5, "name": "Louisa de Graaf", "phone": "+9457951595", "uuid": "28e929d8-46aa-5dda-8941-0cb6a6cff1c6" } }, { "$distinct_id": "1a632c4e-bccc-55f6-8915-b768479dbe55", "$properties": { "avatar": "https://randomuser.me/api/portraits/women/70.jpg", "colorTheme": "blue", "created": "2023-03-03T06:56:39", "email": "weraruz@dapa.pm", "lat": 0.63, "long": -40.78, "luckyNumber": 2, "name": "Verna Sorelli", "phone": "+8714237993", "uuid": "1a632c4e-bccc-55f6-8915-b768479dbe55" } }, { "$distinct_id": "c26f798f-62d4-5f26-8e87-2010d58e5016", "$properties": { "avatar": "https://randomuser.me/api/portraits/men/60.jpg", "colorTheme": "blue", "created": "2023-03-02T09:12:55", "email": "jog@mulzitil.tj", "lat": -82.8, "long": 51.9, "luckyNumber": 19, "name": "Rodney Bonnet", "phone": "+6827435739", "uuid": "c26f798f-62d4-5f26-8e87-2010d58e5016" } }];
+		const job = await mp({}, data, { ...opts, recordType: 'user', fixData: true });
+		expect(job.success).toBe(3);
+		expect(job.failed).toBe(0);
+		expect(job.total).toBe(3);
+		expect(job.duration).toBeGreaterThan(0);
+		expect(job.requests).toBe(1);
+	}, longTimeout);
+
+
+
+
+	test('flat user props', async () => {
+		const data = [
+			{
+				$distinct_id: "28e929d8-46aa-5dda-8941-0cb6a6cff1c6",
+				avatar: "https://randomuser.me/api/portraits/women/18.jpg",
+				colorTheme: "violet",
+				created: "2023-03-04T03:12:23",
+				email: "hemiravaw@udte.vg",
+				lat: -34.93,
+				long: -67.11,
+				luckyNumber: 5,
+				name: "Louisa de Graaf",
+				phone: "+9457951595",
+				uuid: "28e929d8-46aa-5dda-8941-0cb6a6cff1c6",
+			}
+		];
+		const job = await mp({}, data, { ...opts, recordType: 'user', fixData: true });
+		expect(job.success).toBe(1);
+		expect(job.failed).toBe(0);
+		expect(job.total).toBe(1);
+		expect(job.duration).toBeGreaterThan(0);
+		expect(job.requests).toBe(1);
+	}, longTimeout);
+});
 
 afterAll(async () => {
 	execSync(`npm run prune`);
