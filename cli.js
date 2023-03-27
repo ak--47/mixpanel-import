@@ -118,6 +118,12 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'concurrent connections',
 			type: 'number'
 		})
+		.option("maxRetries", {
+			demandOption: false,
+			default: 10,
+			describe: 'max attempts on 429',
+			type: 'number'
+		})
 		.option("region", {
 			demandOption: false,
 			default: 'US',
