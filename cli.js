@@ -92,12 +92,25 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'show progress bar',
 			type: 'boolean'
 		})
-		.option("streamFormat", {
+		.option("format", {
 			demandOption: false,
-			alias: 'format',
+			alias: 'streamFormat',
 			default: 'jsonl',
 			describe: 'either json or jsonl',
 			type: 'string'
+		})
+		.option("stream", {
+			alias: "forceStream",
+			demandOption: false,
+			default: false,
+			describe: 'always use streams to load files',
+			type: 'boolean'
+		})
+		.option("streamSize", {
+			demandOption: false,
+			default: 27,
+			describe: '2^n value of highWaterMark',
+			type: 'number'
 		})
 		.option("workers", {
 			demandOption: false,
@@ -116,12 +129,6 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			default: false,
 			describe: 'fix common mistakes',
 			type: 'boolean'
-		})
-		.option("streamSize", {
-			demandOption: false,
-			default: 27,
-			describe: '2^n value of highWaterMark',
-			type: 'number'
 		})
 		.option("recordsPerBatch", {
 			demandOption: false,
@@ -152,12 +159,12 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			default: dayjs().format(dateFormat),
 			describe: 'end date (exports)',
 			type: 'string'
-		})	
+		})
 		.help()
 		.argv;
-	if (args._.length === 0 && !args.type?.toLowerCase()?.includes('export') ) {
+	if (args._.length === 0 && !args.type?.toLowerCase()?.includes('export')) {
 		yargs.showHelp();
-		process.exit()
+		process.exit();
 	}
 	return args;
 }
@@ -166,13 +173,13 @@ const hero = String.raw`
 _  _ _ _  _ ___  ____ _  _ ____ _       _ _  _ ___  ____ ____ ___ 
 |\/| |  \/  |__] |__| |\ | |___ |       | |\/| |__] |  | |__/  |  
 |  | | _/\_ |    |  | | \| |___ |___    | |  | |    |__| |  \  |                                                                    
-`
+`;
 
 const banner = `... streamer of data... to mixpanel! (v${version || 2})
-\tby AK (ak@mixpanel.com)\n\n`
+\tby AK (ak@mixpanel.com)\n\n`;
 
-const welcome = hero.concat('\n').concat(banner)
+const welcome = hero.concat('\n').concat(banner);
 
-cliParams.welcome = welcome
+cliParams.welcome = welcome;
 
-module.exports = cliParams
+module.exports = cliParams;
