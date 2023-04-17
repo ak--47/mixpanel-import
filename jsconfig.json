@@ -1,6 +1,7 @@
 {
 	"compilerOptions": {
 		"module": "CommonJS",
+		"moduleResolution": "node16",
 		"checkJs": true,
 		"allowJs": true,
 		"typeRoots": [
