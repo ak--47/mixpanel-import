@@ -339,7 +339,37 @@ describe('data fixes', () => {
 	}, longTimeout);
 
 
+	test('filter out {} /import', async () => {
+		const data = [
+			{ event: "foo", properties: { distinct_id: "bar", time: 1681750925188, $insert_id: "1234" } },
+			{},
+			{},
+			{}
+		];
+		const job = await mp({}, data, { ...opts, recordType: 'event', fixData: false });
+		expect(job.success).toBe(1);
+		expect(job.failed).toBe(0);
+		expect(job.total).toBe(4);
+		expect(job.empty).toBe(3);
+		expect(job.duration).toBeGreaterThan(0);
+		expect(job.requests).toBe(1);
+	}, longTimeout);
 
+	test('filter out {} /engage', async () => {
+		const data = [
+			{ "$distinct_id": "foo", "token": process.env.MP_TOKEN, "$set": { "bar": "baz" } },
+			{},
+			{},
+			{}
+		];
+		const job = await mp({}, data, { ...opts, recordType: 'user', fixData: false });
+		expect(job.success).toBe(1);
+		expect(job.failed).toBe(0);
+		expect(job.total).toBe(4);
+		expect(job.empty).toBe(3);
+		expect(job.duration).toBeGreaterThan(0);
+		expect(job.requests).toBe(1);
+	}, longTimeout);
 
 	test('flat user props', async () => {
 		const data = [

@@ -102,7 +102,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 		.option("stream", {
 			alias: "forceStream",
 			demandOption: false,
-			default: false,
+			default: true,
 			describe: 'always use streams to load files',
 			type: 'boolean'
 		})

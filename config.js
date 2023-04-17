@@ -3,7 +3,7 @@ const dateFormat = `YYYY-MM-DD`;
 const u = require('ak-tools');
 const transforms = require('./transforms.js');
 // eslint-disable-next-line no-unused-vars
-const types = require("./types.js");
+const types = require("./types/types.js");
 
 /**
  * a singleton to hold state about the imported data
@@ -70,7 +70,7 @@ class importJob {
 		this.fixData = u.isNil(opts.fixData) ? false : opts.fixData; //apply transforms on the data
 		this.removeNulls = u.isNil(opts.removeNulls) ? false : opts.removeNulls; //remove null fields
 		this.abridged = u.isNil(opts.abridged) ? false : opts.abridged; //don't include success responses
-		this.forceStream = u.isNil(opts.forceStream) ? false : opts.forceStream; //don't ever buffer files into memory
+		this.forceStream = u.isNil(opts.forceStream) ? true : opts.forceStream; //don't ever buffer files into memory
 
 		// ? transform options
 		this.transformFunc = opts.transformFunc || function noop(a) { return a; }; //will be called on every record
@@ -88,6 +88,7 @@ class importJob {
 		this.retries = 0;
 		this.batches = 0;
 		this.requests = 0;
+		this.empty = 0;
 		this.timer = u.time('etl');
 
 		// ? requests
@@ -230,7 +231,8 @@ class importJob {
 			human: this.timer.report(false).human,
 			retries: this.retries,
 			version: this.version,
-			workers: this.workers
+			workers: this.workers,
+			empty: this.empty
 		};
 
 		summary.eps = Math.floor(this.recordsProcessed / this.timer.report(false).delta * 1000);

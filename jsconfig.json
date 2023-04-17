@@ -1,0 +1,21 @@
+{
+	"compilerOptions": {
+		"module": "CommonJS",
+		"checkJs": true,
+		"allowJs": true,
+		"typeRoots": [
+			"./node_modules/@types",
+			"./types"
+		],
+		"skipLibCheck": true,
+	},
+	"files": [
+		"./types/types.d.ts"
+	],
+	"exclude": [
+		"node_modules"
+	],
+	"typeAcquisition": {
+		"enable": false
+	}
+}

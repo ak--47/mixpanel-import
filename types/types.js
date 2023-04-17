@@ -1,6 +1,3 @@
-/**
- * @namespace types
- */
 
 /*
 ------------
@@ -26,13 +23,13 @@ MODULE STUFF
 /**
  * mixpanel project credentials for the import job
  * @typedef {Object} Creds 
- * @property {string} acct - service account username
- * @property {string} pass - service account password
- * @property {(string | number)} project - project id
+ * @property {string} [acct] - service account username
+ * @property {string} [pass] - service account password
+ * @property {(string | number)} [project] - project id
  * @property {string} [token] - project token (for importing user profiles)
  * @property {string} [lookupTableId] - lookup table ID (for importing lookup tables)
  * @property {string} [groupKey] - group identifier (for importing group profiles)
- * @property {string} secret - mixpanel project secret
+ * @property {string} [secret] - mixpanel project secret
  */
 
 /**
@@ -73,6 +70,8 @@ MODULE STUFF
  * @property {number} success - num records successfully imported
  * @property {number} failed - num of records failed to import
  * @property {number} retries - num of request retries
+ * @property {number} total - num of total records processed
+ * @property {number} empty - num of empty records found
  * @property {number} batches - num of batches
  * @property {number} requests - num of requests
  * @property {number} eps - estimate of "events per second" throughput
@@ -154,6 +153,3 @@ MIXPANEL STUFF
  * @typedef {mpUserStandardProps & ProfileData} mpUser
  */
 
-
-
-exports.unused = {};

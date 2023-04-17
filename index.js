@@ -1,6 +1,5 @@
 #! /usr/bin/env node
 
-
 /*
 ----
 MIXPANEL IMPORT
@@ -16,9 +15,7 @@ DEPS
 -----
 */
 
-// $ types + config
-// eslint-disable-next-line no-unused-vars
-const types = require("./types.js");
+// $ config
 const importJob = require('./config');
 
 // $ parsers
@@ -27,11 +24,13 @@ const Papa = require('papaparse');
 const { parser: jsonlParser } = require('stream-json/jsonl/Parser');
 const StreamArray = require('stream-json/streamers/StreamArray'); //json parser
 
+
 // $ streamers
 const _ = require('highland');
 const stream = require('stream');
 const got = require('got');
 const https = require('https');
+const MultiStream = require('multistream');
 
 // $ file system
 const path = require('path');
@@ -75,12 +74,11 @@ CORE
  * @example
  * const mp = require('mixpanel-import')
  * const imported = await mp(creds, data, options)
- * @param {types.Creds} creds - mixpanel project credentials
- * @param {types.Data} data - data to import
- * @param {types.Options} opts - import options
+ * @param {Creds} creds - mixpanel project credentials
+ * @param {Data} data - data to import
+ * @param {Options} opts - import options
  * @param {boolean} isCLI - `true` when run as CLI
- * @param {importJob} existingConfig - used to recycle a config for `.pipe()` streams
- * @returns {Promise<types.ImportResults>} API receipts of imported data
+ * @returns {Promise<ImportResults>} API receipts of imported data
  */
 async function main(creds = {}, data, opts = {}, isCLI = false) {
 	track('start', { runId });
@@ -104,17 +102,17 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	// ETL
 	config.timer.start();
 
-	const streams = await determineData(data || cliData, config); // always stream[]
-	for (const stream of streams) {
-		try {
-			await corePipeline(stream, config);
-		}
+	const stream = await determineData(data || cliData, config); // always stream[]
 
-		catch (e) {
-			l(`ERROR: ${e.message}`);
-			if (e?.response?.body) l(`RESPONSE: ${u.json(e.response.body)}\n`);
-		}
+	try {
+		await corePipeline(stream, config);
 	}
+
+	catch (e) {
+		l(`ERROR: ${e.message}`);
+		if (e?.response?.body) l(`RESPONSE: ${u.json(e.response.body)}\n`);
+	}
+
 	l('\n');
 
 	// clean up
@@ -142,9 +140,20 @@ function corePipeline(stream, config, toNodeStream = false) {
 	const flush = _.wrapCallback(callbackify(flushToMixpanel));
 
 	const mpPipeline = _.pipeline(
+		// * only actual data points
+		_.filter((data) => {
+			config.recordsProcessed++;
+			if (data && JSON.stringify(data) !== '{}') {
+				return true;
+			}
+			else {
+				config.empty++;
+				return false;
+			}
+		}),
+
 		// * transforms
 		_.map((data) => {
-			config.recordsProcessed++;
 			if (config.transformFunc) data = config.transformFunc(data);
 			if (config.fixData) data = config.ezTransform(data);
 			if (config.removeNulls) data = config.nullRemover(data);
@@ -520,37 +529,37 @@ async function determineData(data, config) {
 	//exports are saved locally
 	if (config.recordType === 'export') {
 		if (config.where) {
-			return [path.resolve(config.where)];
+			return path.resolve(config.where);
 		}
 		const folder = u.mkdir('./mixpanel-exports');
 		const filename = path.resolve(`${folder}/export-${dayjs().format(dateFormat)}-${u.rand()}.ndjson`);
 		await u.touch(filename);
-		return [filename];
+		return filename;
 	}
 
 	if (config.recordType === 'peopleExport') {
 		if (config.where) {
-			return [path.resolve(config.where)];
+			return path.resolve(config.where);
 		}
 		const folder = u.mkdir('./mixpanel-exports');
-		return [path.resolve(folder)];
+		return path.resolve(folder);
 	}
 
 	// lookup tables are not streamed
 	if (config.recordType === 'table') {
-		if (fs.existsSync(path.resolve(data))) return [await u.load(data)];
-		return [data];
+		if (fs.existsSync(path.resolve(data))) return await u.load(data);
+		return data;
 	}
 
 	// data is already a stream
 	if (data.pipe || data instanceof stream.Stream) {
-		if (data.readableObjectMode) return [data];
-		return [_(existingStream(data))];
+		if (data.readableObjectMode) return data;
+		return _(existingStream(data));
 	}
 
 	// data is an object in memory
 	if (Array.isArray(data)) {
-		return [stream.Readable.from(data, { objectMode: true, highWaterMark: config.highWater })];
+		return stream.Readable.from(data, { objectMode: true, highWaterMark: config.highWater });
 	}
 
 	try {
@@ -559,14 +568,13 @@ async function determineData(data, config) {
 		if (fs.existsSync(path.resolve(data))) {
 			const fileOrDir = fs.lstatSync(path.resolve(data));
 
-
 			//file case			
 			if (fileOrDir.isFile()) {
 				if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(data))) {
 					// !! if the file is small enough; just load it into memory (is this ok?)
 					if (fileOrDir.size < os.freemem() * .75 && !config.forceStream) {
 						const file = await u.load(path.resolve(data), true);
-						return [stream.Readable.from(file, { objectMode: true, highWaterMark: config.highWater })];
+						return stream.Readable.from(file, { objectMode: true, highWaterMark: config.highWater });
 					}
 
 					//otherwise, stream it
@@ -577,7 +585,7 @@ async function determineData(data, config) {
 					if (fileOrDir.size < os.freemem() * .75 && !config.forceStream) {
 						const file = await u.load(path.resolve(data));
 						const parsed = file.trim().split('\n').map(JSON.parse);
-						return [stream.Readable.from(parsed, { objectMode: true, highWaterMark: config.highWater })];
+						return stream.Readable.from(parsed, { objectMode: true, highWaterMark: config.highWater });
 					}
 
 					return itemStream(path.resolve(data), "jsonl", config.highWater);
@@ -607,7 +615,7 @@ async function determineData(data, config) {
 
 		//stringified JSON
 		try {
-			return [stream.Readable.from(JSON.parse(data), { objectMode: true, highWaterMark: config.highWater })];
+			return stream.Readable.from(JSON.parse(data), { objectMode: true, highWaterMark: config.highWater });
 		}
 		catch (e) {
 			//noop
@@ -615,7 +623,7 @@ async function determineData(data, config) {
 
 		//stringified JSONL
 		try {
-			return [stream.Readable.from(data.trim().split('\n').map(JSON.parse), { objectMode: true, highWaterMark: config.highWater })];
+			return stream.Readable.from(data.trim().split('\n').map(JSON.parse), { objectMode: true, highWaterMark: config.highWater });
 		}
 
 		catch (e) {
@@ -624,7 +632,7 @@ async function determineData(data, config) {
 
 		//CSV or TSV
 		try {
-			return [stream.Readable.from(Papa.parse(data, { header: true, skipEmptyLines: true }))];
+			return stream.Readable.from(Papa.parse(data, { header: true, skipEmptyLines: true }));
 		}
 		catch (e) {
 			//noop
@@ -644,7 +652,6 @@ async function flushLookupTable(stream, config) {
 }
 
 function existingStream(stream) {
-
 	const rl = readline.createInterface({
 		input: stream,
 		crlfDelay: Infinity
@@ -666,16 +673,32 @@ function existingStream(stream) {
 
 function itemStream(filePath, type = "jsonl", workers) {
 	let stream;
+	let parsedStream;
+	const parser = type === "jsonl" ? jsonlParser : StreamArray.withParser;
+
+	//parsing folders
 	if (Array.isArray(filePath)) {
-		stream = filePath.map((file) => fs.createReadStream(file));
-	}
-	else {
-		stream = [fs.createReadStream(filePath)];
+		if (type === "jsonl") {
+			stream = new MultiStream(filePath.map((file) => { return fs.createReadStream(file); }), { highWaterMark: workers * 2000 });
+			parsedStream = stream.pipe(parser({ highWaterMark: workers * 2000, includeUndecided: false })).map(token => token.value);
+			return parsedStream;
+
+		}
+		if (type === "json") {
+			stream = filePath.map((file) => fs.createReadStream(file));
+			parsedStream = MultiStream.obj(stream.map(s => s.pipe(parser({ highWaterMark: workers * 2000 })).map(token => token.value)));
+			return parsedStream;
+		}
 	}
 
-	//use the right parser based on the type of file
-	const parser = type === "jsonl" ? jsonlParser : StreamArray.withParser;
-	return stream.map(s => s.pipe(parser({ highWaterMark: workers * 2000 })).map(token => token.value));
+	//parsing files
+	else {
+		stream = fs.createReadStream(filePath, { highWaterMark: workers * 2000 });
+		parsedStream = stream.pipe(parser({ highWaterMark: workers * 2000, includeUndecided: false })).map(token => token.value);
+	}
+
+	return parsedStream;
+
 }
 
 function chunkForSize(config) {
@@ -823,5 +846,11 @@ mpImport.createMpStream = pipeInterface;
 
 // * this allows the program to run as a CLI
 if (require.main === module) {
-	main(undefined, undefined, undefined, true).then(() => { });
+	main(undefined, undefined, undefined, true).then(() => {
+		process.exit(0);
+	}).catch((e) => {
+		console.log('\n\nUH OH! something went wrong; the error is:\n\n');
+		console.error(e);
+		process.exit(1);
+	});
 }
