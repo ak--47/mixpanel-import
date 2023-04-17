@@ -1,3 +1,5 @@
+
+declare module "mixpanel-import" {
 /**
  * valid records types which can be imported
  */
@@ -271,3 +273,5 @@ type mpGroup = mpGroupStandardProps & ProfileData;
  * a user profile update payload
  */
 type mpUser = mpUserStandardProps & ProfileData;
+
+}

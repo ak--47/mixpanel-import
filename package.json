@@ -1,6 +1,6 @@
 {
   "name": "mixpanel-import",
-  "version": "2.3.02",
+  "version": "2.3.03",
   "description": "stream and import data to mixpanel from node.js",
   "main": "index.js",
   "keywords": [
@@ -20,8 +20,7 @@
     "prune": "rm -rf ./logs/* && rm -rf ./mixpanel-exports/* && rm -rf ./tmp/*",
     "test": "jest --watch",
     "cli:test": "node index.js ./testData/moarEvents.json --fixData",
-    "cli:help": "node index.js --help",
-	"build:types": "npx -p typescript tsc ./types/*.js --declaration --allowJs --emitDeclarationOnly --outDir types"
+    "cli:help": "node index.js --help"
   },
   "bin": {
     "mixpanel-import": "./index.js"

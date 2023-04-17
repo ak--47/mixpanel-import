@@ -74,11 +74,11 @@ CORE
  * @example
  * const mp = require('mixpanel-import')
  * const imported = await mp(creds, data, options)
- * @param {Creds} creds - mixpanel project credentials
- * @param {Data} data - data to import
- * @param {Options} opts - import options
+ * @param {import('mixpanel-import').Creds} creds - mixpanel project credentials
+ * @param {import('mixpanel-import').Data} data - data to import
+ * @param {import('mixpanel-import').Options} opts - import options
  * @param {boolean} isCLI - `true` when run as CLI
- * @returns {Promise<ImportResults>} API receipts of imported data
+ * @returns {Promise<import('mixpanel-import').ImportResults>} API receipts of imported data
  */
 async function main(creds = {}, data, opts = {}, isCLI = false) {
 	track('start', { runId });
@@ -127,9 +127,9 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 
 /**
  * the core pipeline 
- * @param {types.ReadableStream} stream 
+ * @param {ReadableStream} stream 
  * @param {importJob} config 
- * @returns {Promise<types.ImportResults>} a promise
+ * @returns {Promise<import('mixpanel-import').ImportResults>} a promise
  */
 function corePipeline(stream, config, toNodeStream = false) {
 
@@ -209,8 +209,8 @@ function corePipeline(stream, config, toNodeStream = false) {
  * observer.on('data', (response)=> { })
  * // create a pipeline
  * myStream.pipe(mpStream).pipe(observer);
- * @param {types.Creds} creds - mixpanel project credentials
- * @param {types.Options} opts - import options
+ * @param {import('mixpanel-import').Creds} creds - mixpanel project credentials
+ * @param {import('mixpanel-import').Options} opts - import options
  * @param {function(): importJob} finish - end of pipelines
  * @returns a transform stream
  */
