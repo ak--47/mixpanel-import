@@ -3,15 +3,15 @@ const dateFormat = `YYYY-MM-DD`;
 const u = require('ak-tools');
 const transforms = require('./transforms.js');
 // eslint-disable-next-line no-unused-vars
-const types = require("./types/types.js");
+
 
 /**
  * a singleton to hold state about the imported data
  * @example
  * const config = new importJob(creds, opts)
  * @class 
- * @param {types.Creds} creds - mixpanel project credentials
- * @param {types.Options} opts - options for import
+ * @param {Types.Creds} creds - mixpanel project credentials
+ * @param {Types.Options} opts - options for import
  * @method summary summarize state of import
 */
 class importJob {
@@ -217,7 +217,7 @@ class importJob {
 	/**
 	 * summary of the results of an import
 	 * @param {boolean} includeResponses - should `errors` and `responses` be included in summary
-	 * @returns {types.ImportResults} `{success, failed, total, requests, duration}`
+	 * @returns {Types.ImportResults} `{success, failed, total, requests, duration}`
 	 */
 	summary(includeResponses = true) {
 		const summary = {

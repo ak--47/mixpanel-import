@@ -20,8 +20,11 @@ const importJob = require('./config');
 
 // $ parsers
 const readline = require('readline');
+// @ts-ignore
 const Papa = require('papaparse');
+// @ts-ignore
 const { parser: jsonlParser } = require('stream-json/jsonl/Parser');
+// @ts-ignore
 const StreamArray = require('stream-json/streamers/StreamArray'); //json parser
 
 
@@ -30,6 +33,7 @@ const _ = require('highland');
 const stream = require('stream');
 const got = require('got');
 const https = require('https');
+// @ts-ignore
 const MultiStream = require('multistream');
 
 // $ file system
@@ -43,10 +47,13 @@ require('dotenv').config();
 const cliParams = require('./cli');
 
 // $ utils
+// @ts-ignore
 const u = require('ak-tools');
 const track = u.tracker('mixpanel-import');
 const runId = u.uid(32);
+// @ts-ignore
 const { pick } = require('underscore');
+// @ts-ignore
 const { gzip } = require('node-gzip');
 const dayjs = require('dayjs');
 const dateFormat = `YYYY-MM-DD`;
@@ -74,11 +81,11 @@ CORE
  * @example
  * const mp = require('mixpanel-import')
  * const imported = await mp(creds, data, options)
- * @param {import('mixpanel-import').Creds} creds - mixpanel project credentials
- * @param {import('mixpanel-import').Data} data - data to import
- * @param {import('mixpanel-import').Options} opts - import options
+ * @param {Types.Creds} creds - mixpanel project credentials
+ * @param {Types.Data} data - data to import
+ * @param {Types.Options} opts - import options
  * @param {boolean} isCLI - `true` when run as CLI
- * @returns {Promise<import('mixpanel-import').ImportResults>} API receipts of imported data
+ * @returns {Promise<Types.ImportResults>} API receipts of imported data
  */
 async function main(creds = {}, data, opts = {}, isCLI = false) {
 	track('start', { runId });
@@ -105,6 +112,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	const stream = await determineData(data || cliData, config); // always stream[]
 
 	try {
+		// @ts-ignore
 		await corePipeline(stream, config);
 	}
 
@@ -129,18 +137,21 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
  * the core pipeline 
  * @param {ReadableStream} stream 
  * @param {importJob} config 
- * @returns {Promise<import('mixpanel-import').ImportResults>} a promise
+ * @returns {Promise<Types.ImportResults>} a promise
  */
 function corePipeline(stream, config, toNodeStream = false) {
 
 	if (config.recordType === 'table') return flushLookupTable(stream, config);
+	// @ts-ignore
 	if (config.recordType === 'export') return exportEvents(stream, config);
 	if (config.recordType === 'peopleExport') return exportProfiles(stream, config);
 
 	const flush = _.wrapCallback(callbackify(flushToMixpanel));
 
+	// @ts-ignore
 	const mpPipeline = _.pipeline(
 		// * only actual data points
+		// @ts-ignore
 		_.filter((data) => {
 			config.recordsProcessed++;
 			if (data && JSON.stringify(data) !== '{}') {
@@ -151,8 +162,9 @@ function corePipeline(stream, config, toNodeStream = false) {
 				return false;
 			}
 		}),
-
+		
 		// * transforms
+		// @ts-ignore
 		_.map((data) => {
 			if (config.transformFunc) data = config.transformFunc(data);
 			if (config.fixData) data = config.ezTransform(data);
@@ -162,26 +174,32 @@ function corePipeline(stream, config, toNodeStream = false) {
 		}),
 
 		// * batch for # of items
+		// @ts-ignore
 		_.batch(config.recordsPerBatch),
 
 		// * batch for req size
+		// @ts-ignore
 		_.consume(chunkForSize(config)),
 
 		// * send to mixpanel
+		// @ts-ignore
 		_.map((batch) => {
 			config.requests++;
 			return flush(batch, config);
 		}),
 
 		// * concurrency
+		// @ts-ignore
 		_.mergeWithLimit(config.workers),
 
 		// * verbose
+		// @ts-ignore
 		_.doto(() => {
 			if (config.verbose) showProgress(config.recordType, config.recordsProcessed, config.requests);
 		}),
 
 		// * errors
+		// @ts-ignore
 		_.errors((e) => {
 			throw e;
 		})
@@ -191,6 +209,7 @@ function corePipeline(stream, config, toNodeStream = false) {
 		return mpPipeline;
 	}
 
+	// @ts-ignore
 	stream.pipe(mpPipeline);
 	return mpPipeline.collect().toPromise(Promise);
 
@@ -209,11 +228,12 @@ function corePipeline(stream, config, toNodeStream = false) {
  * observer.on('data', (response)=> { })
  * // create a pipeline
  * myStream.pipe(mpStream).pipe(observer);
- * @param {import('mixpanel-import').Creds} creds - mixpanel project credentials
- * @param {import('mixpanel-import').Options} opts - import options
+ * @param {Types.Creds} creds - mixpanel project credentials
+ * @param {Types.Options} opts - import options
  * @param {function(): importJob} finish - end of pipelines
  * @returns a transform stream
  */
+// @ts-ignore
 function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 	const envVar = getEnvVars();
 	const config = new importJob({ ...envVar, ...creds }, { ...envVar, ...opts });
@@ -222,17 +242,22 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 	const pipeToMe = corePipeline(null, config, true);
 
 	// * handlers
+	// @ts-ignore
 	pipeToMe.on('end', () => {
 		config.timer.end(false);
 		track('end', { runId, ...config.summary(false) });
+		// @ts-ignore
 		finish(null, config.summary());
 	});
 
+	// @ts-ignore
 	pipeToMe.on('pipe', () => {
 		track('start', { runId });
+		// @ts-ignore
 		pipeToMe.resume();
 	});
 
+	// @ts-ignore
 	pipeToMe.on('error', (e) => {
 		if (config.verbose) {
 			console.log(e);
@@ -248,7 +273,10 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 HELPERS
 ----
 */
-
+/**
+ * @param  {Object[]} batch
+ * @param  {Object} config
+ */
 async function flushToMixpanel(batch, config) {
 	try {
 		let body = typeof batch === 'string' ? batch : JSON.stringify(batch);
@@ -271,6 +299,7 @@ async function flushToMixpanel(batch, config) {
 				statusCodes: [429, 500, 501, 503],
 				errorCodes: [],
 				methods: ['POST'],
+				// @ts-ignore
 				noise: 2500
 
 			},
@@ -285,8 +314,10 @@ async function flushToMixpanel(batch, config) {
 				https: new https.Agent({ keepAlive: true })
 			},
 			hooks: {
+				// @ts-ignore
 				beforeRetry: [(req, resp, count) => {
 					try {
+						// @ts-ignore
 						l(`got ${resp.message}...retrying request...#${count}`);
 					}
 					catch (e) {
@@ -297,10 +328,12 @@ async function flushToMixpanel(batch, config) {
 			},
 			body
 		};
+		// @ts-ignore
 		if (config.project) options.searchParams.project_id = config.project;
 
 		let req, res, success;
 		try {
+			// @ts-ignore
 			req = await got(options);
 			res = JSON.parse(req.body);
 			success = true;
@@ -331,6 +364,7 @@ async function flushToMixpanel(batch, config) {
 
 	catch (e) {
 		try {
+			// @ts-ignore
 			l(`\nBATCH FAILED: ${e.message}\n`);
 		}
 		catch (e) {
@@ -358,7 +392,9 @@ async function exportEvents(filename, config) {
 			https: new https.Agent({ keepAlive: true })
 		},
 		hooks: {
+			// @ts-ignore
 			beforeRetry: [(err, count) => {
+				// @ts-ignore
 				l(`retrying request...#${count}`);
 				config.retries++;
 			}]
@@ -366,8 +402,10 @@ async function exportEvents(filename, config) {
 
 	};
 
+	// @ts-ignore
 	if (config.project) options.searchParams.project_id = config.project;
 
+	// @ts-ignore
 	const request = got.stream(options);
 
 	request.on('response', (res) => {
@@ -430,8 +468,10 @@ async function exportProfiles(folder, config) {
 		searchParams: {},
 		responseType: 'json'
 	};
+	// @ts-ignore
 	if (config.project) options.searchParams.project_id = config.project;
 
+	// @ts-ignore
 	let request = await got(options).catch(e => {
 		config.failed++;
 		config.responses.push({
@@ -479,9 +519,12 @@ async function exportProfiles(folder, config) {
 
 		fileName = `people-${iterations}.json`;
 		file = path.resolve(`${folder}/${fileName}`);
+		// @ts-ignore
 		options.searchParams.page = page;
+		// @ts-ignore
 		options.searchParams.session_id = session_id;
 
+		// @ts-ignore
 		request = await got(options).catch(e => {
 			config.failed++;
 			config.responses.push({
@@ -623,6 +666,7 @@ async function determineData(data, config) {
 
 		//stringified JSONL
 		try {
+			// @ts-ignore
 			return stream.Readable.from(data.trim().split('\n').map(JSON.parse), { objectMode: true, highWaterMark: config.highWater });
 		}
 
@@ -814,6 +858,7 @@ async function writeLogs(data) {
 	const fileName = `${data.recordType}-import-log-${dateTime}.json`;
 	const filePath = `${fileDir}/${fileName}`;
 	const file = await u.touch(filePath, data, true);
+	// @ts-ignore
 	l(`\nCOMPLETE\nlog written to:\n${file}`);
 }
 
@@ -825,6 +870,7 @@ async function countFileLines(filePath) {
 				let idx = -1;
 				lineCount--; // Because the loop will run once for idx=-1
 				do {
+					// @ts-ignore
 					idx = buffer.indexOf(10, idx + 1);
 					lineCount++;
 				} while (idx !== -1);
