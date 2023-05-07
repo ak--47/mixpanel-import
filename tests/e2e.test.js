@@ -1,3 +1,4 @@
+// @ts-nocheck
 /* NOTE: to make tests work, you need a .env file of the form
 
 MP_PROJECT=project
