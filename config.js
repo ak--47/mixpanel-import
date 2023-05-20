@@ -10,8 +10,8 @@ const transforms = require('./transforms.js');
  * @example
  * const config = new importJob(creds, opts)
  * @class 
- * @param {Types.Creds} creds - mixpanel project credentials
- * @param {Types.Options} opts - options for import
+ * @param {import('./index.d.ts').Creds} creds - mixpanel project credentials
+ * @param {import('./index.d.ts').Options} opts - options for import
  * @method summary summarize state of import
 */
 class importJob {
@@ -217,7 +217,7 @@ class importJob {
 	/**
 	 * summary of the results of an import
 	 * @param {boolean} includeResponses - should `errors` and `responses` be included in summary
-	 * @returns {Types.ImportResults} `{success, failed, total, requests, duration}`
+	 * @returns {import('./index.d.ts').ImportResults} `{success, failed, total, requests, duration}`
 	 */
 	summary(includeResponses = true) {
 		const summary = {
@@ -232,15 +232,19 @@ class importJob {
 			retries: this.retries,
 			version: this.version,
 			workers: this.workers,
-			empty: this.empty
+			empty: this.empty,
+			eps: 0,
+			rps: 0,
+			errors: [],
+			responses: []
 		};
 
 		summary.eps = Math.floor(this.recordsProcessed / this.timer.report(false).delta * 1000);
 		summary.rps = u.round(summary.requests / this.timer.report(false).delta * 1000, 3);
+		summary.errors = this.errors;
 
 		if (includeResponses) {
-			summary.responses = this.responses;
-			summary.errors = this.errors;
+			summary.responses = this.responses;			
 		}
 
 		if (this.file) {

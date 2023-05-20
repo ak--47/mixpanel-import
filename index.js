@@ -62,14 +62,6 @@ const { promisify, callbackify } = require('util');
 
 
 /*
--------
-CONFIG
--------
-*/
-
-
-
-/*
 ----
 CORE
 ----
@@ -81,11 +73,11 @@ CORE
  * @example
  * const mp = require('mixpanel-import')
  * const imported = await mp(creds, data, options)
- * @param {import('./types/types.d.ts').Creds} creds - mixpanel project credentials
- * @param {import('./types/types.d.ts').Data} data - data to import
- * @param {import('./types/types.d.ts').Options} opts - import options
+ * @param {import('./index.d.ts').Creds} creds - mixpanel project credentials
+ * @param {import('./index.d.ts').Data} data - data to import
+ * @param {import('./index.d.ts').Options} opts - import options
  * @param {boolean} isCLI - `true` when run as CLI
- * @returns {Promise<import('./types/types.d.ts').ImportResults>} API receipts of imported data
+ * @returns {Promise<import('./index.d.ts').ImportResults>} API receipts of imported data
  */
 async function main(creds = {}, data, opts = {}, isCLI = false) {
 	track('start', { runId });
@@ -137,7 +129,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
  * the core pipeline 
  * @param {ReadableStream} stream 
  * @param {importJob} config 
- * @returns {Promise<import('./types/types.d.ts').ImportResults>} a promise
+ * @returns {Promise<import('./index.d.ts').ImportResults>} a promise
  */
 function corePipeline(stream, config, toNodeStream = false) {
 
@@ -228,8 +220,8 @@ function corePipeline(stream, config, toNodeStream = false) {
  * observer.on('data', (response)=> { })
  * // create a pipeline
  * myStream.pipe(mpStream).pipe(observer);
- * @param {import('./types/types.d.ts').Creds} creds - mixpanel project credentials
- * @param {import('./types/types.d.ts').Options} opts - import options
+ * @param {import('./index.d.ts').Creds} creds - mixpanel project credentials
+ * @param {import('./index.d.ts').Options} opts - import options
  * @param {function(): importJob} finish - end of pipelines
  * @returns a transform stream
  */
@@ -684,7 +676,7 @@ async function determineData(data, config) {
 	}
 
 	console.error(`ERROR:\n\t${data} is not a file, a folder, an array, a stream, or a string... (i could not determine it's type)`);
-	process.exit();
+	process.exit(1);
 
 }
 

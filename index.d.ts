@@ -1,7 +1,41 @@
+
+/**
+ * Mixpanel Importer
+ * stream `events`, `users`, `groups`, and `tables` to mixpanel!
+ * @example
+ * const mp = require('mixpanel-import')
+ * const imported = await mp(creds, data, options)
+ * @param {import('./index.d.ts').Creds} creds - mixpanel project credentials
+ * @param {import('./index.d.ts').Data} data - data to import
+ * @param {import('./index.d.ts').Options} [opts] - import options
+ * @param {boolean} [isCLI] - `true` when run as CLI
+ * @returns {Promise<import('./index.d.ts').ImportResults>} API receipts of imported data
+ */
+export function main(data: Data, creds: Creds, options?: Options, isCLI? : Boolean): Promise<ImportResults>;
+
+
+/**
+ * Mixpanel Importer Stream
+ * stream `events`, `users`, `groups`, and `tables` to mixpanel!
+ * @example
+ * // pipe a stream to mixpanel
+ * const { mpStream } = require('mixpanel-import')
+ * const mpStream = createMpStream(creds, opts, callback);
+ * const observer = new PassThrough({objectMode: true})
+ * observer.on('data', (response)=> { })
+ * // create a pipeline
+ * myStream.pipe(mpStream).pipe(observer);
+ * @param {import('./index.d.ts').Creds} creds - mixpanel project credentials
+ * @param {import('./index.d.ts').Options} opts - import options
+ * @param {function()} [finish] - callback @ end of pipeline
+ * @returns a transform stream
+ */
+export function createMpStream(creds: Creds, opts: Options, finish?: Function): import("stream").Transform;
+
 /**
  * valid records types which can be imported
  */
-export type RecordType = "event" | "user" | "group" | "table" | "export" | "peopleExport";
+type RecordType = "event" | "user" | "group" | "table" | "export" | "peopleExport";
 
 /**
  * - a path to a file/folder, objects in memory, or a readable object/file stream that contains data you wish to import
@@ -45,7 +79,7 @@ export type Creds = {
  */
 export type Options = {
     /**
-     * - export type of record to import (`event`, `user`, `group`, or `table`)
+     * - type of record to import (`event`, `user`, `group`, or `table`)
      */
     recordType?: RecordType;
     /**
@@ -124,15 +158,11 @@ export type Options = {
 /**
  * a transform function to `map()` over the data
  */
-export type transFunc = (data: any) => mpEvent | mpUser | mpGroup;
+type transFunc = (data: any) => mpEvent | mpUser | mpGroup;
 /**
  * a summary of the import
  */
 export type ImportResults = {
-    /**
-     * - num records seen in pipeline
-     */
-    recordsProcessed: number;
     /**
      * - num records successfully imported
      */
@@ -172,7 +202,7 @@ export type ImportResults = {
     /**
      * - successful import records (200s)
      */
-    responses: any[];
+    responses?: any[];
     /**
      * - failed import records (400s)
      */
@@ -181,11 +211,11 @@ export type ImportResults = {
 /**
  * valid mixpanel property values; {@link https://help.mixpanel.com/hc/en-us/articles/115004547063-Properties-Supported-Data-Types more info}
  */
-export type PropValues = string | string[] | number | number[] | boolean | boolean[] | Date;
+type PropValues = string | string[] | number | number[] | boolean | boolean[] | Date;
 /**
  * mixpanel's required event properties
  */
-export type mpEvStandardProps = {
+type mpEvStandardProps = {
     /**
      * - uuid of the end user
      */
@@ -202,13 +232,13 @@ export type mpEvStandardProps = {
 /**
  * event properties payload
  */
-export type mpEvProperties = {
+type mpEvProperties = {
     [x: string]: PropValues;
 } & mpEvStandardProps;
 /**
  * - a mixpanel event
  */
-export type mpEvent = {
+type mpEvent = {
     /**
      * - the event name
      */
@@ -221,11 +251,11 @@ export type mpEvent = {
 /**
  * valid profile update types; {@link https://developer.mixpanel.com/reference/profile-set more info}
  */
-export type ProfileOperation = "$set" | "$set_once" | "$add" | "$union" | "$append" | "$remove" | "$unset";
+type ProfileOperation = "$set" | "$set_once" | "$add" | "$union" | "$append" | "$remove" | "$unset";
 /**
  * object of k:v pairs to update the profile
  */
-export type ProfileData = Partial<
+type ProfileData = Partial<
     Record<
         ProfileOperation,
         {
@@ -233,7 +263,7 @@ export type ProfileData = Partial<
         }
     >
 >;
-export type mpUserStandardProps = {
+type mpUserStandardProps = {
     /**
      * - the `distinct_id` of the profile to update
      */
@@ -254,7 +284,7 @@ export type mpUserStandardProps = {
 /**
  * - a mixpanel user profile
  */
-export type mpGroupStandardProps = {
+type mpGroupStandardProps = {
     /**
      * - the group (analytics) key for the entity
      */
@@ -271,8 +301,8 @@ export type mpGroupStandardProps = {
 /**
  * a group profile update payload
  */
-export type mpGroup = mpGroupStandardProps & ProfileData;
+type mpGroup = mpGroupStandardProps & ProfileData;
 /**
  * a user profile update payload
  */
-export type mpUser = mpUserStandardProps & ProfileData;
+type mpUser = mpUserStandardProps & ProfileData;

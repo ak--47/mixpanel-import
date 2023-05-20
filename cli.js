@@ -136,6 +136,12 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'fix common mistakes',
 			type: 'boolean'
 		})
+		.option("removeNulls", {
+			demandOption: false,
+			default: false,
+			describe: 'remove null values',
+			type: 'boolean'
+		})
 		.option("recordsPerBatch", {
 			demandOption: false,
 			default: 2000,
@@ -168,6 +174,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 		})
 		.help()
 		.argv;
+	// @ts-ignore
 	if (args._.length === 0 && !args.type?.toLowerCase()?.includes('export')) {
 		yargs.showHelp();
 		process.exit();

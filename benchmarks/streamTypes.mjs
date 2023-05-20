@@ -1,10 +1,11 @@
+//@ts-nocheck
 /* eslint-disable no-unused-vars */
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const mpStream = require('../index.js');
 const stream = require('stream');
 const u = require('ak-tools');
-const Types = require("../types.js");
+const Types = require("../index.js");
 
 
 

@@ -1,3 +1,4 @@
+//@ts-nocheck
 import streamType from './streamTypes.mjs';
 import worker from './workers.mjs';
 
