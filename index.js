@@ -605,16 +605,7 @@ async function determineData(data, config) {
 
 			//file case			
 			if (fileOrDir.isFile()) {
-				if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(data))) {
-					// !! if the file is small enough; just load it into memory (is this ok?)
-					if (fileOrDir.size < os.freemem() * .75 && !config.forceStream) {
-						const file = await u.load(path.resolve(data), true);
-						return stream.Readable.from(file, { objectMode: true, highWaterMark: config.highWater });
-					}
-
-					//otherwise, stream it
-					return itemStream(path.resolve(data), "json", config.highWater);
-				}
+				//check for jsonl first... many jsonl files will have the same extension as json
 				if (config.streamFormat === 'jsonl' || config.lineByLineFileExt.includes(path.extname(data))) {
 					// !! if the file is small enough; just load it into memory (is this ok?)
 					if (fileOrDir.size < os.freemem() * .75 && !config.forceStream) {
@@ -625,6 +616,18 @@ async function determineData(data, config) {
 
 					return itemStream(path.resolve(data), "jsonl", config.highWater);
 				}
+
+				if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(data))) {
+					// !! if the file is small enough; just load it into memory (is this ok?)
+					if (fileOrDir.size < os.freemem() * .75 && !config.forceStream) {
+						const file = await u.load(path.resolve(data), true);
+						return stream.Readable.from(file, { objectMode: true, highWaterMark: config.highWater });
+					}
+
+					//otherwise, stream it
+					return itemStream(path.resolve(data), "json", config.highWater);
+				}
+				
 			}
 
 			//folder case
