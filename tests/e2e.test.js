@@ -39,6 +39,7 @@ const eventNinetyNine = require('../testData/events-nine.json');
 const twoFiftyK = `./testData/big.ndjson`;
 const needTransform = `./testData/needDateTransform.ndjson`;
 const dayjs = require('dayjs');
+const badData = `./testData/bad_data.jsonl`
 
 const opts = {
 	recordType: `event`,
@@ -395,8 +396,31 @@ describe('data fixes', () => {
 		expect(job.duration).toBeGreaterThan(0);
 		expect(job.requests).toBe(1);
 	}, longTimeout);
+
+
+	test('skips bad lines', async () => {
+		const job = await mp({}, badData, { ...opts, recordType: 'user', fixData: true, transformFunc: badDataTrans });
+		expect(job.success).toBe(2439);
+		expect(job.failed).toBe(0);
+		expect(job.total).toBe(2439);
+		expect(job.duration).toBeGreaterThan(0);
+		expect(job.requests).toBe(3);
+
+	});
+
 });
 
 afterAll(async () => {
 	execSync(`npm run prune`);
 });
+
+
+function badDataTrans(badData) {	
+	const mixpanelProfile = {
+		$distinct_id: badData.identity || badData.id || 'none',
+		$ip: badData.initial_ip,
+		$set: badData,
+	};
+
+	return mixpanelProfile;
+}

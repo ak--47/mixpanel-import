@@ -20,12 +20,14 @@ const importJob = require('./config');
 
 // $ parsers
 const readline = require('readline');
-// @ts-ignore
+
 const Papa = require('papaparse');
-// @ts-ignore
-const { parser: jsonlParser } = require('stream-json/jsonl/Parser');
-// @ts-ignore
-const StreamArray = require('stream-json/streamers/StreamArray'); //json parser
+
+// const { parser: jsonlParser } = require('stream-json/jsonl/Parser');
+const { parser: jsonlParser } = require('stream-json-ak/jsonl/Parser');
+
+// const StreamArray = require('stream-json/streamers/StreamArray'); //json parser
+const StreamArray = require('stream-json-ak/streamers/StreamArray'); //json parser
 
 
 // $ streamers
@@ -154,7 +156,7 @@ function corePipeline(stream, config, toNodeStream = false) {
 				return false;
 			}
 		}),
-		
+
 		// * transforms
 		// @ts-ignore
 		_.map((data) => {
@@ -627,7 +629,7 @@ async function determineData(data, config) {
 					//otherwise, stream it
 					return itemStream(path.resolve(data), "json", config.highWater);
 				}
-				
+
 			}
 
 			//folder case
@@ -719,7 +721,7 @@ function itemStream(filePath, type = "jsonl", workers) {
 	if (Array.isArray(filePath)) {
 		if (type === "jsonl") {
 			stream = new MultiStream(filePath.map((file) => { return fs.createReadStream(file); }), { highWaterMark: workers * 2000 });
-			parsedStream = stream.pipe(parser({ highWaterMark: workers * 2000, includeUndecided: false })).map(token => token.value);
+			parsedStream = stream.pipe(parser({ highWaterMark: workers * 2000, includeUndecided: false, checkErrors: true })).map(token => token.value);
 			return parsedStream;
 
 		}
@@ -733,7 +735,7 @@ function itemStream(filePath, type = "jsonl", workers) {
 	//parsing files
 	else {
 		stream = fs.createReadStream(filePath, { highWaterMark: workers * 2000 });
-		parsedStream = stream.pipe(parser({ highWaterMark: workers * 2000, includeUndecided: false })).map(token => token.value);
+		parsedStream = stream.pipe(parser({ highWaterMark: workers * 2000, includeUndecided: false, checkErrors: true })).map(token => token.value);
 	}
 
 	return parsedStream;

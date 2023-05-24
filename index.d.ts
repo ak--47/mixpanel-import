@@ -11,7 +11,7 @@
  * @param {boolean} [isCLI] - `true` when run as CLI
  * @returns {Promise<import('./index.d.ts').ImportResults>} API receipts of imported data
  */
-export function main(data: Data, creds: Creds, options?: Options, isCLI? : Boolean): Promise<ImportResults>;
+export default function main(data: Data, creds: Creds, options?: Options, isCLI? : Boolean): Promise<ImportResults>;
 
 
 /**
