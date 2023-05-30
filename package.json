@@ -1,6 +1,6 @@
 {
   "name": "mixpanel-import",
-  "version": "2.3.09",
+  "version": "2.3.1",
   "description": "stream and import data to mixpanel from node.js",
   "main": "index.js",
   "types": "index.d.ts",
@@ -47,7 +47,7 @@
     "node-gzip": "^1.1.2",
     "papaparse": "^5.3.2",
     "stream-json": "^1.7.4",
-    "stream-json-ak": "^1.7.5",
+    "stream-json-ak": "^1.7.511",
     "underscore": "^1.13.2",
     "yargs": "^17.6.2"
   },

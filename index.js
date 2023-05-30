@@ -599,6 +599,7 @@ async function determineData(data, config) {
 		return stream.Readable.from(data, { objectMode: true, highWaterMark: config.highWater });
 	}
 
+	//todo: support array of files
 	try {
 
 		// data refers to file/folder on disk
@@ -721,7 +722,7 @@ function itemStream(filePath, type = "jsonl", workers) {
 	if (Array.isArray(filePath)) {
 		if (type === "jsonl") {
 			stream = new MultiStream(filePath.map((file) => { return fs.createReadStream(file); }), { highWaterMark: workers * 2000 });
-			parsedStream = stream.pipe(parser({ highWaterMark: workers * 2000, includeUndecided: false, checkErrors: true })).map(token => token.value);
+			parsedStream = stream.pipe(parser({ highWaterMark: workers * 2000, includeUndecided: false, skipErrors: true })).map(token => token.value);
 			return parsedStream;
 
 		}
@@ -735,7 +736,7 @@ function itemStream(filePath, type = "jsonl", workers) {
 	//parsing files
 	else {
 		stream = fs.createReadStream(filePath, { highWaterMark: workers * 2000 });
-		parsedStream = stream.pipe(parser({ highWaterMark: workers * 2000, includeUndecided: false, checkErrors: true })).map(token => token.value);
+		parsedStream = stream.pipe(parser({ highWaterMark: workers * 2000, includeUndecided: false, skipErrors: true })).map(token => token.value);
 	}
 
 	return parsedStream;

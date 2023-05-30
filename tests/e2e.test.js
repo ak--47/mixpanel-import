@@ -400,11 +400,11 @@ describe('data fixes', () => {
 
 	test('skips bad lines', async () => {
 		const job = await mp({}, badData, { ...opts, recordType: 'user', fixData: true, transformFunc: badDataTrans });
-		expect(job.success).toBe(2439);
+		expect(job.success).toBe(5077);
 		expect(job.failed).toBe(0);
-		expect(job.total).toBe(2439);
+		expect(job.total).toBe(5077);
 		expect(job.duration).toBeGreaterThan(0);
-		expect(job.requests).toBe(3);
+		expect(job.requests).toBe(4);
 
 	});
 
