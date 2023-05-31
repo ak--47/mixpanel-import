@@ -23,11 +23,11 @@ const readline = require('readline');
 
 const Papa = require('papaparse');
 
-// const { parser: jsonlParser } = require('stream-json/jsonl/Parser');
-const { parser: jsonlParser } = require('stream-json-ak/jsonl/Parser');
+const { parser: jsonlParser } = require('stream-json/jsonl/Parser');
+// const { parser: jsonlParser } = require('stream-json-ak/jsonl/Parser');
 
-// const StreamArray = require('stream-json/streamers/StreamArray'); //json parser
-const StreamArray = require('stream-json-ak/streamers/StreamArray'); //json parser
+const StreamArray = require('stream-json/streamers/StreamArray'); //json parser
+// const StreamArray = require('stream-json-ak/streamers/StreamArray'); //json parser
 
 
 // $ streamers
@@ -722,7 +722,7 @@ function itemStream(filePath, type = "jsonl", workers) {
 	if (Array.isArray(filePath)) {
 		if (type === "jsonl") {
 			stream = new MultiStream(filePath.map((file) => { return fs.createReadStream(file); }), { highWaterMark: workers * 2000 });
-			parsedStream = stream.pipe(parser({ highWaterMark: workers * 2000, includeUndecided: false, skipErrors: true })).map(token => token.value);
+			parsedStream = stream.pipe(parser({ highWaterMark: workers * 2000, includeUndecided: false,  errorIndicator: undefined })).map(token => token.value);
 			return parsedStream;
 
 		}
@@ -736,7 +736,7 @@ function itemStream(filePath, type = "jsonl", workers) {
 	//parsing files
 	else {
 		stream = fs.createReadStream(filePath, { highWaterMark: workers * 2000 });
-		parsedStream = stream.pipe(parser({ highWaterMark: workers * 2000, includeUndecided: false, skipErrors: true })).map(token => token.value);
+		parsedStream = stream.pipe(parser({ highWaterMark: workers * 2000, includeUndecided: false, errorIndicator: undefined })).map(token => token.value);
 	}
 
 	return parsedStream;
