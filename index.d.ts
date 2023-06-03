@@ -74,67 +74,83 @@ export type Creds = {
      */
     secret?: string;
 };
+
 /**
  * options for the import job
  */
 export type Options = {
-    /**
+    
+	/**
      * - type of record to import (`event`, `user`, `group`, or `table`)
      */
     recordType?: RecordType;
-    /**
+    
+	/**
      * - US or EU (data residency)
      */
     region?: "US" | "EU";
-    /**
+    
+	/**
      * - format of underlying data stream; json or jsonl
      */
     streamFormat?: "json" | "jsonl";
-    /**
+    
+	/**
      * - use gzip compression (events only)
      */
     compress?: boolean;
-    /**
+   
+	/**
      * - validate data on send (events only)
      */
     strict?: boolean;
-    /**
+    
+	/**
      * - log results to `./logs/`
      */
     logs?: boolean;
-    /**
+    
+	/**
      * - display verbose output messages
      */
     verbose?: boolean;
-    /**
+   
+	/**
      * - apply various transformations to ensure data is properly ingested
      */
     fixData?: boolean;
-    /**
+    
+	/**
      * - remove the following (keys and values) from each record with values = `null`, `''`, `undefined`, `{}`, or `[]`
      */
     removeNulls?: boolean;
-    /**
+    
+	/**
      * - included only error responses; not successes
      */
     abridged?: boolean;
-    /**
+    
+	/**
      * - don't buffer files into memory (even if they can fit)
      */
     forceStream?: boolean;
-    /**
+    
+	/**
      * - 2^N; highWaterMark value for stream [DEPRECATED] ... use workers instead
      */
     streamSize?: number;
-    /**
+   
+	/**
      * - UTC offset which will add/subtract hours to an event's `time` value; can be a positive or negative number; default `0`
      */
     timeOffset?: number;
-    /**
+    
+	/**
      * - max # of records in each payload (max 2000; max 200 for group profiles)
      */
     recordsPerBatch?: number;
-    /**
+    
+	/**
      * - max # of bytes in each payload (max 2MB)
      */
     bytesPerBatch?: number;
@@ -142,23 +158,31 @@ export type Options = {
      * - maximum # of times to retry
      */
     maxRetries?: number;
-    /**
+    
+	/**
      * - # of concurrent workers sending requests
      */
     workers?: number;
-    /**
-     * - where to put files
+    
+	/**
+     * - where to put files (logs, exports)
      */
     where?: string;
-    /**
-     * - a function to apply to every record before sending
+    
+	/**
+     * - a transform function to `map()` over the data
+	 * - if it returns `{}` the record will be skipped
+	 * - if it returns `[{},{},{}]` the record will be split into multiple records
      */
     transformFunc?: transFunc;
 };
 /**
- * a transform function to `map()` over the data
+   * - a transform function to `map()` over the data
+	 * - if it returns `{}` the record will be skipped
+	 * - if it returns `[{},{},{}]` the record will be split into multiple records
  */
 type transFunc = (data: any) => mpEvent | mpUser | mpGroup;
+
 /**
  * a summary of the import
  */

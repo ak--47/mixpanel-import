@@ -9,7 +9,7 @@ create data streams to mixpanel... _quickly_
 
 `mixpanel-import` implements Mixpanel's [`/import`](https://developer.mixpanel.com/reference/events#import-events), [`/engage`](https://developer.mixpanel.com/reference/profile-set), [`/groups`](https://developer.mixpanel.com/reference/group-set-property), and [`/lookup`](https://developer.mixpanel.com/reference/replace-lookup-table) APIs with [best practices](https://developer.mixpanel.com/reference/import-events#rate-limits), providing a clean, configurable interface to stream JSON (or NDJSON) files compliant with Mixpanel's [data model](https://developer.mixpanel.com/docs/data-structure-deep-dive).
 
-using [streams in node.js](https://nodejs.org/api/stream.html) high-throughput backfills are possible with no intermediate storage; this particularly useful for cloud/lambda data pipelines where rETL is not available. 
+by implementing all interfaces as [streams in node.js](https://nodejs.org/api/stream.html), high-throughput backfills are possible with no intermediate storage and a low memory footprint.
 
 **note:** if you're trying to add real-time mixpanel tracking to a node.js web application - this module is **NOT** what you want; you want **[mixpanel-node](https://github.com/mixpanel/mixpanel-node)** the official node.js SDK.
 
@@ -28,7 +28,7 @@ import mpStream from 'mixpanel-import'
 //for cjs:
 const mpStream = require('mixpanel-import')
 
-const myImportDated = await mpSteam(creds, data, options)
+const myImportedData = await mpSteam(creds, data, options)
 ```
 
  <div id="cli"></div>
@@ -36,10 +36,10 @@ const myImportDated = await mpSteam(creds, data, options)
 ### 💻 CLI usage
 
 ```
-npx --yes mixpanel-import ./pathToData
+npx --yes mixpanel-import@latest ./pathToData
 ```
 
-when running stand-alone, `pathToData` can be a `.json`, `.jsonl`, `.ndjson`, `.csv` or `.txt` file OR a **directory** which contains said files.
+when running as a CLI, `pathToData` can be a `.json`, `.jsonl`, `.ndjson`, `.csv` or `.txt` file OR a **directory** which contains said files.
 
 when using the CLI, you will supply params to specify options of the form `--option value`, for example your project credentials:
 
@@ -55,7 +55,7 @@ npx --yes mixpanel-import --help
 
 alternatively, you may use an [`.env` configuration file](#env) to provide your project credentials (and some other values).
 
-the CLI will write response logs to a `./logs` directory by default. you can specify a `--where dir` option as well!
+the CLI will write response logs to a `./logs` directory by default. you can specify a `--where dir` option as well if you prefer to put logs elsewhere.
 
 <div id="mod"></div>
 
@@ -135,7 +135,7 @@ const importedData = await mpStream(creds, data, options);
 
 #### 🏓 profiles + tables:
 
-if you are importing `user` profiles, `group` profiles, or `lookup tables`, you should _also_ provide also provide the corresponding values in your `creds` configuration:
+if you are importing `user` profiles, `group` profiles, or `lookup tables`, you should _also_ provide also provide the you project `token` and some other values in your `creds` configuration:
 
 ```javascript
 const creds = {
@@ -149,7 +149,7 @@ const creds = {
 
 #### 🤖 environment variables:
 
-it is possible to delegate the authentication details to environment variables, using a `.env` file of the form:
+it is possible to delegate the authentication details to environment variables, using a `.env` file under the `MP_` prefix of the form:
 
 ```
 # if using service account auth; these 3 values are required:
@@ -173,7 +173,7 @@ MP_GROUP_KEY={{your-group-key}}
 MP_TABLE_ID={{your-lookup-id}}
 ```
 
-note: pass `null` as the `creds` to the module to use `.env` variables for authentication:
+note: pass `null` (or `{}`) as the `creds` to the module to use `.env` variables for authentication:
 
 ```javascript
 const importedData = await mpStream(null, data, options);
@@ -197,21 +197,21 @@ const importedData = await mpStream(creds, data, options);
 - **a path to a _directory_**, which contains files that have records as `.json`, `.jsonl`, `.ndjson`, or `.txt`
 
 ```javascript
-const data = `./myEventsToImport/`;
+const data = `./myEventsToImport/`; //has json files
 const importedData = await mpStream(creds, data, options);
 ```
 
 - **an array of objects** (records), in memory
 
 ```javascript
-const data = require("./myEventsToImport.json");
+const data = [{event: "foo"}, {event: "bar"}, {event: "baz"}]
 const importedData = await mpStream(creds, data, options);
 ```
 
 - **a stringified array of objects**, in memory
 
 ```javascript
-const records = require("./myEventsToImport.json");
+const records = [{event: "foo"}, {event: "bar"}, {event: "baz"}]
 const data = JSON.stringify(data);
 const importedData = await mpStream(creds, data, options);
 ```
@@ -219,7 +219,7 @@ const importedData = await mpStream(creds, data, options);
 - **a JSON (or JSONL) readable file stream**
 
 ```javascript
-const myStream = fs.createReadStream("./testData/lines.json");
+const myStream = fs.createReadStream("./myData/lines.json");
 const imported = await mpStream(creds, myStream, { streamFormat: `json` });
 ```
 
@@ -256,23 +256,29 @@ Below, the default values are given, but you can override them with your own val
 
 ##### module options
 
-```javascript
-const options = {
-  recordType: `event`, // event, user, group or table
-  compress: false, //gzip payload on egress (events only)
-  region: `US`, // US or EU
-  recordsPerBatch: 2000, // records in each req; max 2000
-  bytesPerBatch: 2 * 1024 * 1024, // max bytes in each req
-  strict: true, // use strict mode
-  logs: false, // write results to a log file
-  verbose: true, // show progress bar
-  fixData: false, //apply transforms on the data to fix common mistakes
-  streamFormat: "jsonl", // json or jsonl ... only relevant for streams
+all options are... optional... for a full list of what these do, see [the type definition](https://github.com/ak--47/mixpanel-import/blob/main/index.d.ts#L78-L81)
 
-  //will be called on every record
-  transformFunc: function noop(a) {
-    return a;
-  },
+```typescript
+export type Options = {
+    recordType?: RecordType;
+    region?: "US" | "EU";
+    streamFormat?: "json" | "jsonl";
+    compress?: boolean;
+    strict?: boolean;
+    logs?: boolean;
+    verbose?: boolean;
+    fixData?: boolean;
+    removeNulls?: boolean;
+    abridged?: boolean;
+    forceStream?: boolean;
+    streamSize?: number;
+    timeOffset?: number;
+    recordsPerBatch?: number;    
+    bytesPerBatch?: number;   
+    maxRetries?: number;  
+    workers?: number;
+    where?: string;    
+    transformFunc?: transFunc; // called on every record
 };
 ```
 
@@ -319,7 +325,7 @@ function addToken(user) {
   return user;
 }
 
-let imported = await mpStream(creds, data, {
+const imported = await mpStream(creds, data, {
   transformFunc: addToken,
   recordType: "user",
 });
@@ -331,12 +337,12 @@ let imported = await mpStream(creds, data, {
 const md5 = require('md5')
 
 function addInsert(event) {
-	let hash = md5(event);
+	const hash = md5(event);
 	event.properties.$insert_id = hash;
 	return event
 }
 
-let imported = await mpStream(creds, data, { transformFunc: addInsert })
+const imported = await mpStream(creds, data, { transformFunc: addInsert })
 ```
 
 - reshape/rename profile data with a proper `$set` key and `$distinct_id` value
@@ -348,7 +354,39 @@ function fixProfiles(user) {
   return mpUser  
 }
 
-let imported = await mpStream(creds, data, { transformFunc: fixProfiles, recordType: "user"});
+const imported = await mpStream(creds, data, { transformFunc: fixProfiles, recordType: "user"});
+```
+
+- only bringing in certain events; by returning `{}` from the `transformFunc`, results will be omitted
+
+```javascript
+function onlyProps(event) {
+	if (!event.properties) return {}; //don't send events without props
+	return event;
+}
+const data = [{ event: "foo" }, {event: "bar"}, {event: "baz", properties: {}}]
+const imported = await mpStream(creds, data, { transformFunc: onlyProps }); //imports only one event
+```
+
+- "exploding" single events into many; by returning an `[]` from the `transformFunc`, each item will be treated as a new record
+
+```javascript
+const data = [{ event: false }, {event: "foo"}]
+			
+// turns "false" event into 100 events
+function exploder(o) => {
+	if (!o.event) {
+		const results = [];
+		const template = { event: "explode!" };
+		for (var i = 0; i < 100; i++) {
+			results.push(template);
+		}
+		return results;
+	}
+	return o;
+};
+
+const imported = await mpStream(creds, data, { transformFunc: exploder }) //imports 101 events
 ```
 
 <div id="testData"></div>
@@ -367,7 +405,7 @@ $ npm run generate
 
 because... i needed this and it didn't exist... so i made it.
 
-then i made it public it because i thought it would be useful to others
+then i made it public it because i thought it would be useful to others. then it was, so i made some improvements.
 
 found a bug? have an idea? 
 

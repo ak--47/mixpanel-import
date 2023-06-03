@@ -39,7 +39,7 @@ const eventNinetyNine = require('../testData/events-nine.json');
 const twoFiftyK = `./testData/big.ndjson`;
 const needTransform = `./testData/needDateTransform.ndjson`;
 const dayjs = require('dayjs');
-const badData = `./testData/bad_data.jsonl`
+const badData = `./testData/bad_data.jsonl`;
 
 const opts = {
 	recordType: `event`,
@@ -174,6 +174,29 @@ describe('transform', () => {
 		});
 		expect(data.success).toBeGreaterThan(1004);
 		expect(data.duration).toBeGreaterThan(0);
+	}, longTimeout);
+
+	test('can explode records', async () => {
+		const data = [
+			{ event: false },
+			{ event: "foo", properties: { distinct_id: "bar", time: 1681750925188, $insert_id: "1234" } },
+			{ event: "foo", properties: { distinct_id: "naz", time: 1681750925148, $insert_id: "4321" } }];
+		const func = (o) => {
+			if (!o.event) {
+				const results = [];
+				const template = { event: "foo", properties: { distinct_id: "bar", time: 1681750925188, $insert_id: "1234" } };
+				for (let i = 0; i < 100; i++) {
+					results.push(template);
+				}
+				return results;
+			}
+			return o;
+		};
+		const job = await mp({}, data, { ...opts, recordType: 'event', fixData: false, transformFunc: func });
+		expect(job.success).toBe(102);
+		expect(job.failed).toBe(0);
+		expect(job.empty).toBe(0);
+		expect(job.total).toBe(3);
 	}, longTimeout);
 });
 
@@ -406,7 +429,24 @@ describe('data fixes', () => {
 		expect(job.duration).toBeGreaterThan(0);
 		expect(job.requests).toBe(4);
 
-	});
+	}, longTimeout);
+
+	test(`can transform out {}'s`, async () => {
+		const data = [
+			{ event: "me" },
+			{ event: "you" },
+			{ event: "foo", properties: { distinct_id: "bar", time: 1681750925188, $insert_id: "1234" } },
+			{ event: "foo", properties: { distinct_id: "naz", time: 1681750925148, $insert_id: "4321" } }];
+		const func = (o) => {
+			if (!o.properties) return {};
+			return o;
+		};
+		const job = await mp({}, data, { ...opts, recordType: 'event', fixData: false, transformFunc: func });
+		expect(job.success).toBe(2);
+		expect(job.failed).toBe(0);
+		expect(job.empty).toBe(2);
+		expect(job.total).toBe(4);
+	}, longTimeout);
 
 });
 
@@ -415,7 +455,7 @@ afterAll(async () => {
 });
 
 
-function badDataTrans(badData) {	
+function badDataTrans(badData) {
 	const mixpanelProfile = {
 		$distinct_id: badData.identity || badData.id || 'none',
 		$ip: badData.initial_ip,

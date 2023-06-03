@@ -156,7 +156,6 @@ function corePipeline(stream, config, toNodeStream = false) {
 				return false;
 			}
 		}),
-
 		// * transforms
 		// @ts-ignore
 		_.map((data) => {
@@ -165,6 +164,20 @@ function corePipeline(stream, config, toNodeStream = false) {
 			if (config.removeNulls) data = config.nullRemover(data);
 			if (config.timeOffset) data = config.UTCoffset(data);
 			return data;
+		}),
+
+		// * allow for "exploded" transforms
+		// @ts-ignore
+		_.flatten(),
+
+		// * post-transform filter to ignore nulls
+		// @ts-ignore
+		_.filter((data) => {
+			if (!data || JSON.stringify(data) === '{}') { 
+				config.empty++;
+				return false				
+			}
+			return true;
 		}),
 
 		// * batch for # of items
