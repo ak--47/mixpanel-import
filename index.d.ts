@@ -1,4 +1,3 @@
-
 /**
  * Mixpanel Importer
  * stream `events`, `users`, `groups`, and `tables` to mixpanel!
@@ -11,8 +10,7 @@
  * @param {boolean} [isCLI] - `true` when run as CLI
  * @returns {Promise<import('./index.d.ts').ImportResults>} API receipts of imported data
  */
-export default function main(data: Data, creds: Creds, options?: Options, isCLI? : Boolean): Promise<ImportResults>;
-
+export default function main(creds: Creds, data: Data, options?: Options, isCLI?: Boolean): Promise<ImportResults>;
 
 /**
  * Mixpanel Importer Stream
@@ -79,78 +77,77 @@ export type Creds = {
  * options for the import job
  */
 export type Options = {
-    
-	/**
+    /**
      * - type of record to import (`event`, `user`, `group`, or `table`)
      */
     recordType?: RecordType;
-    
-	/**
+
+    /**
      * - US or EU (data residency)
      */
     region?: "US" | "EU";
-    
-	/**
+
+    /**
      * - format of underlying data stream; json or jsonl
      */
     streamFormat?: "json" | "jsonl";
-    
-	/**
+
+    /**
      * - use gzip compression (events only)
      */
     compress?: boolean;
-   
-	/**
+
+    /**
      * - validate data on send (events only)
      */
     strict?: boolean;
-    
-	/**
+
+    /**
      * - log results to `./logs/`
      */
     logs?: boolean;
-    
-	/**
+
+    /**
      * - display verbose output messages
      */
     verbose?: boolean;
-   
-	/**
+
+    /**
      * - apply various transformations to ensure data is properly ingested
      */
     fixData?: boolean;
-    
-	/**
+
+    /**
      * - remove the following (keys and values) from each record with values = `null`, `''`, `undefined`, `{}`, or `[]`
      */
     removeNulls?: boolean;
-    
-	/**
+
+    /**
      * - included only error responses; not successes
      */
     abridged?: boolean;
-    
-	/**
+
+    /**
      * - don't buffer files into memory (even if they can fit)
      */
     forceStream?: boolean;
-    
-	/**
+
+    /**
      * - 2^N; highWaterMark value for stream [DEPRECATED] ... use workers instead
      */
     streamSize?: number;
-   
-	/**
+
+    /**
      * - UTC offset which will add/subtract hours to an event's `time` value; can be a positive or negative number; default `0`
      */
     timeOffset?: number;
-    
-	/**
+
+    /**
      * - max # of records in each payload (max 2000; max 200 for group profiles)
      */
     recordsPerBatch?: number;
-    
-	/**
+
+    /**
      * - max # of bytes in each payload (max 2MB)
      */
     bytesPerBatch?: number;
@@ -158,30 +155,30 @@ export type Options = {
      * - maximum # of times to retry
      */
     maxRetries?: number;
-    
-	/**
+
+    /**
      * - # of concurrent workers sending requests
      */
     workers?: number;
-    
-	/**
+
+    /**
      * - where to put files (logs, exports)
      */
     where?: string;
-    
-	/**
+
+    /**
      * - a transform function to `map()` over the data
-	 * - if it returns `{}` the record will be skipped
-	 * - if it returns `[{},{},{}]` the record will be split into multiple records
+     * - if it returns `{}` the record will be skipped
+     * - if it returns `[{},{},{}]` the record will be split into multiple records
      */
     transformFunc?: transFunc;
 };
 /**
-   * - a transform function to `map()` over the data
-	 * - if it returns `{}` the record will be skipped
-	 * - if it returns `[{},{},{}]` the record will be split into multiple records
+ * - a transform function to `map()` over the data
+ * - if it returns `{}` the record will be skipped
+ * - if it returns `[{},{},{}]` the record will be split into multiple records
  */
-type transFunc = (data: any) => mpEvent | mpUser | mpGroup;
+type transFunc = (data: any) => mpEvent | mpUser | mpGroup | Object[] | Object;
 
 /**
  * a summary of the import
@@ -231,6 +228,10 @@ export type ImportResults = {
      * - failed import records (400s)
      */
     errors: any[];
+    /**
+     * - human readable timestamp
+     */
+    human: string;
 };
 /**
  * valid mixpanel property values; {@link https://help.mixpanel.com/hc/en-us/articles/115004547063-Properties-Supported-Data-Types more info}

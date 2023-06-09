@@ -2,3 +2,5 @@
 // @ts-check
 const mpImport = require('../index.js');
 
+
+mpImport()

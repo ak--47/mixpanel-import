@@ -35,7 +35,6 @@ const _ = require('highland');
 const stream = require('stream');
 const got = require('got');
 const https = require('https');
-// @ts-ignore
 const MultiStream = require('multistream');
 
 // $ file system
@@ -49,13 +48,10 @@ require('dotenv').config();
 const cliParams = require('./cli');
 
 // $ utils
-// @ts-ignore
 const u = require('ak-tools');
 const track = u.tracker('mixpanel-import');
 const runId = u.uid(32);
-// @ts-ignore
 const { pick } = require('underscore');
-// @ts-ignore
 const { gzip } = require('node-gzip');
 const dayjs = require('dayjs');
 const dateFormat = `YYYY-MM-DD`;
@@ -81,9 +77,8 @@ CORE
  * @param {boolean} isCLI - `true` when run as CLI
  * @returns {Promise<import('./index.d.ts').ImportResults>} API receipts of imported data
  */
-async function main(creds = {}, data, opts = {}, isCLI = false) {
-	track('start', { runId });
-	let config = {};
+async function main(creds = {}, data, opts = {}, isCLI = false, telemetry = true) {
+	if (telemetry) track('start', { runId });
 	let cliData = {};
 
 	// gathering params
@@ -93,7 +88,8 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 		cli = cliParams();
 		cliData = cli._[0];
 	}
-	config = new importJob({ ...envVar, ...cli, ...creds }, { ...envVar, ...cli, ...opts });
+
+	const config = new importJob({ ...envVar, ...cli, ...creds }, { ...envVar, ...cli, ...opts });
 
 	if (isCLI) config.verbose = true;
 	const l = logger(config);
@@ -106,7 +102,6 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	const stream = await determineData(data || cliData, config); // always stream[]
 
 	try {
-		// @ts-ignore
 		await corePipeline(stream, config);
 	}
 
@@ -122,7 +117,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	const summary = config.summary();
 	l(`${config.type === 'export' ? 'export' : 'import'} complete in ${summary.human}`);
 	if (config.logs) await writeLogs(summary);
-	track('end', { runId, ...config.summary(false) });
+	if (telemetry) track('end', { runId, ...config.summary(false) });
 	return summary;
 }
 
@@ -131,12 +126,11 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
  * the core pipeline 
  * @param {ReadableStream} stream 
  * @param {importJob} config 
- * @returns {Promise<import('./index.d.ts').ImportResults>} a promise
+ * @returns {Promise<import('./index.d.ts').ImportResults> | Promise<void>} a promise
  */
 function corePipeline(stream, config, toNodeStream = false) {
 
 	if (config.recordType === 'table') return flushLookupTable(stream, config);
-	// @ts-ignore
 	if (config.recordType === 'export') return exportEvents(stream, config);
 	if (config.recordType === 'peopleExport') return exportProfiles(stream, config);
 
@@ -173,9 +167,9 @@ function corePipeline(stream, config, toNodeStream = false) {
 		// * post-transform filter to ignore nulls
 		// @ts-ignore
 		_.filter((data) => {
-			if (!data || JSON.stringify(data) === '{}') { 
+			if (!data || JSON.stringify(data) === '{}') {
 				config.empty++;
-				return false				
+				return false;
 			}
 			return true;
 		}),
@@ -241,7 +235,7 @@ function corePipeline(stream, config, toNodeStream = false) {
  * @returns a transform stream
  */
 // @ts-ignore
-function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
+function pipeInterface(creds = {}, opts = {}, finish = () => { }, telemetry = true) {
 	const envVar = getEnvVars();
 	const config = new importJob({ ...envVar, ...creds }, { ...envVar, ...opts });
 	config.timer.start();
@@ -252,14 +246,14 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 	// @ts-ignore
 	pipeToMe.on('end', () => {
 		config.timer.end(false);
-		track('end', { runId, ...config.summary(false) });
+		if (telemetry) track('end', { runId, ...config.summary(false) });
 		// @ts-ignore
 		finish(null, config.summary());
 	});
 
 	// @ts-ignore
 	pipeToMe.on('pipe', () => {
-		track('start', { runId });
+		if (telemetry) track('start', { runId });
 		// @ts-ignore
 		pipeToMe.resume();
 	});
@@ -303,11 +297,23 @@ async function flushToMixpanel(batch, config) {
 			method: config.reqMethod,
 			retry: {
 				limit: config.maxRetries || 10,
-				statusCodes: [429, 500, 501, 503],
-				errorCodes: [],
+				statusCodes: [429, 500, 501, 503, 524, 502],
+				errorCodes: [
+					`ETIMEDOUT`,
+					`ECONNRESET`,
+					`EADDRINUSE`,
+					`ECONNREFUSED`,
+					`EPIPE`,
+					`ENOTFOUND`,
+					`ENETUNREACH`,
+					`EAI_AGAIN`,
+					`ESOCKETTIMEDOUT`,
+					`ECONNABORTED`,
+					`EHOSTUNREACH`
+				],
 				methods: ['POST'],
 				// @ts-ignore
-				noise: 2500
+				noise: 100
 
 			},
 			headers: {
@@ -318,7 +324,7 @@ async function flushToMixpanel(batch, config) {
 				'Accept': 'application/json'
 			},
 			agent: {
-				https: new https.Agent({ keepAlive: true })
+				https: new https.Agent({ keepAlive: true, maxSockets: 100 })
 			},
 			hooks: {
 				// @ts-ignore
@@ -331,7 +337,8 @@ async function flushToMixpanel(batch, config) {
 						//noop
 					}
 					config.retries++;
-				}]
+				}],
+
 			},
 			body
 		};
@@ -354,6 +361,7 @@ async function flushToMixpanel(batch, config) {
 				res = e;
 			}
 			success = false;
+			
 		}
 
 		if (config.recordType === 'event') {
@@ -735,7 +743,7 @@ function itemStream(filePath, type = "jsonl", workers) {
 	if (Array.isArray(filePath)) {
 		if (type === "jsonl") {
 			stream = new MultiStream(filePath.map((file) => { return fs.createReadStream(file); }), { highWaterMark: workers * 2000 });
-			parsedStream = stream.pipe(parser({ highWaterMark: workers * 2000, includeUndecided: false,  errorIndicator: undefined })).map(token => token.value);
+			parsedStream = stream.pipe(parser({ highWaterMark: workers * 2000, includeUndecided: false, errorIndicator: undefined })).map(token => token.value);
 			return parsedStream;
 
 		}
