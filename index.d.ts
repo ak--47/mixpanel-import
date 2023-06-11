@@ -240,6 +240,26 @@ export type ImportResults = {
      * - the number of times a 500x responses was received (and the request was retried)
      */
     serverErrors?: number;
+    /**
+     * - the number of bytes sent to mixpanel (uncompressed)
+     */
+    bytes?: number;
+    /**
+     * - MB sent to mixpanel (uncompressed)
+     */
+    bytesHuman?: number;
+    /**
+     * - throughput in MB/s
+     */
+    mbps?: number;
+	/**
+	 * - estimation of consumption of mixpanel's event quota
+	 */
+	percentQuota?: number;
+	/**
+	 * - summary of memory usage
+	 */
+	memory?: Object;
 };
 /**
  * valid mixpanel property values; {@link https://help.mixpanel.com/hc/en-us/articles/115004547063-Properties-Supported-Data-Types more info}

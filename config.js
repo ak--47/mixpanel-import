@@ -5,6 +5,7 @@ const transforms = require('./transforms.js');
 // eslint-disable-next-line no-unused-vars
 
 
+
 /**
  * a singleton to hold state about the imported data
  * @example
@@ -57,9 +58,9 @@ class importJob {
 		this.timeOffset = opts.timeOffset || 0; // utc hours offset
 
 		// ? don't allow batches bigger than API limits
-		if (this.type === 'event' && this.recordsPerBatch > 2000) this.recordsPerBatch = 2000;
-		if (this.type === 'user' && this.recordsPerBatch > 2000) this.recordsPerBatch = 2000;
-		if (this.type === 'group' && this.recordsPerBatch > 200) this.recordsPerBatch = 200;
+		if (this.recordType === 'event' && this.recordsPerBatch > 2000) this.recordsPerBatch = 2000;
+		if (this.recordType === 'user' && this.recordsPerBatch > 2000) this.recordsPerBatch = 2000;
+		if (this.recordType === 'group' && this.recordsPerBatch > 200) this.recordsPerBatch = 200;
 
 		// ? boolean options
 		this.compress = u.isNil(opts.compress) ? false : opts.compress; //gzip data (events only)
@@ -76,7 +77,7 @@ class importJob {
 		this.transformFunc = opts.transformFunc || function noop(a) { return a; }; //will be called on every record
 		this.ezTransform = function noop(a) { return a; }; //placeholder for ez transforms
 		this.nullRemover = function noop(a) { return a; }; //placeholder for null remove
-		this.UTCoffset = function noop(a) { return a; }; //placeholder for null remove
+		this.UTCoffset = function noop(a) { return a; }; //placeholder for UTC offset
 		if (this.fixData) this.ezTransform = transforms.ezTransforms(this);
 		if (this.removeNulls) this.nullRemover = transforms.removeNulls();
 		if (this.timeOffset) this.UTCoffset = transforms.UTCoffset(this.timeOffset);
@@ -91,6 +92,7 @@ class importJob {
 		this.empty = 0;
 		this.rateLimited = 0;
 		this.serverErrors = 0;
+		this.bytesProcessed = 0;
 		this.timer = u.time('etl');
 
 		// ? requests
@@ -222,33 +224,50 @@ class importJob {
 	 * @returns {import('./index.d.ts').ImportResults} `{success, failed, total, requests, duration}`
 	 */
 	summary(includeResponses = true) {
+		const { delta, human } = this.timer.report(false);
+		const memory = u.objMap(process.memoryUsage(), (v) => u.bytesHuman(v));
 		const summary = {
+			recordType: this.recordType,
+
+			total: this.recordsProcessed,
 			success: this.success,
 			failed: this.failed,
-			total: this.recordsProcessed,
+			empty: this.empty,
+
+			duration: delta,
+			human: human,
+			bytes: this.bytesProcessed,
+			bytesHuman: u.bytesHuman(this.bytesProcessed),
+
 			requests: this.requests,
 			batches: this.batches,
-			recordType: this.recordType,
-			duration: this.timer.report(false).delta,
-			human: this.timer.report(false).human,
 			retries: this.retries,
-			version: this.version,
-			workers: this.workers,
-			empty: this.empty,
 			rateLimit: this.rateLimited,
 			serverErrors: this.serverErrors,
+
+			version: this.version,
+			workers: this.workers,
+			memory,
+
 			eps: 0,
 			rps: 0,
 			errors: [],
 			responses: []
 		};
 
-		summary.eps = Math.floor(this.recordsProcessed / this.timer.report(false).delta * 1000);
-		summary.rps = u.round(summary.requests / this.timer.report(false).delta * 1000, 3);
+		summary.eps = Math.floor(summary.total / summary.duration * 1000);
+		summary.rps = u.round(summary.requests / summary.duration * 1000, 3);
+		summary.mbps = u.round((summary.bytes / 1e+6) / summary.duration * 1000, 3);
+		// 2GB uncompressed per limit (rolling)
+		// ? https://developer.mixpanel.com/reference/import-events#rate-limits
+		const quota = 2e9; //2GB in bytes
+		const gbPerMin = (summary.bytes / quota) / (summary.duration / 60000);
+		summary.percentQuota = u.round(gbPerMin, 3);
 		summary.errors = this.errors;
+		summary;
 
 		if (includeResponses) {
-			summary.responses = this.responses;			
+			summary.responses = this.responses;
 		}
 
 		if (this.file) {
