@@ -102,7 +102,10 @@ async function main(creds = {}, data, opts = {}, isCLI = false, telemetry = true
 	const stream = await determineData(data || cliData, config); // always stream[]
 
 	try {
-		await corePipeline(stream, config);
+		// eslint-disable-next-line no-unused-vars
+		const result = await corePipeline(stream, config).finally(() => {
+			l(`\n\nFINISHED!\n\n`)
+		});
 	}
 
 	catch (e) {
@@ -337,6 +340,12 @@ async function flushToMixpanel(batch, config) {
 						//noop
 					}
 					config.retries++;
+					if (resp?.code?.toString() === "429") {
+						config.rateLimited++;
+					}
+					if (resp?.code?.toString().startsWith("5")) {
+						config.serverErrors++;
+					}
 				}],
 
 			},
@@ -348,7 +357,7 @@ async function flushToMixpanel(batch, config) {
 		let req, res, success;
 		try {
 			// @ts-ignore
-			req = await got(options);
+			req = await got(options);			
 			res = JSON.parse(req.body);
 			success = true;
 		}
@@ -361,7 +370,7 @@ async function flushToMixpanel(batch, config) {
 				res = e;
 			}
 			success = false;
-			
+
 		}
 
 		if (config.recordType === 'event') {
@@ -738,26 +747,32 @@ function itemStream(filePath, type = "jsonl", workers) {
 	let stream;
 	let parsedStream;
 	const parser = type === "jsonl" ? jsonlParser : StreamArray.withParser;
+	const streamOpts = {
+		highWaterMark: workers * 2000,
+		autoClose: true,
+		emitClose: true
 
+	};
 	//parsing folders
 	if (Array.isArray(filePath)) {
+
 		if (type === "jsonl") {
-			stream = new MultiStream(filePath.map((file) => { return fs.createReadStream(file); }), { highWaterMark: workers * 2000 });
-			parsedStream = stream.pipe(parser({ highWaterMark: workers * 2000, includeUndecided: false, errorIndicator: undefined })).map(token => token.value);
+			stream = new MultiStream(filePath.map((file) => { return fs.createReadStream(file, streamOpts); }), streamOpts);
+			parsedStream = stream.pipe(parser({ includeUndecided: false, errorIndicator: undefined, ...streamOpts })).map(token => token.value);
 			return parsedStream;
 
 		}
 		if (type === "json") {
 			stream = filePath.map((file) => fs.createReadStream(file));
-			parsedStream = MultiStream.obj(stream.map(s => s.pipe(parser({ highWaterMark: workers * 2000 })).map(token => token.value)));
+			parsedStream = MultiStream.obj(stream.map(s => s.pipe(parser(streamOpts)).map(token => token.value)));
 			return parsedStream;
 		}
 	}
 
 	//parsing files
 	else {
-		stream = fs.createReadStream(filePath, { highWaterMark: workers * 2000 });
-		parsedStream = stream.pipe(parser({ highWaterMark: workers * 2000, includeUndecided: false, errorIndicator: undefined })).map(token => token.value);
+		stream = fs.createReadStream(filePath, streamOpts);
+		parsedStream = stream.pipe(parser({ includeUndecided: false, errorIndicator: undefined, ...streamOpts })).map(token => token.value);
 	}
 
 	return parsedStream;
@@ -917,5 +932,7 @@ if (require.main === module) {
 		console.log('\n\nUH OH! something went wrong; the error is:\n\n');
 		console.error(e);
 		process.exit(1);
+	}).finally(() => {
+		process.exit(0);
 	});
 }

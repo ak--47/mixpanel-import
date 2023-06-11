@@ -232,6 +232,14 @@ export type ImportResults = {
      * - human readable timestamp
      */
     human: string;
+    /**
+     * - the number of times a 429 response was received (and the request was retried)
+     */
+    rateLimit?: number;
+    /**
+     * - the number of times a 500x responses was received (and the request was retried)
+     */
+    serverErrors?: number;
 };
 /**
  * valid mixpanel property values; {@link https://help.mixpanel.com/hc/en-us/articles/115004547063-Properties-Supported-Data-Types more info}

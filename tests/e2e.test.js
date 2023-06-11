@@ -286,6 +286,12 @@ describe('cli', () => {
 		const result = await u.load(output, true);
 		expect(result.success).toBe(1000);
 	}, longTimeout);
+
+	test('folder', async () => {
+		const output = execSync(`node ./index.js  ${folderjsonl} --format jsonl`).toString().trim().split('\n').pop();
+		const result = await u.load(output, true);
+		expect(result.success).toBe(3009);
+	}, longTimeout);
 });
 
 describe('options', () => {

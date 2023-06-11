@@ -89,6 +89,8 @@ class importJob {
 		this.batches = 0;
 		this.requests = 0;
 		this.empty = 0;
+		this.rateLimited = 0;
+		this.serverErrors = 0;
 		this.timer = u.time('etl');
 
 		// ? requests
@@ -233,6 +235,8 @@ class importJob {
 			version: this.version,
 			workers: this.workers,
 			empty: this.empty,
+			rateLimit: this.rateLimited,
+			serverErrors: this.serverErrors,
 			eps: 0,
 			rps: 0,
 			errors: [],
