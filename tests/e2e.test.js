@@ -100,7 +100,6 @@ describe('filenames', () => {
 
 describe('folders', () => {
 	test('jsonl', async () => {
-
 		const data = await mp({}, folderjsonl, { ...opts, streamFormat: "jsonl" });
 		expect(data.success).toBe(3009);
 		expect(data.failed).toBe(0);
@@ -197,6 +196,28 @@ describe('transform', () => {
 		expect(job.failed).toBe(0);
 		expect(job.empty).toBe(0);
 		expect(job.total).toBe(3);
+	}, longTimeout);
+
+	test('tags: event', async () => {
+		const data = await mp({}, events, { ...opts, tags: { foo: "bar" } });
+		expect(data.success).toBe(5003);
+		expect(data.failed).toBe(0);
+		expect(data.duration).toBeGreaterThan(0);
+	}, longTimeout);
+
+	test('tags: user', async () => {
+		const data = await mp({}, people, { ...opts, recordType: `user`, tags: { baz: "qux" } });
+		expect(data.success).toBe(5000);
+		expect(data.failed).toBe(0);
+		expect(data.duration).toBeGreaterThan(0);
+
+	}, longTimeout);
+
+	test('tags: group', async () => {
+		const data = await mp({}, groups, { ...opts, recordType: `group`, tags: { foo: "bar", mux: "dux", hey: "you", guys: "yo" } });
+		expect(data.success).toBe(1860);
+		expect(data.failed).toBe(0);
+		expect(data.duration).toBeGreaterThan(0);
 	}, longTimeout);
 });
 

@@ -34,7 +34,7 @@ function ezTransforms(config) {
 				user.$distinct_id = user.$set.$distinct_id;
 				delete user.$set.$distinct_id;
 				delete user.$set.$token;
-				
+
 				//deal with mp export shape
 				//? https://developer.mixpanel.com/reference/engage-query
 				if (typeof user.$set?.$properties === 'object') {
@@ -111,6 +111,36 @@ function removeNulls(valuesToRemove = [null, '', undefined]) {
 
 }
 
+//add tags to every record
+function addTags(config) {
+	const type = config.recordType;
+	const tags = config.tags || {};
+	return function (record) {
+		if (!Object.keys(tags).length) return record;		
+		if (type === 'event') {
+			if (record.properties) record.properties = { ...record.properties, ...tags };
+			return record;
+		}
+
+		const ignoreKeys = ["$token", "$group_key", "$group_id"]
+
+		if (type === 'user') {
+			const operation = Object.keys(record).find(predicate => predicate.startsWith('$') && !ignoreKeys.includes(predicate));
+			if (operation) record[operation] = { ...record[operation], ...tags };
+			return record;
+		}
+
+		if (type === 'group') {
+			const operation = Object.keys(record).find(predicate => predicate.startsWith('$') && !ignoreKeys.includes(predicate));
+			if (operation) record[operation] = { ...record[operation], ...tags };
+			return record;
+		}
+
+		return record;
+	};
+}
+
+//offset the time of events by an integer number of hours
 function UTCoffset(timeOffset = 0) {
 	return function (record) {
 		if (record?.properties?.time) {
@@ -125,5 +155,6 @@ function UTCoffset(timeOffset = 0) {
 module.exports = {
 	ezTransforms,
 	removeNulls,
-	UTCoffset
+	UTCoffset,
+	addTags
 };

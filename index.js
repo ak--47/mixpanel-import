@@ -163,6 +163,7 @@ function corePipeline(stream, config, toNodeStream = false) {
 			if (config.fixData) data = config.ezTransform(data);
 			if (config.removeNulls) data = config.nullRemover(data);
 			if (config.timeOffset) data = config.UTCoffset(data);
+			if (config.tags && Object.keys(config.tags).length) data = config.addTags(data);
 			return data;
 		}),
 

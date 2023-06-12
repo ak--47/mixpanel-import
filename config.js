@@ -27,6 +27,7 @@ class importJob {
 		this.lookupTableId = creds.lookupTableId || ``; //lookup table id
 		this.groupKey = creds.groupKey || ``; //group key id
 		this.auth = this.resolveProjInfo();
+		
 
 
 		//? dates
@@ -74,13 +75,17 @@ class importJob {
 		this.forceStream = u.isNil(opts.forceStream) ? true : opts.forceStream; //don't ever buffer files into memory
 
 		// ? transform options
+		this.tags = opts.tags || {}; //tags for the import
 		this.transformFunc = opts.transformFunc || function noop(a) { return a; }; //will be called on every record
 		this.ezTransform = function noop(a) { return a; }; //placeholder for ez transforms
 		this.nullRemover = function noop(a) { return a; }; //placeholder for null remove
 		this.UTCoffset = function noop(a) { return a; }; //placeholder for UTC offset
+		this.addTags = function noop(a) { return a; }; //placeholder for add tags
+		
 		if (this.fixData) this.ezTransform = transforms.ezTransforms(this);
 		if (this.removeNulls) this.nullRemover = transforms.removeNulls();
 		if (this.timeOffset) this.UTCoffset = transforms.UTCoffset(this.timeOffset);
+		if (Object.keys(this.tags).length > 0) this.addTags = transforms.addTags(this);
 
 		// ? counters
 		this.recordsProcessed = 0;

@@ -172,6 +172,11 @@ export type Options = {
      * - if it returns `[{},{},{}]` the record will be split into multiple records
      */
     transformFunc?: transFunc;
+
+	/**
+	 * - a set of tags which will be added to all records
+	 */
+	tags?: genericObj;
 };
 /**
  * - a transform function to `map()` over the data
@@ -359,3 +364,8 @@ type mpGroup = mpGroupStandardProps & ProfileData;
  * a user profile update payload
  */
 type mpUser = mpUserStandardProps & ProfileData;
+
+
+type genericObj = { 
+	[x: string]: string | number | boolean
+}
