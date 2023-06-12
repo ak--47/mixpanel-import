@@ -172,6 +172,12 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'end date (exports)',
 			type: 'string'
 		})
+		.options("tags", {
+			demandOption: false,
+			default: {},
+			describe: 'tags to add to each record; {key: value}',
+			type: 'string'
+		})
 		.help()
 		.argv;
 	// @ts-ignore

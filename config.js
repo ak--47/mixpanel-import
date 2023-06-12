@@ -76,6 +76,15 @@ class importJob {
 
 		// ? transform options
 		this.tags = opts.tags || {}; //tags for the import
+		if (typeof this.tags === 'string') {
+			try {
+				this.tags = JSON.parse(this.tags);
+			}
+			catch (e) { 
+				if (this.verbose) console.log(`error parsing tags: ${this.tags}\ntags must be valid JSON`)
+				this.tags = {}; //bad json
+			}
+		}
 		this.transformFunc = opts.transformFunc || function noop(a) { return a; }; //will be called on every record
 		this.ezTransform = function noop(a) { return a; }; //placeholder for ez transforms
 		this.nullRemover = function noop(a) { return a; }; //placeholder for null remove
