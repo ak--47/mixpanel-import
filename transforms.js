@@ -1,5 +1,9 @@
 const md5 = require('md5');
 const dayjs = require('dayjs');
+const u = require('ak-tools');
+
+const validOperations = ["$set", "$set_once", "$add", "$union", "$append", "$remove", "$unset"];
+
 
 function ezTransforms(config) {
 	//for strict event imports, make every record has an $insert_id
@@ -29,7 +33,7 @@ function ezTransforms(config) {
 			//todo make it possible to take existing profiles and send them...
 
 			//wrong shape; fix it
-			if (!(user.$set || user.$set_once || user.$add || user.$union || user.$append || user.$remove || user.$unset)) {
+			if (!validOperations.some(op => Object.keys(user).includes(op))) {
 				user = { $set: { ...user } };
 				user.$distinct_id = user.$set.$distinct_id;
 				delete user.$set.$distinct_id;
@@ -105,7 +109,6 @@ function removeNulls(valuesToRemove = [null, '', undefined]) {
 				}
 			}
 		}
-
 		return record;
 	};
 
@@ -116,26 +119,39 @@ function addTags(config) {
 	const type = config.recordType;
 	const tags = config.tags || {};
 	return function (record) {
-		if (!Object.keys(tags).length) return record;		
+		if (!Object.keys(tags).length) return record;
 		if (type === 'event') {
 			if (record.properties) record.properties = { ...record.properties, ...tags };
 			return record;
 		}
 
-		const ignoreKeys = ["$token", "$group_key", "$group_id"]
+		const operation = Object.keys(record).find(predicate => predicate.startsWith('$') && validOperations.includes(predicate));
 
-		if (type === 'user') {
-			const operation = Object.keys(record).find(predicate => predicate.startsWith('$') && !ignoreKeys.includes(predicate));
+		if (type === 'user' || type === 'group') {
 			if (operation) record[operation] = { ...record[operation], ...tags };
 			return record;
 		}
 
-		if (type === 'group') {
-			const operation = Object.keys(record).find(predicate => predicate.startsWith('$') && !ignoreKeys.includes(predicate));
-			if (operation) record[operation] = { ...record[operation], ...tags };
+		return record;
+	};
+}
+
+// rename property keys
+function applyAliases(config) {
+	const type = config.recordType;
+	const aliases = config.aliases || {};
+	return function (record) {
+		if (!Object.keys(aliases).length) return record;
+		if (type === 'event') {
+			record.properties = u.rnKeys(record.properties, aliases);
 			return record;
 		}
+		const operation = Object.keys(record).find(predicate => predicate.startsWith('$') && validOperations.includes(predicate));
 
+		if (type === 'user' || type === 'group') {
+			if (operation) record[operation] = u.rnKeys(record[operation], aliases);
+			return record;
+		}
 		return record;
 	};
 }
@@ -156,5 +172,6 @@ module.exports = {
 	ezTransforms,
 	removeNulls,
 	UTCoffset,
-	addTags
+	addTags,
+	applyAliases
 };

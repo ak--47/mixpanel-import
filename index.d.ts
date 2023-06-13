@@ -177,6 +177,12 @@ export type Options = {
 	 * - a set of tags which will be added to all records
 	 */
 	tags?: genericObj;
+
+	/**
+	 * - a set of aliases used to rename property keys in the source data
+	 */
+
+	aliases?: genericObj;
 };
 /**
  * - a transform function to `map()` over the data

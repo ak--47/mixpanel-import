@@ -205,6 +205,13 @@ describe('transform', () => {
 		expect(data.duration).toBeGreaterThan(0);
 	}, longTimeout);
 
+	test('aliases: event', async () => {
+		const data = await mp({}, events, { ...opts, aliases: { colorTheme: "color", luckyNumber: "lucky!!!" } });
+		expect(data.success).toBe(5003);
+		expect(data.failed).toBe(0);
+		expect(data.duration).toBeGreaterThan(0);
+	}, longTimeout);
+
 	test('tags: user', async () => {
 		const data = await mp({}, people, { ...opts, recordType: `user`, tags: { baz: "qux" } });
 		expect(data.success).toBe(5000);
@@ -213,8 +220,23 @@ describe('transform', () => {
 
 	}, longTimeout);
 
+	test('aliases: user', async () => {
+		const data = await mp({}, people, { ...opts, recordType: `user`, aliases: { colorTheme: "color", luckyNumber: "lucky!!!" } });
+		expect(data.success).toBe(5000);
+		expect(data.failed).toBe(0);
+		expect(data.duration).toBeGreaterThan(0);
+
+	}, longTimeout);
+
 	test('tags: group', async () => {
 		const data = await mp({}, groups, { ...opts, recordType: `group`, tags: { foo: "bar", mux: "dux", hey: "you", guys: "yo" } });
+		expect(data.success).toBe(1860);
+		expect(data.failed).toBe(0);
+		expect(data.duration).toBeGreaterThan(0);
+	}, longTimeout);
+
+	test('aliases: group', async () => {
+		const data = await mp({}, groups, { ...opts, recordType: `group`, aliases: { colorTheme: "color", luckyNumber: "lucky!!!" }  });
 		expect(data.success).toBe(1860);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);

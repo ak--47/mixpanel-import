@@ -85,16 +85,29 @@ class importJob {
 				this.tags = {}; //bad json
 			}
 		}
+
+		this.aliases = opts.aliases || {}; //aliases for the import
+		if (typeof this.aliases === 'string') {
+			try {
+				this.aliases = JSON.parse(this.tags);
+			}
+			catch (e) { 
+				if (this.verbose) console.log(`error parsing aliases: ${this.tags}\ntags must be valid JSON`)
+				this.aliases = {}; //bad json
+			}
+		}
 		this.transformFunc = opts.transformFunc || function noop(a) { return a; }; //will be called on every record
 		this.ezTransform = function noop(a) { return a; }; //placeholder for ez transforms
 		this.nullRemover = function noop(a) { return a; }; //placeholder for null remove
 		this.UTCoffset = function noop(a) { return a; }; //placeholder for UTC offset
 		this.addTags = function noop(a) { return a; }; //placeholder for add tags
+		this.applyAliases = function noop(a) { return a; }; //placeholder for apply aliases
 		
 		if (this.fixData) this.ezTransform = transforms.ezTransforms(this);
 		if (this.removeNulls) this.nullRemover = transforms.removeNulls();
 		if (this.timeOffset) this.UTCoffset = transforms.UTCoffset(this.timeOffset);
 		if (Object.keys(this.tags).length > 0) this.addTags = transforms.addTags(this);
+		if (Object.keys(this.aliases).length > 0) this.applyAliases = transforms.applyAliases(this);
 
 		// ? counters
 		this.recordsProcessed = 0;

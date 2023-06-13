@@ -174,8 +174,14 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 		})
 		.options("tags", {
 			demandOption: false,
-			default: {},
-			describe: 'tags to add to each record; {key: value}',
+			default: "{}",
+			describe: 'tags to add to each record; {"key": "value"}',
+			type: 'string'
+		})
+		.options("aliases", {
+			demandOption: false,
+			default: "{}",
+			describe: 'rename property keys on each record; {"oldPropKey": "newPropKey"}',
 			type: 'string'
 		})
 		.help()
