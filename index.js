@@ -201,6 +201,7 @@ function corePipeline(stream, config, toNodeStream = false) {
 		_.map((batch) => {
 			config.requests++;
 			config.batches++;
+			config.batchLengths.push(batch.length);
 			return flush(batch, config);
 		}),
 

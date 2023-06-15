@@ -271,6 +271,10 @@ export type ImportResults = {
 	 * - summary of memory usage
 	 */
 	memory?: Object;
+	/**
+	 * - average # of records per batch
+	 */
+	avgBatchLength?: number;
 };
 /**
  * valid mixpanel property values; {@link https://help.mixpanel.com/hc/en-us/articles/115004547063-Properties-Supported-Data-Types more info}

@@ -101,7 +101,8 @@ async function exportProfiles(folder, config) {
 			Authorization: auth
 		},
 		searchParams: {},
-		responseType: 'json'
+		responseType: 'json',
+		retry: { limit: 50 }
 	};
 	// @ts-ignore
 	if (config.project) options.searchParams.project_id = config.project;

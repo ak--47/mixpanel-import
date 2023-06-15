@@ -120,6 +120,7 @@ class importJob {
 		this.rateLimited = 0;
 		this.serverErrors = 0;
 		this.bytesProcessed = 0;
+		this.batchLengths = [];
 		this.timer = u.time('etl');
 
 		// ? requests
@@ -276,6 +277,7 @@ class importJob {
 			workers: this.workers,
 			memory,
 
+			avgBatchLength: u.avg(...this.batchLengths),
 			eps: 0,
 			rps: 0,
 			errors: [],
@@ -290,8 +292,9 @@ class importJob {
 		const quota = 2e9; //2GB in bytes
 		const gbPerMin = (summary.bytes / quota) / (summary.duration / 60000);
 		summary.percentQuota = u.round(gbPerMin, 3);
+		
 		summary.errors = this.errors;
-		summary;
+		
 
 		if (includeResponses) {
 			summary.responses = this.responses;
