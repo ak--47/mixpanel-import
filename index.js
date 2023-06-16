@@ -54,6 +54,8 @@ const runId = u.uid(32);
 const { pick } = require('underscore');
 const { gzip } = require('node-gzip');
 const dayjs = require('dayjs');
+const utc = require('dayjs/plugin/utc');
+dayjs.extend(utc);
 const dateFormat = `YYYY-MM-DD`;
 const { callbackify } = require('util');
 
@@ -344,19 +346,20 @@ async function flushToMixpanel(batch, config) {
 			},
 			hooks: {
 				// @ts-ignore
-				beforeRetry: [(req, resp, count) => {
+				beforeRetry: [(req, error, count) => {
 					try {
 						// @ts-ignore
-						l(`got ${resp.message}...retrying request...#${count}`);
+						l(`got ${error.message}...retrying request...#${count}`);
 					}
 					catch (e) {
 						//noop
 					}
 					config.retries++;
-					if (resp?.code?.toString() === "429") {
+					config.requests++;
+					if (error?.response?.statusCode?.toString() === "429") {
 						config.rateLimited++;
 					}
-					if (resp?.code?.toString().startsWith("5")) {
+					if (error?.response?.statusCode?.toString()?.startsWith("5")) {
 						config.serverErrors++;
 					}
 				}],
@@ -481,6 +484,38 @@ async function determineData(data, config) {
 					return itemStream(path.resolve(data), "json", config.highWater);
 				}
 
+				//csv case
+				// todo: refactor this
+				if (config.streamFormat === 'csv') {
+					const fileStream = fs.createReadStream(path.resolve(data));
+					const mappings = Object.entries(config.aliases);
+					const csvParser = Papa.parse(Papa.NODE_STREAM_INPUT, {
+						header: true,
+						skipEmptyLines: true,
+						transformHeader: (header) => {
+							const mapping = mappings.filter(pair => pair[0] === header).pop();
+							if (mapping) header = mapping[1];
+							return header;
+						}
+					});
+					const transformer = new stream.Transform({
+						objectMode: true, highWaterMark: config.highWater, transform: (chunk, encoding, callback) => {
+							const { distinct_id = "", $insert_id = " ", time, event, ...props } = chunk;
+							const mixpanelEvent = {
+								event,
+								properties: {
+									distinct_id,
+									$insert_id,
+									time: dayjs.utc(time).valueOf(),
+									...props
+								}
+							};
+							callback(null, mixpanelEvent);
+						}
+					});
+					const outStream = fileStream.pipe(csvParser).pipe(transformer);
+					return outStream;
+				}
 			}
 
 			//folder case

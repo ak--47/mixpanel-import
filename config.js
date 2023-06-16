@@ -287,11 +287,11 @@ class importJob {
 		summary.eps = Math.floor(summary.total / summary.duration * 1000);
 		summary.rps = u.round(summary.requests / summary.duration * 1000, 3);
 		summary.mbps = u.round((summary.bytes / 1e+6) / summary.duration * 1000, 3);
-		// 2GB uncompressed per limit (rolling)
+		// 2GB uncompressed per min (rolling)
 		// ? https://developer.mixpanel.com/reference/import-events#rate-limits
 		const quota = 2e9; //2GB in bytes
 		const gbPerMin = (summary.bytes / quota) / (summary.duration / 60000);
-		summary.percentQuota = u.round(gbPerMin, 3);
+		summary.percentQuota = u.round(gbPerMin, 5) * 100;
 		
 		summary.errors = this.errors;
 		

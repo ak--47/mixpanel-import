@@ -21,3 +21,5 @@ benchmarks/testData/*
 todos
 tmp/*
 !tmp/.gitkeep
+tests/coverage/*
+!tests/coverage/.gitkeep

@@ -216,11 +216,11 @@ export type ImportResults = {
      */
     empty: number;
     /**
-     * - num of batches
+     * - total num of batches
      */
     batches: number;
     /**
-     * - num of requests
+     * - total num of requests
      */
     requests: number;
     /**
@@ -228,7 +228,7 @@ export type ImportResults = {
      */
     eps: number;
     /**
-     * - estimate of "requests per second"
+     * - estimate of "requests per second" throughput
      */
     rps: number;
     /**

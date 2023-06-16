@@ -40,6 +40,7 @@ const twoFiftyK = `./testData/big.ndjson`;
 const needTransform = `./testData/needDateTransform.ndjson`;
 const dayjs = require('dayjs');
 const badData = `./testData/bad_data.jsonl`;
+const eventsCSV = `./testData/eventAsTable.csv`
 
 const opts = {
 	recordType: `event`,
@@ -241,6 +242,15 @@ describe('transform', () => {
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
 	}, longTimeout);
+
+	test('event CSV!', async () => {
+		const data = await mp({}, eventsCSV, { ...opts, streamFormat: "csv", aliases: { row_id: "$insert_id", uuid: "distinct_id", action: "event", timestamp: "time"} });
+		expect(data.success).toBe(10003);
+		expect(data.failed).toBe(0);
+		expect(data.duration).toBeGreaterThan(0);
+	}, longTimeout);
+
+	
 });
 
 describe('object streams', () => {
