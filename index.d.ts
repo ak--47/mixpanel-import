@@ -173,16 +173,16 @@ export type Options = {
      */
     transformFunc?: transFunc;
 
-	/**
-	 * - a set of tags which will be added to all records
-	 */
-	tags?: genericObj;
+    /**
+     * - a set of tags which will be added to all records
+     */
+    tags?: genericObj;
 
-	/**
-	 * - a set of aliases used to rename property keys in the source data
-	 */
+    /**
+     * - a set of aliases used to rename property keys in the source data
+     */
 
-	aliases?: genericObj;
+    aliases?: genericObj;
 };
 /**
  * - a transform function to `map()` over the data
@@ -263,18 +263,26 @@ export type ImportResults = {
      * - throughput in MB/s
      */
     mbps?: number;
-	/**
-	 * - estimation of consumption of mixpanel's event quota
-	 */
-	percentQuota?: number;
-	/**
-	 * - summary of memory usage
-	 */
-	memory?: Object;
-	/**
-	 * - average # of records per batch
-	 */
-	avgBatchLength?: number;
+    /**
+     * - estimation of consumption of mixpanel's event quota
+     */
+    percentQuota?: number;
+    /**
+     * - summary of memory usage
+     */
+    memory?: Object;
+    /**
+     * - average # of records per batch
+     */
+    avgBatchLength?: number;
+    /**
+     * - the start timestamp of the job (ISO 8601)
+     */
+    startTime?: string;
+    /**
+     * - the end timestamp of the job (ISO 8601)
+     */
+    endTime?: string;
 };
 /**
  * valid mixpanel property values; {@link https://help.mixpanel.com/hc/en-us/articles/115004547063-Properties-Supported-Data-Types more info}
@@ -375,7 +383,6 @@ type mpGroup = mpGroupStandardProps & ProfileData;
  */
 type mpUser = mpUserStandardProps & ProfileData;
 
-
-type genericObj = { 
-	[x: string]: string | number | boolean
-}
+type genericObj = {
+    [x: string]: string | number | boolean;
+};

@@ -27,6 +27,8 @@ class importJob {
 		this.lookupTableId = creds.lookupTableId || ``; //lookup table id
 		this.groupKey = creds.groupKey || ``; //group key id
 		this.auth = this.resolveProjInfo();
+		this.startTime = new Date().toISOString();
+		this.endTime = null;
 		
 
 
@@ -262,6 +264,8 @@ class importJob {
 			failed: this.failed,
 			empty: this.empty,
 
+			startTime: this.startTime,
+			endTime: new Date().toISOString(),
 			duration: delta,
 			human: human,
 			bytes: this.bytesProcessed,

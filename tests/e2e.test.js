@@ -72,6 +72,8 @@ describe('filenames', () => {
 		expect(data.success).toBe(5003);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
+		expect(data).toHaveProperty('startTime');
+		expect(data).toHaveProperty('endTime');
 	}, longTimeout);
 
 	test('user', async () => {
