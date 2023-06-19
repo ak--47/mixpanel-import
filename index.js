@@ -146,7 +146,8 @@ function corePipeline(stream, config, toNodeStream = false) {
 
 	// @ts-ignore
 	const mpPipeline = _.pipeline(
-		// * only actual data points
+		
+		// * only JSON from stream
 		// @ts-ignore
 		_.filter((data) => {
 			config.recordsProcessed++;
@@ -158,10 +159,40 @@ function corePipeline(stream, config, toNodeStream = false) {
 				return false;
 			}
 		}),
-		// * transforms
+		
+		// * apply user defined transform
 		// @ts-ignore
 		_.map((data) => {
 			if (config.transformFunc) data = config.transformFunc(data);
+			return data;
+		}),
+		
+		// * allow for "exploded" transforms [{},{},{}] to emit single events {}
+		// @ts-ignore
+		_.flatten(),
+
+		// * post-transform filter to ignore nulls + empty objects
+		// @ts-ignore
+		_.filter((data) => {
+			if (data) {
+				const str = JSON.stringify(data);
+				if (str !== '{}' && str !== '[]' && str !== '""' && str !== 'null') {
+					return true;
+				}
+				else {
+					config.empty++;
+					return false;
+				}
+			}
+			else {
+				config.empty++;
+				return false;
+			}
+		}),
+
+		// * helper transforms
+		// @ts-ignore
+		_.map((data) => {
 			if (config.fixData) data = config.ezTransform(data);
 			if (config.removeNulls) data = config.nullRemover(data);
 			if (config.timeOffset) data = config.UTCoffset(data);
@@ -170,11 +201,7 @@ function corePipeline(stream, config, toNodeStream = false) {
 			return data;
 		}),
 
-		// * allow for "exploded" transforms
-		// @ts-ignore
-		_.flatten(),
-
-		// * post-transform filter to ignore nulls + empty objects
+		// * post-transform filter to ignore nulls + count byte size
 		// @ts-ignore
 		_.filter((data) => {
 			if (!data) {
@@ -182,7 +209,7 @@ function corePipeline(stream, config, toNodeStream = false) {
 				return false;
 			}
 			const str = JSON.stringify(data);
-			if (str === '{}' || str === '[]' || str === '""') {
+			if (str === '{}' || str === '[]' || str === 'null') {
 				config.empty++;
 				return false;
 			}
