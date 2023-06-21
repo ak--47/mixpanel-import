@@ -59,6 +59,9 @@ class importJob {
 		this.bytesPerBatch = opts.bytesPerBatch || 2 * 1024 * 1024; // max bytes in each req
 		this.maxRetries = opts.maxRetries || 10; // number of times to retry a batch
 		this.timeOffset = opts.timeOffset || 0; // utc hours offset
+		this.compressionLevel = opts.compressionLevel || 6; // gzip compression level
+		this.workers = Number.isInteger(opts.workers) ? opts.workers : 10; // number of workers to use
+		this.highWater = (this.workers * this.recordsPerBatch) || 2000;
 
 		// ? don't allow batches bigger than API limits
 		if (this.recordType === 'event' && this.recordsPerBatch > 2000) this.recordsPerBatch = 2000;
@@ -66,7 +69,7 @@ class importJob {
 		if (this.recordType === 'group' && this.recordsPerBatch > 200) this.recordsPerBatch = 200;
 
 		// ? boolean options
-		this.compress = u.isNil(opts.compress) ? false : opts.compress; //gzip data (events only)
+		this.compress = u.isNil(opts.compress) ? true : opts.compress; //gzip data (events only)
 		this.strict = u.isNil(opts.strict) ? true : opts.strict; // use strict mode?
 		this.logs = u.isNil(opts.logs) ? false : opts.logs; //create log file
 		this.where = u.isNil(opts.logs) ? '' : opts.where; // where to put logs
@@ -131,8 +134,7 @@ class importJob {
 		this.encoding = "";
 		this.responses = [];
 		this.errors = [];
-		this.workers = Number.isInteger(opts.workers) ? opts.workers : 10;
-		this.highWater = (this.workers * this.recordsPerBatch) || 2000;
+
 
 		// ? allow plurals
 		if (this.recordType === 'events') this.recordType === 'event';

@@ -146,7 +146,7 @@ function corePipeline(stream, config, toNodeStream = false) {
 
 	// @ts-ignore
 	const mpPipeline = _.pipeline(
-		
+
 		// * only JSON from stream
 		// @ts-ignore
 		_.filter((data) => {
@@ -159,14 +159,14 @@ function corePipeline(stream, config, toNodeStream = false) {
 				return false;
 			}
 		}),
-		
+
 		// * apply user defined transform
 		// @ts-ignore
 		_.map((data) => {
 			if (config.transformFunc) data = config.transformFunc(data);
 			return data;
 		}),
-		
+
 		// * allow for "exploded" transforms [{},{},{}] to emit single events {}
 		// @ts-ignore
 		_.flatten(),
@@ -327,7 +327,7 @@ async function flushToMixpanel(batch, config) {
 	try {
 		let body = typeof batch === 'string' ? batch : JSON.stringify(batch);
 		if (config.recordType === 'event' && config.compress) {
-			body = await gzip(body);
+			body = await gzip(body, { level: config.compressionLevel || 6 });
 			config.encoding = 'gzip';
 		}
 
@@ -512,7 +512,7 @@ async function determineData(data, config) {
 				}
 
 				//csv case
-				// todo: refactor this
+				// todo: refactor this inside the itemStream function
 				if (config.streamFormat === 'csv') {
 					const fileStream = fs.createReadStream(path.resolve(data));
 					const mappings = Object.entries(config.aliases);

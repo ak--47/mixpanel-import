@@ -79,111 +79,121 @@ export type Creds = {
 export type Options = {
     /**
      * - type of record to import (`event`, `user`, `group`, or `table`)
+	 * - default `event`
      */
     recordType?: RecordType;
 
     /**
      * - US or EU (data residency)
+	 * - default `US`
      */
     region?: "US" | "EU";
 
     /**
      * - format of underlying data stream; json or jsonl
+	 * - default `jsonl`
      */
-    streamFormat?: "json" | "jsonl";
-
+    streamFormat?: "json" | "jsonl" | "csv";
     /**
      * - use gzip compression (events only)
+	 * - default `true`
      */
     compress?: boolean;
-
+	/**
+	 * - compression level (events only)
+	 * - default `6`
+	 */
+	compressionLevel?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
     /**
-     * - validate data on send (events only)
+     * - validate data on send (events only) ... 
+	 * - default `true`
      */
     strict?: boolean;
-
     /**
      * - log results to `./logs/`
+	 * - default `false`
      */
     logs?: boolean;
-
     /**
      * - display verbose output messages
+	 * - default `true`
      */
     verbose?: boolean;
-
     /**
      * - apply various transformations to ensure data is properly ingested
+	 * - default `true`
      */
     fixData?: boolean;
-
     /**
      * - remove the following (keys and values) from each record with values = `null`, `''`, `undefined`, `{}`, or `[]`
+	 * - default `false`
      */
     removeNulls?: boolean;
-
     /**
      * - included only error responses; not successes
+	 * - default `false`
      */
     abridged?: boolean;
-
     /**
      * - don't buffer files into memory (even if they can fit)
+	 * - default `false`
      */
     forceStream?: boolean;
-
     /**
      * - 2^N; highWaterMark value for stream [DEPRECATED] ... use workers instead
      */
     streamSize?: number;
-
     /**
      * - UTC offset which will add/subtract hours to an event's `time` value; can be a positive or negative number; default `0`
+	 * - default `0`
      */
     timeOffset?: number;
-
     /**
      * - max # of records in each payload (max 2000; max 200 for group profiles)
+	 * - default `2000` (events + users), `200` (groups)
      */
     recordsPerBatch?: number;
-
     /**
      * - max # of bytes in each payload (max 2MB)
+	 * - default `2000000`
      */
     bytesPerBatch?: number;
     /**
      * - maximum # of times to retry
+	 * - default `10`
      */
     maxRetries?: number;
-
     /**
      * - # of concurrent workers sending requests
+	 * - default `10`
      */
     workers?: number;
-
     /**
      * - where to put files (logs, exports)
+	 * - default `./`
      */
     where?: string;
-
     /**
      * - a transform function to `map()` over the data
      * - if it returns `{}` the record will be skipped
      * - if it returns `[{},{},{}]` the record will be split into multiple records
+	 * - default `undefined`
      */
     transformFunc?: transFunc;
-
     /**
      * - a set of tags which will be added to all records
+	 * - default `{}`
      */
     tags?: genericObj;
-
     /**
      * - a set of aliases used to rename property keys in the source data
+	 * - note this is required for importing CSVs; we expect a value like `{uuid: "distinct_id", row_id: "$insert_id"}`, etc..
+	 * - default `{}`
      */
 
     aliases?: genericObj;
 };
+
 /**
  * - a transform function to `map()` over the data
  * - if it returns `{}` the record will be skipped
@@ -195,43 +205,46 @@ type transFunc = (data: any) => mpEvent | mpUser | mpGroup | Object[] | Object;
  * a summary of the import
  */
 export type ImportResults = {
-    recordType: RecordType;
+    /**
+	 * - type of record imported
+	 */
+	recordType?: RecordType;
 	/**
      * - num records successfully imported
      */
-    success: number;
+    success?: number;
     /**
      * - num of records failed to import
      */
-    failed: number;
+    failed?: number;
     /**
      * - num of request retries
      */
-    retries: number;
+    retries?: number;
     /**
      * - num of total records processed
      */
-    total: number;
+    total?: number;
     /**
      * - num of empty records found
      */
-    empty: number;
+    empty?: number;
     /**
      * - total num of batches
      */
-    batches: number;
+    batches?: number;
     /**
      * - total num of requests
      */
-    requests: number;
+    requests?: number;
     /**
      * - estimate of "events per second" throughput
      */
-    eps: number;
+    eps?: number;
     /**
      * - estimate of "requests per second" throughput
      */
-    rps: number;
+    rps?: number;
     /**
      * - successful import records (200s)
      */
@@ -239,15 +252,15 @@ export type ImportResults = {
     /**
      * - failed import records (400s)
      */
-    errors: any[];
+    errors?: any[];
 	/**
 	 * - the elapsed time in ms
 	 */
-	duration: number;
+	duration?: number;
     /**
      * - human readable timestamp
      */
-    human: string;
+    human?: string;
     /**
      * - the number of times a 429 response was received (and the request was retried)
      */
