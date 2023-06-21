@@ -256,6 +256,7 @@ class importJob {
 	summary(includeResponses = true) {
 		const { delta, human } = this.timer.report(false);
 		const memory = u.objMap(process.memoryUsage(), (v) => u.bytesHuman(v));
+		/** @type {import('./index.d.ts').ImportResults} */
 		const summary = {
 			recordType: this.recordType,
 

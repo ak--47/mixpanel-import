@@ -195,7 +195,8 @@ type transFunc = (data: any) => mpEvent | mpUser | mpGroup | Object[] | Object;
  * a summary of the import
  */
 export type ImportResults = {
-    /**
+    recordType: RecordType;
+	/**
      * - num records successfully imported
      */
     success: number;
@@ -239,6 +240,10 @@ export type ImportResults = {
      * - failed import records (400s)
      */
     errors: any[];
+	/**
+	 * - the elapsed time in ms
+	 */
+	duration: number;
     /**
      * - human readable timestamp
      */
@@ -283,6 +288,10 @@ export type ImportResults = {
      * - the end timestamp of the job (ISO 8601)
      */
     endTime?: string;
+	version?: string;
+	file?: string;
+	folder?: string;
+	workers?: number;
 };
 /**
  * valid mixpanel property values; {@link https://help.mixpanel.com/hc/en-us/articles/115004547063-Properties-Supported-Data-Types more info}
