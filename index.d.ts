@@ -4,11 +4,11 @@
  * @example
  * const mp = require('mixpanel-import')
  * const imported = await mp(creds, data, options)
- * @param {import('./index.d.ts').Creds} creds - mixpanel project credentials
- * @param {import('./index.d.ts').Data} data - data to import
- * @param {import('./index.d.ts').Options} [opts] - import options
+ * @param {Creds} creds - mixpanel project credentials
+ * @param {Data} data - data to import
+ * @param {Options} [opts] - import options
  * @param {boolean} [isCLI] - `true` when run as CLI
- * @returns {Promise<import('./index.d.ts').ImportResults>} API receipts of imported data
+ * @returns {Promise<ImportResults>} API receipts of imported data
  */
 export default function main(creds: Creds, data: Data, options?: Options, isCLI?: Boolean): Promise<ImportResults>;
 
@@ -23,8 +23,8 @@ export default function main(creds: Creds, data: Data, options?: Options, isCLI?
  * observer.on('data', (response)=> { })
  * // create a pipeline
  * myStream.pipe(mpStream).pipe(observer);
- * @param {import('./index.d.ts').Creds} creds - mixpanel project credentials
- * @param {import('./index.d.ts').Options} opts - import options
+ * @param {Creds} creds - mixpanel project credentials
+ * @param {Options} opts - import options
  * @param {function()} [finish] - callback @ end of pipeline
  * @returns a transform stream
  */
@@ -79,64 +79,64 @@ export type Creds = {
 export type Options = {
     /**
      * - type of record to import (`event`, `user`, `group`, or `table`)
-	 * - default `event`
+     * - default `event`
      */
     recordType?: RecordType;
 
     /**
      * - US or EU (data residency)
-	 * - default `US`
+     * - default `US`
      */
     region?: "US" | "EU";
 
     /**
      * - format of underlying data stream; json or jsonl
-	 * - default `jsonl`
+     * - default `jsonl`
      */
     streamFormat?: "json" | "jsonl" | "csv";
     /**
      * - use gzip compression (events only)
-	 * - default `true`
+     * - default `true`
      */
     compress?: boolean;
-	/**
-	 * - compression level (events only)
-	 * - default `6`
-	 */
-	compressionLevel?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
     /**
-     * - validate data on send (events only) ... 
-	 * - default `true`
+     * - compression level (events only)
+     * - default `6`
+     */
+    compressionLevel?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+    /**
+     * - validate data on send (events only) ...
+     * - default `true`
      */
     strict?: boolean;
     /**
      * - log results to `./logs/`
-	 * - default `false`
+     * - default `false`
      */
     logs?: boolean;
     /**
      * - display verbose output messages
-	 * - default `true`
+     * - default `true`
      */
     verbose?: boolean;
     /**
      * - apply various transformations to ensure data is properly ingested
-	 * - default `true`
+     * - default `true`
      */
     fixData?: boolean;
     /**
      * - remove the following (keys and values) from each record with values = `null`, `''`, `undefined`, `{}`, or `[]`
-	 * - default `false`
+     * - default `false`
      */
     removeNulls?: boolean;
     /**
      * - included only error responses; not successes
-	 * - default `false`
+     * - default `false`
      */
     abridged?: boolean;
     /**
      * - don't buffer files into memory (even if they can fit)
-	 * - default `false`
+     * - default `false`
      */
     forceStream?: boolean;
     /**
@@ -145,50 +145,50 @@ export type Options = {
     streamSize?: number;
     /**
      * - UTC offset which will add/subtract hours to an event's `time` value; can be a positive or negative number; default `0`
-	 * - default `0`
+     * - default `0`
      */
     timeOffset?: number;
     /**
      * - max # of records in each payload (max 2000; max 200 for group profiles)
-	 * - default `2000` (events + users), `200` (groups)
+     * - default `2000` (events + users), `200` (groups)
      */
     recordsPerBatch?: number;
     /**
      * - max # of bytes in each payload (max 2MB)
-	 * - default `2000000`
+     * - default `2000000`
      */
     bytesPerBatch?: number;
     /**
      * - maximum # of times to retry
-	 * - default `10`
+     * - default `10`
      */
     maxRetries?: number;
     /**
      * - # of concurrent workers sending requests
-	 * - default `10`
+     * - default `10`
      */
     workers?: number;
     /**
      * - where to put files (logs, exports)
-	 * - default `./`
+     * - default `./`
      */
     where?: string;
     /**
      * - a transform function to `map()` over the data
      * - if it returns `{}` the record will be skipped
      * - if it returns `[{},{},{}]` the record will be split into multiple records
-	 * - default `undefined`
+     * - default `undefined`
      */
     transformFunc?: transFunc;
     /**
      * - a set of tags which will be added to all records
-	 * - default `{}`
+     * - default `{}`
      */
     tags?: genericObj;
     /**
      * - a set of aliases used to rename property keys in the source data
-	 * - note this is required for importing CSVs; we expect a value like `{uuid: "distinct_id", row_id: "$insert_id"}`, etc..
-	 * - default `{}`
+     * - note this is required for importing CSVs; we expect a value like `{uuid: "distinct_id", row_id: "$insert_id"}`, etc..
+     * - default `{}`
      */
 
     aliases?: genericObj;
@@ -206,10 +206,10 @@ type transFunc = (data: any) => mpEvent | mpUser | mpGroup | Object[] | Object;
  */
 export type ImportResults = {
     /**
-	 * - type of record imported
-	 */
-	recordType?: RecordType;
-	/**
+     * - type of record imported
+     */
+    recordType?: RecordType;
+    /**
      * - num records successfully imported
      */
     success?: number;
@@ -253,10 +253,10 @@ export type ImportResults = {
      * - failed import records (400s)
      */
     errors?: any[];
-	/**
-	 * - the elapsed time in ms
-	 */
-	duration?: number;
+    /**
+     * - the elapsed time in ms
+     */
+    duration?: number;
     /**
      * - human readable timestamp
      */
@@ -269,6 +269,10 @@ export type ImportResults = {
      * - the number of times a 500x responses was received (and the request was retried)
      */
     serverErrors?: number;
+    /**
+     * - number of times a client side error occurred (timeout/socket hangup... these requests are retried)
+     */
+    clientErrors?: number;
     /**
      * - the number of bytes sent to mixpanel (uncompressed)
      */
@@ -301,10 +305,10 @@ export type ImportResults = {
      * - the end timestamp of the job (ISO 8601)
      */
     endTime?: string;
-	version?: string;
-	file?: string;
-	folder?: string;
-	workers?: number;
+    version?: string;
+    file?: string;
+    folder?: string;
+    workers?: number;
 };
 /**
  * valid mixpanel property values; {@link https://help.mixpanel.com/hc/en-us/articles/115004547063-Properties-Supported-Data-Types more info}

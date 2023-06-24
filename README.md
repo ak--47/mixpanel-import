@@ -389,6 +389,28 @@ function exploder(o) => {
 const imported = await mpStream(creds, data, { transformFunc: exploder }) //imports 101 events
 ```
 
+- importing a CSV file of events using `aliases` to identify the correct mixpanel fields:
+
+```javascript
+const eventsCSV = './myEvents.csv'
+/*
+myEvents.csv looks like this:
+row_id,uuid,timestamp,action,colorTheme,luckyNumber
+a50b0a01b9df43e74707afb679132452aee00a1f,7e1dd089-8773-5fc9-a3bc-37ba5f186ffe,2023-05-15 09:57:44,button_click,yellow,43
+09735b6f19fe5ee7be5cd5df59836e7165021374,7e1dd089-8773-5fc9-a3bc-37ba5f186ffe,2023-06-13 12:11:12,button_click,orange,7
+*/
+const imported = await mpStream(creds, eventsCSV, { 
+	streamFormat: "csv", 
+	aliases: { 
+			row_id: "$insert_id", 
+			uuid: "distinct_id", 
+			action: "event", 
+			timestamp: "time"
+		} 
+	}
+);
+```
+
 <div id="testData"></div>
 
 ## ⚗️ test data

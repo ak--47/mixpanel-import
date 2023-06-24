@@ -386,8 +386,11 @@ async function flushToMixpanel(batch, config) {
 					if (error?.response?.statusCode?.toString() === "429") {
 						config.rateLimited++;
 					}
-					if (error?.response?.statusCode?.toString()?.startsWith("5")) {
+					else if (error?.response?.statusCode?.toString()?.startsWith("5")) {
 						config.serverErrors++;
+					}
+					else {
+						config.clientErrors++;
 					}
 				}],
 
@@ -625,12 +628,12 @@ function existingStream(stream) {
 	return generator;
 }
 
-function itemStream(filePath, type = "jsonl", workers) {
+function itemStream(filePath, type = "jsonl", highWater) {
 	let stream;
 	let parsedStream;
 	const parser = type === "jsonl" ? jsonlParser : StreamArray.withParser;
 	const streamOpts = {
-		highWaterMark: workers * 2000,
+		highWaterMark: highWater,
 		autoClose: true,
 		emitClose: true
 
