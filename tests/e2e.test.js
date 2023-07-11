@@ -40,7 +40,7 @@ const twoFiftyK = `./testData/big.ndjson`;
 const needTransform = `./testData/needDateTransform.ndjson`;
 const dayjs = require('dayjs');
 const badData = `./testData/bad_data.jsonl`;
-const eventsCSV = `./testData/eventAsTable.csv`
+const eventsCSV = `./testData/eventAsTable.csv`;
 
 const opts = {
 	recordType: `event`,
@@ -239,20 +239,20 @@ describe('transform', () => {
 	}, longTimeout);
 
 	test('aliases: group', async () => {
-		const data = await mp({}, groups, { ...opts, recordType: `group`, aliases: { colorTheme: "color", luckyNumber: "lucky!!!" }  });
+		const data = await mp({}, groups, { ...opts, recordType: `group`, aliases: { colorTheme: "color", luckyNumber: "lucky!!!" } });
 		expect(data.success).toBe(1860);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
 	}, longTimeout);
 
 	test('event CSV!', async () => {
-		const data = await mp({}, eventsCSV, { ...opts, streamFormat: "csv", aliases: { row_id: "$insert_id", uuid: "distinct_id", action: "event", timestamp: "time"} });
+		const data = await mp({}, eventsCSV, { ...opts, streamFormat: "csv", aliases: { row_id: "$insert_id", uuid: "distinct_id", action: "event", timestamp: "time" } });
 		expect(data.success).toBe(10003);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
 	}, longTimeout);
 
-	
+
 });
 
 describe('object streams', () => {
@@ -509,6 +509,58 @@ describe('data fixes', () => {
 		expect(job.total).toBe(4);
 	}, longTimeout);
 
+	test('fixes time', async () => {
+		const data = [{
+			"event": "watch_video",
+			"properties": {
+				"distinct_id": "24377a8a-8096-55d4-be61-54010bc27adf",
+				"time": "2023-06-09 11:25:31",
+				"$insert_id": null
+			}
+		},
+		{
+			"event": "page_view",
+			"properties": {
+				"distinct_id": "24377a8a-8096-55d4-be61-54010bc27adf",
+				"time": "2023-06-09 11:25:31",
+				"$insert_id": null
+			}
+		}];
+
+
+		const job = await mp({}, data, { ...opts, recordType: 'event', fixData: true });
+		expect(job.success).toBe(2);
+		expect(job.failed).toBe(0);
+		expect(job.total).toBe(2);
+		expect(job.duration).toBeGreaterThan(0);
+		expect(job.requests).toBe(1);
+	});
+
+
+	test('fixes bad shape', async () => {
+		const data = [{
+			"event": "watch_video",
+			"distinct_id": "24377a8a-8096-55d4-be61-54010bc27adf",
+			"time": "2023-06-09 11:25:31",
+			"$insert_id": null
+
+		},
+		{
+			"event": "page_view",
+			"distinct_id": "24377a8a-8096-55d4-be61-54010bc27adf",
+			"time": "2023-06-09 11:25:31",
+			"$insert_id": null
+
+		}];
+
+
+		const job = await mp({}, data, { ...opts, recordType: 'event', fixData: true });
+		expect(job.success).toBe(2);
+		expect(job.failed).toBe(0);
+		expect(job.total).toBe(2);
+		expect(job.duration).toBeGreaterThan(0);
+		expect(job.requests).toBe(1);
+	});
 });
 
 afterAll(async () => {

@@ -1,14 +1,30 @@
 const md5 = require('md5');
 const dayjs = require('dayjs');
+const utc = require('dayjs/plugin/utc');
+dayjs.extend(utc);
 const u = require('ak-tools');
 
 const validOperations = ["$set", "$set_once", "$add", "$union", "$append", "$remove", "$unset"];
 
 
 function ezTransforms(config) {
-	//for strict event imports, make every record has an $insert_id
 	if (config.recordType === `event`) {
-		return function addInsertIfAbsent(event) {
+		return function FixShapeAndAddInsertIfAbsentAndFixTime(event) {
+			//wrong shape
+			if (!event.properties) {
+				event.properties = { ...event };
+				//delete properties outside properties
+				for (const key in event) {
+					if (key !== 'properties' && key !== 'event') delete event[key];
+				}
+				delete event.properties.event;
+			}
+
+			//fixing time
+			if (event.properties.time && Number.isNaN(Number(event.properties.time))) {
+				event.properties.time = dayjs.utc(event.properties.time).valueOf();
+			}
+			//adding insert_id
 			if (!event?.properties?.$insert_id) {
 				try {
 					let deDupeTuple = [event.name, event.properties.distinct_id || "", event.properties.time];
@@ -18,11 +34,9 @@ function ezTransforms(config) {
 				catch (e) {
 					event.properties.$insert_id = event.properties.distinct_id;
 				}
-				return event;
 			}
-			else {
-				return event;
-			}
+
+			return event;
 		};
 
 	}
@@ -143,15 +157,28 @@ function applyAliases(config) {
 	return function (record) {
 		if (!Object.keys(aliases).length) return record;
 		if (type === 'event') {
-			record.properties = u.rnKeys(record.properties, aliases);
+			if (record.properties) {
+				record.properties = u.rnKeys(record.properties, aliases);
+			}
+			else {
+				record = u.rnKeys(record, aliases);
+			}
 			return record;
 		}
 		const operation = Object.keys(record).find(predicate => predicate.startsWith('$') && validOperations.includes(predicate));
 
 		if (type === 'user' || type === 'group') {
-			if (operation) record[operation] = u.rnKeys(record[operation], aliases);
-			return record;
+			if (operation) {
+				record[operation] = u.rnKeys(record[operation], aliases);
+				return record;
+			}
+
+			else {
+				record = u.rnKeys(record, aliases);
+				return record;
+			}
 		}
+		
 		return record;
 	};
 }
