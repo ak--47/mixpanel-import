@@ -530,7 +530,7 @@ async function determineData(data, config) {
 					});
 					const transformer = new stream.Transform({
 						objectMode: true, highWaterMark: config.highWater, transform: (chunk, encoding, callback) => {
-							const { distinct_id = "", $insert_id = " ", time, event, ...props } = chunk;
+							const { distinct_id = "", $insert_id = "", time, event, ...props } = chunk;
 							const mixpanelEvent = {
 								event,
 								properties: {
