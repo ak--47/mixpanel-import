@@ -94,7 +94,7 @@ class importJob {
 		this.aliases = opts.aliases || {}; //aliases for the import
 		if (typeof this.aliases === 'string') {
 			try {
-				this.aliases = JSON.parse(this.tags);
+				this.aliases = JSON.parse(this.aliases);
 			}
 			catch (e) { 
 				if (this.verbose) console.log(`error parsing aliases: ${this.tags}\ntags must be valid JSON`)
@@ -272,6 +272,7 @@ class importJob {
 			endTime: new Date().toISOString(),
 			duration: delta,
 			human: human,
+			durationHuman: human,
 			bytes: this.bytesProcessed,
 			bytesHuman: u.bytesHuman(this.bytesProcessed),
 

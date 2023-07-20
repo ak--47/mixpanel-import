@@ -356,10 +356,7 @@ async function flushToMixpanel(batch, config) {
 					`ECONNABORTED`,
 					`EHOSTUNREACH`
 				],
-				methods: ['POST'],
-				// @ts-ignore
-				noise: 100
-
+				methods: ['POST']
 			},
 			headers: {
 				"Authorization": `${config.auth}`,

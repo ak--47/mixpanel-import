@@ -260,6 +260,10 @@ export type ImportResults = {
     /**
      * - human readable timestamp
      */
+	durationHuman?: string;
+    /**
+     * - human readable timestamp [deprecated]
+     */
     human?: string;
     /**
      * - the number of times a 429 response was received (and the request was retried)
@@ -280,7 +284,7 @@ export type ImportResults = {
     /**
      * - MB sent to mixpanel (uncompressed)
      */
-    bytesHuman?: number;
+    bytesHuman?: string;
     /**
      * - throughput in MB/s
      */
