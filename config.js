@@ -56,7 +56,7 @@ class importJob {
 		// ? number options
 		this.streamSize = opts.streamSize || 27; // power of 2 for highWaterMark in stream  (default 134 MB)		
 		this.recordsPerBatch = opts.recordsPerBatch || 2000; // records in each req; max 2000 (200 for groups)
-		this.bytesPerBatch = opts.bytesPerBatch || 2 * 1024 * 1024; // max bytes in each req
+		this.bytesPerBatch = opts.bytesPerBatch || 9 * 1024 * 1024; // max bytes in each req ... api max: 10485760
 		this.maxRetries = opts.maxRetries || 10; // number of times to retry a batch
 		this.timeOffset = opts.timeOffset || 0; // utc hours offset
 		this.compressionLevel = opts.compressionLevel || 6; // gzip compression level

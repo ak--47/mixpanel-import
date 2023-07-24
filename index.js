@@ -149,8 +149,7 @@ function corePipeline(stream, config, toNodeStream = false) {
 
 		// * only JSON from stream
 		// @ts-ignore
-		_.filter((data) => {
-			config.recordsProcessed++;
+		_.filter((data) => {			
 			if (data && JSON.stringify(data) !== '{}') {
 				return true;
 			}
@@ -177,6 +176,7 @@ function corePipeline(stream, config, toNodeStream = false) {
 			if (data) {
 				const str = JSON.stringify(data);
 				if (str !== '{}' && str !== '[]' && str !== '""' && str !== 'null') {
+					config.recordsProcessed++;
 					return true;
 				}
 				else {
@@ -661,58 +661,111 @@ function itemStream(filePath, type = "jsonl", highWater) {
 
 }
 
+
+//! GPT implementation
+/**
+ * @param  {importJob} config
+ */
 function chunkForSize(config) {
-	return (err, batch, push, next) => {
-		const maxBatchSize = config.bytesPerBatch;
+    let pending = [];
 
-		if (err) {
-			// pass errors along the stream and consume next value
-			push(err);
-			next();
-		}
+    return (err, x, push, next) => {
+        const maxBatchSize = config.bytesPerBatch;
+        const maxBatchCount = config.recordsPerBatch;
 
-		else if (batch === _.nil) {
-			// pass nil (end event) along the stream
-			push(null, batch);
-		}
+        if (err) {
+            // Pass errors along the stream and consume next value
+            push(err);
+            next();
+        } else if (x === _.nil) {
+            // Pass nil (end event) along the stream
+            if (pending.length > 0) {
+                push(null, pending);
+                pending = [];
+            }
+            push(null, x);
+        } else {
+            pending.push(...x);
+            while (Buffer.byteLength(JSON.stringify(pending), 'utf-8') > maxBatchSize || pending.length > maxBatchCount) {
+                const chunk = [];
+                let size = 0;
 
-		else {
-			// if batch is below max size, continue
-			if (JSON.stringify(batch).length <= maxBatchSize) {
-				push(null, batch);
-			}
+                while (pending.length > 0) {
+                    const item = pending[0];
+                    const itemSize = Buffer.byteLength(JSON.stringify(item), 'utf-8');
 
-			// if batch is above max size, chop into smaller chunks
-			else {
-				let tempArr = [];
-				let runningSize = 0;
-				const sizedChunks = batch.reduce(function (accum, curr, index, source) {
-					//catch leftovers at the end
-					if (index === source.length - 1) {
-						accum.push(tempArr);
-					}
-					//fill each batch 95%
-					if (runningSize >= maxBatchSize * .95) {
-						accum.push(tempArr);
-						runningSize = 0;
-						tempArr = [];
-					}
+                    if (size + itemSize > maxBatchSize || chunk.length >= maxBatchCount) {
+                        break;
+                    }
 
-					runningSize += JSON.stringify(curr).length;
-					tempArr.push(curr);
-					return accum;
+                    size += itemSize;
+                    chunk.push(item);
+                    pending.shift();
+                }
 
-				}, []);
-
-				for (const chunk of sizedChunks) {
-					push(null, chunk);
-				}
-
-			}
-			next();
-		}
-	};
+                push(null, chunk);
+            }
+            next();
+        }
+    };
 }
+
+
+
+
+// // AK's implementation
+// function chunkForSize(config) {
+// 	return (err, batch, push, next) => {
+// 		const maxBatchSize = config.bytesPerBatch;
+
+// 		if (err) {
+// 			// pass errors along the stream and consume next value
+// 			push(err);
+// 			next();
+// 		}
+
+// 		else if (batch === _.nil) {
+// 			// pass nil (end event) along the stream
+// 			push(null, batch);
+// 		}
+
+// 		else {
+// 			// if batch is below max size, continue
+// 			if (JSON.stringify(batch).length <= maxBatchSize) {
+// 				push(null, batch);
+// 			}
+
+// 			// if batch is above max size, chop into smaller chunks
+// 			else {
+// 				let tempArr = [];
+// 				let runningSize = 0;
+// 				const sizedChunks = batch.reduce(function (accum, curr, index, source) {
+// 					//catch leftovers at the end
+// 					if (index === source.length - 1) {
+// 						accum.push(tempArr);
+// 					}
+// 					//fill each batch 90%
+// 					if (runningSize >= maxBatchSize * .80) {
+// 						accum.push(tempArr);
+// 						runningSize = 0;
+// 						tempArr = [];
+// 					}
+
+// 					runningSize += JSON.stringify(curr).length;
+// 					tempArr.push(curr);
+// 					return accum;
+
+// 				}, []);
+
+// 				for (const chunk of sizedChunks) {
+// 					push(null, chunk);
+// 				}
+
+// 			}
+// 			next();
+// 		}
+// 	};
+// }
 
 function getEnvVars() {
 	const envVars = pick(process.env, `MP_PROJECT`, `MP_ACCT`, `MP_PASS`, `MP_SECRET`, `MP_TOKEN`, `MP_TYPE`, `MP_TABLE_ID`, `MP_GROUP_KEY`, `MP_START`, `MP_END`);
