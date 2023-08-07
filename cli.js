@@ -184,6 +184,20 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'rename property keys on each record; {"oldPropKey": "newPropKey"}',
 			type: 'string'
 		})
+		.options("epoch-start", {
+			demandOption: false,
+			alias: 'epochStart',
+			default: 0,
+			describe: 'don\'t import data before this timestamp (UNIX EPOCH)',
+			type: 'number'
+		})
+		.options("epoch-end", {
+			demandOption: false,
+			default: 9991427224,
+			alias: 'epochEnd',
+			describe: 'don\'t import data after this timestamp (UNIX EPOCH)',
+			type: 'number'
+		})
 		.help()
 		.argv;
 	// @ts-ignore

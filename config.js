@@ -62,6 +62,8 @@ class importJob {
 		this.compressionLevel = opts.compressionLevel || 6; // gzip compression level
 		this.workers = Number.isInteger(opts.workers) ? opts.workers : 10; // number of workers to use
 		this.highWater = (this.workers * this.recordsPerBatch) || 2000;
+		this.epochStart = opts.epochStart || 0; // start date for epoch
+		this.epochEnd = opts.epochEnd || 9991427224; // end date for epoch; i will die many years before this is a problem
 
 		// ? don't allow batches bigger than API limits
 		if (this.recordType === 'event' && this.recordsPerBatch > 2000) this.recordsPerBatch = 2000;
@@ -126,6 +128,7 @@ class importJob {
 		this.serverErrors = 0;
 		this.clientErrors = 0;
 		this.bytesProcessed = 0;
+		this.outOfBounds = 0;
 		this.batchLengths = [];
 		this.timer = u.time('etl');
 
@@ -267,6 +270,7 @@ class importJob {
 			success: this.success,
 			failed: this.failed,
 			empty: this.empty,
+			outOfBounds: this.outOfBounds,
 
 			startTime: this.startTime,
 			endTime: new Date().toISOString(),

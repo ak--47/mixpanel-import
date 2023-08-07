@@ -143,13 +143,15 @@ function corePipeline(stream, config, toNodeStream = false) {
 	if (config.recordType === 'peopleExport') return exportProfiles(stream, config);
 
 	const flush = _.wrapCallback(callbackify(flushToMixpanel));
+	const epochStart = dayjs.unix(config.epochStart).utc();
+	const epochEnd = dayjs.unix(config.epochEnd).utc();
 
 	// @ts-ignore
 	const mpPipeline = _.pipeline(
 
 		// * only JSON from stream
 		// @ts-ignore
-		_.filter((data) => {			
+		_.filter((data) => {
 			if (data && JSON.stringify(data) !== '{}') {
 				return true;
 			}
@@ -198,6 +200,23 @@ function corePipeline(stream, config, toNodeStream = false) {
 			if (config.removeNulls) data = config.nullRemover(data);
 			if (config.timeOffset) data = config.UTCoffset(data);
 			if (Object.keys(config.tags).length) data = config.addTags(data);
+
+			//start/end epoch filtering
+			if (config.recordType === 'event') {
+				if (data?.properties?.time) {
+					let eventTime = data.properties.time;
+					if (eventTime.toString().length === 10) eventTime = eventTime * 1000;
+					eventTime = dayjs.utc(eventTime);
+					if (eventTime.isBefore(epochStart)) {
+						config.outOfBounds++;
+						return null;
+					}
+					else if (eventTime.isAfter(epochEnd)) {
+						config.outOfBounds++;
+						return null;
+					}
+				}
+			}
 			return data;
 		}),
 
@@ -667,47 +686,47 @@ function itemStream(filePath, type = "jsonl", highWater) {
  * @param  {importJob} config
  */
 function chunkForSize(config) {
-    let pending = [];
+	let pending = [];
 
-    return (err, x, push, next) => {
-        const maxBatchSize = config.bytesPerBatch;
-        const maxBatchCount = config.recordsPerBatch;
+	return (err, x, push, next) => {
+		const maxBatchSize = config.bytesPerBatch;
+		const maxBatchCount = config.recordsPerBatch;
 
-        if (err) {
-            // Pass errors along the stream and consume next value
-            push(err);
-            next();
-        } else if (x === _.nil) {
-            // Pass nil (end event) along the stream
-            if (pending.length > 0) {
-                push(null, pending);
-                pending = [];
-            }
-            push(null, x);
-        } else {
-            pending.push(...x);
-            while (Buffer.byteLength(JSON.stringify(pending), 'utf-8') > maxBatchSize || pending.length > maxBatchCount) {
-                const chunk = [];
-                let size = 0;
+		if (err) {
+			// Pass errors along the stream and consume next value
+			push(err);
+			next();
+		} else if (x === _.nil) {
+			// Pass nil (end event) along the stream
+			if (pending.length > 0) {
+				push(null, pending);
+				pending = [];
+			}
+			push(null, x);
+		} else {
+			pending.push(...x);
+			while (Buffer.byteLength(JSON.stringify(pending), 'utf-8') > maxBatchSize || pending.length > maxBatchCount) {
+				const chunk = [];
+				let size = 0;
 
-                while (pending.length > 0) {
-                    const item = pending[0];
-                    const itemSize = Buffer.byteLength(JSON.stringify(item), 'utf-8');
+				while (pending.length > 0) {
+					const item = pending[0];
+					const itemSize = Buffer.byteLength(JSON.stringify(item), 'utf-8');
 
-                    if (size + itemSize > maxBatchSize || chunk.length >= maxBatchCount) {
-                        break;
-                    }
+					if (size + itemSize > maxBatchSize || chunk.length >= maxBatchCount) {
+						break;
+					}
 
-                    size += itemSize;
-                    chunk.push(item);
-                    pending.shift();
-                }
+					size += itemSize;
+					chunk.push(item);
+					pending.shift();
+				}
 
-                push(null, chunk);
-            }
-            next();
-        }
-    };
+				push(null, chunk);
+			}
+			next();
+		}
+	};
 }
 
 

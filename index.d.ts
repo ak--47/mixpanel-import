@@ -192,6 +192,16 @@ export type Options = {
      */
 
     aliases?: genericObj;
+
+	/**
+	 * data points with a UNIX time BEFORE this value will be skipped
+	 */
+	epochStart?: number;
+
+	/**
+	 * data points with a UNIX time AFTER this value will be skipped
+	 */
+	epochEnd?: number;
 };
 
 /**
@@ -309,6 +319,10 @@ export type ImportResults = {
      * - the end timestamp of the job (ISO 8601)
      */
     endTime?: string;
+	/**
+	 * - data points skipped due to epochStart/epochEnd
+	 */
+	outOfBounds?: number;
     version?: string;
     file?: string;
     folder?: string;

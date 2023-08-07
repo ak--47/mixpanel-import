@@ -572,6 +572,54 @@ describe('data fixes', () => {
 		expect(job.duration).toBeGreaterThan(0);
 		expect(job.requests).toBe(1);
 	});
+
+	test('epoch start + end', async () => {
+		const data = [
+			{
+				"event": "foo",
+				"distinct_id": "24377a8a-8096-55d4-be61-54010bc27adf",
+				"time": 1691429413,
+				"$insert_id": '321'
+
+			},
+			{
+				"event": "foo",
+				"distinct_id": "24377a8a-8096-55d4-be61-54010bc27adf",
+				"time": 1691429414,
+				"$insert_id": '123'
+
+			},
+			{
+				"event": "foo",
+				"distinct_id": "24377a8a-8096-55d4-be61-54010bc27adf",
+				"time": 1691429415,
+				"$insert_id": '456'
+
+			},
+			{
+				"event": "foo",
+				"distinct_id": "24377a8a-8096-55d4-be61-54010bc27adf",
+				"time": 1691429416,
+				"$insert_id": '789'
+
+			},
+			{
+				"event": "foo",
+				"distinct_id": "24377a8a-8096-55d4-be61-54010bc27adf",
+				"time": 1691429417,
+				"$insert_id": '012'
+
+			}];
+
+
+		const job = await mp({}, data, { ...opts, recordType: 'event', epochStart: 1691429414, epochEnd: 1691429416 });
+		expect(job.success).toBe(3);
+		expect(job.failed).toBe(0);
+		expect(job.total).toBe(5);
+		expect(job.outOfBounds).toBe(2);
+		expect(job.duration).toBeGreaterThan(0);
+		expect(job.requests).toBe(1);
+	});
 });
 
 afterAll(async () => {
