@@ -82,8 +82,8 @@ CORE
  * @param {boolean} isCLI - `true` when run as CLI
  * @returns {Promise<import('./index.d.ts').ImportResults>} API receipts of imported data
  */
-async function main(creds = {}, data, opts = {}, isCLI = false, telemetry = true) {
-	if (telemetry) track('start', { runId });
+async function main(creds = {}, data, opts = {}, isCLI = false, shouldTrack = false) {
+	if (shouldTrack) track('start', { runId });
 	let cliData = {};
 
 	// gathering params
@@ -125,7 +125,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false, telemetry = true
 	const summary = config.summary();
 	l(`${config.type === 'export' ? 'export' : 'import'} complete in ${summary.human}`);
 	if (config.logs) await writeLogs(summary);
-	if (telemetry) track('end', { runId, ...config.summary(false) });
+	if (shouldTrack) track('end', { runId, ...config.summary(false) });
 	return summary;
 }
 

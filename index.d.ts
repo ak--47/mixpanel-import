@@ -8,9 +8,10 @@
  * @param {Data} data - data to import
  * @param {Options} [opts] - import options
  * @param {boolean} [isCLI] - `true` when run as CLI
+ * @param {boolean} [shouldTrack] - `true` adds telemetry; only true for CLI
  * @returns {Promise<ImportResults>} API receipts of imported data
  */
-export default function main(creds: Creds, data: Data, options?: Options, isCLI?: Boolean): Promise<ImportResults>;
+export default function main(creds: Creds, data: Data, options?: Options, isCLI?: Boolean, shouldTrack?: Boolean): Promise<ImportResults>;
 
 /**
  * Mixpanel Importer Stream
