@@ -287,7 +287,7 @@ function corePipeline(stream, config, toNodeStream = false) {
  * stream `events`, `users`, `groups`, and `tables` to mixpanel!
  * @example
  * // pipe a stream to mixpanel
- * const { mpStream } = require('mixpanel-import')
+ * const { createMpStream } = require('mixpanel-import')
  * const mpStream = createMpStream(creds, opts, callback);
  * const observer = new PassThrough({objectMode: true})
  * observer.on('data', (response)=> { })
@@ -299,7 +299,7 @@ function corePipeline(stream, config, toNodeStream = false) {
  * @returns a transform stream
  */
 // @ts-ignore
-function pipeInterface(creds = {}, opts = {}, finish = () => { }, telemetry = true) {
+function pipeInterface(creds = {}, opts = {}, finish = () => { }, telemetry = false) {
 	const envVar = getEnvVars();
 	const config = new importJob({ ...envVar, ...creds }, { ...envVar, ...opts });
 	config.timer.start();
@@ -327,6 +327,8 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }, telemetry = tr
 		if (config.verbose) {
 			console.log(e);
 		}
+		// @ts-ignore
+		finish(e, config.summary());
 	});
 
 	return pipeToMe;
@@ -686,62 +688,62 @@ function itemStream(filePath, type = "jsonl", highWater) {
  * @param  {importJob} config
  */
 function chunkForSize(config) {
-    let pending = [];
-    let totalSize = 0; // maintain a running total of size
+	let pending = [];
+	let totalSize = 0; // maintain a running total of size
 
-    return (err, x, push, next) => {
-        const maxBatchSize = config.bytesPerBatch;
-        const maxBatchCount = config.recordsPerBatch;
+	return (err, x, push, next) => {
+		const maxBatchSize = config.bytesPerBatch;
+		const maxBatchCount = config.recordsPerBatch;
 
-        if (err) {
-            push(err);
-            next();
-        } else if (x === _.nil) {
-            if (pending.length > 0) {
-                push(null, pending);
-                pending = [];
-                totalSize = 0; // reset total size
-            }
-            push(null, x);
-        } else {
-            for (const item of x) {
-                const itemSize = Buffer.byteLength(JSON.stringify(item), 'utf-8');
+		if (err) {
+			push(err);
+			next();
+		} else if (x === _.nil) {
+			if (pending.length > 0) {
+				push(null, pending);
+				pending = [];
+				totalSize = 0; // reset total size
+			}
+			push(null, x);
+		} else {
+			for (const item of x) {
+				const itemSize = Buffer.byteLength(JSON.stringify(item), 'utf-8');
 
-                // Check for individual items exceeding size
-                if (itemSize > maxBatchSize) {
-                    console.warn('Dropping an oversized record.');
-                    continue;
-                }
+				// Check for individual items exceeding size
+				if (itemSize > maxBatchSize) {
+					console.warn('Dropping an oversized record.');
+					continue;
+				}
 
-                pending.push(item);
-                totalSize += itemSize;
+				pending.push(item);
+				totalSize += itemSize;
 
-                // Check size and count constraints
-                while (totalSize > maxBatchSize || pending.length > maxBatchCount) {
-                    const chunk = [];
-                    let size = 0;
+				// Check size and count constraints
+				while (totalSize > maxBatchSize || pending.length > maxBatchCount) {
+					const chunk = [];
+					let size = 0;
 
-                    while (pending.length > 0) {
-                        const item = pending[0];
-                        const itemSize = Buffer.byteLength(JSON.stringify(item), 'utf-8');
+					while (pending.length > 0) {
+						const item = pending[0];
+						const itemSize = Buffer.byteLength(JSON.stringify(item), 'utf-8');
 
-                        if (size + itemSize > maxBatchSize || chunk.length >= maxBatchCount) {
-                            break;
-                        }
+						if (size + itemSize > maxBatchSize || chunk.length >= maxBatchCount) {
+							break;
+						}
 
-                        size += itemSize;
-                        totalSize -= itemSize; // reduce from total size
-                        chunk.push(item);
-                        pending.shift();
-                    }
+						size += itemSize;
+						totalSize -= itemSize; // reduce from total size
+						chunk.push(item);
+						pending.shift();
+					}
 
-                    push(null, chunk);
-                }
-            }
+					push(null, chunk);
+				}
+			}
 
-            next();
-        }
-    };
+			next();
+		}
+	};
 }
 
 // !OLD implementation
