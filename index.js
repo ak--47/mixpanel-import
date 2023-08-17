@@ -152,6 +152,7 @@ function corePipeline(stream, config, toNodeStream = false) {
 		// * only JSON from stream
 		// @ts-ignore
 		_.filter((data) => {
+			config.recordsProcessed++;
 			if (data && JSON.stringify(data) !== '{}') {
 				return true;
 			}
@@ -172,13 +173,20 @@ function corePipeline(stream, config, toNodeStream = false) {
 		// @ts-ignore
 		_.flatten(),
 
+		// * dedupe
+		// @ts-ignore
+		_.map((data) => {
+			if (config.dedupe) data = config.deduper(data);
+			return data;
+		}),
+
 		// * post-transform filter to ignore nulls + empty objects
 		// @ts-ignore
 		_.filter((data) => {
 			if (data) {
 				const str = JSON.stringify(data);
 				if (str !== '{}' && str !== '[]' && str !== '""' && str !== 'null') {
-					config.recordsProcessed++;
+					
 					return true;
 				}
 				else {
@@ -202,6 +210,7 @@ function corePipeline(stream, config, toNodeStream = false) {
 			if (Object.keys(config.tags).length) data = config.addTags(data);
 
 			//start/end epoch filtering
+			//todo: move this to it's own function
 			if (config.recordType === 'event') {
 				if (data?.properties?.time) {
 					let eventTime = data.properties.time;

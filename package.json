@@ -1,6 +1,6 @@
 {
   "name": "mixpanel-import",
-  "version": "2.4.03",
+  "version": "2.4.04",
   "description": "stream and import data to mixpanel from node.js",
   "main": "index.js",
   "types": "index.d.ts",
@@ -19,7 +19,7 @@
     "generate": "NUMEVENTS=9999 SINCEDAYS=30 node generateFakeData.js",
     "prune": "rm -rf ./logs/* && rm -rf ./mixpanel-exports/* && rm -rf ./tmp/*",
     "test": "jest --watch",
-	"coverage": "node --no-warnings --experimental-vm-modules node_modules/jest/bin/jest.js --coverage && open ./tests/coverage/lcov-report/index.html",
+    "coverage": "node --no-warnings --experimental-vm-modules node_modules/jest/bin/jest.js --coverage && open ./tests/coverage/lcov-report/index.html",
     "cli:test": "node index.js ./testData/moarEvents.json --fixData",
     "cli:help": "node index.js --help"
   },
@@ -43,8 +43,10 @@
     "dotenv": "^10.0.0",
     "got": "^11.8.6",
     "highland": "^2.13.5",
+    "json-stable-stringify": "^1.0.2",
     "md5": "^2.3.0",
     "multistream": "^4.1.0",
+    "murmurhash": "^2.0.1",
     "node-gzip": "^1.1.2",
     "papaparse": "^5.3.2",
     "stream-json": "^1.8.0",

@@ -29,7 +29,8 @@ class importJob {
 		this.auth = this.resolveProjInfo();
 		this.startTime = new Date().toISOString();
 		this.endTime = null;
-		
+		this.hashTable = new Set(); //used if de-dupe is on
+
 
 
 		//? dates
@@ -80,6 +81,7 @@ class importJob {
 		this.removeNulls = u.isNil(opts.removeNulls) ? false : opts.removeNulls; //remove null fields
 		this.abridged = u.isNil(opts.abridged) ? false : opts.abridged; //don't include success responses
 		this.forceStream = u.isNil(opts.forceStream) ? true : opts.forceStream; //don't ever buffer files into memory
+		this.dedupe = u.isNil(opts.dedupe) ? false : opts.dedupe; //remove duplicate records
 
 		// ? transform options
 		this.tags = opts.tags || {}; //tags for the import
@@ -87,8 +89,8 @@ class importJob {
 			try {
 				this.tags = JSON.parse(this.tags);
 			}
-			catch (e) { 
-				if (this.verbose) console.log(`error parsing tags: ${this.tags}\ntags must be valid JSON`)
+			catch (e) {
+				if (this.verbose) console.log(`error parsing tags: ${this.tags}\ntags must be valid JSON`);
 				this.tags = {}; //bad json
 			}
 		}
@@ -98,8 +100,8 @@ class importJob {
 			try {
 				this.aliases = JSON.parse(this.aliases);
 			}
-			catch (e) { 
-				if (this.verbose) console.log(`error parsing aliases: ${this.tags}\ntags must be valid JSON`)
+			catch (e) {
+				if (this.verbose) console.log(`error parsing aliases: ${this.tags}\ntags must be valid JSON`);
 				this.aliases = {}; //bad json
 			}
 		}
@@ -109,10 +111,12 @@ class importJob {
 		this.UTCoffset = function noop(a) { return a; }; //placeholder for UTC offset
 		this.addTags = function noop(a) { return a; }; //placeholder for add tags
 		this.applyAliases = function noop(a) { return a; }; //placeholder for apply aliases
-		
+		this.deduper = function noop(a) { return a; }; //placeholder for dedupe
+
 		if (this.fixData) this.ezTransform = transforms.ezTransforms(this);
 		if (this.removeNulls) this.nullRemover = transforms.removeNulls();
 		if (this.timeOffset) this.UTCoffset = transforms.UTCoffset(this.timeOffset);
+		if (this.dedupe) this.deduper = transforms.dedupeRecords(this);
 		if (Object.keys(this.tags).length > 0) this.addTags = transforms.addTags(this);
 		if (Object.keys(this.aliases).length > 0) this.applyAliases = transforms.applyAliases(this);
 
@@ -129,6 +133,7 @@ class importJob {
 		this.clientErrors = 0;
 		this.bytesProcessed = 0;
 		this.outOfBounds = 0;
+		this.duplicates = 0;
 		this.batchLengths = [];
 		this.timer = u.time('etl');
 
@@ -271,6 +276,7 @@ class importJob {
 			failed: this.failed,
 			empty: this.empty,
 			outOfBounds: this.outOfBounds,
+			duplicates: this.duplicates,
 
 			startTime: this.startTime,
 			endTime: new Date().toISOString(),
@@ -306,9 +312,9 @@ class importJob {
 		const quota = 2e9; //2GB in bytes
 		const gbPerMin = (summary.bytes / quota) / (summary.duration / 60000);
 		summary.percentQuota = u.round(gbPerMin, 5) * 100;
-		
+
 		summary.errors = this.errors;
-		
+
 
 		if (includeResponses) {
 			summary.responses = this.responses;

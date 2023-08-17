@@ -198,6 +198,12 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'don\'t import data after this timestamp (UNIX EPOCH)',
 			type: 'number'
 		})
+		.options("dedupe", {
+			demandOption: false,
+			default: false,
+			describe: 'dedupe records by murmur hash',
+			type: 'boolean'
+		})
 		.help()
 		.argv;
 	// @ts-ignore

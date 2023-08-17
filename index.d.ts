@@ -203,6 +203,11 @@ export type Options = {
 	 * data points with a UNIX time AFTER this value will be skipped
 	 */
 	epochEnd?: number;
+
+	/**
+	 * if true, will remove duplicate records based on a hash of the records
+	 */
+	dedupe?: boolean;
 };
 
 /**
@@ -324,10 +329,16 @@ export type ImportResults = {
 	 * - data points skipped due to epochStart/epochEnd
 	 */
 	outOfBounds?: number;
+	/**
+	 * data points skipped due to dedupe
+	 * only available if dedupe is true
+	 */
+	duplicates?: number;
     version?: string;
     file?: string;
     folder?: string;
     workers?: number;
+	
 };
 /**
  * valid mixpanel property values; {@link https://help.mixpanel.com/hc/en-us/articles/115004547063-Properties-Supported-Data-Types more info}

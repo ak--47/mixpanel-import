@@ -41,6 +41,7 @@ const needTransform = `./testData/needDateTransform.ndjson`;
 const dayjs = require('dayjs');
 const badData = `./testData/bad_data.jsonl`;
 const eventsCSV = `./testData/eventAsTable.csv`;
+const dupePeople = `./testData/pplWithDupes.ndjson`;
 
 const opts = {
 	recordType: `event`,
@@ -198,7 +199,7 @@ describe('transform', () => {
 		expect(job.success).toBe(102);
 		expect(job.failed).toBe(0);
 		expect(job.empty).toBe(0);
-		expect(job.total).toBe(102);
+		expect(job.total).toBe(3);
 	}, longTimeout);
 
 	test('tags: event', async () => {
@@ -316,7 +317,7 @@ describe('big files', () => {
 	test('large events', async () => {
 		const data = await mp({}, "./testData/nykaa/largeEvents.ndjson", { ...opts, streamFormat: `jsonl` });
 		expect(data.success).toBe(4077);
-		expect(data.total).toBe(4077);
+		expect(data.total).toBe(2000);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
 		expect(data.batches).toBe(22);
@@ -446,7 +447,7 @@ describe('data fixes', () => {
 		const job = await mp({}, data, { ...opts, recordType: 'event', fixData: false });
 		expect(job.success).toBe(1);
 		expect(job.failed).toBe(0);
-		expect(job.total).toBe(1);
+		expect(job.total).toBe(4);
 		expect(job.empty).toBe(3);
 		expect(job.duration).toBeGreaterThan(0);
 		expect(job.requests).toBe(1);
@@ -462,7 +463,7 @@ describe('data fixes', () => {
 		const job = await mp({}, data, { ...opts, recordType: 'user', fixData: false });
 		expect(job.success).toBe(1);
 		expect(job.failed).toBe(0);
-		expect(job.total).toBe(1);
+		expect(job.total).toBe(4);
 		expect(job.empty).toBe(3);
 		expect(job.duration).toBeGreaterThan(0);
 		expect(job.requests).toBe(1);
@@ -517,7 +518,7 @@ describe('data fixes', () => {
 		expect(job.success).toBe(2);
 		expect(job.failed).toBe(0);
 		expect(job.empty).toBe(2);
-		expect(job.total).toBe(2);
+		expect(job.total).toBe(4);
 	}, longTimeout);
 
 	test('fixes time', async () => {
@@ -620,6 +621,19 @@ describe('data fixes', () => {
 		expect(job.duration).toBeGreaterThan(0);
 		expect(job.requests).toBe(1);
 	});
+
+	test('dedupe', async () => {
+		
+		const job = await mp({}, dupePeople, { ...opts, recordType: 'user', dedupe:true });
+		expect(job.success).toBe(10);
+		expect(job.failed).toBe(0);
+		expect(job.total).toBe(2250);
+		expect(job.outOfBounds).toBe(0);
+		expect(job.duration).toBeGreaterThan(0);
+		expect(job.requests).toBe(1);
+		expect(job.empty).toBe(2240);
+		expect(job.duplicates).toBe(2040);
+	}, longTimeout);
 });
 
 afterAll(async () => {

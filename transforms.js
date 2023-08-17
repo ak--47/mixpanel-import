@@ -1,42 +1,44 @@
-const md5 = require('md5');
+// const md5 = require('md5');
+const murmurhash = require('murmurhash');
 const dayjs = require('dayjs');
 const utc = require('dayjs/plugin/utc');
 dayjs.extend(utc);
 const u = require('ak-tools');
+const stringify = require('json-stable-stringify');
 
 const validOperations = ["$set", "$set_once", "$add", "$union", "$append", "$remove", "$unset"];
 
 
 function ezTransforms(config) {
 	if (config.recordType === `event`) {
-		return function FixShapeAndAddInsertIfAbsentAndFixTime(event) {
+		return function FixShapeAndAddInsertIfAbsentAndFixTime(record) {
 			//wrong shape
-			if (!event.properties) {
-				event.properties = { ...event };
+			if (!record.properties) {
+				record.properties = { ...record };
 				//delete properties outside properties
-				for (const key in event) {
-					if (key !== 'properties' && key !== 'event') delete event[key];
+				for (const key in record) {
+					if (key !== 'properties' && key !== 'event') delete record[key];
 				}
-				delete event.properties.event;
+				delete record.properties.event;
 			}
 
 			//fixing time
-			if (event.properties.time && Number.isNaN(Number(event.properties.time))) {
-				event.properties.time = dayjs.utc(event.properties.time).valueOf();
+			if (record.properties.time && Number.isNaN(Number(record.properties.time))) {
+				record.properties.time = dayjs.utc(record.properties.time).valueOf();
 			}
 			//adding insert_id
-			if (!event?.properties?.$insert_id) {
+			if (!record?.properties?.$insert_id) {
 				try {
-					let deDupeTuple = [event.name, event.properties.distinct_id || "", event.properties.time];
-					let hash = md5(deDupeTuple);
-					event.properties.$insert_id = hash;
+					const deDupeTuple = [record.event, record.properties.distinct_id || "", record.properties.time];
+					const hash = murmurhash.v3(deDupeTuple.join('-')).toString();
+					record.properties.$insert_id = hash;
 				}
 				catch (e) {
-					event.properties.$insert_id = event.properties.distinct_id;
+					record.properties.$insert_id = record.properties.distinct_id;
 				}
 			}
 
-			return event;
+			return record;
 		};
 
 	}
@@ -178,7 +180,7 @@ function applyAliases(config) {
 				return record;
 			}
 		}
-		
+
 		return record;
 	};
 }
@@ -195,10 +197,31 @@ function UTCoffset(timeOffset = 0) {
 	};
 }
 
+/**
+ * this will dedupe records based on their (murmur v3) hash
+ * records with the same hash will be filtered out 
+ */
+function dedupeRecords(config) {
+	const hashTable = config.hashTable;
+	return function (record) {
+		//JSON stable stringification
+		const hash = murmurhash.v3(stringify(record));
+		if (hashTable.has(hash)) {
+			config.duplicates++;
+			return {};
+		}
+		else {
+			hashTable.add(hash);
+			return record;
+		}
+	};
+}
+
 module.exports = {
 	ezTransforms,
 	removeNulls,
 	UTCoffset,
 	addTags,
-	applyAliases
+	applyAliases,
+	dedupeRecords
 };
