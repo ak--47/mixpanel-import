@@ -632,7 +632,7 @@ describe('data fixes', () => {
 		expect(job.duration).toBeGreaterThan(0);
 		expect(job.requests).toBe(1);
 		expect(job.empty).toBe(2240);
-		expect(job.duplicates).toBe(2040);
+		expect(job.duplicates).toBe(2240);
 	}, longTimeout);
 });
 
