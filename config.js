@@ -82,36 +82,29 @@ class importJob {
 		this.abridged = u.isNil(opts.abridged) ? false : opts.abridged; //don't include success responses
 		this.forceStream = u.isNil(opts.forceStream) ? true : opts.forceStream; //don't ever buffer files into memory
 		this.dedupe = u.isNil(opts.dedupe) ? false : opts.dedupe; //remove duplicate records
+		this.shouldWhiteBlackList = false
+
+		// ? tagging options
+		this.tags = parse(opts.tags) || {}; //tags for the import		
+		this.aliases = parse(opts.aliases) || {}; //aliases for the import
+
+		// ? whitelist/blacklist options
+		this.eventWhitelist = parse(opts.eventWhitelist) || [];
+		this.eventBlacklist = parse(opts.eventBlacklist) || [];
+		this.propKeyWhitelist = parse(opts.propKeyWhitelist) || [];
+		this.propKeyBlacklist = parse(opts.propKeyBlacklist) || [];
+		this.propValWhitelist = parse(opts.propValWhitelist) || [];
+		this.propValBlacklist = parse(opts.propValBlacklist) || [];
 
 		// ? transform options
-		this.tags = opts.tags || {}; //tags for the import
-		if (typeof this.tags === 'string') {
-			try {
-				this.tags = JSON.parse(this.tags);
-			}
-			catch (e) {
-				if (this.verbose) console.log(`error parsing tags: ${this.tags}\ntags must be valid JSON`);
-				this.tags = {}; //bad json
-			}
-		}
-
-		this.aliases = opts.aliases || {}; //aliases for the import
-		if (typeof this.aliases === 'string') {
-			try {
-				this.aliases = JSON.parse(this.aliases);
-			}
-			catch (e) {
-				if (this.verbose) console.log(`error parsing aliases: ${this.tags}\ntags must be valid JSON`);
-				this.aliases = {}; //bad json
-			}
-		}
-		this.transformFunc = opts.transformFunc || function noop(a) { return a; }; //will be called on every record
-		this.ezTransform = function noop(a) { return a; }; //placeholder for ez transforms
-		this.nullRemover = function noop(a) { return a; }; //placeholder for null remove
-		this.UTCoffset = function noop(a) { return a; }; //placeholder for UTC offset
-		this.addTags = function noop(a) { return a; }; //placeholder for add tags
-		this.applyAliases = function noop(a) { return a; }; //placeholder for apply aliases
-		this.deduper = function noop(a) { return a; }; //placeholder for dedupe
+		this.transformFunc = opts.transformFunc || noop;
+		this.ezTransform = noop;
+		this.nullRemover = noop;
+		this.UTCoffset = noop;
+		this.addTags = noop;
+		this.applyAliases = noop;
+		this.deduper = noop;
+		this.whiteAndBlackLister = noop;
 
 		if (this.fixData) this.ezTransform = transforms.ezTransforms(this);
 		if (this.removeNulls) this.nullRemover = transforms.removeNulls();
@@ -119,6 +112,18 @@ class importJob {
 		if (this.dedupe) this.deduper = transforms.dedupeRecords(this);
 		if (Object.keys(this.tags).length > 0) this.addTags = transforms.addTags(this);
 		if (Object.keys(this.aliases).length > 0) this.applyAliases = transforms.applyAliases(this);
+		const whiteOrBlacklist = {
+			eventWhitelist: this.eventWhitelist,
+			eventBlacklist: this.eventBlacklist,
+			propKeyWhitelist: this.propKeyWhitelist,
+			propKeyBlacklist: this.propKeyBlacklist,
+			propValWhitelist: this.propValWhitelist,
+			propValBlacklist: this.propValBlacklist
+		};
+		if (Object.values(whiteOrBlacklist).some(array => array.length >= 1)) { 
+			this.whiteAndBlackLister = transforms.whiteAndBlackLister(this, whiteOrBlacklist);
+			this.shouldWhiteBlackList = true
+		}
 
 		// ? counters
 		this.recordsProcessed = 0;
@@ -134,6 +139,8 @@ class importJob {
 		this.bytesProcessed = 0;
 		this.outOfBounds = 0;
 		this.duplicates = 0;
+		this.whiteListSkipped = 0;
+		this.blackListSkipped = 0;
 		this.batchLengths = [];
 		this.timer = u.time('etl');
 
@@ -277,6 +284,8 @@ class importJob {
 			empty: this.empty,
 			outOfBounds: this.outOfBounds,
 			duplicates: this.duplicates,
+			whiteListSkipped: this.whiteListSkipped,
+			blackListSkipped: this.blackListSkipped,
 
 			startTime: this.startTime,
 			endTime: new Date().toISOString(),
@@ -331,5 +340,26 @@ class importJob {
 		return summary;
 	}
 }
+
+
+/** 
+ * helper to parse values passed in from cli
+ */
+function parse(val) {
+	if (typeof val === 'string') {
+		try {
+			val = JSON.parse(val);
+		}
+		catch (e) {
+			if (this.verbose) console.log(`error parsing tags: ${val}\ntags must be valid JSON`);
+			val = {}; //bad json
+		}
+	}
+	return val;
+}
+
+
+// a noop function
+function noop(a) { return a; }
 
 module.exports = importJob;

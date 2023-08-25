@@ -208,6 +208,7 @@ function corePipeline(stream, config, toNodeStream = false) {
 			if (config.removeNulls) data = config.nullRemover(data);
 			if (config.timeOffset) data = config.UTCoffset(data);
 			if (Object.keys(config.tags).length) data = config.addTags(data);
+			if (config.shouldWhiteBlackList) data = config.whiteAndBlackLister(data);
 
 			//start/end epoch filtering
 			//todo: move this to it's own function

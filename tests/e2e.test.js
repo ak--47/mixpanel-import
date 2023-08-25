@@ -623,8 +623,8 @@ describe('data fixes', () => {
 	});
 
 	test('dedupe', async () => {
-		
-		const job = await mp({}, dupePeople, { ...opts, recordType: 'user', dedupe:true });
+
+		const job = await mp({}, dupePeople, { ...opts, recordType: 'user', dedupe: true });
 		expect(job.success).toBe(10);
 		expect(job.failed).toBe(0);
 		expect(job.total).toBe(2250);
@@ -635,6 +635,117 @@ describe('data fixes', () => {
 		expect(job.duplicates).toBe(2240);
 	}, longTimeout);
 });
+
+describe('white + blacklist', () => {
+	const data = [
+		{
+			"event": "foo",
+			"distinct_id": "24377a8a-8096-55d4-be61-54010bc27adf",
+			"time": 1691429413,
+			"$insert_id": '321',
+			"happy": "kinda"
+
+		},
+		{
+			"event": "bar",
+			"distinct_id": "24377a8a-8096-55d4-be61-54010bc27adf",
+			"time": 1691429414,
+			"$insert_id": '123',
+			"sad": "sorta"
+
+		},
+		{
+			"event": "baz",
+			"distinct_id": "24377a8a-8096-55d4-be61-54010bc27adf",
+			"time": 1691429415,
+			"$insert_id": '456',
+			"maybe": "cool"
+
+		},
+		{
+			"event": "qux",
+			"distinct_id": "24377a8a-8096-55d4-be61-54010bc27adf",
+			"time": 1691429416,
+			"$insert_id": '789',
+			"deal": "with it"
+
+		},
+		{
+			"event": "mux",
+			"distinct_id": "24377a8a-8096-55d4-be61-54010bc27adf",
+			"time": 1691429417,
+			"$insert_id": '012',
+			"because": "why",
+			"happy": "nope"
+
+		}];
+
+
+
+	test('event: whitelist', async () => {
+		const job = await mp({}, data, { ...opts, recordType: 'event', eventWhitelist: ['foo', 'baz'] });
+		expect(job.success).toBe(2);
+		expect(job.failed).toBe(0);
+		expect(job.total).toBe(5);
+		expect(job.empty).toBe(3);
+		expect(job.whiteListSkipped).toBe(3);
+	}, longTimeout);
+
+
+	test('event: blacklist', async () => {
+		const job = await mp({}, data, { ...opts, recordType: 'event', eventBlacklist: ['mux', 'qux'] });
+		expect(job.success).toBe(3);
+		expect(job.failed).toBe(0);
+		expect(job.total).toBe(5);
+		expect(job.empty).toBe(2);
+		expect(job.blackListSkipped).toBe(2);
+	}, longTimeout);
+
+
+	test('prop key: whitelist', async () => {
+		const job = await mp({}, data, { ...opts, recordType: 'event', propKeyWhitelist: ['because'] });
+		expect(job.success).toBe(1);
+		expect(job.failed).toBe(0);
+		expect(job.total).toBe(5);
+		expect(job.empty).toBe(4);
+		expect(job.whiteListSkipped).toBe(4);
+	}, longTimeout);
+
+
+	test('prop key: blacklist', async () => {
+		const job = await mp({}, data, { ...opts, recordType: 'event', propKeyBlacklist: ['happy'] });
+		expect(job.success).toBe(3);
+		expect(job.failed).toBe(0);
+		expect(job.total).toBe(5);
+		expect(job.empty).toBe(2);
+		expect(job.blackListSkipped).toBe(2);
+	}, longTimeout);
+
+
+	test('prop val: whitelist', async () => {
+		const job = await mp({}, data, { ...opts, recordType: 'event', propValWhitelist: ['cool'] });
+		expect(job.success).toBe(1);
+		expect(job.failed).toBe(0);
+		expect(job.total).toBe(5);
+		expect(job.empty).toBe(4);
+		expect(job.whiteListSkipped).toBe(4);
+	}, longTimeout);
+
+
+	test('prop val: blacklist', async () => {
+		const job = await mp({}, data, { ...opts, recordType: 'event', propValBlacklist: ['with it'] });
+		expect(job.success).toBe(4);
+		expect(job.failed).toBe(0);
+		expect(job.total).toBe(5);
+		expect(job.empty).toBe(1);
+		expect(job.blackListSkipped).toBe(1);
+	}, longTimeout);
+
+
+
+
+});
+
 
 afterAll(async () => {
 	execSync(`npm run prune`);

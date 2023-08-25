@@ -204,7 +204,50 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'dedupe records by murmur hash',
 			type: 'boolean'
 		})
+		.options('event-whitelist', {
+			demandOption: false,
+			default: '[]',
+			alias: 'eventWhitelist',
+			describe: 'only send events on whitelist',
+			type: 'string'
+		})
+		.options('event-blacklist', {
+			demandOption: false,
+			default: '[]',
+			alias: 'eventBlacklist',
+			describe: 'don\'t send events on blacklist',
+			type: 'string'
+		})
+		.options('prop-key-whitelist', {
+			demandOption: false,
+			default: '[]',
+			alias: 'propKeyWhitelist',
+			describe: 'only send events with prop keys on whitelist',
+			type: 'string'
+		})
+		.options('prop-key-blacklist', {
+			demandOption: false,
+			default: '[]',
+			alias: 'propKeyBlacklist',
+			describe: 'don\'t send events with prop keys on blacklist',
+			type: 'string'
+		})
+		.options('prop-val-whitelist', {
+			demandOption: false,
+			default: '[]',
+			alias: 'propValWhitelist',
+			describe: 'only send events with prop values on whitelist',
+			type: 'string'
+		})
+		.options('prop-val-blacklist', {
+			demandOption: false,
+			default: '[]',
+			alias: 'propValBlacklist',
+			describe: 'don\'t send events with prop values on blacklist',
+			type: 'string'
+		})
 		.help()
+		.wrap(yargs.terminalWidth())
 		.argv;
 	// @ts-ignore
 	if (args._.length === 0 && !args.type?.toLowerCase()?.includes('export')) {

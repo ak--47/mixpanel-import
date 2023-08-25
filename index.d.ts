@@ -74,6 +74,15 @@ export type Creds = {
     secret?: string;
 };
 
+export type WhiteAndBlackListParams = {
+    eventWhitelist: string[];
+    eventBlacklist: string[];
+    propKeyWhitelist: string[];
+    propKeyBlacklist: string[];
+    propValWhitelist: string[];
+    propValBlacklist: string[];
+};
+
 /**
  * options for the import job
  */
@@ -194,20 +203,44 @@ export type Options = {
 
     aliases?: genericObj;
 
-	/**
-	 * data points with a UNIX time BEFORE this value will be skipped
-	 */
-	epochStart?: number;
+    /**
+     * data points with a UNIX time BEFORE this value will be skipped
+     */
+    epochStart?: number;
 
-	/**
-	 * data points with a UNIX time AFTER this value will be skipped
-	 */
-	epochEnd?: number;
+    /**
+     * data points with a UNIX time AFTER this value will be skipped
+     */
+    epochEnd?: number;
 
-	/**
-	 * if true, will remove duplicate records based on a hash of the records
-	 */
-	dedupe?: boolean;
+    /**
+     * if true, will remove duplicate records based on a hash of the records
+     */
+    dedupe?: boolean;
+	 /**
+     * only import events on the whitelist
+     */
+	 eventWhitelist?: string[];
+	 /**
+	  * don't import events on the blacklist
+	  */
+	 eventBlacklist?: string[];
+	 /**
+	  * only import events with property keys on the whitelist
+	  */
+	 propKeyWhitelist?: string[];
+	 /**
+	  * don't import events with property keys on the blacklist
+	  */
+	 propKeyBlacklist?: string[];
+	 /**
+	  * only import events with property values on the whitelist
+	  */
+	 propValWhitelist?: string[];
+	 /**
+	  * don't import events with property values on the blacklist
+	  */
+	 propValBlacklist?: string[];
 };
 
 /**
@@ -276,7 +309,7 @@ export type ImportResults = {
     /**
      * - human readable timestamp
      */
-	durationHuman?: string;
+    durationHuman?: string;
     /**
      * - human readable timestamp [deprecated]
      */
@@ -325,20 +358,28 @@ export type ImportResults = {
      * - the end timestamp of the job (ISO 8601)
      */
     endTime?: string;
+    /**
+     * - data points skipped due to epochStart/epochEnd
+     */
+    outOfBounds?: number;
+   
+    /**
+     * data points skipped due to dedupe
+     * only available if dedupe is true
+     */
+    duplicates?: number;
 	/**
-	 * - data points skipped due to epochStart/epochEnd
+	 * data points skipped due to whitelist
 	 */
-	outOfBounds?: number;
+	whiteListSkipped?: number;
 	/**
-	 * data points skipped due to dedupe
-	 * only available if dedupe is true
+	 * data points skipped due to blacklist
 	 */
-	duplicates?: number;
+	blackListSkipped?: number;
     version?: string;
     file?: string;
     folder?: string;
     workers?: number;
-	
 };
 /**
  * valid mixpanel property values; {@link https://help.mixpanel.com/hc/en-us/articles/115004547063-Properties-Supported-Data-Types more info}
