@@ -1,5 +1,5 @@
+// @ts-nocheck
 const fs = require('fs')
-const path = require('path')
 const Chance = require('chance'); //https://github.com/chancejs/chancejs
 const chance = new Chance();
 const readline = require('readline');
@@ -59,7 +59,7 @@ function main(numEvents = 1000, numDays) {
 
     fs.writeFile("./testData/someTestData.json", JSON.stringify(arrOfEvents), function(err) {
         if(err) {
-            return console.log(err);
+			console.log(err);
             process.exit(1)
         }
         console.log("\ntry:\n\nnpm run import ./testData/someTestData.json\n\nto send the data to mixpanel!");

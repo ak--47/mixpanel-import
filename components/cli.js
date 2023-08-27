@@ -1,7 +1,9 @@
 const yargs = require('yargs');
 const dayjs = require('dayjs');
 const dateFormat = `YYYY-MM-DD`;
-const { version } = require('./package.json');
+const { version } = require('../package.json');
+const readline = require('readline');
+const u = require('ak-tools');
 
 
 function cliParams() {
@@ -267,7 +269,17 @@ const banner = `... streamer of data... to mixpanel! (v${version || 2})
 \tby AK (ak@mixpanel.com)\n\n`;
 
 const welcome = hero.concat('\n').concat(banner);
-
 cliParams.welcome = welcome;
+
+function showProgress(record, processed, requests) {
+	const { rss, heapTotal, heapUsed } = process.memoryUsage();
+	const percentHeap = (heapUsed / heapTotal) * 100;
+	const percentRSS = (heapUsed / rss) * 100;
+	const line = `${record}s: ${u.comma(processed)} | batches: ${u.comma(requests)} | memory: ${u.bytesHuman(heapUsed)} (heap: ${u.round(percentHeap)}% total:${u.round(percentRSS)}%)\t\t`;
+	readline.cursorTo(process.stdout, 0);
+	process.stdout.write(line);
+}
+
+cliParams.showProgress = showProgress;
 
 module.exports = cliParams;

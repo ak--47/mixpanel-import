@@ -208,7 +208,7 @@ function dedupeRecords(config) {
 /**
  * this function is used to whitelist or blacklist events, prop keys, or prop values
  * @param  {any} config
- * @param  {import('./index.js').WhiteAndBlackListParams} params
+ * @param  {import('../index.js').WhiteAndBlackListParams} params
  */
 function whiteAndBlackLister(config, params) {
 	const {

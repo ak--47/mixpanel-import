@@ -1,6 +1,8 @@
 /* eslint-disable no-unused-vars */
 // @ts-check
-const mpImport = require('../index.js');
+const foo = require('../index.js');
 
 
-mpImport()
+foo({}, '', {transformFunc: (a) => { return a}}, true);
+
+foo.createMpStream({}, {})

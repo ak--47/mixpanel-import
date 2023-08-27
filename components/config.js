@@ -2,8 +2,6 @@ const dayjs = require('dayjs');
 const dateFormat = `YYYY-MM-DD`;
 const u = require('ak-tools');
 const transforms = require('./transforms.js');
-// eslint-disable-next-line no-unused-vars
-
 
 
 /**
@@ -11,8 +9,8 @@ const transforms = require('./transforms.js');
  * @example
  * const config = new importJob(creds, opts)
  * @class 
- * @param {import('./index.d.ts').Creds} creds - mixpanel project credentials
- * @param {import('./index.d.ts').Options} opts - options for import
+ * @param {import('../index.js').Creds} creds - mixpanel project credentials
+ * @param {import('../index.js').Options} opts - options for import
  * @method summary summarize state of import
 */
 class importJob {
@@ -236,7 +234,7 @@ class importJob {
 		if (!success) this.errors.push(response);
 	}
 	getVersion() {
-		const { version } = require('./package.json');
+		const { version } = require('../package.json');
 		if (version) return version;
 		if (process.env.npm_package_version) return process.env.npm_package_version;
 		return 'unknown';
@@ -269,12 +267,12 @@ class importJob {
 	/**
 	 * summary of the results of an import
 	 * @param {boolean} includeResponses - should `errors` and `responses` be included in summary
-	 * @returns {import('./index.d.ts').ImportResults} `{success, failed, total, requests, duration}`
+	 * @returns {import('../index.js').ImportResults} `{success, failed, total, requests, duration}`
 	 */
 	summary(includeResponses = true) {
 		const { delta, human } = this.timer.report(false);
 		const memory = u.objMap(process.memoryUsage(), (v) => u.bytesHuman(v));
-		/** @type {import('./index.d.ts').ImportResults} */
+		/** @type {import('../index.js').ImportResults} */
 		const summary = {
 			recordType: this.recordType,
 
