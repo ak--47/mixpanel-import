@@ -3,29 +3,32 @@ const https = require('https');
 const { gzip } = require('node-gzip');
 const u = require('ak-tools');
 
+/** @typedef {import('./job')} JobConfig */
+
 /**
  * @param  {Object[]} batch
- * @param  {Object} config
+ * @param  {JobConfig} jobConfig
  */
-async function flushToMixpanel(batch, config) {
+async function flushToMixpanel(batch, jobConfig) {
 	try {
+		/** @type {Buffer | string} */
 		let body = typeof batch === 'string' ? batch : JSON.stringify(batch);
-		if (config.recordType === 'event' && config.compress) {
-			body = await gzip(body, { level: config.compressionLevel || 6 });
-			config.encoding = 'gzip';
+		if (jobConfig.recordType === 'event' && jobConfig.compress) {
+			body = await gzip(body, { level: jobConfig.compressionLevel || 6 });
+			jobConfig.encoding = 'gzip';
 		}
 
 		/** @type {got.Options} */
 		const options = {
-			url: config.url,
+			url: jobConfig.url,
 			searchParams: {
 				ip: 0,
 				verbose: 1,
-				strict: Number(config.strict)
+				strict: Number(jobConfig.strict)
 			},
-			method: config.reqMethod,
+			method: jobConfig.reqMethod || 'POST',
 			retry: {
-				limit: config.maxRetries || 10,
+				limit: jobConfig.maxRetries || 10,
 				statusCodes: [429, 500, 501, 503, 524, 502, 408, 504],
 				errorCodes: [
 					`ETIMEDOUT`,
@@ -45,9 +48,9 @@ async function flushToMixpanel(batch, config) {
 				methods: ['POST']
 			},
 			headers: {
-				"Authorization": `${config.auth}`,
-				"Content-Type": config.contentType,
-				"Content-Encoding": config.encoding,
+				"Authorization": `${jobConfig.auth}`,
+				"Content-Type": jobConfig.contentType,
+				"Content-Encoding": jobConfig.encoding,
 				'Connection': 'keep-alive',
 				'Accept': 'application/json'
 			},
@@ -65,16 +68,16 @@ async function flushToMixpanel(batch, config) {
 					catch (e) {
 						//noop
 					}
-					config.retries++;
-					config.requests++;
+					jobConfig.retries++;
+					jobConfig.requests++;
 					if (error?.response?.statusCode?.toString() === "429") {
-						config.rateLimited++;
+						jobConfig.rateLimited++;
 					}
 					else if (error?.response?.statusCode?.toString()?.startsWith("5")) {
-						config.serverErrors++;
+						jobConfig.serverErrors++;
 					}
 					else {
-						config.clientErrors++;
+						jobConfig.clientErrors++;
 					}
 				}],
 
@@ -82,7 +85,7 @@ async function flushToMixpanel(batch, config) {
 			body
 		};
 		// @ts-ignore
-		if (config.project) options.searchParams.project_id = config.project;
+		if (jobConfig.project) options.searchParams.project_id = jobConfig.project;
 
 		let req, res, success;
 		try {
@@ -103,16 +106,16 @@ async function flushToMixpanel(batch, config) {
 
 		}
 
-		if (config.recordType === 'event') {
-			config.success += res.num_records_imported || 0;
-			config.failed += res?.failed_records?.length || 0;
+		if (jobConfig.recordType === 'event') {
+			jobConfig.success += res.num_records_imported || 0;
+			jobConfig.failed += res?.failed_records?.length || 0;
 		}
-		if (config.recordType === 'user' || config.recordType === 'group') {
-			if (!res.error || res.status) config.success += batch.length;
-			if (res.error || !res.status) config.failed += batch.length;
+		if (jobConfig.recordType === 'user' || jobConfig.recordType === 'group') {
+			if (!res.error || res.status) jobConfig.success += batch.length;
+			if (res.error || !res.status) jobConfig.failed += batch.length;
 		}
 
-		config.store(res, success);
+		jobConfig.store(res, success);
 		return res;
 	}
 
@@ -127,9 +130,13 @@ async function flushToMixpanel(batch, config) {
 	}
 }
 
-async function flushLookupTable(stream, config) {
-	const res = await flushToMixpanel(stream, config);
-	config.recordsProcessed = stream.split('\n').length - 1;
+/**
+ * @param  {any} csvString
+ * @param  {JobConfig} config
+ */
+async function flushLookupTable(csvString, config) {
+	const res = await flushToMixpanel(csvString, config);
+	config.recordsProcessed = csvString.split('\n').length - 1;
 	config.success = config.recordsProcessed;
 	return res;
 }

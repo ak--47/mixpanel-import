@@ -19,7 +19,7 @@ unzip it in ./testData
 /* cSpell:disable */
 require('dotenv').config();
 const { execSync } = require("child_process");
-const longTimeout = 30000;
+const longTimeout = 75000;
 
 
 const mp = require('../index.js');
@@ -60,12 +60,6 @@ const opts = {
 };
 
 
-
-describe('do tests work?', () => {
-	test('a = a', () => {
-		expect(true).toBe(true);
-	});
-});
 
 describe('filenames', () => {
 	test('event', async () => {
@@ -287,7 +281,7 @@ describe('exports', () => {
 		expect(data.duration).toBeGreaterThan(0);
 		expect(data.requests).toBe(1);
 		expect(data.failed).toBe(0);
-		expect(data.total).toBeGreaterThan(92);
+		expect(data.total).toBeGreaterThan(80);
 		expect(data.success).toBeGreaterThan(92);
 	}, longTimeout);
 

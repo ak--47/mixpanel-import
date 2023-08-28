@@ -6,22 +6,28 @@ const path = require('path');
 const fs = require('fs');
 const { promisify } = require('util');
 const u = require('ak-tools')
+const showProgress = require('./cli').showProgress;
 
+/** @typedef {import('./job')} jobConfig */
 
-async function exportEvents(filename, config) {
+/**
+ * @param  {string} filename
+ * @param  {jobConfig} jobConfig
+ */
+async function exportEvents(filename, jobConfig) {
 	const pipeline = promisify(stream.pipeline);
 
 	/** @type {got.Options} */
 	const options = {
-		url: config.url,
+		url: jobConfig.url,
 		searchParams: {
-			from_date: config.start,
-			to_date: config.end
+			from_date: jobConfig.start,
+			to_date: jobConfig.end
 		},
-		method: config.reqMethod,
+		method: jobConfig.reqMethod,
 		retry: { limit: 50 },
 		headers: {
-			"Authorization": `${config.auth}`
+			"Authorization": `${jobConfig.auth}`
 		},
 		agent: {
 			https: new https.Agent({ keepAlive: true })
@@ -31,21 +37,21 @@ async function exportEvents(filename, config) {
 			beforeRetry: [(err, count) => {
 				// @ts-ignore
 				l(`retrying request...#${count}`);
-				config.retries++;
+				jobConfig.retries++;
 			}]
 		},
 
 	};
 
 	// @ts-ignore
-	if (config.project) options.searchParams.project_id = config.project;
+	if (jobConfig.project) options.searchParams.project_id = jobConfig.project;
 
 	// @ts-ignore
 	const request = got.stream(options);
 
 	request.on('response', (res) => {
-		config.requests++;
-		config.responses.push({
+		jobConfig.requests++;
+		jobConfig.responses.push({
 			status: res.statusCode,
 			ip: res.ip,
 			url: res.requestUrl,
@@ -54,8 +60,8 @@ async function exportEvents(filename, config) {
 	});
 
 	request.on('error', (e) => {
-		config.failed++;
-		config.responses.push({
+		jobConfig.failed++;
+		jobConfig.responses.push({
 			status: e.statusCode,
 			ip: e.ip,
 			url: e.requestUrl,
@@ -70,7 +76,7 @@ async function exportEvents(filename, config) {
 		downloadProgress(progress.transferred);
 	});
 
-	const exportedData = await pipeline(
+	await pipeline(
 		request,
 		fs.createWriteStream(filename)
 	);
@@ -78,15 +84,19 @@ async function exportEvents(filename, config) {
 	console.log('\n\ndownload finished\n\n');
 
 	const lines = await countFileLines(filename);
-	config.recordsProcessed += lines;
-	config.success += lines;
-	config.file = filename;
+	jobConfig.recordsProcessed += lines;
+	jobConfig.success += lines;
+	jobConfig.file = filename;
 
-	return exportedData;
+	return null;
 }
 
-async function exportProfiles(folder, config) {
-	const auth = config.auth;
+/**
+ * @param  {string} folder
+ * @param  {jobConfig} jobConfig
+ */
+async function exportProfiles(folder, jobConfig) {
+	const auth = jobConfig.auth;
 	const allFiles = [];
 
 	let iterations = 0;
@@ -96,7 +106,7 @@ async function exportProfiles(folder, config) {
 	/** @type {got.Options} */
 	const options = {
 		method: 'POST',
-		url: config.url,
+		url: jobConfig.url,
 		headers: {
 			Authorization: auth
 		},
@@ -105,12 +115,12 @@ async function exportProfiles(folder, config) {
 		retry: { limit: 50 }
 	};
 	// @ts-ignore
-	if (config.project) options.searchParams.project_id = config.project;
+	if (jobConfig.project) options.searchParams.project_id = jobConfig.project;
 
 	// @ts-ignore
 	let request = await got(options).catch(e => {
-		config.failed++;
-		config.responses.push({
+		jobConfig.failed++;
+		jobConfig.responses.push({
 			status: e.statusCode,
 			ip: e.ip,
 			url: e.requestUrl,
@@ -134,17 +144,17 @@ async function exportProfiles(folder, config) {
 	allFiles.push(firstFile);
 
 	//update config
-	config.recordsProcessed += profiles.length;
-	config.success += profiles.length;
-	config.requests++;
-	config.responses.push({
+	jobConfig.recordsProcessed += profiles.length;
+	jobConfig.success += profiles.length;
+	jobConfig.requests++;
+	jobConfig.responses.push({
 		status: request.statusCode,
 		ip: request.ip,
 		url: request.requestUrl,
 		...request.headers
 	});
 
-	showProgress("profile", config.success, iterations + 1);
+	showProgress("profile", jobConfig.success, iterations + 1);
 
 
 	// recursively consume all profiles
@@ -162,8 +172,8 @@ async function exportProfiles(folder, config) {
 
 		// @ts-ignore
 		request = await got(options).catch(e => {
-			config.failed++;
-			config.responses.push({
+			jobConfig.failed++;
+			jobConfig.responses.push({
 				status: e.statusCode,
 				ip: e.ip,
 				url: e.requestUrl,
@@ -174,16 +184,16 @@ async function exportProfiles(folder, config) {
 		response = request.body;
 
 		//update config
-		config.requests++;
-		config.responses.push({
+		jobConfig.requests++;
+		jobConfig.responses.push({
 			status: request.statusCode,
 			ip: request.ip,
 			url: request.requestUrl,
 			...request.headers
 		});
-		config.success += profiles.length;
-		config.recordsProcessed += profiles.length;
-		showProgress("profile", config.success, iterations + 1);
+		jobConfig.success += profiles.length;
+		jobConfig.recordsProcessed += profiles.length;
+		showProgress("profile", jobConfig.success, iterations + 1);
 
 		profiles = response.results;
 
@@ -197,13 +207,17 @@ async function exportProfiles(folder, config) {
 
 	console.log('\n\ndownload finished\n\n');
 
-	config.file = allFiles;
-	config.folder = folder;
+	// @ts-ignore
+	jobConfig.file = allFiles;
+	jobConfig.folder = folder;
 
-	return folder;
+	return null;
 
 }
 
+/**
+ * @param  {number} amount
+ */
 function downloadProgress(amount) {
 	if (amount < 1000000) {
 		//noop
@@ -214,14 +228,6 @@ function downloadProgress(amount) {
 	}
 }
 
-function showProgress(record, processed, requests) {
-	const { rss, heapTotal, heapUsed } = process.memoryUsage();
-	const percentHeap = (heapUsed / heapTotal) * 100;
-	const percentRSS = (heapUsed / rss) * 100;
-	const line = `${record}s: ${u.comma(processed)} | batches: ${u.comma(requests)} | memory: ${u.bytesHuman(heapUsed)} (heap: ${u.round(percentHeap)}% total:${u.round(percentRSS)}%)\t\t`;
-	readline.cursorTo(process.stdout, 0);
-	process.stdout.write(line);
-}
 
 
 async function countFileLines(filePath) {

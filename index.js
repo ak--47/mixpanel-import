@@ -15,8 +15,8 @@ DEPS
 -----
 */
 
-// $ config
-const importJob = require('./components/config.js');
+// $ job configuration
+const importJob = require('./components/job.js');
 
 // $ parsers
 const { determineDataType, getEnvVars } = require("./components/parsers.js");
@@ -56,21 +56,21 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 		cliData = cli._[0];
 	}
 
-	const config = new importJob({ ...envVar, ...cli, ...creds }, { ...envVar, ...cli, ...opts });
+	const jobConfig = new importJob({ ...envVar, ...cli, ...creds }, { ...envVar, ...cli, ...opts });
 
-	if (isCLI) config.verbose = true;
-	const l = logger(config);
+	if (isCLI) jobConfig.verbose = true;
+	const l = logger(jobConfig);
 	l(cliParams.welcome);
 	if (isCLI) global.l = l; // hacky way to make logger available globally
 
 	// ETL
-	config.timer.start();
+	jobConfig.timer.start();
 
-	const stream = await determineDataType(data || cliData, config); // always stream[]
+	const stream = await determineDataType(data || cliData, jobConfig); // always stream[]
 
 	try {
 
-		await corePipeline(stream, config).finally(() => {
+		await corePipeline(stream, jobConfig).finally(() => {
 			l(`\n\nFINISHED!\n\n`);
 		});
 	}
@@ -83,10 +83,10 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	l('\n');
 
 	// clean up
-	config.timer.end(false);
-	const summary = config.summary();
-	l(`${config.type === 'export' ? 'export' : 'import'} complete in ${summary.human}`);
-	if (config.logs) await writeLogs(summary);
+	jobConfig.timer.end(false);
+	const summary = jobConfig.summary();
+	l(`${jobConfig.type === 'export' ? 'export' : 'import'} complete in ${summary.human}`);
+	if (jobConfig.logs) await writeLogs(summary);
 	return summary;
 }
 

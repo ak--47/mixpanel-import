@@ -1,3 +1,4 @@
 {	
-	"coverageDirectory": "./tests/coverage"
+	"coverageDirectory": "./tests/coverage",
+	"setupFilesAfterEnv": ["jest-extended/all"]
 }

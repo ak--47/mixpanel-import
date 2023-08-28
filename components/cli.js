@@ -271,6 +271,11 @@ const banner = `... streamer of data... to mixpanel! (v${version || 2})
 const welcome = hero.concat('\n').concat(banner);
 cliParams.welcome = welcome;
 
+/** progress bar
+ * @param  {string} record
+ * @param  {number} processed
+ * @param  {number} requests
+ */
 function showProgress(record, processed, requests) {
 	const { rss, heapTotal, heapUsed } = process.memoryUsage();
 	const percentHeap = (heapUsed / heapTotal) * 100;

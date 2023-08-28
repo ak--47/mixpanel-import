@@ -21,7 +21,8 @@
     "test": "jest --watch",
     "coverage": "node --no-warnings --experimental-vm-modules node_modules/jest/bin/jest.js --coverage && open ./tests/coverage/lcov-report/index.html",
     "cli:test": "node index.js ./testData/moarEvents.json --fixData",
-    "cli:help": "node index.js --help"
+    "cli:help": "node index.js --help",
+    "typecheck": "npx tsc"
   },
   "bin": {
     "mixpanel-import": "./index.js"
@@ -58,6 +59,8 @@
     "@types/multistream": "^4.1.0",
     "eslint": "^8.26.0",
     "jest": "^29.3.1",
-    "nodemon": "^2.0.15"
+    "jest-extended": "^4.0.1",
+    "nodemon": "^2.0.15",
+    "typescript": "^5.2.2"
   }
 }

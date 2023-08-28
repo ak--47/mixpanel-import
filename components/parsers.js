@@ -16,15 +16,19 @@ const dateFormat = `YYYY-MM-DD`;
 const Papa = require('papaparse');
 
 
+/** @typedef {import('./job')} JobConfig */
+/** @typedef {import('../index').Data} Data */
 
 
-
-
-async function determineDataType(data, config) {
+/**
+ * @param  {any} data
+ * @param  {JobConfig} jobConfig
+ */
+async function determineDataType(data, jobConfig) {
 	//exports are saved locally
-	if (config.recordType === 'export') {
-		if (config.where) {
-			return path.resolve(config.where);
+	if (jobConfig.recordType === 'export') {
+		if (jobConfig.where) {
+			return path.resolve(jobConfig.where);
 		}
 		const folder = u.mkdir('./mixpanel-exports');
 		const filename = path.resolve(`${folder}/export-${dayjs().format(dateFormat)}-${u.rand()}.ndjson`);
@@ -32,16 +36,16 @@ async function determineDataType(data, config) {
 		return filename;
 	}
 
-	if (config.recordType === 'peopleExport') {
-		if (config.where) {
-			return path.resolve(config.where);
+	if (jobConfig.recordType === 'peopleExport') {
+		if (jobConfig.where) {
+			return path.resolve(jobConfig.where);
 		}
 		const folder = u.mkdir('./mixpanel-exports');
 		return path.resolve(folder);
 	}
 
 	// lookup tables are not streamed
-	if (config.recordType === 'table') {
+	if (jobConfig.recordType === 'table') {
 		if (fs.existsSync(path.resolve(data))) return await u.load(data);
 		return data;
 	}
@@ -54,7 +58,7 @@ async function determineDataType(data, config) {
 
 	// data is an object in memory
 	if (Array.isArray(data)) {
-		return stream.Readable.from(data, { objectMode: true, highWaterMark: config.highWater });
+		return stream.Readable.from(data, { objectMode: true, highWaterMark: jobConfig.highWater });
 	}
 
 	//todo: support array of files
@@ -67,33 +71,33 @@ async function determineDataType(data, config) {
 			//file case			
 			if (fileOrDir.isFile()) {
 				//check for jsonl first... many jsonl files will have the same extension as json
-				if (config.streamFormat === 'jsonl' || config.lineByLineFileExt.includes(path.extname(data))) {
-					// !! if the file is small enough; just load it into memory (is this ok?)
-					if (fileOrDir.size < os.freemem() * .75 && !config.forceStream) {
-						const file = await u.load(path.resolve(data));
-						const parsed = file.trim().split('\n').map(JSON.parse);
-						return stream.Readable.from(parsed, { objectMode: true, highWaterMark: config.highWater });
+				if (jobConfig.streamFormat === 'jsonl' || jobConfig.lineByLineFileExt.includes(path.extname(data))) {
+					// !! todo... make DRY
+					if (fileOrDir.size < os.freemem() * .50 && !jobConfig.forceStream) {						
+						const file = /** @type {string} */ (await u.load(path.resolve(data)));
+						const parsed = file.trim().split('\n').map(line => JSON.parse(line));
+						return stream.Readable.from(parsed, { objectMode: true, highWaterMark: jobConfig.highWater });
 					}
 
-					return itemStream(path.resolve(data), "jsonl", config.highWater);
+					return itemStream(path.resolve(data), "jsonl", jobConfig.highWater);
 				}
 
-				if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(data))) {
-					// !! if the file is small enough; just load it into memory (is this ok?)
-					if (fileOrDir.size < os.freemem() * .75 && !config.forceStream) {
+				if (jobConfig.streamFormat === 'json' || jobConfig.objectModeFileExt.includes(path.extname(data))) {
+					// !! ugh
+					if (fileOrDir.size < os.freemem() * .50 && !jobConfig.forceStream) {
 						const file = await u.load(path.resolve(data), true);
-						return stream.Readable.from(file, { objectMode: true, highWaterMark: config.highWater });
+						return stream.Readable.from(file, { objectMode: true, highWaterMark: jobConfig.highWater });
 					}
 
 					//otherwise, stream it
-					return itemStream(path.resolve(data), "json", config.highWater);
+					return itemStream(path.resolve(data), "json", jobConfig.highWater);
 				}
 
 				//csv case
 				// todo: refactor this inside the itemStream function
-				if (config.streamFormat === 'csv') {
+				if (jobConfig.streamFormat === 'csv') {
 					const fileStream = fs.createReadStream(path.resolve(data));
-					const mappings = Object.entries(config.aliases);
+					const mappings = Object.entries(jobConfig.aliases);
 					const csvParser = Papa.parse(Papa.NODE_STREAM_INPUT, {
 						header: true,
 						skipEmptyLines: true,
@@ -105,7 +109,7 @@ async function determineDataType(data, config) {
 					});
 					const transformer = new stream.Transform({
 						// @ts-ignore
-						objectMode: true, highWaterMark: config.highWater, transform: (chunk, encoding, callback) => {
+						objectMode: true, highWaterMark: jobConfig.highWater, transform: (chunk, encoding, callback) => {
 							const { distinct_id = "", $insert_id = "", time, event, ...props } = chunk;
 							const mixpanelEvent = {
 								event,
@@ -127,12 +131,12 @@ async function determineDataType(data, config) {
 			//folder case
 			if (fileOrDir.isDirectory()) {
 				const enumDir = await u.ls(path.resolve(data));
-				const files = enumDir.filter(filePath => config.supportedFileExt.includes(path.extname(filePath)));
-				if (config.streamFormat === 'jsonl' || config.lineByLineFileExt.includes(path.extname(files[0]))) {
-					return itemStream(files, "jsonl", config.highWater);
+				const files = enumDir.filter(filePath => jobConfig.supportedFileExt.includes(path.extname(filePath)));
+				if (jobConfig.streamFormat === 'jsonl' || jobConfig.lineByLineFileExt.includes(path.extname(files[0]))) {
+					return itemStream(files, "jsonl", jobConfig.highWater);
 				}
-				if (config.streamFormat === 'json' || config.objectModeFileExt.includes(path.extname(files[0]))) {
-					return itemStream(files, "json", config.highWater);
+				if (jobConfig.streamFormat === 'json' || jobConfig.objectModeFileExt.includes(path.extname(files[0]))) {
+					return itemStream(files, "json", jobConfig.highWater);
 				}
 			}
 		}
@@ -147,7 +151,7 @@ async function determineDataType(data, config) {
 
 		//stringified JSON
 		try {
-			return stream.Readable.from(JSON.parse(data), { objectMode: true, highWaterMark: config.highWater });
+			return stream.Readable.from(JSON.parse(data), { objectMode: true, highWaterMark: jobConfig.highWater });
 		}
 		catch (e) {
 			//noop
@@ -156,7 +160,7 @@ async function determineDataType(data, config) {
 		//stringified JSONL
 		try {
 			// @ts-ignore
-			return stream.Readable.from(data.trim().split('\n').map(JSON.parse), { objectMode: true, highWaterMark: config.highWater });
+			return stream.Readable.from(data.trim().split('\n').map(JSON.parse), { objectMode: true, highWaterMark: jobConfig.highWater });
 		}
 
 		catch (e) {
@@ -179,6 +183,9 @@ async function determineDataType(data, config) {
 
 
 
+/**
+ * @param  { import("stream").Readable} stream
+ */
 function existingStreamInterface(stream) {
 	const rl = readline.createInterface({
 		input: stream,
@@ -199,6 +206,11 @@ function existingStreamInterface(stream) {
 	return generator;
 }
 
+/**
+ * @param  {string} filePath
+ * @param  {import('../index').SupportedFormats} type="jsonl"
+ * @param  {number} highWater
+ */
 function itemStream(filePath, type = "jsonl", highWater) {
 	let stream;
 	let parsedStream;
@@ -235,37 +247,16 @@ function itemStream(filePath, type = "jsonl", highWater) {
 
 }
 
-
-function getEnvVars() {
-	const envVars = pick(process.env, `MP_PROJECT`, `MP_ACCT`, `MP_PASS`, `MP_SECRET`, `MP_TOKEN`, `MP_TYPE`, `MP_TABLE_ID`, `MP_GROUP_KEY`, `MP_START`, `MP_END`);
-	const envKeyNames = {
-		MP_PROJECT: "project",
-		MP_ACCT: "acct",
-		MP_PASS: "pass",
-		MP_SECRET: "secret",
-		MP_TOKEN: "token",
-		MP_TYPE: "recordType",
-		MP_TABLE_ID: "lookupTableId",
-		MP_GROUP_KEY: "groupKey",
-		MP_START: "start",
-		MP_END: "end"
-	};
-	const envCreds = u.rnKeys(envVars, envKeyNames);
-
-	return envCreds;
-}
-
-//! GPT implementation
 /**
- * @param  {import('./config')} config
+ * @param  {JobConfig} jobConfig
  */
-function chunkForSize(config) {
+function chunkForSize(jobConfig) {
 	let pending = [];
 	let totalSize = 0; // maintain a running total of size
 
 	return (err, x, push, next) => {
-		const maxBatchSize = config.bytesPerBatch;
-		const maxBatchCount = config.recordsPerBatch;
+		const maxBatchSize = jobConfig.bytesPerBatch;
+		const maxBatchCount = jobConfig.recordsPerBatch;
 
 		if (err) {
 			push(err);
@@ -318,6 +309,24 @@ function chunkForSize(config) {
 	};
 }
 
+function getEnvVars() {
+	const envVars = pick(process.env, `MP_PROJECT`, `MP_ACCT`, `MP_PASS`, `MP_SECRET`, `MP_TOKEN`, `MP_TYPE`, `MP_TABLE_ID`, `MP_GROUP_KEY`, `MP_START`, `MP_END`);
+	const envKeyNames = {
+		MP_PROJECT: "project",
+		MP_ACCT: "acct",
+		MP_PASS: "pass",
+		MP_SECRET: "secret",
+		MP_TOKEN: "token",
+		MP_TYPE: "recordType",
+		MP_TABLE_ID: "lookupTableId",
+		MP_GROUP_KEY: "groupKey",
+		MP_START: "start",
+		MP_END: "end"
+	};
+	const envCreds = u.rnKeys(envVars, envKeyNames);
+
+	return envCreds;
+}
 
 module.exports = {
 	JsonlParser,

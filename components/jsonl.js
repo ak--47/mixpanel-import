@@ -1,3 +1,4 @@
+// @ts-nocheck
 const Utf8Stream = require('stream-json/utils/Utf8Stream');
 // ? outstanding PR: https://github.com/uhop/stream-json/pull/140
 class JsonlParser extends Utf8Stream {

@@ -1,5 +1,5 @@
 // $ config
-const importJob = require('./config.js');
+const importJob = require('./job.js');
 
 // $ parsers
 const { getEnvVars, chunkForSize } = require("./parsers.js");
@@ -24,34 +24,41 @@ const utc = require('dayjs/plugin/utc');
 dayjs.extend(utc);
 const { callbackify } = require('util');
 
+
+/** @typedef {import('./job')} JobConfig */
+/** @typedef {import('../index').Data} Data */
+/** @typedef {import('../index').Options} Options */
+/** @typedef {import('../index').Creds} Creds */
+/** @typedef {import('../index').ImportResults} ImportResults */
+
 /**
  * the core pipeline 
- * @param {ReadableStream} stream 
- * @param {importJob} config 
- * @returns {Promise<import('../index.d.ts').ImportResults> | Promise<void>} a promise
+ * @param {ReadableStream | null} stream 
+ * @param {JobConfig} jobConfig 
+ * @returns {Promise<ImportResults> | Promise<null>} a promise
  */
-function corePipeline(stream, config, toNodeStream = false) {
+function corePipeline(stream, jobConfig, toNodeStream = false) {
 
-	if (config.recordType === 'table') return flushLookupTable(stream, config);
-	if (config.recordType === 'export') return exportEvents(stream, config);
-	if (config.recordType === 'peopleExport') return exportProfiles(stream, config);
+	if (jobConfig.recordType === 'table') return flushLookupTable(stream, jobConfig);
+	if (jobConfig.recordType === 'export' && typeof stream === 'string') return exportEvents(stream, jobConfig);
+	if (jobConfig.recordType === 'peopleExport' && typeof stream === 'string') return exportProfiles(stream, jobConfig);
 
 	const flush = _.wrapCallback(callbackify(flushToMixpanel));
-	const epochStart = dayjs.unix(config.epochStart).utc();
-	const epochEnd = dayjs.unix(config.epochEnd).utc();
+	const epochStart = dayjs.unix(jobConfig.epochStart).utc();
+	const epochEnd = dayjs.unix(jobConfig.epochEnd).utc();
 
 	// @ts-ignore
 	const mpPipeline = _.pipeline(
-
+		
 		// * only JSON from stream
 		// @ts-ignore
 		_.filter((data) => {
-			config.recordsProcessed++;
+			jobConfig.recordsProcessed++;
 			if (data && JSON.stringify(data) !== '{}') {
 				return true;
 			}
 			else {
-				config.empty++;
+				jobConfig.empty++;
 				return false;
 			}
 		}),
@@ -59,7 +66,7 @@ function corePipeline(stream, config, toNodeStream = false) {
 		// * apply user defined transform
 		// @ts-ignore
 		_.map((data) => {
-			if (config.transformFunc) data = config.transformFunc(data);
+			if (jobConfig.transformFunc) data = jobConfig.transformFunc(data);
 			return data;
 		}),
 
@@ -70,7 +77,7 @@ function corePipeline(stream, config, toNodeStream = false) {
 		// * dedupe
 		// @ts-ignore
 		_.map((data) => {
-			if (config.dedupe) data = config.deduper(data);
+			if (jobConfig.dedupe) data = jobConfig.deduper(data);
 			return data;
 		}),
 
@@ -84,12 +91,12 @@ function corePipeline(stream, config, toNodeStream = false) {
 					return true;
 				}
 				else {
-					config.empty++;
+					jobConfig.empty++;
 					return false;
 				}
 			}
 			else {
-				config.empty++;
+				jobConfig.empty++;
 				return false;
 			}
 		}),
@@ -97,26 +104,26 @@ function corePipeline(stream, config, toNodeStream = false) {
 		// * helper transforms
 		// @ts-ignore
 		_.map((data) => {
-			if (Object.keys(config.aliases).length) data = config.applyAliases(data);
-			if (config.fixData) data = config.ezTransform(data);
-			if (config.removeNulls) data = config.nullRemover(data);
-			if (config.timeOffset) data = config.UTCoffset(data);
-			if (Object.keys(config.tags).length) data = config.addTags(data);
-			if (config.shouldWhiteBlackList) data = config.whiteAndBlackLister(data);
+			if (Object.keys(jobConfig.aliases).length) data = jobConfig.applyAliases(data);
+			if (jobConfig.fixData) data = jobConfig.ezTransform(data);
+			if (jobConfig.removeNulls) data = jobConfig.nullRemover(data);
+			if (jobConfig.timeOffset) data = jobConfig.UTCoffset(data);
+			if (Object.keys(jobConfig.tags).length) data = jobConfig.addTags(data);
+			if (jobConfig.shouldWhiteBlackList) data = jobConfig.whiteAndBlackLister(data);
 
 			//start/end epoch filtering
 			//todo: move this to it's own function
-			if (config.recordType === 'event') {
+			if (jobConfig.recordType === 'event') {
 				if (data?.properties?.time) {
 					let eventTime = data.properties.time;
 					if (eventTime.toString().length === 10) eventTime = eventTime * 1000;
 					eventTime = dayjs.utc(eventTime);
 					if (eventTime.isBefore(epochStart)) {
-						config.outOfBounds++;
+						jobConfig.outOfBounds++;
 						return null;
 					}
 					else if (eventTime.isAfter(epochEnd)) {
-						config.outOfBounds++;
+						jobConfig.outOfBounds++;
 						return null;
 					}
 				}
@@ -128,43 +135,43 @@ function corePipeline(stream, config, toNodeStream = false) {
 		// @ts-ignore
 		_.filter((data) => {
 			if (!data) {
-				config.empty++;
+				jobConfig.empty++;
 				return false;
 			}
 			const str = JSON.stringify(data);
 			if (str === '{}' || str === '[]' || str === 'null') {
-				config.empty++;
+				jobConfig.empty++;
 				return false;
 			}
-			config.bytesProcessed += Buffer.byteLength(str, 'utf-8');
+			jobConfig.bytesProcessed += Buffer.byteLength(str, 'utf-8');
 			return true;
 		}),
 
 		// * batch for # of items
 		// @ts-ignore
-		_.batch(config.recordsPerBatch),
+		_.batch(jobConfig.recordsPerBatch),
 
 		// * batch for req size
 		// @ts-ignore
-		_.consume(chunkForSize(config)),
+		_.consume(chunkForSize(jobConfig)),
 
 		// * send to mixpanel
 		// @ts-ignore
 		_.map((batch) => {
-			config.requests++;
-			config.batches++;
-			config.batchLengths.push(batch.length);
-			return flush(batch, config);
+			jobConfig.requests++;
+			jobConfig.batches++;
+			jobConfig.batchLengths.push(batch.length);
+			return flush(batch, jobConfig);
 		}),
 
 		// * concurrency
 		// @ts-ignore
-		_.mergeWithLimit(config.workers),
+		_.mergeWithLimit(jobConfig.workers),
 
 		// * verbose
 		// @ts-ignore
 		_.doto(() => {
-			if (config.verbose) counter(config.recordType, config.recordsProcessed, config.requests);
+			if (jobConfig.verbose) counter(jobConfig.recordType, jobConfig.recordsProcessed, jobConfig.requests);
 		}),
 
 		// * errors
@@ -187,8 +194,8 @@ function corePipeline(stream, config, toNodeStream = false) {
 
 
 /**
- * @param {import('../index.d.ts').Creds} creds - mixpanel project credentials
- * @param {import('../index.d.ts').Options} opts - import options
+ * @param {Creds} creds - mixpanel project credentials
+ * @param {Options} opts - import options
  * @param {function(): importJob | void} finish - end of pipelines
  * @returns a transform stream
  */
@@ -231,4 +238,4 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 module.exports = {
 	corePipeline,
 	pipeInterface
-}
+};

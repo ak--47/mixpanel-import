@@ -1,21 +1,30 @@
 const dayjs = require('dayjs');
 const dateFormat = `YYYY-MM-DD`;
+// @ts-ignore
 const u = require('ak-tools');
 const transforms = require('./transforms.js');
 
 
+/** @typedef {import('../index.js').Creds} Creds */
+/** @typedef {import('../index.js').Options} Options */
+
 /**
  * a singleton to hold state about the imported data
  * @example
- * const config = new importJob(creds, opts)
+ * const importJob = new Job(creds, opts)
  * @class 
- * @param {import('../index.js').Creds} creds - mixpanel project credentials
- * @param {import('../index.js').Options} opts - options for import
+ * @param {Creds} creds - mixpanel project credentials
+ * @param {Options} opts - options for import
  * @method summary summarize state of import
 */
-class importJob {
-	constructor(creds, opts) {
+class Job {
+	/**
+	 * @param  {Creds} creds
+	 * @param  {Options} [opts]
+	 */
+	constructor(creds, opts = {}) {
 		// ? credentials
+		if (!creds) throw new Error('no credentials provided!');
 		this.acct = creds.acct || ``; //service acct username
 		this.pass = creds.pass || ``; //service acct secret
 		this.project = creds.project || ``; //project id
@@ -59,7 +68,7 @@ class importJob {
 		this.maxRetries = opts.maxRetries || 10; // number of times to retry a batch
 		this.timeOffset = opts.timeOffset || 0; // utc hours offset
 		this.compressionLevel = opts.compressionLevel || 6; // gzip compression level
-		this.workers = Number.isInteger(opts.workers) ? opts.workers : 10; // number of workers to use
+		this.workers = opts.workers || 10; // number of workers to use
 		this.highWater = (this.workers * this.recordsPerBatch) || 2000;
 		this.epochStart = opts.epochStart || 0; // start date for epoch
 		this.epochEnd = opts.epochEnd || 9991427224; // end date for epoch; i will die many years before this is a problem
@@ -80,7 +89,7 @@ class importJob {
 		this.abridged = u.isNil(opts.abridged) ? false : opts.abridged; //don't include success responses
 		this.forceStream = u.isNil(opts.forceStream) ? true : opts.forceStream; //don't ever buffer files into memory
 		this.dedupe = u.isNil(opts.dedupe) ? false : opts.dedupe; //remove duplicate records
-		this.shouldWhiteBlackList = false
+		this.shouldWhiteBlackList = false;
 
 		// ? tagging options
 		this.tags = parse(opts.tags) || {}; //tags for the import		
@@ -118,9 +127,9 @@ class importJob {
 			propValWhitelist: this.propValWhitelist,
 			propValBlacklist: this.propValBlacklist
 		};
-		if (Object.values(whiteOrBlacklist).some(array => array.length >= 1)) { 
+		if (Object.values(whiteOrBlacklist).some(array => array.length >= 1)) {
 			this.whiteAndBlackLister = transforms.whiteAndBlackLister(this, whiteOrBlacklist);
-			this.shouldWhiteBlackList = true
+			this.shouldWhiteBlackList = true;
 		}
 
 		// ? counters
@@ -143,6 +152,7 @@ class importJob {
 		this.timer = u.time('etl');
 
 		// ? requests
+		/** @type {'POST' | 'GET' | 'PUT' | 'PATCH'} */
 		this.reqMethod = "POST";
 		this.contentType = "application/json";
 		this.encoding = "";
@@ -151,9 +161,13 @@ class importJob {
 
 
 		// ? allow plurals
+		// @ts-ignore
 		if (this.recordType === 'events') this.recordType === 'event';
+		// @ts-ignore
 		if (this.recordType === 'users') this.recordType === 'user';
+		// @ts-ignore
 		if (this.recordType === 'groups') this.recordType === 'group';
+		// @ts-ignore
 		if (this.recordType === 'tables') this.recordType === 'table';
 
 		// ? headers for lookup tables
@@ -215,9 +229,11 @@ class importJob {
 		const { acct, pass, project, secret, token, lookupTableId, groupKey, auth } = this;
 		return { acct, pass, project, secret, token, lookupTableId, groupKey, auth };
 	}
+	// @ts-ignore
 	set batchSize(chunkSize) {
 		this.recordsPerBatch = chunkSize;
 	}
+	// @ts-ignore
 	set transform(fn) {
 		this.transformFunc = fn;
 	}
@@ -276,18 +292,18 @@ class importJob {
 		const summary = {
 			recordType: this.recordType,
 
-			total: this.recordsProcessed,
-			success: this.success,
-			failed: this.failed,
-			empty: this.empty,
-			outOfBounds: this.outOfBounds,
-			duplicates: this.duplicates,
-			whiteListSkipped: this.whiteListSkipped,
-			blackListSkipped: this.blackListSkipped,
+			total: this.recordsProcessed || 0,
+			success: this.success || 0,
+			failed: this.failed || 0,
+			empty: this.empty || 0,
+			outOfBounds: this.outOfBounds || 0,
+			duplicates: this.duplicates || 0,
+			whiteListSkipped: this.whiteListSkipped || 0,
+			blackListSkipped: this.blackListSkipped || 0,
 
 			startTime: this.startTime,
 			endTime: new Date().toISOString(),
-			duration: delta,
+			duration: delta || 0,
 			human: human,
 			durationHuman: human,
 			bytes: this.bytesProcessed,
@@ -311,14 +327,17 @@ class importJob {
 			responses: []
 		};
 
-		summary.eps = Math.floor(summary.total / summary.duration * 1000);
-		summary.rps = u.round(summary.requests / summary.duration * 1000, 3);
-		summary.mbps = u.round((summary.bytes / 1e+6) / summary.duration * 1000, 3);
-		// 2GB uncompressed per min (rolling)
-		// ? https://developer.mixpanel.com/reference/import-events#rate-limits
-		const quota = 2e9; //2GB in bytes
-		const gbPerMin = (summary.bytes / quota) / (summary.duration / 60000);
-		summary.percentQuota = u.round(gbPerMin, 5) * 100;
+		// stats
+		if (summary.total && summary.duration && summary.requests && summary.bytes) {
+			summary.eps = Math.floor(summary.total / summary.duration * 1000);
+			summary.rps = u.round(summary.requests / summary.duration * 1000, 3);
+			summary.mbps = u.round((summary.bytes / 1e+6) / summary.duration * 1000, 3);
+			// 2GB uncompressed per min (rolling)
+			// ? https://developer.mixpanel.com/reference/import-events#rate-limits
+			const quota = 2e9; //2GB in bytes
+			const gbPerMin = (summary.bytes / quota) / (summary.duration / 60000);
+			summary.percentQuota = u.round(gbPerMin, 5) * 100;
+		}
 
 		summary.errors = this.errors;
 
@@ -342,15 +361,18 @@ class importJob {
 
 /** 
  * helper to parse values passed in from cli
+ * @param {string | string[] | import('../index').genericObj | void} val - value to parse
+ * @param {any} [defaultVal] value if it can't be parsed
+ * @return {Object<length, number>}
  */
-function parse(val) {
+function parse(val, defaultVal = []) {
 	if (typeof val === 'string') {
 		try {
 			val = JSON.parse(val);
 		}
 		catch (e) {
 			if (this.verbose) console.log(`error parsing tags: ${val}\ntags must be valid JSON`);
-			val = {}; //bad json
+			val = defaultVal; //bad json
 		}
 	}
 	return val;
@@ -360,4 +382,4 @@ function parse(val) {
 // a noop function
 function noop(a) { return a; }
 
-module.exports = importJob;
+module.exports = Job;

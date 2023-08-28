@@ -1,15 +1,26 @@
-// const md5 = require('md5');
 const murmurhash = require("murmurhash");
 const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc");
 dayjs.extend(utc);
 const u = require("ak-tools");
 const stringify = require("json-stable-stringify");
-
 const validOperations = ["$set", "$set_once", "$add", "$union", "$append", "$remove", "$unset"];
 
-function ezTransforms(config) {
-	if (config.recordType === `event`) {
+/** @typedef {import('./job')} JobConfig */
+/** @typedef {import('../index').Data} Data */
+/** @typedef {import('../index').Options} Options */
+/** @typedef {import('../index').Creds} Creds */
+/** @typedef {import('../index').ImportResults} ImportResults */
+
+
+// a noop function
+function noop(a) { return a; }
+
+/**
+ * @param  {JobConfig} jobConfig
+ */
+function ezTransforms(jobConfig) {
+	if (jobConfig.recordType === `event`) {
 		return function FixShapeAndAddInsertIfAbsentAndFixTime(record) {
 			//wrong shape
 			if (!record.properties) {
@@ -41,9 +52,8 @@ function ezTransforms(config) {
 	}
 
 	//for user imports, make sure every record has a $token and the right shape
-	if (config.recordType === `user`) {
+	if (jobConfig.recordType === `user`) {
 		return function addUserTokenIfAbsent(user) {
-			//todo make it possible to take existing profiles and send them...
 
 			//wrong shape; fix it
 			if (!validOperations.some(op => Object.keys(user).includes(op))) {
@@ -61,14 +71,14 @@ function ezTransforms(config) {
 			}
 
 			//catch missing token
-			if (!user.$token && config.token) user.$token = config.token;
+			if (!user.$token && jobConfig.token) user.$token = jobConfig.token;
 
 			return user;
 		};
 	}
 
 	//for group imports, make sure every record has a $token and the right shape
-	if (config.recordType === `group`) {
+	if (jobConfig.recordType === `group`) {
 		return function addGroupKeysIfAbsent(group) {
 			//wrong shape; fix it
 			if (!(group.$set || group.$set_once || group.$add || group.$union || group.$append || group.$remove || group.$unset)) {
@@ -82,21 +92,23 @@ function ezTransforms(config) {
 			}
 
 			//catch missing token
-			if (!group.$token && config.token) group.$token = config.token;
+			if (!group.$token && jobConfig.token) group.$token = jobConfig.token;
 
 			//catch group key
-			if (!group.$group_key && config.groupKey) group.$group_key = config.groupKey;
+			if (!group.$group_key && jobConfig.groupKey) group.$group_key = jobConfig.groupKey;
 
 			return group;
 		};
 	}
+
+	return noop;
 }
 
 // side-effects; for efficiency
 // removes: null, '', undefined, {}, []
 function removeNulls(valuesToRemove = [null, "", undefined]) {
 	return function (record) {
-		const keysToEnum = ["properties", "$set", "$set_once"];
+		const keysToEnum = ["properties", ...validOperations];
 		for (const recordKey of keysToEnum) {
 			for (const badVal of valuesToRemove) {
 				if (record?.[recordKey]) {
@@ -123,9 +135,12 @@ function removeNulls(valuesToRemove = [null, "", undefined]) {
 }
 
 //add tags to every record
-function addTags(config) {
-	const type = config.recordType;
-	const tags = config.tags || {};
+/**
+ * @param  {JobConfig} jobConfig
+ */
+function addTags(jobConfig) {
+	const type = jobConfig.recordType;
+	const tags = jobConfig.tags || {};
 	return function (record) {
 		if (!Object.keys(tags).length) return record;
 		if (type === "event") {
@@ -145,9 +160,12 @@ function addTags(config) {
 }
 
 // rename property keys
-function applyAliases(config) {
-	const type = config.recordType;
-	const aliases = config.aliases || {};
+/**
+ * @param  {JobConfig} jobConfig
+ */
+function applyAliases(jobConfig) {
+	const type = jobConfig.recordType;
+	const aliases = jobConfig.aliases || {};
 	return function (record) {
 		if (!Object.keys(aliases).length) return record;
 		if (type === "event") {
@@ -174,7 +192,11 @@ function applyAliases(config) {
 	};
 }
 
-//offset the time of events by an integer number of hours
+
+/**
+ * offset the time of events by an integer number of hours
+ * @param  {number} timeOffset=0
+ */
 function UTCoffset(timeOffset = 0) {
 	return function (record) {
 		if (record?.properties?.time) {
@@ -189,14 +211,15 @@ function UTCoffset(timeOffset = 0) {
 /**
  * this will dedupe records based on their (murmur v3) hash
  * records with the same hash will be filtered out
+ * @param  {JobConfig} jobConfig
  */
-function dedupeRecords(config) {
-	const hashTable = config.hashTable;
+function dedupeRecords(jobConfig) {
+	const hashTable = jobConfig.hashTable;
 	return function (record) {
 		//JSON stable stringification
 		const hash = murmurhash.v3(stringify(record));
 		if (hashTable.has(hash)) {
-			config.duplicates++;
+			jobConfig.duplicates++;
 			return {};
 		} else {
 			hashTable.add(hash);
@@ -207,10 +230,10 @@ function dedupeRecords(config) {
 
 /**
  * this function is used to whitelist or blacklist events, prop keys, or prop values
- * @param  {any} config
- * @param  {import('../index.js').WhiteAndBlackListParams} params
+ * @param  {JobConfig} jobConfig
+ * @param  {import('../index').WhiteAndBlackListParams} params
  */
-function whiteAndBlackLister(config, params) {
+function whiteAndBlackLister(jobConfig, params) {
 	const {
 		eventWhitelist = [],
 		eventBlacklist = [],
@@ -224,7 +247,7 @@ function whiteAndBlackLister(config, params) {
 		//check for event whitelist
 		if (eventWhitelist.length) {
 			if (!eventWhitelist.includes(record?.event)) {
-				config.whiteListSkipped++;
+				jobConfig.whiteListSkipped++;
 				return {};
 			}
 		}
@@ -232,7 +255,7 @@ function whiteAndBlackLister(config, params) {
 		//check for event blacklist
 		if (eventBlacklist.length) {
 			if (eventBlacklist.includes(record?.event)) {
-				config.blackListSkipped++;
+				jobConfig.blackListSkipped++;
 				return {};
 			}
 		}
@@ -246,7 +269,7 @@ function whiteAndBlackLister(config, params) {
 				}
 			}
 			if (!pass) {
-				config.whiteListSkipped++;
+				jobConfig.whiteListSkipped++;
 				return {};
 			}
 		}
@@ -256,7 +279,7 @@ function whiteAndBlackLister(config, params) {
 			let pass = true;
 			for (const key in record?.properties) {
 				if (propKeyBlacklist.includes(key)) {
-					config.blackListSkipped++;
+					jobConfig.blackListSkipped++;
 					pass = false;
 				}
 			}
@@ -273,7 +296,7 @@ function whiteAndBlackLister(config, params) {
 				}
 			}
 			if (!pass) {
-				config.whiteListSkipped++;
+				jobConfig.whiteListSkipped++;
 				return {};
 			}
 		}
@@ -283,7 +306,7 @@ function whiteAndBlackLister(config, params) {
 			let pass = true;
 			for (const key in record?.properties) {
 				if (propValBlacklist.includes(record.properties[key])) {
-					config.blackListSkipped++;
+					jobConfig.blackListSkipped++;
 					pass = false;
 				}
 			}

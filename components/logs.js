@@ -1,11 +1,19 @@
 const u = require('ak-tools');
 
-function logger(config) {
+/** @typedef {import('./job')} JobConfig */
+
+/**
+ * @param  {JobConfig} jobConfig
+ */
+function logger(jobConfig) {
 	return (message) => {
-		if (config.verbose) console.log(message);
+		if (jobConfig.verbose) console.log(message);
 	};
 }
 
+/**
+ * @param  {Object} data
+ */
 async function writeLogs(data) {
 	const dateTime = new Date().toISOString().split('.')[0].replace('T', '--').replace(/:/g, ".");
 	const fileDir = u.mkdir('./logs');

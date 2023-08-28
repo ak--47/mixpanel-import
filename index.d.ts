@@ -19,7 +19,7 @@ declare namespace main {
     /**
      * valid records types which can be imported
      */
-    type RecordType = "event" | "user" | "group" | "table" | "export" | "peopleExport";
+    type RecordType = "event" | "user" | "group" | "table" | "export" | "peopleExport" | "events" | "users" | "groups" | "tables";
     /**
      * - a path to a file/folder, objects in memory, or a readable object/file stream that contains data you wish to import
      */
@@ -56,6 +56,10 @@ declare namespace main {
          * - mixpanel project secret
          */
         secret?: string;
+		/**
+		 * - a bearer token (https://mixpanel.com/oauth/access_token) which be used for exports 
+		 */
+		bearer?: string;
     };
 
     type WhiteAndBlackListParams = {
@@ -66,6 +70,9 @@ declare namespace main {
         propValWhitelist: string[];
         propValBlacklist: string[];
     };
+	
+	type Regions = "US" | "EU";
+	type SupportedFormats = "json" | "jsonl" | "csv";
 
     /**
      * options for the import job
@@ -81,13 +88,13 @@ declare namespace main {
          * - US or EU (data residency)
          * - default `US`
          */
-        region?: "US" | "EU";
+        region?: Regions;
 
         /**
          * - format of underlying data stream; json or jsonl
          * - default `jsonl`
          */
-        streamFormat?: "json" | "jsonl" | "csv";
+        streamFormat?: SupportedFormats;
         /**
          * - use gzip compression (events only)
          * - default `true`
@@ -225,6 +232,14 @@ declare namespace main {
          * don't import events with property values on the blacklist
          */
         propValBlacklist?: string[];
+		/**
+		 * the start date of the export (events only)
+		 */
+		start?: string;
+		/**
+		 * the end date of the export (events only)
+		 */
+		end?: string;
     };
 
     /**
