@@ -42,6 +42,7 @@ const dayjs = require('dayjs');
 const badData = `./testData/bad_data.jsonl`;
 const eventsCSV = `./testData/eventAsTable.csv`;
 const dupePeople = `./testData/pplWithDupes.ndjson`;
+const heapParseError = `./testData/heap-parse-error.jsonl`;
 
 const opts = {
 	recordType: `event`,
@@ -492,7 +493,8 @@ describe('data fixes', () => {
 		const job = await mp({}, badData, { ...opts, recordType: 'user', fixData: true, transformFunc: badDataTrans });
 		expect(job.success).toBe(5077);
 		expect(job.failed).toBe(0);
-		expect(job.total).toBe(5077);
+		expect(job.total).toBe(5080);
+		expect(job.empty).toBe(3);
 		expect(job.duration).toBeGreaterThan(0);
 		expect(job.requests).toBe(3);
 
@@ -628,6 +630,30 @@ describe('data fixes', () => {
 		expect(job.empty).toBe(2240);
 		expect(job.duplicates).toBe(2240);
 	}, longTimeout);
+
+
+	test('fix unparseable', async () => {
+
+		function parseErrorHandler(err, record) {
+			let attemptedParse;
+			try {
+				attemptedParse = JSON.parse(record.replace(/\\\\/g, '\\'));
+			}
+			catch (e) {
+				attemptedParse = {};
+			}
+			return attemptedParse;
+		}
+		const job = await mp({}, heapParseError, { ...opts, recordType: 'user', parseErrorHandler });
+		expect(job.success).toBe(3);
+		expect(job.failed).toBe(0);
+		expect(job.total).toBe(8);
+		expect(job.outOfBounds).toBe(0);
+		expect(job.duration).toBeGreaterThan(0);
+		expect(job.requests).toBe(1);
+		expect(job.empty).toBe(5);
+		expect(job.duplicates).toBe(0);
+	});
 });
 
 describe('white + blacklist', () => {

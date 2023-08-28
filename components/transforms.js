@@ -57,9 +57,16 @@ function ezTransforms(jobConfig) {
 
 			//wrong shape; fix it
 			if (!validOperations.some(op => Object.keys(user).includes(op))) {
+				let uuidKey;
+				if (user.$distinct_id) uuidKey = "$distinct_id";
+				else if (user.distinct_id) uuidKey = "distinct_id";
+				else {
+					if (jobConfig.verbose) console.log(`user record has no uuid:\n${JSON.stringify(user)}\n skipping record`);
+					return {};
+				}
 				user = { $set: { ...user } };
-				user.$distinct_id = user.$set.$distinct_id;
-				delete user.$set.$distinct_id;
+				user.$distinct_id = user.$set[uuidKey];
+				delete user.$set[uuidKey];
 				delete user.$set.$token;
 
 				//deal with mp export shape
@@ -82,11 +89,18 @@ function ezTransforms(jobConfig) {
 		return function addGroupKeysIfAbsent(group) {
 			//wrong shape; fix it
 			if (!(group.$set || group.$set_once || group.$add || group.$union || group.$append || group.$remove || group.$unset)) {
+				let uuidKey;
+				if (group.$distinct_id) uuidKey = "$distinct_id";
+				else if (group.distinct_id) uuidKey = "distinct_id";
+				else if (group.$group_id) uuidKey = "$group_id";
+				else if (group.group_id) uuidKey = "group_id";
+				else {
+					if (jobConfig.verbose) console.log(`group record has no uuid:\n${JSON.stringify(group)}\n skipping record`);
+					return {};
+				}
 				group = { $set: { ...group } };
-				if (group.$set?.$group_key) group.$group_key = group.$set.$group_key;
-				if (group.$set?.$distinct_id) group.$group_id = group.$set.$distinct_id;
-				if (group.$set?.$group_id) group.$group_id = group.$set.$group_id;
-				delete group.$set.$distinct_id;
+				group.$group_id = group.$set[uuidKey];
+				delete group.$set[uuidKey];
 				delete group.$set.$group_id;
 				delete group.$set.$token;
 			}
@@ -317,6 +331,34 @@ function whiteAndBlackLister(jobConfig, params) {
 	};
 }
 
+
+/**
+ * this function is used to whitelist or blacklist events, prop keys, or prop values
+ * @param  {JobConfig} jobConfig
+ */
+function epochFilter(jobConfig) {
+	const epochStart = dayjs.unix(jobConfig.epochStart).utc();
+	const epochEnd = dayjs.unix(jobConfig.epochEnd).utc();
+	return function filterEventsOnTime(record) {
+		if (jobConfig.recordType === 'event') {
+			if (record?.properties?.time) {
+				let eventTime = record.properties.time;
+				if (eventTime.toString().length === 10) eventTime = eventTime * 1000;
+				eventTime = dayjs.utc(eventTime);
+				if (eventTime.isBefore(epochStart)) {
+					jobConfig.outOfBounds++;
+					return null;
+				}
+				else if (eventTime.isAfter(epochEnd)) {
+					jobConfig.outOfBounds++;
+					return null;
+				}
+			}
+		}
+		return record;
+	};
+}
+
 module.exports = {
 	ezTransforms,
 	removeNulls,
@@ -324,5 +366,6 @@ module.exports = {
 	addTags,
 	applyAliases,
 	dedupeRecords,
-	whiteAndBlackLister
+	whiteAndBlackLister,
+	epochFilter
 };

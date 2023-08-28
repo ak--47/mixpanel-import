@@ -73,13 +73,13 @@ async function determineDataType(data, jobConfig) {
 				//check for jsonl first... many jsonl files will have the same extension as json
 				if (jobConfig.streamFormat === 'jsonl' || jobConfig.lineByLineFileExt.includes(path.extname(data))) {
 					// !! todo... make DRY
-					if (fileOrDir.size < os.freemem() * .50 && !jobConfig.forceStream) {						
+					if (fileOrDir.size < os.freemem() * .50 && !jobConfig.forceStream) {
 						const file = /** @type {string} */ (await u.load(path.resolve(data)));
 						const parsed = file.trim().split('\n').map(line => JSON.parse(line));
 						return stream.Readable.from(parsed, { objectMode: true, highWaterMark: jobConfig.highWater });
 					}
 
-					return itemStream(path.resolve(data), "jsonl", jobConfig.highWater);
+					return itemStream(path.resolve(data), "jsonl", jobConfig);
 				}
 
 				if (jobConfig.streamFormat === 'json' || jobConfig.objectModeFileExt.includes(path.extname(data))) {
@@ -90,7 +90,7 @@ async function determineDataType(data, jobConfig) {
 					}
 
 					//otherwise, stream it
-					return itemStream(path.resolve(data), "json", jobConfig.highWater);
+					return itemStream(path.resolve(data), "json", jobConfig);
 				}
 
 				//csv case
@@ -133,10 +133,10 @@ async function determineDataType(data, jobConfig) {
 				const enumDir = await u.ls(path.resolve(data));
 				const files = enumDir.filter(filePath => jobConfig.supportedFileExt.includes(path.extname(filePath)));
 				if (jobConfig.streamFormat === 'jsonl' || jobConfig.lineByLineFileExt.includes(path.extname(files[0]))) {
-					return itemStream(files, "jsonl", jobConfig.highWater);
+					return itemStream(files, "jsonl", jobConfig);
 				}
 				if (jobConfig.streamFormat === 'json' || jobConfig.objectModeFileExt.includes(path.extname(files[0]))) {
-					return itemStream(files, "json", jobConfig.highWater);
+					return itemStream(files, "json", jobConfig);
 				}
 			}
 		}
@@ -209,14 +209,14 @@ function existingStreamInterface(stream) {
 /**
  * @param  {string} filePath
  * @param  {import('../index').SupportedFormats} type="jsonl"
- * @param  {number} highWater
+ * @param {JobConfig} jobConfig
  */
-function itemStream(filePath, type = "jsonl", highWater) {
+function itemStream(filePath, type = "jsonl", jobConfig) {
 	let stream;
 	let parsedStream;
 	const parser = type === "jsonl" ? JsonlParser.parser : StreamArray.withParser;
 	const streamOpts = {
-		highWaterMark: highWater,
+		highWaterMark: jobConfig.highWater,
 		autoClose: true,
 		emitClose: true
 
@@ -226,7 +226,7 @@ function itemStream(filePath, type = "jsonl", highWater) {
 
 		if (type === "jsonl") {
 			stream = new MultiStream(filePath.map((file) => { return fs.createReadStream(file, streamOpts); }), streamOpts);
-			parsedStream = stream.pipe(parser({ includeUndecided: false, errorIndicator: undefined, ...streamOpts })).map(token => token.value);
+			parsedStream = stream.pipe(parser({ includeUndecided: false, errorIndicator: jobConfig.parseErrorHandler, ...streamOpts })).map(token => token.value);
 			return parsedStream;
 
 		}
@@ -240,7 +240,7 @@ function itemStream(filePath, type = "jsonl", highWater) {
 	//parsing files
 	else {
 		stream = fs.createReadStream(filePath, streamOpts);
-		parsedStream = stream.pipe(parser({ includeUndecided: false, errorIndicator: undefined, ...streamOpts })).map(token => token.value);
+		parsedStream = stream.pipe(parser({ includeUndecided: false, errorIndicator: jobConfig.parseErrorHandler, ...streamOpts })).map(token => token.value);
 	}
 
 	return parsedStream;

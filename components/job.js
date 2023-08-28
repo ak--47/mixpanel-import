@@ -90,6 +90,9 @@ class Job {
 		this.forceStream = u.isNil(opts.forceStream) ? true : opts.forceStream; //don't ever buffer files into memory
 		this.dedupe = u.isNil(opts.dedupe) ? false : opts.dedupe; //remove duplicate records
 		this.shouldWhiteBlackList = false;
+		this.shouldEpochFilter = false;
+		this.shouldAddTags = false;
+		this.shouldApplyAliases = false;
 
 		// ? tagging options
 		this.tags = parse(opts.tags) || {}; //tags for the import		
@@ -112,13 +115,22 @@ class Job {
 		this.applyAliases = noop;
 		this.deduper = noop;
 		this.whiteAndBlackLister = noop;
+		this.epochFilter = noop;
+		this.parseErrorHandler = opts.parseErrorHandler || returnEmpty;
 
+		// ? transform conditions
 		if (this.fixData) this.ezTransform = transforms.ezTransforms(this);
 		if (this.removeNulls) this.nullRemover = transforms.removeNulls();
 		if (this.timeOffset) this.UTCoffset = transforms.UTCoffset(this.timeOffset);
 		if (this.dedupe) this.deduper = transforms.dedupeRecords(this);
-		if (Object.keys(this.tags).length > 0) this.addTags = transforms.addTags(this);
-		if (Object.keys(this.aliases).length > 0) this.applyAliases = transforms.applyAliases(this);
+		if (Object.keys(this.tags).length > 0) {
+			this.shouldAddTags = true;
+			this.addTags = transforms.addTags(this); 
+		} 
+		if (Object.keys(this.aliases).length > 0) { 
+			this.shouldApplyAliases = true;
+			this.applyAliases = transforms.applyAliases(this);			
+		}
 		const whiteOrBlacklist = {
 			eventWhitelist: this.eventWhitelist,
 			eventBlacklist: this.eventBlacklist,
@@ -131,6 +143,12 @@ class Job {
 			this.whiteAndBlackLister = transforms.whiteAndBlackLister(this, whiteOrBlacklist);
 			this.shouldWhiteBlackList = true;
 		}
+		if (opts.epochStart || opts.epochEnd) { 
+			this.shouldEpochFilter = true;
+			this.epochFilter = transforms.epochFilter(this);
+		}
+
+		
 
 		// ? counters
 		this.recordsProcessed = 0;
@@ -381,5 +399,10 @@ function parse(val, defaultVal = []) {
 
 // a noop function
 function noop(a) { return a; }
+
+// eslint-disable-next-line no-unused-vars
+function returnEmpty(_err, _record, _reviver) { 
+	return {}; 
+}
 
 module.exports = Job;

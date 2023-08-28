@@ -56,10 +56,10 @@ declare namespace main {
          * - mixpanel project secret
          */
         secret?: string;
-		/**
-		 * - a bearer token (https://mixpanel.com/oauth/access_token) which be used for exports 
-		 */
-		bearer?: string;
+        /**
+         * - a bearer token (https://mixpanel.com/oauth/access_token) which be used for exports
+         */
+        bearer?: string;
     };
 
     type WhiteAndBlackListParams = {
@@ -70,9 +70,9 @@ declare namespace main {
         propValWhitelist: string[];
         propValBlacklist: string[];
     };
-	
-	type Regions = "US" | "EU";
-	type SupportedFormats = "json" | "jsonl" | "csv";
+
+    type Regions = "US" | "EU";
+    type SupportedFormats = "json" | "jsonl" | "csv";
 
     /**
      * options for the import job
@@ -182,6 +182,13 @@ declare namespace main {
          */
         transformFunc?: transFunc;
         /**
+         * - a transform function to handle parsing errors
+         * - whatever is returned will be forwarded down the pipeline
+         * - the signature of this function is `(err, record, reviver) => {}`
+         * - default is  `(a) => { return {} }}`
+         */
+        parseErrorHandler?: transFunc;
+        /**
          * - a set of tags which will be added to all records
          * - default `{}`
          */
@@ -232,14 +239,14 @@ declare namespace main {
          * don't import events with property values on the blacklist
          */
         propValBlacklist?: string[];
-		/**
-		 * the start date of the export (events only)
-		 */
-		start?: string;
-		/**
-		 * the end date of the export (events only)
-		 */
-		end?: string;
+        /**
+         * the start date of the export (events only)
+         */
+        start?: string;
+        /**
+         * the end date of the export (events only)
+         */
+        end?: string;
     };
 
     /**
@@ -248,7 +255,13 @@ declare namespace main {
      * - if it returns `[{},{},{}]` the record will be split into multiple records
      */
     type transFunc = (data: any) => mpEvent | mpUser | mpGroup | Object[] | Object;
-
+    /**
+     * - a transform function to handle parsing errors
+     * - whatever is returned will be forwarded down the pipeline
+     * - the signature of this function is `(err, record, reviver) => {}`
+     * - default is  `(a) => { return {} }}`
+     */
+    type ErrorHandler = (err: Error, record: Object, reviver: any) => any;
     /**
      * a summary of the import
      */

@@ -2,14 +2,13 @@
 
 ## 🤨 wat.
 
-create data streams to mixpanel... _quickly_
-
+stream data to mixpanel... _quickly_
 
 ![stream events, users, and groups into mixpanel](https://aktunes.neocities.org/mp-import.gif)
 
-`mixpanel-import` implements Mixpanel's [`/import`](https://developer.mixpanel.com/reference/events#import-events), [`/engage`](https://developer.mixpanel.com/reference/profile-set), [`/groups`](https://developer.mixpanel.com/reference/group-set-property), and [`/lookup`](https://developer.mixpanel.com/reference/replace-lookup-table) APIs with [best practices](https://developer.mixpanel.com/reference/import-events#rate-limits), providing a clean, configurable interface to stream JSON (or NDJSON) files compliant with Mixpanel's [data model](https://developer.mixpanel.com/docs/data-structure-deep-dive).
+`mixpanel-import` implements Mixpanel's [`/import`](https://developer.mixpanel.com/reference/events#import-events), [`/engage`](https://developer.mixpanel.com/reference/profile-set), [`/groups`](https://developer.mixpanel.com/reference/group-set-property), and [`/lookup`](https://developer.mixpanel.com/reference/replace-lookup-table) APIs with [best practices](https://developer.mixpanel.com/reference/import-events#rate-limits), providing a clean, configurable interface to stream JSON, NDJSON, or CSV files compliant with Mixpanel's [data model](https://developer.mixpanel.com/docs/data-structure-deep-dive) through Mixpanel's ingestion pipeline.
 
-by implementing all interfaces as [streams in node.js](https://nodejs.org/api/stream.html), high-throughput backfills are possible with no intermediate storage and a low memory footprint.
+by implementing interfaces as [streams in node.js](https://nodejs.org/api/stream.html), high-throughput backfills are possible with no intermediate storage and a low memory footprint.
 
 **note:** if you're trying to add real-time mixpanel tracking to a node.js web application - this module is **NOT** what you want; you want **[mixpanel-node](https://github.com/mixpanel/mixpanel-node)** the official node.js SDK.
 
@@ -17,11 +16,14 @@ by implementing all interfaces as [streams in node.js](https://nodejs.org/api/st
 
 this module can be used in _two ways_:
 
-- **as a [CLI](#cli)**, standalone script via: 
+-   **as a [CLI](#cli)**, standalone script via:
+
 ```bash
 npx mixpanel-import file --options
 ```
-- **as a [module](#mod)** in code via 
+
+-   **as a [module](#mod)** in code via
+
 ```javascript
 //for esm:
 import mpStream from 'mixpanel-import'
@@ -59,7 +61,7 @@ the CLI will write response logs to a `./logs` directory by default. you can spe
 
 <div id="mod"></div>
 
-### 🔌 module usage 
+### 🔌 module usage
 
 install `mixpanel-import` as a dependency in your project
 
@@ -74,7 +76,7 @@ const mpStream = require("mixpanel-import");
 const importedData = await mpStream(credentials, data, options);
 
 console.log(importedData);
-/* 
+/*
 
 {
 	success: 5003,
@@ -85,9 +87,9 @@ console.log(importedData);
 	eps: 5000,
 	recordType: "event",
 	duration: 1.299,
-	retries: 0,	
+	retries: 0,
 	responses: [ ... ],
-	errors: [ ... ]    
+	errors: [ ... ]
 }
 
 */
@@ -187,28 +189,28 @@ the `data` param represents the data you wish to import; this might be [events](
 
 the value of data can be:
 
-- **a path to a _file_**, which contains records as `.json`, `.jsonl`, `.ndjson`, or `.txt`
+-   **a path to a _file_**, which contains records as `.json`, `.jsonl`, `.ndjson`, or `.txt`
 
 ```javascript
 const data = `./myEventsToImport.json`;
 const importedData = await mpStream(creds, data, options);
 ```
 
-- **a path to a _directory_**, which contains files that have records as `.json`, `.jsonl`, `.ndjson`, or `.txt`
+-   **a path to a _directory_**, which contains files that have records as `.json`, `.jsonl`, `.ndjson`, or `.txt`
 
 ```javascript
 const data = `./myEventsToImport/`; //has json files
 const importedData = await mpStream(creds, data, options);
 ```
 
-- **an array of objects** (records), in memory
+-   **an array of objects** (records), in memory
 
 ```javascript
 const data = [{event: "foo"}, {event: "bar"}, {event: "baz"}]
 const importedData = await mpStream(creds, data, options);
 ```
 
-- **a stringified array of objects**, in memory
+-   **a stringified array of objects**, in memory
 
 ```javascript
 const records = [{event: "foo"}, {event: "bar"}, {event: "baz"}]
@@ -216,7 +218,7 @@ const data = JSON.stringify(data);
 const importedData = await mpStream(creds, data, options);
 ```
 
-- **a JSON (or JSONL) readable file stream**
+-   **a JSON (or JSONL) readable file stream**
 
 ```javascript
 const myStream = fs.createReadStream("./myData/lines.json");
@@ -225,7 +227,7 @@ const imported = await mpStream(creds, myStream, { streamFormat: `json` });
 
 note: please specify `streamFormat` as `json` or `jsonl` in the [options](#options)
 
-- **an "object mode" readable stream**:
+-   **an "object mode" readable stream**:
 
 ```javascript
 const { createMpStream } = require('mixpanel-import');
@@ -248,9 +250,9 @@ you will use the **[`options`](#opts)** (below) to specify what type of records 
 
 ### 🎛 options
 
-`options` is an object that allows you to configure the behavior of this module. you can specify options as the third argument in [module mode](#mod) or as flags in [CLI mode](#cliOpt).
+`options` is an object that allows you to configure the behavior of this module. there are LOTS of options for different types of import usecases. you can specify options as the third argument in [module mode](#mod) or as flags in [CLI mode](#cliOpt).
 
-Below, the default values are given, but you can override them with your own values:
+
 
  <div id="modOpt"></div>
 
@@ -260,25 +262,40 @@ all options are... optional... for a full list of what these do, see [the type d
 
 ```typescript
 export type Options = {
-    recordType?: RecordType;
-    region?: "US" | "EU";
-    streamFormat?: "json" | "jsonl";
-    compress?: boolean;
-    strict?: boolean;
-    logs?: boolean;
-    verbose?: boolean;
-    fixData?: boolean;
-    removeNulls?: boolean;
-    abridged?: boolean;
-    forceStream?: boolean;
-    streamSize?: number;
-    timeOffset?: number;
-    recordsPerBatch?: number;    
-    bytesPerBatch?: number;   
-    maxRetries?: number;  
-    workers?: number;
-    where?: string;    
-    transformFunc?: transFunc; // called on every record
+	recordType?: RecordType;
+	region?: Regions;
+	streamFormat?: SupportedFormats;
+	compress?: boolean;
+	compressionLevel?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+	strict?: boolean;
+	logs?: boolean;
+	verbose?: boolean;
+	fixData?: boolean;
+	removeNulls?: boolean;
+	abridged?: boolean;
+	forceStream?: boolean;
+	streamSize?: number;
+	timeOffset?: number;
+	recordsPerBatch?: number;
+	bytesPerBatch?: number;
+	maxRetries?: number;
+	workers?: number;
+	where?: string;
+	transformFunc?: transFunc;
+	parseErrorHandler?: transFunc;
+	tags?: genericObj;
+	aliases?: genericObj;
+	epochStart?: number;
+	epochEnd?: number;
+	dedupe?: boolean;
+	eventWhitelist?: string[];
+	eventBlacklist?: string[];
+	propKeyWhitelist?: string[];
+	propKeyBlacklist?: string[];
+	propValWhitelist?: string[];
+	propValBlacklist?: string[];
+	start?: string;
+	end?: string;
 };
 ```
 
@@ -317,7 +334,7 @@ the `transformFunc` is useful because it can pre-process records in the pipeline
 
 here are some examples:
 
-- putting a `token` on every `user` record:
+-   putting a `token` on every `user` record:
 
 ```javascript
 function addToken(user) {
@@ -331,7 +348,7 @@ const imported = await mpStream(creds, data, {
 });
 ```
 
-- constructing an `$insert_id` for each event:
+-   constructing an `$insert_id` for each event:
 
 ```javascript
 const md5 = require('md5')
@@ -345,19 +362,19 @@ function addInsert(event) {
 const imported = await mpStream(creds, data, { transformFunc: addInsert })
 ```
 
-- reshape/rename profile data with a proper `$set` key and `$distinct_id` value
+-   reshape/rename profile data with a proper `$set` key and `$distinct_id` value
 
 ```javascript
 function fixProfiles(user) {
   const mpUser = { $set: { ...user } };
   mpUser.$set.$distinct_id = user.uuid;
-  return mpUser  
+  return mpUser
 }
 
 const imported = await mpStream(creds, data, { transformFunc: fixProfiles, recordType: "user"});
 ```
 
-- only bringing in certain events; by returning `{}` from the `transformFunc`, results will be omitted
+-   only bringing in certain events; by returning `{}` from the `transformFunc`, results will be omitted
 
 ```javascript
 function onlyProps(event) {
@@ -368,11 +385,11 @@ const data = [{ event: "foo" }, {event: "bar"}, {event: "baz", properties: {}}]
 const imported = await mpStream(creds, data, { transformFunc: onlyProps }); //imports only one event
 ```
 
-- "exploding" single events into many; by returning an `[]` from the `transformFunc`, each item will be treated as a new record
+-   "exploding" single events into many; by returning an `[]` from the `transformFunc`, each item will be treated as a new record
 
 ```javascript
 const data = [{ event: false }, {event: "foo"}]
-			
+
 // turns "false" event into 100 events
 function exploder(o) => {
 	if (!o.event) {
@@ -389,7 +406,7 @@ function exploder(o) => {
 const imported = await mpStream(creds, data, { transformFunc: exploder }) //imports 101 events
 ```
 
-- importing a CSV file of events using `aliases` to identify the correct mixpanel fields:
+-   importing a CSV file of events using `aliases` to identify the correct mixpanel fields:
 
 ```javascript
 const eventsCSV = './myEvents.csv'
@@ -399,14 +416,14 @@ row_id,uuid,timestamp,action,colorTheme,luckyNumber
 a50b0a01b9df43e74707afb679132452aee00a1f,7e1dd089-8773-5fc9-a3bc-37ba5f186ffe,2023-05-15 09:57:44,button_click,yellow,43
 09735b6f19fe5ee7be5cd5df59836e7165021374,7e1dd089-8773-5fc9-a3bc-37ba5f186ffe,2023-06-13 12:11:12,button_click,orange,7
 */
-const imported = await mpStream(creds, eventsCSV, { 
-	streamFormat: "csv", 
-	aliases: { 
-			row_id: "$insert_id", 
-			uuid: "distinct_id", 
-			action: "event", 
+const imported = await mpStream(creds, eventsCSV, {
+	streamFormat: "csv",
+	aliases: {
+			row_id: "$insert_id",
+			uuid: "distinct_id",
+			action: "event",
 			timestamp: "time"
-		} 
+		}
 	}
 );
 ```
@@ -429,6 +446,6 @@ because... i needed this and it didn't exist... so i made it.
 
 then i made it public it because i thought it would be useful to others. then it was, so i made some improvements.
 
-found a bug? have an idea? 
+found a bug? have an idea?
 
 [let me know](https://github.com/ak--47/mixpanel-import/issues)

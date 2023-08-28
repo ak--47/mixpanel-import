@@ -249,7 +249,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			type: 'string'
 		})
 		.help()
-		.wrap(yargs.terminalWidth())
+		.wrap(null)
 		.argv;
 	// @ts-ignore
 	if (args._.length === 0 && !args.type?.toLowerCase()?.includes('export')) {

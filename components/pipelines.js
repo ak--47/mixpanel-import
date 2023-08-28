@@ -44,8 +44,6 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 	if (jobConfig.recordType === 'peopleExport' && typeof stream === 'string') return exportProfiles(stream, jobConfig);
 
 	const flush = _.wrapCallback(callbackify(flushToMixpanel));
-	const epochStart = dayjs.unix(jobConfig.epochStart).utc();
-	const epochEnd = dayjs.unix(jobConfig.epochEnd).utc();
 
 	// @ts-ignore
 	const mpPipeline = _.pipeline(
@@ -104,31 +102,14 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 		// * helper transforms
 		// @ts-ignore
 		_.map((data) => {
-			if (Object.keys(jobConfig.aliases).length) data = jobConfig.applyAliases(data);
+			if (jobConfig.shouldApplyAliases) data = jobConfig.applyAliases(data);
 			if (jobConfig.fixData) data = jobConfig.ezTransform(data);
 			if (jobConfig.removeNulls) data = jobConfig.nullRemover(data);
 			if (jobConfig.timeOffset) data = jobConfig.UTCoffset(data);
-			if (Object.keys(jobConfig.tags).length) data = jobConfig.addTags(data);
+			if (jobConfig.shouldAddTags) data = jobConfig.addTags(data);
 			if (jobConfig.shouldWhiteBlackList) data = jobConfig.whiteAndBlackLister(data);
-
-			//start/end epoch filtering
-			//todo: move this to it's own function
-			if (jobConfig.recordType === 'event') {
-				if (data?.properties?.time) {
-					let eventTime = data.properties.time;
-					if (eventTime.toString().length === 10) eventTime = eventTime * 1000;
-					eventTime = dayjs.utc(eventTime);
-					if (eventTime.isBefore(epochStart)) {
-						jobConfig.outOfBounds++;
-						return null;
-					}
-					else if (eventTime.isAfter(epochEnd)) {
-						jobConfig.outOfBounds++;
-						return null;
-					}
-				}
-			}
-			return data;
+			if (jobConfig.shouldEpochFilter) data = jobConfig.epochFilter(data);
+			return data;			
 		}),
 
 		// * post-transform filter to ignore nulls + count byte size
