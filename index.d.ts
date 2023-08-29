@@ -269,134 +269,147 @@ declare namespace main {
         /**
          * - type of record imported
          */
-        recordType?: RecordType;
+        recordType: RecordType;
         /**
          * - num records successfully imported
          */
-        success?: number;
+        success: number;
         /**
          * - num of records failed to import
          */
-        failed?: number;
+        failed: number;
         /**
          * - num of request retries
          */
-        retries?: number;
+        retries: number;
         /**
          * - num of total records processed
          */
-        total?: number;
+        total: number;
         /**
          * - num of empty records found
          */
-        empty?: number;
+        empty: number;
         /**
          * - total num of batches
          */
-        batches?: number;
+        batches: number;
         /**
          * - total num of requests
          */
-        requests?: number;
+        requests: number;
         /**
          * - estimate of "events per second" throughput
          */
-        eps?: number;
+        eps: number;
         /**
          * - estimate of "requests per second" throughput
          */
-        rps?: number;
+        rps: number;
         /**
          * - successful import records (200s)
          */
-        responses?: any[];
+        responses: any[];
         /**
          * - failed import records (400s)
          */
-        errors?: any[];
+        errors: any[];
         /**
          * - the elapsed time in ms
          */
-        duration?: number;
+        duration: number;
         /**
          * - human readable timestamp
          */
-        durationHuman?: string;
+        durationHuman: string;
         /**
          * - human readable timestamp [deprecated]
          */
-        human?: string;
+        human: string;
         /**
          * - the number of times a 429 response was received (and the request was retried)
          */
-        rateLimit?: number;
+        rateLimit: number;
         /**
          * - the number of times a 500x responses was received (and the request was retried)
          */
-        serverErrors?: number;
+        serverErrors: number;
         /**
          * - number of times a client side error occurred (timeout/socket hangup... these requests are retried)
          */
-        clientErrors?: number;
+        clientErrors: number;
         /**
          * - the number of bytes sent to mixpanel (uncompressed)
          */
-        bytes?: number;
+        bytes: number;
         /**
          * - MB sent to mixpanel (uncompressed)
          */
-        bytesHuman?: string;
+        bytesHuman: string;
         /**
          * - throughput in MB/s
          */
-        mbps?: number;
+        mbps: number;
         /**
          * - estimation of consumption of mixpanel's event quota
          */
-        percentQuota?: number;
+        percentQuota: number;
         /**
          * - summary of memory usage
          */
-        memory?: Object;
+        memory: Object;
         /**
          * - average # of records per batch
          */
-        avgBatchLength?: number;
+        avgBatchLength: number;
         /**
          * - the start timestamp of the job (ISO 8601)
          */
-        startTime?: string;
+        startTime: string;
         /**
          * - the end timestamp of the job (ISO 8601)
          */
-        endTime?: string;
+        endTime: string;
         /**
          * - data points skipped due to epochStart/epochEnd
          */
-        outOfBounds?: number;
+        outOfBounds: number;
 
         /**
          * data points skipped due to dedupe
          * only available if dedupe is true
          */
-        duplicates?: number;
+        duplicates: number;
         /**
          * data points skipped due to whitelist
          */
-        whiteListSkipped?: number;
+        whiteListSkipped: number;
         /**
          * data points skipped due to blacklist
          */
-        blackListSkipped?: number;
-        version?: string;
+        blackListSkipped: number;        
+		/**
+		 * event exports only: path to exported file
+		 */
         file?: string;
+		/**
+		 * profile exports only: path to exported folders
+		 */
         folder?: string;
-        workers?: number;
+        workers: number;
+		version: string;
     };
+
+	type genericObj = {
+        [x: string]: string | number | boolean;
+    };
+
+	// ! MIXPANEL TYPES
+
     /**
      * valid mixpanel property values; {@link https://help.mixpanel.com/hc/en-us/articles/115004547063-Properties-Supported-Data-Types more info}
      */
-    type PropValues = string | string[] | number | number[] | boolean | boolean[] | Date;
+    type PropValues = string | string[] | number | number[] | boolean | boolean[] | Date | Object | Object[] | null | undefined;
     /**
      * mixpanel's required event properties
      */
@@ -404,7 +417,15 @@ declare namespace main {
         /**
          * - uuid of the end user
          */
-        distinct_id: string;
+        distinct_id?: string;
+		/**
+         * - anon id of the end user (simplified id mgmt)
+         */
+        $device_id?: string;
+		/**
+         * - known id of the end user (simplified id mgmt)
+         */
+        $user_id?: string;
         /**
          * - the UTC time of the event (unix epoch)
          */
@@ -492,9 +513,6 @@ declare namespace main {
      */
     type mpUser = mpUserStandardProps & ProfileData;
 
-    type genericObj = {
-        [x: string]: string | number | boolean;
-    };
 }
 
 /**
