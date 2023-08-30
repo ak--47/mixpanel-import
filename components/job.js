@@ -73,6 +73,8 @@ class Job {
 		this.epochStart = opts.epochStart || 0; // start date for epoch
 		this.epochEnd = opts.epochEnd || 9991427224; // end date for epoch; i will die many years before this is a problem
 
+		if (opts.concurrency) this.workers = opts.concurrency; // alias for workers
+
 		// ? don't allow batches bigger than API limits
 		if (this.recordType === 'event' && this.recordsPerBatch > 2000) this.recordsPerBatch = 2000;
 		if (this.recordType === 'user' && this.recordsPerBatch > 2000) this.recordsPerBatch = 2000;
@@ -205,11 +207,11 @@ class Job {
 	}
 
 	// ? props
-	version = this.getVersion();
-	supportedTypes = ['event', 'user', 'group', 'table'];
+	version = this.getVersion();	
 	lineByLineFileExt = ['.txt', '.jsonl', '.ndjson'];
 	objectModeFileExt = ['.json'];
-	supportedFileExt = [...this.lineByLineFileExt, ...this.objectModeFileExt, '.csv'];
+	tableFileExt = ['.csv', '.tsv'];
+	supportedFileExt = [...this.lineByLineFileExt, ...this.objectModeFileExt, ...this.tableFileExt];
 	endpoints = {
 		us: {
 			event: `https://api.mixpanel.com/import`,

@@ -5,6 +5,9 @@ const require = createRequire(import.meta.url);
 const mpStream = require('../index.js');
 const u = require('ak-tools');
 const Types = require("../index.js");
+
+//! CONCLUSION: OPTIMAL NUMBER OF WORKERS IS BETWEEN 10 - 25 (diminishing returns AT 50) 
+
 export default async function main() {
 	const NDJSON = `./benchmarks/testData/dnd250.ndjson`;
 

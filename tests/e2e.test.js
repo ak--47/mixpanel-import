@@ -241,8 +241,16 @@ describe('transform', () => {
 		expect(data.duration).toBeGreaterThan(0);
 	}, longTimeout);
 
-	test('event CSV!', async () => {
-		const data = await mp({}, eventsCSV, { ...opts, streamFormat: "csv", aliases: { row_id: "$insert_id", uuid: "distinct_id", action: "event", timestamp: "time" } });
+	const aliases = { row_id: "$insert_id", uuid: "distinct_id", action: "event", timestamp: "time" }
+	test('event CSV! (stream)', async () => {
+		const data = await mp({}, eventsCSV, { ...opts, streamFormat: "csv", aliases, forceStream: true  });
+		expect(data.success).toBe(10003);
+		expect(data.failed).toBe(0);
+		expect(data.duration).toBeGreaterThan(0);
+	}, longTimeout);
+
+	test('event CSV! (memory)', async () => {
+		const data = await mp({}, eventsCSV, { ...opts, streamFormat: "csv", aliases, forceStream: false });
 		expect(data.success).toBe(10003);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);

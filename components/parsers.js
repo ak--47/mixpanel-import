@@ -67,26 +67,44 @@ async function determineDataType(data, jobConfig) {
 		// data refers to file/folder on disk
 		if (fs.existsSync(path.resolve(data))) {
 			const fileOrDir = fs.lstatSync(path.resolve(data));
+			const { lineByLineFileExt, objectModeFileExt, tableFileExt, supportedFileExt, streamFormat, forceStream, highWater } = jobConfig;
 
 			//file case			
 			if (fileOrDir.isFile()) {
-				//check for jsonl first... many jsonl files will have the same extension as json
-				if (jobConfig.streamFormat === 'jsonl' || jobConfig.lineByLineFileExt.includes(path.extname(data))) {
-					// !! todo... make DRY
-					if (fileOrDir.size < os.freemem() * .50 && !jobConfig.forceStream) {
-						const file = /** @type {string} */ (await u.load(path.resolve(data)));
-						const parsed = file.trim().split('\n').map(line => JSON.parse(line));
-						return stream.Readable.from(parsed, { objectMode: true, highWaterMark: jobConfig.highWater });
+				let parsingCase = '';
+				if (streamFormat === 'jsonl' || lineByLineFileExt.includes(path.extname(data))) parsingCase = 'jsonl';
+				if (streamFormat === 'json' || objectModeFileExt.includes(path.extname(data))) parsingCase = 'json';
+				if (streamFormat === 'csv' || tableFileExt.includes(path.extname(data))) parsingCase = 'csv';
+
+				let loadIntoMemory = false;
+				if (fileOrDir.size < os.freemem() * .50) loadIntoMemory = true;
+				if (forceStream) loadIntoMemory = false;
+
+				if (parsingCase === 'jsonl') {
+					if (loadIntoMemory) {
+						try {
+							const file = /** @type {string} */ (await u.load(path.resolve(data)));
+							const parsed = file.trim().split('\n').map(line => JSON.parse(line));
+							return stream.Readable.from(parsed, { objectMode: true, highWaterMark: highWater });
+						}
+						catch (e) {
+							// probably a memory crash, so we'll try to stream it
+						}
 					}
 
 					return itemStream(path.resolve(data), "jsonl", jobConfig);
 				}
 
-				if (jobConfig.streamFormat === 'json' || jobConfig.objectModeFileExt.includes(path.extname(data))) {
-					// !! ugh
-					if (fileOrDir.size < os.freemem() * .50 && !jobConfig.forceStream) {
-						const file = await u.load(path.resolve(data), true);
-						return stream.Readable.from(file, { objectMode: true, highWaterMark: jobConfig.highWater });
+				if (parsingCase === 'json') {
+					if (loadIntoMemory) {
+						try {
+							const file = await u.load(path.resolve(data), true);
+							// @ts-ignore
+							return stream.Readable.from(file, { objectMode: true, highWaterMark: highWater });
+						}
+						catch (e) {
+							// probably a memory crash, so we'll try to stream it
+						}
 					}
 
 					//otherwise, stream it
@@ -94,49 +112,39 @@ async function determineDataType(data, jobConfig) {
 				}
 
 				//csv case
-				// todo: refactor this inside the itemStream function
-				if (jobConfig.streamFormat === 'csv') {
-					const fileStream = fs.createReadStream(path.resolve(data));
-					const mappings = Object.entries(jobConfig.aliases);
-					const csvParser = Papa.parse(Papa.NODE_STREAM_INPUT, {
-						header: true,
-						skipEmptyLines: true,
-						transformHeader: (header) => {
-							const mapping = mappings.filter(pair => pair[0] === header).pop();
-							if (mapping) header = mapping[1];
-							return header;
+				if (parsingCase === 'csv') {
+					if (loadIntoMemory) {
+						try {
+							return await csvMemory(path.resolve(data), jobConfig);
 						}
-					});
-					const transformer = new stream.Transform({
-						// @ts-ignore
-						objectMode: true, highWaterMark: jobConfig.highWater, transform: (chunk, encoding, callback) => {
-							const { distinct_id = "", $insert_id = "", time, event, ...props } = chunk;
-							const mixpanelEvent = {
-								event,
-								properties: {
-									distinct_id,
-									$insert_id,
-									time: dayjs.utc(time).valueOf(),
-									...props
-								}
-							};
-							callback(null, mixpanelEvent);
+						catch (e) {
+							// probably a memory crash, so we'll try to stream it
 						}
-					});
-					const outStream = fileStream.pipe(csvParser).pipe(transformer);
-					return outStream;
+
+					}
+					return csvStreamer(path.resolve(data), jobConfig);
+
 				}
 			}
 
 			//folder case
 			if (fileOrDir.isDirectory()) {
 				const enumDir = await u.ls(path.resolve(data));
-				const files = enumDir.filter(filePath => jobConfig.supportedFileExt.includes(path.extname(filePath)));
-				if (jobConfig.streamFormat === 'jsonl' || jobConfig.lineByLineFileExt.includes(path.extname(files[0]))) {
-					return itemStream(files, "jsonl", jobConfig);
-				}
-				if (jobConfig.streamFormat === 'json' || jobConfig.objectModeFileExt.includes(path.extname(files[0]))) {
-					return itemStream(files, "json", jobConfig);
+				const files = enumDir.filter(filePath => supportedFileExt.includes(path.extname(filePath)));
+				const exampleFile = path.extname(files[0]);
+				let parsingCase = '';
+
+				if (streamFormat === 'json' || objectModeFileExt.includes(exampleFile)) parsingCase = 'json';
+				if (streamFormat === 'jsonl' || lineByLineFileExt.includes(exampleFile)) parsingCase = 'jsonl';
+
+				switch (parsingCase) {
+					case 'jsonl':
+						return itemStream(files, "jsonl", jobConfig);
+					case 'json':
+						return itemStream(files, "json", jobConfig);
+					//todo csv case
+					default:
+						return itemStream(files, "jsonl", jobConfig);
 				}
 			}
 		}
@@ -169,7 +177,7 @@ async function determineDataType(data, jobConfig) {
 
 		//CSV or TSV
 		try {
-			return stream.Readable.from(Papa.parse(data, { header: true, skipEmptyLines: true }));
+			return stream.Readable.from(Papa.parse(data, { header: true, skipEmptyLines: true }).data, { objectMode: true, highWaterMark: jobConfig.highWater });
 		}
 		catch (e) {
 			//noop
@@ -184,7 +192,7 @@ async function determineDataType(data, jobConfig) {
 
 
 /**
- * @param  { import("stream").Readable} stream
+ * @param  {import("stream").Readable} stream
  */
 function existingStreamInterface(stream) {
 	const rl = readline.createInterface({
@@ -226,12 +234,14 @@ function itemStream(filePath, type = "jsonl", jobConfig) {
 
 		if (type === "jsonl") {
 			stream = new MultiStream(filePath.map((file) => { return fs.createReadStream(file, streamOpts); }), streamOpts);
+			// @ts-ignore
 			parsedStream = stream.pipe(parser({ includeUndecided: false, errorIndicator: jobConfig.parseErrorHandler, ...streamOpts })).map(token => token.value);
 			return parsedStream;
 
 		}
 		if (type === "json") {
 			stream = filePath.map((file) => fs.createReadStream(file));
+			// @ts-ignore
 			parsedStream = MultiStream.obj(stream.map(s => s.pipe(parser(streamOpts)).map(token => token.value)));
 			return parsedStream;
 		}
@@ -240,10 +250,96 @@ function itemStream(filePath, type = "jsonl", jobConfig) {
 	//parsing files
 	else {
 		stream = fs.createReadStream(filePath, streamOpts);
+		// @ts-ignore
 		parsedStream = stream.pipe(parser({ includeUndecided: false, errorIndicator: jobConfig.parseErrorHandler, ...streamOpts })).map(token => token.value);
 	}
 
 	return parsedStream;
+
+}
+
+/**
+ * streamer for csv files
+ * @param  {string} filePath
+ * @param {JobConfig} jobConfig
+ */
+function csvStreamer(filePath, jobConfig) {
+	const fileStream = fs.createReadStream(path.resolve(filePath));
+	const mappings = Object.entries(jobConfig.aliases);
+	const csvParser = Papa.parse(Papa.NODE_STREAM_INPUT, {
+		header: true,
+		skipEmptyLines: true,
+
+		//rename's header keys to match aliases
+		transformHeader: (header) => {
+			const mapping = mappings.filter(pair => pair[0] === header).pop();
+			if (mapping) header = mapping[1];
+			return header;
+		}
+
+	});
+	const transformer = new stream.Transform({
+		objectMode: true, highWaterMark: jobConfig.highWater, transform: (chunk, encoding, callback) => {
+			const { distinct_id = "", $insert_id = "", time = 0, event, ...props } = chunk;
+			const mixpanelEvent = {
+				event,
+				properties: {
+					distinct_id,
+					$insert_id,
+					time: dayjs.utc(time).valueOf(),
+					...props
+				}
+			};
+			if (!distinct_id) delete mixpanelEvent.properties.distinct_id;
+			if (!$insert_id) delete mixpanelEvent.properties.$insert_id;
+			if (!time) delete mixpanelEvent.properties.time;
+
+			callback(null, mixpanelEvent);
+		}
+	});
+	const outStream = fileStream.pipe(csvParser).pipe(transformer);
+	return outStream;
+}
+
+/**
+ * streamer for csv files
+ * @param  {string} filePath
+ * @param {JobConfig} jobConfig
+ */
+async function csvMemory(filePath, jobConfig) {
+	/** @type {string} */
+	// @ts-ignore
+	const fileContents = await u.load(filePath, false);
+	const mappings = Object.entries(jobConfig.aliases);
+	const csvParser = Papa.parse(fileContents, {
+		header: true,
+		skipEmptyLines: true,
+
+		//rename's header keys to match aliases
+		transformHeader: (header) => {
+			const mapping = mappings.filter(pair => pair[0] === header).pop();
+			if (mapping) header = mapping[1];
+			return header;
+		}
+
+	});
+	const data = csvParser.data.map((chunk) => {
+		const { distinct_id = "", $insert_id = "", time = 0, event, ...props } = chunk;
+		const mixpanelEvent = {
+			event,
+			properties: {
+				distinct_id,
+				$insert_id,
+				time: dayjs.utc(time).valueOf(),
+				...props
+			}
+		};
+		if (!distinct_id) delete mixpanelEvent.properties.distinct_id;
+		if (!$insert_id) delete mixpanelEvent.properties.$insert_id;
+		if (!time) delete mixpanelEvent.properties.time;
+		return mixpanelEvent;
+	});
+	return stream.Readable.from(data, { objectMode: true, highWaterMark: jobConfig.highWater });
 
 }
 

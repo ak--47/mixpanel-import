@@ -7,7 +7,7 @@ const stream = require('stream');
 const u = require('ak-tools');
 const Types = require("../index.js");
 
-
+// ! CONCLUSION FASTEST TYPES OF STREAMS ARE OBJECT STREAMS > NDJSON > JSON (11, 15, 29 seconds respectively)
 
 export default async function main() {
 	const JSON = `./benchmarks/testData/dnd250.json`;

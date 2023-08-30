@@ -2,6 +2,7 @@ const got = require('got');
 const https = require('https');
 const { gzip } = require('node-gzip');
 const u = require('ak-tools');
+const HTTP_AGENT = new https.Agent({ keepAlive: true, maxSockets: 100 })
 
 /** @typedef {import('./job')} JobConfig */
 
@@ -56,7 +57,7 @@ async function flushToMixpanel(batch, jobConfig) {
 			},
 			//consider timeout + agent timeout
 			agent: {
-				https: new https.Agent({ keepAlive: true, maxSockets: 100 })
+				https: HTTP_AGENT
 			},
 			hooks: {
 				// @ts-ignore

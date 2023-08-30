@@ -165,10 +165,15 @@ declare namespace main {
          */
         maxRetries?: number;
         /**
-         * - # of concurrent workers sending requests
+         * - # of concurrent workers sending requests (same as concurrency)
          * - default `10`
          */
         workers?: number;
+        /**
+         * - # of concurrent requests (same as workers)
+         * - default `10`
+         */
+        concurrency?: number;
         /**
          * - where to put files (logs, exports)
          * - default `./`
@@ -387,24 +392,31 @@ declare namespace main {
         /**
          * data points skipped due to blacklist
          */
-        blackListSkipped: number;        
-		/**
-		 * event exports only: path to exported file
-		 */
+        blackListSkipped: number;
+        /**
+         * event exports only: path to exported file
+         */
         file?: string;
-		/**
-		 * profile exports only: path to exported folders
-		 */
+        /**
+         * profile exports only: path to exported folders
+         */
         folder?: string;
         workers: number;
-		version: string;
+        version: string;
     };
 
-	type genericObj = {
+    type genericObj = {
         [x: string]: string | number | boolean;
     };
+    // generic for `{}`
+    type openObject = {
+        [key: string]: any;
+    };
 
-	// ! MIXPANEL TYPES
+    // generic for `[{},{},{}]`
+    type ArrayOfObjects = openObject[];
+
+    // ! MIXPANEL TYPES
 
     /**
      * valid mixpanel property values; {@link https://help.mixpanel.com/hc/en-us/articles/115004547063-Properties-Supported-Data-Types more info}
@@ -418,11 +430,11 @@ declare namespace main {
          * - uuid of the end user
          */
         distinct_id?: string;
-		/**
+        /**
          * - anon id of the end user (simplified id mgmt)
          */
         $device_id?: string;
-		/**
+        /**
          * - known id of the end user (simplified id mgmt)
          */
         $user_id?: string;
@@ -512,7 +524,6 @@ declare namespace main {
      * a user profile update payload
      */
     type mpUser = mpUserStandardProps & ProfileData;
-
 }
 
 /**

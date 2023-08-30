@@ -1,6 +1,6 @@
 {
   "name": "mixpanel-import",
-  "version": "2.5.10",
+  "version": "2.5.11",
   "description": "stream and import data to mixpanel from node.js",
   "main": "index.js",
   "types": "index.d.ts",
@@ -15,7 +15,7 @@
   "scripts": {
     "dev": "npm run prune && nodemon --max-old-space-size=8192 --inspect scratch.js --ignore ./testData --ignore ./mixpanel-exports --ignore ./logs",
     "post": "npm publish",
-    "benchmark": "node --inspect ./benchmarks/main.mjs",
+    "benchmark": "nodemon --inspect ./benchmarks/main.mjs",
     "generate": "NUMEVENTS=9999 SINCEDAYS=30 node ./components/fakeData.js",
     "prune": "rm -rf ./logs/* && rm -rf ./mixpanel-exports/* && rm -rf ./tmp/*",
     "test": "jest --watch",
