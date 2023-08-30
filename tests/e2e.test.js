@@ -28,6 +28,7 @@ const { createReadStream } = require('fs');
 const { Readable, Transform, Writable, PassThrough } = require('stream');
 const u = require('ak-tools');
 const events = `./testData/events.ndjson`;
+const eventsNDJSONdisguise = `./testData/events.json`;
 const people = `./testData/people.ndjson`;
 const groups = `./testData/groups.ndjson`;
 const table = `./testData/table.csv`;
@@ -65,6 +66,15 @@ const opts = {
 describe('filenames', () => {
 	test('event', async () => {
 		const data = await mp({}, events, { ...opts });
+		expect(data.success).toBe(5003);
+		expect(data.failed).toBe(0);
+		expect(data.duration).toBeGreaterThan(0);
+		expect(data).toHaveProperty('startTime');
+		expect(data).toHaveProperty('endTime');
+	}, longTimeout);
+
+	test('event (.json ext, but jsonl)', async () => {
+		const data = await mp({}, eventsNDJSONdisguise, { ...opts, streamFormat: "jsonl" });
 		expect(data.success).toBe(5003);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);

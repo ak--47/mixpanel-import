@@ -65,7 +65,7 @@ async function determineDataType(data, jobConfig) {
 	try {
 
 		// data refers to file/folder on disk
-		if (fs.existsSync(path.resolve(data))) {
+		if (typeof data === 'string' && fs.existsSync(path.resolve(data))) {
 			const fileOrDir = fs.lstatSync(path.resolve(data));
 			const { lineByLineFileExt, objectModeFileExt, tableFileExt, supportedFileExt, streamFormat, forceStream, highWater } = jobConfig;
 
@@ -73,8 +73,8 @@ async function determineDataType(data, jobConfig) {
 			if (fileOrDir.isFile()) {
 				let parsingCase = '';
 				if (streamFormat === 'jsonl' || lineByLineFileExt.includes(path.extname(data))) parsingCase = 'jsonl';
-				if (streamFormat === 'json' || objectModeFileExt.includes(path.extname(data))) parsingCase = 'json';
-				if (streamFormat === 'csv' || tableFileExt.includes(path.extname(data))) parsingCase = 'csv';
+				else if (streamFormat === 'json' || objectModeFileExt.includes(path.extname(data))) parsingCase = 'json';
+				else if (streamFormat === 'csv' || tableFileExt.includes(path.extname(data))) parsingCase = 'csv';
 
 				let loadIntoMemory = false;
 				if (fileOrDir.size < os.freemem() * .50) loadIntoMemory = true;
@@ -134,9 +134,9 @@ async function determineDataType(data, jobConfig) {
 				const exampleFile = path.extname(files[0]);
 				let parsingCase = '';
 
-				if (streamFormat === 'json' || objectModeFileExt.includes(exampleFile)) parsingCase = 'json';
 				if (streamFormat === 'jsonl' || lineByLineFileExt.includes(exampleFile)) parsingCase = 'jsonl';
-
+				else if (streamFormat === 'json' || objectModeFileExt.includes(exampleFile)) parsingCase = 'json';
+				
 				switch (parsingCase) {
 					case 'jsonl':
 						return itemStream(files, "jsonl", jobConfig);
