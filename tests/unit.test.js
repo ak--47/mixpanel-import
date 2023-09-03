@@ -286,7 +286,7 @@ describe("parsers", () => {
 		});
 	});
 
-	test("chun: maxBatchCount", done => {
+	test("chunk: maxBatchCount", done => {
 		const smallItem = { data: "a".repeat(10) };
 		const generator = (push, next) => {
 			push(null, Array(10).fill(smallItem));

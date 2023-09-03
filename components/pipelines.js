@@ -1,8 +1,6 @@
-// $ config
-const importJob = require('./job.js');
 
 // $ parsers
-const { getEnvVars, chunkForSize } = require("./parsers.js");
+const { chunkForSize } = require("./parsers.js");
 
 // $ streamers
 const _ = require('highland');
@@ -17,8 +15,6 @@ const counter = cliParams.showProgress;
 
 
 // $ utils
-
-
 const dayjs = require('dayjs');
 const utc = require('dayjs/plugin/utc');
 dayjs.extend(utc);
@@ -52,6 +48,9 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 		// @ts-ignore
 		_.filter((data) => {
 			jobConfig.recordsProcessed++;
+			// very small chance of mem sampling
+			Math.random() <= 0.00005 ? jobConfig.memSamp() : null;
+			
 			if (data && JSON.stringify(data) !== '{}') {
 				return true;
 			}
@@ -174,49 +173,7 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 
 
 
-/**
- * @param {Creds} creds - mixpanel project credentials
- * @param {Options} opts - import options
- * @param {function(): importJob | void} finish - end of pipelines
- * @returns a transform stream
- */
-function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
-	const envVar = getEnvVars();
-	const config = new importJob({ ...envVar, ...creds }, { ...envVar, ...opts });
-	config.timer.start();
-
-	const pipeToMe = corePipeline(null, config, true);
-
-	// * handlers
-	// @ts-ignore
-	pipeToMe.on('end', () => {
-		config.timer.end(false);
-
-		// @ts-ignore
-		finish(null, config.summary());
-	});
-
-	// @ts-ignore
-	pipeToMe.on('pipe', () => {
-
-		// @ts-ignore
-		pipeToMe.resume();
-	});
-
-	// @ts-ignore
-	pipeToMe.on('error', (e) => {
-		if (config.verbose) {
-			console.log(e);
-		}
-		// @ts-ignore
-		finish(e, config.summary());
-	});
-
-	return pipeToMe;
-}
-
 
 module.exports = {
-	corePipeline,
-	pipeInterface
+	corePipeline
 };

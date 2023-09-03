@@ -360,9 +360,17 @@ declare namespace main {
          */
         percentQuota: number;
         /**
-         * - summary of memory usage
+         * - summary of memory usage (averaged over the duration of the job)
          */
         memory: Object;
+        /**
+         * - summary of memory usage in human readable format
+         */
+        memoryHuman: Object;
+        /**
+         * - if `false` the data was loaded into memory
+         */
+        wasStream: Boolean | void;
         /**
          * - average # of records per batch
          */

@@ -203,6 +203,13 @@ const data = `./myEventsToImport/`; //has json files
 const importedData = await mpStream(creds, data, options);
 ```
 
+-   **a list of paths**, which contains files that have records as `.json`, `.jsonl`, `.ndjson`, or `.txt`
+
+```javascript
+const data = [`./file1.jsonl`, `./file2.jsonl`] ; //has json files
+const importedData = await mpStream(creds, data, options);
+```
+
 -   **an array of objects** (records), in memory
 
 ```javascript
@@ -250,7 +257,7 @@ you will use the **[`options`](#opts)** (below) to specify what type of records 
 
 ### 🎛 options
 
-`options` is an object that allows you to configure the behavior of this module. there are LOTS of options for different types of import usecases. you can specify options as the third argument in [module mode](#mod) or as flags in [CLI mode](#cliOpt).
+`options` is an object that allows you to configure the behavior of this module. there are LOTS of options for different types of import use cases. you can specify options as the third argument in [module mode](#mod) or as flags in [CLI mode](#cliOpt).
 
 
 

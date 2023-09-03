@@ -22,7 +22,7 @@ const importJob = require('./components/job.js');
 const { determineDataType, getEnvVars } = require("./components/parsers.js");
 
 // $ pipelines
-const { corePipeline, pipeInterface } = require('./components/pipelines.js');
+const { corePipeline } = require('./components/pipelines.js');
 
 // $ env
 require('dotenv').config();
@@ -36,6 +36,10 @@ const dayjs = require('dayjs');
 const utc = require('dayjs/plugin/utc');
 dayjs.extend(utc);
 
+/** @typedef {import('./index.d.ts').Creds} Creds */
+/** @typedef {import('./index.d.ts').Data} Data */
+/** @typedef {import('./index.d.ts').Options} Options */
+/** @typedef {import('./index.d.ts').ImportResults} ImportResults */
 
 
 /*
@@ -45,6 +49,18 @@ CORE
 */
 
 
+/**
+ * Mixpanel Importer
+ * stream `events`, `users`, `groups`, and `tables` to mixpanel!
+ * @example
+ * const mp = require('mixpanel-import')
+ * const imported = await mp(creds, data, options)
+ * @param {Creds} creds - mixpanel project credentials
+ * @param {Data} data - data to import
+ * @param {Options} opts - import options
+ * @param {boolean} isCLI - `true` when run as CLI
+ * @returns {Promise<ImportResults>} API receipts of imported data
+ */
 async function main(creds = {}, data, opts = {}, isCLI = false) {
 	let cliData = {};
 
@@ -91,6 +107,51 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 }
 
 
+
+/**
+ * Mixpanel Streamer
+ * this function returns a transform stream that takes in data and streams it to mixpanel
+ * @param {Creds} creds - mixpanel project credentials
+ * @param {Options} opts - import options
+ * @param {function(): importJob | void} finish - end of pipelines
+ * @returns a transform stream
+ */
+function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
+	const envVar = getEnvVars();
+	const config = new importJob({ ...envVar, ...creds }, { ...envVar, ...opts });
+	config.timer.start();
+
+	const pipeToMe = corePipeline(null, config, true);
+
+	// * handlers
+	// @ts-ignore
+	pipeToMe.on('end', () => {
+		config.timer.end(false);
+
+		// @ts-ignore
+		finish(null, config.summary());
+	});
+
+	// @ts-ignore
+	pipeToMe.on('pipe', () => {
+
+		// @ts-ignore
+		pipeToMe.resume();
+	});
+
+	// @ts-ignore
+	pipeToMe.on('error', (e) => {
+		if (config.verbose) {
+			console.log(e);
+		}
+		// @ts-ignore
+		finish(e, config.summary());
+	});
+
+	return pipeToMe;
+}
+
+
 /*
 -------
 EXPORTS
@@ -102,6 +163,7 @@ mpImport.createMpStream = pipeInterface;
 
 // this is for CLI
 if (require.main === module) {
+	// @ts-ignore
 	main(undefined, undefined, undefined, true).then(() => {
 		//noop
 	}).catch((e) => {

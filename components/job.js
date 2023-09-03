@@ -37,6 +37,8 @@ class Job {
 		this.startTime = new Date().toISOString();
 		this.endTime = null;
 		this.hashTable = new Set(); //used if de-dupe is on
+		this.memorySamples = []; //used to calculate memory usage
+		this.wasStream = null; //was the data loaded into memory or streamed?
 
 
 
@@ -127,11 +129,11 @@ class Job {
 		if (this.dedupe) this.deduper = transforms.dedupeRecords(this);
 		if (Object.keys(this.tags).length > 0) {
 			this.shouldAddTags = true;
-			this.addTags = transforms.addTags(this); 
-		} 
-		if (Object.keys(this.aliases).length > 0) { 
+			this.addTags = transforms.addTags(this);
+		}
+		if (Object.keys(this.aliases).length > 0) {
 			this.shouldApplyAliases = true;
-			this.applyAliases = transforms.applyAliases(this);			
+			this.applyAliases = transforms.applyAliases(this);
 		}
 		const whiteOrBlacklist = {
 			eventWhitelist: this.eventWhitelist,
@@ -145,12 +147,12 @@ class Job {
 			this.whiteAndBlackLister = transforms.whiteAndBlackLister(this, whiteOrBlacklist);
 			this.shouldWhiteBlackList = true;
 		}
-		if (opts.epochStart || opts.epochEnd) { 
+		if (opts.epochStart || opts.epochEnd) {
 			this.shouldEpochFilter = true;
 			this.epochFilter = transforms.epochFilter(this);
 		}
 
-		
+
 
 		// ? counters
 		this.recordsProcessed = 0;
@@ -207,7 +209,7 @@ class Job {
 	}
 
 	// ? props
-	version = this.getVersion();	
+	version = this.getVersion();
 	lineByLineFileExt = ['.txt', '.jsonl', '.ndjson'];
 	objectModeFileExt = ['.json'];
 	tableFileExt = ['.csv', '.tsv'];
@@ -300,6 +302,61 @@ class Job {
 		}
 
 	}
+
+	// Capture a memory sample
+	memSamp() {
+		const memoryUsage = process.memoryUsage();
+		this.memorySamples.push(memoryUsage);
+		return memoryUsage;
+	}
+
+	// Compute the average of the collected memorySamples
+	memAvg() {
+		if (this.memorySamples.length === 0) {
+			return process.memoryUsage();
+
+		}
+
+		const sum = this.memorySamples.reduce((acc, curr) => {
+			acc.rss += curr.rss;
+			acc.heapTotal += curr.heapTotal;
+			acc.heapUsed += curr.heapUsed;
+			acc.external += curr.external;
+			acc.arrayBuffers += curr.arrayBuffers;
+			return acc;
+		}, {
+			rss: 0,
+			heapTotal: 0,
+			heapUsed: 0,
+			external: 0,
+			arrayBuffers: 0
+		});
+
+		// Calculate the average for each metric
+		const averageMemoryUsage = {
+			rss: sum.rss / this.memorySamples.length,
+			heapTotal: sum.heapTotal / this.memorySamples.length,
+			heapUsed: sum.heapUsed / this.memorySamples.length,
+			external: sum.external / this.memorySamples.length,
+			arrayBuffers: sum.arrayBuffers / this.memorySamples.length
+		};
+
+		return averageMemoryUsage;
+	}
+
+	// human readable memory usage
+	memPretty() {
+		const memoryUsage = this.memAvg();
+		if (!memoryUsage) {
+			return {};
+		}
+		return u.objMap(memoryUsage, (v) => u.bytesHuman(v));
+	}
+
+	// Clear the samples
+	memRest() {
+		this.samples = [];
+	}
 	/**
 	 * summary of the results of an import
 	 * @param {boolean} includeResponses - should `errors` and `responses` be included in summary
@@ -307,7 +364,8 @@ class Job {
 	 */
 	summary(includeResponses = true) {
 		const { delta, human } = this.timer.report(false);
-		const memory = u.objMap(process.memoryUsage(), (v) => u.bytesHuman(v));
+		const memoryHuman = this.memPretty();
+		const memory = this.memAvg();
 		/** @type {import('../index.js').ImportResults} */
 		const summary = {
 			recordType: this.recordType,
@@ -339,12 +397,14 @@ class Job {
 			version: this.version,
 			workers: this.workers,
 			memory,
+			memoryHuman,
+			wasStream: this.wasStream,
 
 			avgBatchLength: u.avg(...this.batchLengths),
 			eps: 0,
 			rps: 0,
 			mbps: 0,
-			percentQuota: 0,			
+			percentQuota: 0,
 			errors: [],
 			responses: []
 		};
@@ -354,7 +414,7 @@ class Job {
 			summary.eps = Math.floor(summary.total / summary.duration * 1000);
 			summary.rps = u.round(summary.requests / summary.duration * 1000, 3);
 			summary.mbps = u.round((summary.bytes / 1e+6) / summary.duration * 1000, 3);
-			
+
 			// OLD QUOTA
 			// // 2GB uncompressed per min (rolling)
 			// // ? https://developer.mixpanel.com/reference/import-events#rate-limits
@@ -363,7 +423,7 @@ class Job {
 			// summary.percentQuota = u.round(gbPerMin, 5) * 100;
 
 			// NEW QUOTA
-			const quota = 1.8e6 // 1.8M events per min 
+			const quota = 1.8e6; // 1.8M events per min 
 			const eventsPerMin = summary.total / (summary.duration / 60000);
 			summary.percentQuota = u.round(eventsPerMin / quota, 5) * 100;
 
@@ -413,8 +473,8 @@ function parse(val, defaultVal = []) {
 function noop(a) { return a; }
 
 // eslint-disable-next-line no-unused-vars
-function returnEmpty(_err, _record, _reviver) { 
-	return {}; 
+function returnEmpty(_err, _record, _reviver) {
+	return {};
 }
 
 module.exports = Job;

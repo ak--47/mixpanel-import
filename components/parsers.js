@@ -1,5 +1,6 @@
 const readline = require('readline');
 const stream = require('stream');
+const { Transform } = require('stream');
 const MultiStream = require('multistream');
 const path = require('path');
 const fs = require('fs');
@@ -25,6 +26,7 @@ const Papa = require('papaparse');
  * @param  {JobConfig} jobConfig
  */
 async function determineDataType(data, jobConfig) {
+
 	//exports are saved locally
 	if (jobConfig.recordType === 'export') {
 		if (jobConfig.where) {
@@ -46,111 +48,144 @@ async function determineDataType(data, jobConfig) {
 
 	// lookup tables are not streamed
 	if (jobConfig.recordType === 'table') {
+		jobConfig.wasStream = false;
 		if (fs.existsSync(path.resolve(data))) return await u.load(data);
 		return data;
 	}
 
 	// data is already a stream
 	if (data.pipe || data instanceof stream.Stream) {
+		jobConfig.wasStream = true;
 		if (data.readableObjectMode) return data;
 		return _(existingStreamInterface(data));
 	}
 
 	// data is an object in memory
-	if (Array.isArray(data)) {
+	if (Array.isArray(data) && data.every(item => typeof item === 'object' && item !== null)) {
+		jobConfig.wasStream = true;
 		return stream.Readable.from(data, { objectMode: true, highWaterMark: jobConfig.highWater });
 	}
 
 	//todo: support array of files
 	try {
+		const { lineByLineFileExt, objectModeFileExt, tableFileExt, supportedFileExt, streamFormat, forceStream, highWater } = jobConfig;
+		let isArrayOfFileNames = false; // !ugh ... so disorganized 
+		//data might be an array of filenames
+		if (Array.isArray(data) && data.every(item => typeof item === 'string')) {
+			if (data.every(filePath => fs.existsSync(path.resolve(filePath)))) {
+				isArrayOfFileNames = true;
+			}
+		}
 
 		// data refers to file/folder on disk
-		if (typeof data === 'string' && fs.existsSync(path.resolve(data))) {
-			const fileOrDir = fs.lstatSync(path.resolve(data));
-			const { lineByLineFileExt, objectModeFileExt, tableFileExt, supportedFileExt, streamFormat, forceStream, highWater } = jobConfig;
+		if (typeof data === 'string' && !isArrayOfFileNames) {
+			if (fs.existsSync(path.resolve(data))) {
+				if (fs.lstatSync(path.resolve(data)).isFile()) {
+					const fileInfo = fs.lstatSync(path.resolve(data));
+					//it's a file
+					let parsingCase = '';
+					if (streamFormat === 'jsonl' || lineByLineFileExt.includes(path.extname(data))) parsingCase = 'jsonl';
+					else if (streamFormat === 'json' || objectModeFileExt.includes(path.extname(data))) parsingCase = 'json';
+					else if (streamFormat === 'csv' || tableFileExt.includes(path.extname(data))) parsingCase = 'csv';
 
-			//file case			
-			if (fileOrDir.isFile()) {
-				let parsingCase = '';
-				if (streamFormat === 'jsonl' || lineByLineFileExt.includes(path.extname(data))) parsingCase = 'jsonl';
-				else if (streamFormat === 'json' || objectModeFileExt.includes(path.extname(data))) parsingCase = 'json';
-				else if (streamFormat === 'csv' || tableFileExt.includes(path.extname(data))) parsingCase = 'csv';
+					let loadIntoMemory = false;
+					if (fileInfo.size < os.freemem() * .50) loadIntoMemory = true;
+					if (forceStream) loadIntoMemory = false;
 
-				let loadIntoMemory = false;
-				if (fileOrDir.size < os.freemem() * .50) loadIntoMemory = true;
-				if (forceStream) loadIntoMemory = false;
-
-				if (parsingCase === 'jsonl') {
-					if (loadIntoMemory) {
-						try {
-							const file = /** @type {string} */ (await u.load(path.resolve(data)));
-							const parsed = file.trim().split('\n').map(line => JSON.parse(line));
-							return stream.Readable.from(parsed, { objectMode: true, highWaterMark: highWater });
+					if (parsingCase === 'jsonl') {
+						if (loadIntoMemory) {
+							jobConfig.wasStream = false;
+							try {
+								const file = /** @type {string} */ (await u.load(path.resolve(data)));
+								const parsed = file.trim().split('\n').map(line => JSON.parse(line));
+								return stream.Readable.from(parsed, { objectMode: true, highWaterMark: highWater });
+							}
+							catch (e) {
+								// probably a memory crash, so we'll try to stream it
+							}
 						}
-						catch (e) {
-							// probably a memory crash, so we'll try to stream it
-						}
+						jobConfig.wasStream = true;
+						return itemStream(path.resolve(data), "jsonl", jobConfig);
 					}
 
-					return itemStream(path.resolve(data), "jsonl", jobConfig);
-				}
+					if (parsingCase === 'json') {
+						if (loadIntoMemory) {
+							try {
+								jobConfig.wasStream = false;
+								const file = await u.load(path.resolve(data), true);
+								// @ts-ignore
+								return stream.Readable.from(file, { objectMode: true, highWaterMark: highWater });
+							}
+							catch (e) {
+								// probably a memory crash, so we'll try to stream it
+							}
+						}
 
-				if (parsingCase === 'json') {
-					if (loadIntoMemory) {
-						try {
-							const file = await u.load(path.resolve(data), true);
-							// @ts-ignore
-							return stream.Readable.from(file, { objectMode: true, highWaterMark: highWater });
-						}
-						catch (e) {
-							// probably a memory crash, so we'll try to stream it
-						}
+						//otherwise, stream it
+						jobConfig.wasStream = true;
+						return itemStream(path.resolve(data), "json", jobConfig);
 					}
 
-					//otherwise, stream it
-					return itemStream(path.resolve(data), "json", jobConfig);
-				}
+					//csv case
+					if (parsingCase === 'csv') {
+						if (loadIntoMemory) {
+							try {
+								jobConfig.wasStream = false;
+								return await csvMemory(path.resolve(data), jobConfig);
+							}
+							catch (e) {
+								// probably a memory crash, so we'll try to stream it
+							}
 
-				//csv case
-				if (parsingCase === 'csv') {
-					if (loadIntoMemory) {
-						try {
-							return await csvMemory(path.resolve(data), jobConfig);
 						}
-						catch (e) {
-							// probably a memory crash, so we'll try to stream it
-						}
+						jobConfig.wasStream = true;
+						return csvStreamer(path.resolve(data), jobConfig);
 
 					}
-					return csvStreamer(path.resolve(data), jobConfig);
-
 				}
+
+			}
+		}
+
+		//folder or array of files case
+		if (isArrayOfFileNames || (fs.existsSync(path.resolve(data)) && fs.lstatSync(path.resolve(data)).isDirectory())) {
+			jobConfig.wasStream = true;
+			let files;
+			let exampleFile;
+			let parsingCase;
+			if (isArrayOfFileNames && Array.isArray(data)) {
+				//array of files case
+				files = data.map(filePath => path.resolve(filePath));
+				exampleFile = path.extname(files[0]);
+			}
+			else {
+				//directory case
+				const enumDir = await u.ls(path.resolve(data));
+				files = enumDir.filter(filePath => supportedFileExt.includes(path.extname(filePath)));
+				exampleFile = path.extname(files[0]);
 			}
 
-			//folder case
-			if (fileOrDir.isDirectory()) {
-				const enumDir = await u.ls(path.resolve(data));
-				const files = enumDir.filter(filePath => supportedFileExt.includes(path.extname(filePath)));
-				const exampleFile = path.extname(files[0]);
-				let parsingCase = '';
+			if (streamFormat === 'jsonl' || lineByLineFileExt.includes(exampleFile)) parsingCase = 'jsonl';
+			else if (streamFormat === 'json' || objectModeFileExt.includes(exampleFile)) parsingCase = 'json';
+			else if (streamFormat === 'csv' || tableFileExt.includes(path.extname(exampleFile))) parsingCase = 'csv';
 
-				if (streamFormat === 'jsonl' || lineByLineFileExt.includes(exampleFile)) parsingCase = 'jsonl';
-				else if (streamFormat === 'json' || objectModeFileExt.includes(exampleFile)) parsingCase = 'json';
-				
-				switch (parsingCase) {
-					case 'jsonl':
-						return itemStream(files, "jsonl", jobConfig);
-					case 'json':
-						return itemStream(files, "json", jobConfig);
-					//todo csv case
-					default:
-						return itemStream(files, "jsonl", jobConfig);
-				}
+			switch (parsingCase) {
+				case 'jsonl':
+					return itemStream(files, "jsonl", jobConfig);
+				case 'json':
+					return itemStream(files, "json", jobConfig);
+				//todo csv case
+				case 'csv':
+					return csvStreamArray(files, jobConfig);
+				default:
+					return itemStream(files, "jsonl", jobConfig);
 			}
 		}
 	}
 
+
 	catch (e) {
+
 		//noop
 	}
 
@@ -214,8 +249,22 @@ function existingStreamInterface(stream) {
 	return generator;
 }
 
+// Create a transform stream factory to ensure newline at the end of each file.
+function createEnsureNewlineTransform() {
+	return new Transform({
+		transform(chunk, encoding, callback) {
+			this.push(chunk);
+			callback();
+		},
+		flush(callback) {
+			this.push('\n');
+			callback();
+		}
+	});
+}
+
 /**
- * @param  {string} filePath
+ * @param  {string | string[]} filePath
  * @param  {import('../index').SupportedFormats} type="jsonl"
  * @param {JobConfig} jobConfig
  */
@@ -233,14 +282,14 @@ function itemStream(filePath, type = "jsonl", jobConfig) {
 	if (Array.isArray(filePath)) {
 
 		if (type === "jsonl") {
-			stream = new MultiStream(filePath.map((file) => { return fs.createReadStream(file, streamOpts); }), streamOpts);
+			stream = new MultiStream(filePath.map((file) => fs.createReadStream(file, streamOpts).pipe(createEnsureNewlineTransform())), streamOpts);
 			// @ts-ignore
 			parsedStream = stream.pipe(parser({ includeUndecided: false, errorIndicator: jobConfig.parseErrorHandler, ...streamOpts })).map(token => token.value);
 			return parsedStream;
 
 		}
 		if (type === "json") {
-			stream = filePath.map((file) => fs.createReadStream(file));
+			stream = filePath.map((file) => fs.createReadStream(file, streamOpts));
 			// @ts-ignore
 			parsedStream = MultiStream.obj(stream.map(s => s.pipe(parser(streamOpts)).map(token => token.value)));
 			return parsedStream;
@@ -256,6 +305,18 @@ function itemStream(filePath, type = "jsonl", jobConfig) {
 
 	return parsedStream;
 
+}
+
+/**
+ * wraps csvStream with MultiStream to turn a folder of csv files into a single stream
+ * @param  {string[]} filePaths
+ * @param  {JobConfig} jobConfig
+ */
+function csvStreamArray(filePaths, jobConfig) {
+	const streams = filePaths.map((filePath) => {
+		return csvStreamer(filePath, jobConfig);
+	});
+	return MultiStream.obj(streams);
 }
 
 /**

@@ -122,6 +122,24 @@ describe('folders', () => {
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
 	}, longTimeout);
+
+	test('array of filenames (JSONL)', async () => {
+		const data = await mp({}, [events, events, events], { ...opts, streamFormat: "jsonl", parseErrorHandler: (err, d,f) => { console.log(err);
+		debugger; } });
+		expect(data.success).toBe(5003 *3);
+		expect(data.failed).toBe(0);
+		expect(data.duration).toBeGreaterThan(0);
+		expect(data).toHaveProperty('startTime');
+		expect(data).toHaveProperty('endTime');
+	}, longTimeout);
+
+	const aliases = { row_id: "$insert_id", uuid: "distinct_id", action: "event", timestamp: "time" };
+	test('array of filenames (CSV)', async () => {
+		const data = await mp({}, [eventsCSV, eventsCSV], { ...opts, streamFormat: "csv", aliases, forceStream: true });
+		expect(data.success).toBe(10003 * 2);
+		expect(data.failed).toBe(0);
+		expect(data.duration).toBeGreaterThan(0);
+	}, longTimeout);
 });
 
 
@@ -251,9 +269,9 @@ describe('transform', () => {
 		expect(data.duration).toBeGreaterThan(0);
 	}, longTimeout);
 
-	const aliases = { row_id: "$insert_id", uuid: "distinct_id", action: "event", timestamp: "time" }
+	const aliases = { row_id: "$insert_id", uuid: "distinct_id", action: "event", timestamp: "time" };
 	test('event CSV! (stream)', async () => {
-		const data = await mp({}, eventsCSV, { ...opts, streamFormat: "csv", aliases, forceStream: true  });
+		const data = await mp({}, eventsCSV, { ...opts, streamFormat: "csv", aliases, forceStream: true });
 		expect(data.success).toBe(10003);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
