@@ -101,7 +101,20 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	// clean up
 	jobConfig.timer.end(false);
 	const summary = jobConfig.summary();
-	l(`${jobConfig.type === 'export' ? 'export' : 'import'} complete in ${summary.human}`);
+	l(`${jobConfig.type === 'export' ? 'export' : 'import'} complete in ${summary.human}\n\n`);
+	const stats = {
+		total: u.comma(summary.total),
+		success: u.comma(summary.success),
+		failed: u.comma(summary.failed),
+		bytes: summary.bytesHuman,
+		requests: u.comma(summary.requests),
+		"rate (per sec)": u.comma(summary.eps)
+	};
+
+	l("STATS");	
+	l(stats, true);
+	l('\n');
+
 	if (jobConfig.logs) await writeLogs(summary);
 	return summary;
 }

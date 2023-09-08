@@ -39,6 +39,7 @@ class Job {
 		this.hashTable = new Set(); //used if de-dupe is on
 		this.memorySamples = []; //used to calculate memory usage
 		this.wasStream = null; //was the data loaded into memory or streamed?
+		this.dryRunResults = []; //results of dry run
 
 
 
@@ -93,6 +94,7 @@ class Job {
 		this.abridged = u.isNil(opts.abridged) ? false : opts.abridged; //don't include success responses
 		this.forceStream = u.isNil(opts.forceStream) ? true : opts.forceStream; //don't ever buffer files into memory
 		this.dedupe = u.isNil(opts.dedupe) ? false : opts.dedupe; //remove duplicate records
+		this.dryRun = u.isNil(opts.dryRun) ? false : opts.dryRun; //don't actually send data
 		this.shouldWhiteBlackList = false;
 		this.shouldEpochFilter = false;
 		this.shouldAddTags = false;
@@ -406,7 +408,8 @@ class Job {
 			mbps: 0,
 			percentQuota: 0,
 			errors: [],
-			responses: []
+			responses: [],
+			dryRun: this.dryRunResults,
 		};
 
 		// stats
@@ -460,9 +463,14 @@ function parse(val, defaultVal = []) {
 		try {
 			val = JSON.parse(val);
 		}
-		catch (e) {
-			if (this.verbose) console.log(`error parsing tags: ${val}\ntags must be valid JSON`);
-			val = defaultVal; //bad json
+		catch (firstError) {
+			try {
+				if (typeof val === 'string') val = JSON.parse(val?.replace(/'/g, '"'));
+			}
+			catch (secondError) {
+				if (this.verbose) console.log(`error parsing tags: ${val}\ntags must be valid JSON`);
+				val = defaultVal; //bad json
+			}
 		}
 	}
 	return val;

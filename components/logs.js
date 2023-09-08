@@ -6,8 +6,10 @@ const u = require('ak-tools');
  * @param  {JobConfig} jobConfig
  */
 function logger(jobConfig) {
-	return (message) => {
-		if (jobConfig.verbose) console.log(message);
+	return (message, isTable = false) => {		
+		if (jobConfig.verbose && isTable) console.table(message);
+		else if (jobConfig.verbose) console.log(message);
+		return;
 	};
 }
 
@@ -21,7 +23,7 @@ async function writeLogs(data) {
 	const filePath = `${fileDir}/${fileName}`;
 	const file = await u.touch(filePath, data, true);
 	// @ts-ignore
-	l(`\nCOMPLETE\nlog written to:\n${file}`);
+	l(`\nfull log written to:\n${file}`);
 }
 
 

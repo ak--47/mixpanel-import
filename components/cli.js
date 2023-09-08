@@ -98,7 +98,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			demandOption: false,
 			alias: 'streamFormat',
 			default: 'jsonl',
-			describe: 'either json or jsonl',
+			describe: 'either json, jsonl, or csv',
 			type: 'string'
 		})
 		.option("stream", {
@@ -247,6 +247,13 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			alias: 'propValBlacklist',
 			describe: 'don\'t send events with prop values on blacklist',
 			type: 'string'
+		})
+		.options('dry-run', {
+			demandOption: false,
+			alias: 'dryRun',
+			default: false,
+			describe: 'just transform data; don\'t send it',
+			type: 'boolean'
 		})
 		.help()
 		.wrap(null)

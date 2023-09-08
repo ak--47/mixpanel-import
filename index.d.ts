@@ -252,6 +252,10 @@ declare namespace main {
          * the end date of the export (events only)
          */
         end?: string;
+		/**
+		 * don't actually send the data to mixpanel, just transform it
+		 */
+		dryRun?: boolean;
     };
 
     /**
@@ -409,7 +413,17 @@ declare namespace main {
          * profile exports only: path to exported folders
          */
         folder?: string;
+		/**
+		 * for dry runs, what is the transformed data
+		 */
+		dryRun: ArrayOfObjects;
+		/**
+		 * the # of concurrent requests
+		 */
         workers: number;
+		/**
+		 * app version!
+		 */
         version: string;
     };
 

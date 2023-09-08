@@ -43,14 +43,14 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 
 	// @ts-ignore
 	const mpPipeline = _.pipeline(
-		
+
 		// * only JSON from stream
 		// @ts-ignore
 		_.filter((data) => {
 			jobConfig.recordsProcessed++;
 			// very small chance of mem sampling
 			Math.random() <= 0.00005 ? jobConfig.memSamp() : null;
-			
+
 			if (data && JSON.stringify(data) !== '{}') {
 				return true;
 			}
@@ -108,7 +108,7 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 			if (jobConfig.shouldAddTags) data = jobConfig.addTags(data);
 			if (jobConfig.shouldWhiteBlackList) data = jobConfig.whiteAndBlackLister(data);
 			if (jobConfig.shouldEpochFilter) data = jobConfig.epochFilter(data);
-			return data;			
+			return data;
 		}),
 
 		// * post-transform filter to ignore nulls + count byte size
@@ -141,6 +141,7 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 			jobConfig.requests++;
 			jobConfig.batches++;
 			jobConfig.batchLengths.push(batch.length);
+			if (jobConfig.dryRun) return _(Promise.resolve(batch));
 			return flush(batch, jobConfig);
 		}),
 
@@ -150,8 +151,17 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 
 		// * verbose
 		// @ts-ignore
-		_.doto(() => {
-			if (jobConfig.verbose) counter(jobConfig.recordType, jobConfig.recordsProcessed, jobConfig.requests);
+		_.doto((batch) => {
+			if (jobConfig.dryRun) {
+				batch.forEach(data => {
+					jobConfig.dryRunResults.push(data);
+					if (jobConfig.verbose) console.log(JSON.stringify(data, null, 2));
+				});
+			}
+			else {
+				if (jobConfig.verbose) counter(jobConfig.recordType, jobConfig.recordsProcessed, jobConfig.requests);
+			}
+
 		}),
 
 		// * errors
