@@ -220,7 +220,7 @@ async function determineDataType(data, jobConfig) {
 	}
 
 	console.error(`ERROR:\n\t${data} is not a file, a folder, an array, a stream, or a string... (i could not determine it's type)`);
-	process.exit(1);
+	if (process) process.exit(1);
 
 }
 
@@ -467,7 +467,7 @@ function chunkForSize(jobConfig) {
 }
 
 function getEnvVars() {
-	const envVars = pick(process.env, `MP_PROJECT`, `MP_ACCT`, `MP_PASS`, `MP_SECRET`, `MP_TOKEN`, `MP_TYPE`, `MP_TABLE_ID`, `MP_GROUP_KEY`, `MP_START`, `MP_END`);
+	const envVars = pick(process?.env, `MP_PROJECT`, `MP_ACCT`, `MP_PASS`, `MP_SECRET`, `MP_TOKEN`, `MP_TYPE`, `MP_TABLE_ID`, `MP_GROUP_KEY`, `MP_START`, `MP_END`);
 	const envKeyNames = {
 		MP_PROJECT: "project",
 		MP_ACCT: "acct",

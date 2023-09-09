@@ -5,7 +5,7 @@ const https = require('https');
 const path = require('path');
 const fs = require('fs');
 const { promisify } = require('util');
-const u = require('ak-tools')
+const u = require('ak-tools');
 const showProgress = require('./cli').showProgress;
 
 /** @typedef {import('./job')} jobConfig */
@@ -223,8 +223,10 @@ function downloadProgress(amount) {
 		//noop
 	}
 	else {
-		readline.cursorTo(process.stdout, 0);
-		process.stdout.write(`\tdownloaded: ${u.bytesHuman(amount, 2, true)}    \t`);
+		if (process) {
+			readline.cursorTo(process.stdout, 0);
+			process.stdout.write(`\tdownloaded: ${u.bytesHuman(amount, 2, true)}    \t`);
+		}
 	}
 }
 
