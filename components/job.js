@@ -276,9 +276,7 @@ class Job {
 	getVersion() {
 		const { version } = require('../package.json');
 		if (version) return version;
-		if (process) {
-			if (process.env.npm_package_version) return process.env.npm_package_version;
-		}
+		if (process.env.npm_package_version) return process.env.npm_package_version;
 		return 'unknown';
 	}
 	resolveProjInfo() {
@@ -302,24 +300,22 @@ class Job {
 
 		else {
 			console.error('no secret or service account provided! quitting...');
-			if (process) process.exit(0);
+			process.exit(0);
 		}
 
 	}
 
 	// Capture a memory sample
 	memSamp() {
-		if (process) {
-			const memoryUsage = process.memoryUsage();
-			this.memorySamples.push(memoryUsage);
-			return memoryUsage;
-		}
+		const memoryUsage = process.memoryUsage();
+		this.memorySamples.push(memoryUsage);
+		return memoryUsage;
 	}
 
 	// Compute the average of the collected memorySamples
 	memAvg() {
 		if (this.memorySamples.length === 0) {
-			if (process) return process.memoryUsage();			
+			return process.memoryUsage();
 
 		}
 
