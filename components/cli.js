@@ -7,7 +7,7 @@ const u = require('ak-tools');
 
 
 function cliParams() {
-	const args = yargs(process.argv.splice(2))
+	const args = yargs(process?.argv?.splice(2))
 		.scriptName("mixpanel-import")
 		.usage(`${welcome}\n\nusage:\nnpx $0 --yes [file or folder] [options]
 
@@ -284,12 +284,14 @@ cliParams.welcome = welcome;
  * @param  {number} requests
  */
 function showProgress(record, processed, requests) {
-	const { rss, heapTotal, heapUsed } = process.memoryUsage();
-	const percentHeap = (heapUsed / heapTotal) * 100;
-	const percentRSS = (heapUsed / rss) * 100;
-	const line = `${record}s: ${u.comma(processed)} | batches: ${u.comma(requests)} | memory: ${u.bytesHuman(heapUsed)} (heap: ${u.round(percentHeap)}% total:${u.round(percentRSS)}%)\t\t`;
-	readline.cursorTo(process.stdout, 0);
-	process.stdout.write(line);
+	if (process) {
+		const { rss, heapTotal, heapUsed } = process.memoryUsage();
+		const percentHeap = (heapUsed / heapTotal) * 100;
+		const percentRSS = (heapUsed / rss) * 100;
+		const line = `${record}s: ${u.comma(processed)} | batches: ${u.comma(requests)} | memory: ${u.bytesHuman(heapUsed)} (heap: ${u.round(percentHeap)}% total:${u.round(percentRSS)}%)\t\t`;
+		readline.cursorTo(process.stdout, 0);
+		process.stdout.write(line);
+	}
 }
 
 cliParams.showProgress = showProgress;

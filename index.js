@@ -182,8 +182,8 @@ if (require.main === module) {
 	}).catch((e) => {
 		console.log('\n\nUH OH! something went wrong; the error is:\n\n');
 		console.error(e);
-		process.exit(1);
+		if (process) process.exit(1);
 	}).finally(() => {
-		process.exit(0);
+		if (process) process.exit(0);
 	});
 }
