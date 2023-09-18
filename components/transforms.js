@@ -359,6 +359,21 @@ function epochFilter(jobConfig) {
 	};
 }
 
+/**
+ * this function is used to see if a record is empty (basically `{}`, `[]`, or `null` or `undefined`)
+ * @param  {any} data
+ * @returns {boolean}
+ */
+function isNotEmpty(data) {
+	if (!data) return false;
+	if (typeof data !== "object") return false;
+	if (Array.isArray(data)) {
+		if (data.length === 0) return false;
+	}
+	if (Object.keys(data).length === 0) return false;
+	return true;	
+}
+
 module.exports = {
 	ezTransforms,
 	removeNulls,
@@ -367,5 +382,6 @@ module.exports = {
 	applyAliases,
 	dedupeRecords,
 	whiteAndBlackLister,
-	epochFilter
+	epochFilter,
+	isNotEmpty
 };

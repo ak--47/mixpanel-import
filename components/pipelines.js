@@ -13,6 +13,8 @@ const { flushLookupTable, flushToMixpanel } = require('./importers.js');
 const cliParams = require('./cli.js');
 const counter = cliParams.showProgress;
 
+// $ transforms
+const { isNotEmpty } = require('./transforms.js');
 
 // $ utils
 const dayjs = require('dayjs');
@@ -51,13 +53,14 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 			// very small chance of mem sampling
 			Math.random() <= 0.00005 ? jobConfig.memSamp() : null;
 
-			if (data && JSON.stringify(data) !== '{}') {
-				return true;
-			}
+			const exists = isNotEmpty(data);
+			if (exists) return true;
 			else {
 				jobConfig.empty++;
 				return false;
 			}
+
+
 		}),
 
 		// * apply user defined transform
@@ -81,21 +84,13 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 		// * post-transform filter to ignore nulls + empty objects
 		// @ts-ignore
 		_.filter((data) => {
-			if (data) {
-				const str = JSON.stringify(data);
-				if (str !== '{}' && str !== '[]' && str !== '""' && str !== 'null') {
-
-					return true;
-				}
-				else {
-					jobConfig.empty++;
-					return false;
-				}
-			}
+			const exists = isNotEmpty(data);
+			if (exists) return true;
 			else {
 				jobConfig.empty++;
 				return false;
 			}
+
 		}),
 
 		// * helper transforms
@@ -114,17 +109,15 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 		// * post-transform filter to ignore nulls + count byte size
 		// @ts-ignore
 		_.filter((data) => {
-			if (!data) {
+			const exists = isNotEmpty(data);
+			if (exists) {
+				jobConfig.bytesProcessed += Buffer.byteLength(JSON.stringify(data), 'utf-8');
+				return true;
+			}
+			else {
 				jobConfig.empty++;
 				return false;
 			}
-			const str = JSON.stringify(data);
-			if (str === '{}' || str === '[]' || str === 'null') {
-				jobConfig.empty++;
-				return false;
-			}
-			jobConfig.bytesProcessed += Buffer.byteLength(str, 'utf-8');
-			return true;
 		}),
 
 		// * batch for # of items

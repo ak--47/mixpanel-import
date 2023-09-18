@@ -23,7 +23,7 @@ declare namespace main {
     /**
      * - a path to a file/folder, objects in memory, or a readable object/file stream that contains data you wish to import
      */
-    type Data = string | Array<mpEvent | mpUser | mpGroup> | import("fs").ReadStream;
+    type Data = string | Array<mpEvent | mpUser | mpGroup> | import("fs").ReadStream | Any;
     /**
      * mixpanel project credentials for the import job
      */
