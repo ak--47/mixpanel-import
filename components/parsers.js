@@ -167,7 +167,7 @@ async function determineDataType(data, jobConfig) {
 
 			if (streamFormat === 'jsonl' || lineByLineFileExt.includes(exampleFile)) parsingCase = 'jsonl';
 			else if (streamFormat === 'json' || objectModeFileExt.includes(exampleFile)) parsingCase = 'json';
-			else if (streamFormat === 'csv' || tableFileExt.includes(path.extname(exampleFile))) parsingCase = 'csv';
+			else if (streamFormat === 'csv' || tableFileExt.includes(exampleFile)) parsingCase = 'csv';
 
 			switch (parsingCase) {
 				case 'jsonl':
