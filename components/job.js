@@ -4,7 +4,7 @@ const dateFormat = `YYYY-MM-DD`;
 const u = require('ak-tools');
 const transforms = require('./transforms.js');
 const { ampEventsToMp, ampUserToMp, ampGroupToMp } = require('../vendor/amplitude.js');
-const { heapEventsToMp, heapUserToMp, heapGroupToMp } = require('../vendor/heap.js');
+const { heapEventsToMp, heapUserToMp, heapGroupToMp, heapParseErrorHandler } = require('../vendor/heap.js');
 
 
 /** @typedef {import('../index.js').Creds} Creds */
@@ -173,10 +173,14 @@ class Job {
 						case 'group':
 							transformFunc = ampGroupToMp(this.vendorOpts);
 							break;
+						default:
+							transformFunc = ampEventsToMp(this.vendorOpts);
+							break;
 					}
 					break;
 				case 'heap':
-					switch (opts.recordType.toLowerCase()) {
+					this.parseErrorHandler = heapParseErrorHandler;
+					switch (opts.recordType?.toLowerCase()) {
 						case 'event':
 							transformFunc = heapEventsToMp(this.vendorOpts);
 							break;
@@ -185,6 +189,9 @@ class Job {
 							break;
 						case 'group':
 							transformFunc = heapGroupToMp(this.vendorOpts);
+							break;
+						default:
+							transformFunc = heapEventsToMp(this.vendorOpts);
 							break;
 					}
 					break;
@@ -451,6 +458,8 @@ class Job {
 			errors: [],
 			responses: [],
 			dryRun: this.dryRunResults,
+			vendor: this.vendor || "",
+			vendorOpts: this.vendorOpts
 		};
 
 		// stats

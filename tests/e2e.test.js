@@ -1028,6 +1028,60 @@ allowNotification,set,App Navigation,,app:#/OnBoardingSurveyView/welcome/introdu
 	});
 });
 
+
+describe("vendor tests", () => {
+
+	test(
+		"amplitude: events",
+		async () => {
+			const job = await mp({}, "./testData/amplitude/2023-04-10_1#0.json", { ...opts, recordType: "event", vendor: "amplitude", dryRun: true });
+			expect(job.dryRun.length).toBe(4011);
+			
+		},
+		longTimeout
+	);
+
+	test(
+		"amplitude: users",
+		async () => {
+			const job = await mp({}, "./testData/amplitude/2023-04-10_1#0.json", { ...opts, recordType: "user", vendor: "amplitude", dryRun: true });
+			expect(job.dryRun.length).toBe(2785);
+
+			const jobWithDedupe = await mp({}, "./testData/amplitude/2023-04-10_1#0.json", { ...opts, recordType: "user", vendor: "amplitude", dryRun: true, dedupe: true });
+			expect(jobWithDedupe.dryRun.length).toBe(216);
+		},
+		longTimeout
+	);
+
+	const heapIdMap = "./testData/heap/merged-users-mappings-test.json"
+
+	test(
+		"heap: events",
+		async () => {
+			const job = await mp({}, "./testData/heap/heap-events-ex.json", { ...opts, recordType: "event", vendor: "heap", dryRun: true });
+			expect(job.dryRun.length).toBe(10000);
+
+			const jobWithMerge = await mp({}, "./testData/heap/events-can-merge.json", { ...opts, recordType: "event", vendor: "heap", dryRun: true, vendorOpts: {device_id_file: heapIdMap} });
+			expect(jobWithMerge.dryRun.length).toBe(12685);
+			expect(jobWithMerge.dryRun.filter(a => a.properties.$user_id).length).toBe(11510)
+		},
+		longTimeout
+	);
+
+	test(
+		"heap: users",
+		async () => {
+			const job = await mp({}, "./testData/heap/heap-users-ex.json", { ...opts, recordType: "user", vendor: "heap", dryRun: true });
+			expect(job.dryRun.length).toBe(1500);
+
+		
+		},
+		longTimeout
+	);
+
+
+})
+
 afterAll(async () => {
 	execSync(`npm run prune`);
 });

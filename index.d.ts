@@ -438,6 +438,12 @@ declare namespace main {
          * app version!
          */
         version: string;
+		/**
+		 * the vendor transform function used
+		 */
+		vendor?: string;
+		vendorOpts?: object;
+	
     };
 
     type genericObj = {

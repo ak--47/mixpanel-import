@@ -6,8 +6,8 @@ dayjs.extend(utc);
 const md5 = require("md5");
 const fs = require("fs");
 const path = require("path");
-const {exportProfiles} = require('../components/exporters.js')
-const jobConfig = require('../components/job.js')
+const { exportProfiles } = require('../components/exporters.js');
+const jobConfig = require('../components/job.js');
 
 /**
  * @typedef {Object<string, *>} StringKeyedObject
@@ -37,8 +37,8 @@ async function getDeviceIdMap(secret) {
 	};
 
 	console.log(`\nDownloading User Profiles from Mixpanel\n`);
-	await exportProfiles('./mixpanel-exports', new jobConfig(creds, opts))
-	
+	await exportProfiles('./mixpanel-exports', new jobConfig(creds, opts));
+
 
 	const directoryPath = './mixpanel-exports'; // Adjust this to your directory path
 
@@ -121,7 +121,15 @@ const heapMpPairs = [
  * @param  {import('../index').heapOpts} options
  */
 function heapEventsToMp(options) {
-	const { user_id = "", device_id_map = new Map() } = options;
+	const { user_id = "", device_id_file = "" } = options;
+	let device_id_map;
+	if (device_id_file) {
+		device_id_map = buildDeviceIdMap(device_id_file);
+	}
+
+	else {
+		device_id_map = new Map();
+	}
 	return function transform(heapEvent) {
 		let insert_id;
 		if (heapEvent.event_id) insert_id = heapEvent.event_id.toString();
@@ -260,9 +268,10 @@ function heapGroupToMp(options) {
 
 }
 
-async function buildDeviceIdMap(file) {
+function buildDeviceIdMap(file) {
 	if (file) {
-		const data = /** @type {arrObj} */ (await u.load(file, true));
+		const fileContents = fs.readFileSync(file, "utf-8");
+		const data = JSON.parse(fileContents);
 		const hashmap = data.reduce((map, item) => {
 			map.set(item.id, item.distinct_id);
 			return map;
