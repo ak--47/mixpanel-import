@@ -3,6 +3,8 @@ const dateFormat = `YYYY-MM-DD`;
 // @ts-ignore
 const u = require('ak-tools');
 const transforms = require('./transforms.js');
+const { ampEventsToMp, ampUserToMp, ampGroupToMp } = require('../vendor/amplitude.js');
+const { heapEventsToMp, heapUserToMp, heapGroupToMp } = require('../vendor/heap.js');
 
 
 /** @typedef {import('../index.js').Creds} Creds */
@@ -63,6 +65,7 @@ class Job {
 		this.recordType = opts.recordType || `event`; // event, user, group or table		
 		this.streamFormat = opts.streamFormat || ''; // json or jsonl ... only relevant for streams
 		this.region = opts.region || `US`; // US or EU
+		this.vendor = opts.vendor || ''; // heap or amplitude
 
 		// ? number options
 		this.streamSize = opts.streamSize || 27; // power of 2 for highWaterMark in stream  (default 134 MB)		
@@ -103,6 +106,7 @@ class Job {
 		// ? tagging options
 		this.tags = parse(opts.tags) || {}; //tags for the import		
 		this.aliases = parse(opts.aliases) || {}; //aliases for the import
+		this.vendorOpts = opts.vendorOpts || {}; //options for vendor transforms
 
 		// ? whitelist/blacklist options
 		this.eventWhitelist = parse(opts.eventWhitelist) || [];
@@ -121,6 +125,7 @@ class Job {
 		this.applyAliases = noop;
 		this.deduper = noop;
 		this.whiteAndBlackLister = noop;
+		this.vendorTransform = noop;
 		this.epochFilter = noop;
 		this.parseErrorHandler = opts.parseErrorHandler || returnEmpty;
 
@@ -152,6 +157,42 @@ class Job {
 		if (opts.epochStart || opts.epochEnd) {
 			this.shouldEpochFilter = true;
 			this.epochFilter = transforms.epochFilter(this);
+		}
+
+		if (opts.vendor) {
+			let transformFunc = noop;
+			switch (opts.vendor.toLowerCase()) {
+				case 'amplitude':
+					switch (opts.recordType?.toLowerCase()) {
+						case 'event':
+							transformFunc = ampEventsToMp(this.vendorOpts);
+							break;
+						case 'user':
+							transformFunc = ampUserToMp(this.vendorOpts);
+							break;
+						case 'group':
+							transformFunc = ampGroupToMp(this.vendorOpts);
+							break;
+					}
+					break;
+				case 'heap':
+					switch (opts.recordType.toLowerCase()) {
+						case 'event':
+							transformFunc = heapEventsToMp(this.vendorOpts);
+							break;
+						case 'user':
+							transformFunc = heapUserToMp(this.vendorOpts);
+							break;
+						case 'group':
+							transformFunc = heapGroupToMp(this.vendorOpts);
+							break;
+					}
+					break;
+				default:
+					transformFunc = noop;
+					break;
+			}
+			this.vendorTransform = transformFunc;
 		}
 
 

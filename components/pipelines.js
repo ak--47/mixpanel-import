@@ -63,6 +63,13 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 
 		}),
 
+		// * apply vendor transforms
+		// @ts-ignore
+		_.map((data) => {
+			if (jobConfig.vendor && jobConfig.vendorTransform) data = jobConfig.vendorTransform(data);
+			return data;
+		}),
+
 		// * apply user defined transform
 		// @ts-ignore
 		_.map((data) => {

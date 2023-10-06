@@ -62,6 +62,11 @@ declare namespace main {
         bearer?: string;
     };
 
+	/**
+	 * built in transform functions for various vendors
+	 */
+	type Vendors = "amplitude" | "heap" | "mixpanel" | "ga4" | "adobe" | "pendo" | "" |  void;
+
     type WhiteAndBlackListParams = {
         eventWhitelist: string[];
         eventBlacklist: string[];
@@ -256,6 +261,14 @@ declare namespace main {
          * don't actually send the data to mixpanel, just transform it
          */
         dryRun?: boolean;
+		/**
+		 * built in transform functions for various vendors
+		 */
+		vendor?: Vendors;
+		/**
+		 * options for built in transform functions
+		 */
+		vendorOpts?: amplitudeOpts | heapOpts | {};
     };
 
     /**
