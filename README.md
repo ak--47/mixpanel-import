@@ -270,6 +270,7 @@ all options are... optional... for a full list of what these do, see [the type d
 ```typescript
 export type Options = {
 	recordType?: RecordType;
+	vendor?: "amplitude" | "heap" | "mixpanel" | "ga4" | "adobe" | "pendo"
 	region?: Regions;
 	streamFormat?: SupportedFormats;
 	compress?: boolean;
@@ -330,6 +331,8 @@ option, alias			description		default
 ```
 
 **note**: the `recordType` param is very important; by default this module assumes you wish to import `event` records.
+
+**added in 2.5.20**: you can now specify certain `vendor`'s in the options like `amplitude` or `ga4` and `mixpanel-import` will provide the correct transform on the source data to bring it into mixpanel.
 
 change this value to `user`, `group`, or `table` if you are importing other entities.
 
