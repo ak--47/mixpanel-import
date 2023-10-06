@@ -204,6 +204,35 @@ describe("in memory", () => {
 	);
 });
 
+describe("inference", () => {
+
+
+	test("infers json", async () => {
+		const data = await mp({}, './testData/moarEvents.json', { ...opts, streamFormat: "" });
+		expect(data.success).toBe(666);
+		expect(data.failed).toBe(0);
+		expect(data.duration).toBeGreaterThan(0);
+	});
+	test("infers ndjson", async () => {
+		const data = await mp({}, events, { ...opts, streamFormat: "" });
+		expect(data.success).toBe(5003);
+		expect(data.failed).toBe(0);
+		expect(data.duration).toBeGreaterThan(0);
+		expect(data).toHaveProperty("startTime");
+		expect(data).toHaveProperty("endTime");
+	},);
+	test("infers csv", async () => {
+		const data = await mp({}, eventsCSV, { ...opts, streamFormat: "", aliases: { row_id: "$insert_id", uuid: "distinct_id", action: "event", timestamp: "time" }, forceStream: false });
+		expect(data.success).toBe(10003);
+		expect(data.failed).toBe(0);
+		expect(data.duration).toBeGreaterThan(0);
+	},
+		longTimeout);
+
+
+
+});
+
 describe("file streams", () => {
 	test(
 		"event",
@@ -1036,7 +1065,7 @@ describe("vendor tests", () => {
 		async () => {
 			const job = await mp({}, "./testData/amplitude/2023-04-10_1#0.json", { ...opts, recordType: "event", vendor: "amplitude", dryRun: true });
 			expect(job.dryRun.length).toBe(4011);
-			
+
 		},
 		longTimeout
 	);
@@ -1045,15 +1074,12 @@ describe("vendor tests", () => {
 		"amplitude: users",
 		async () => {
 			const job = await mp({}, "./testData/amplitude/2023-04-10_1#0.json", { ...opts, recordType: "user", vendor: "amplitude", dryRun: true });
-			expect(job.dryRun.length).toBe(2785);
-
-			const jobWithDedupe = await mp({}, "./testData/amplitude/2023-04-10_1#0.json", { ...opts, recordType: "user", vendor: "amplitude", dryRun: true, dedupe: true });
-			expect(jobWithDedupe.dryRun.length).toBe(216);
+			expect(job.dryRun.length).toBe(216);
 		},
 		longTimeout
 	);
 
-	const heapIdMap = "./testData/heap/merged-users-mappings-test.json"
+	const heapIdMap = "./testData/heap/merged-users-mappings-test.json";
 
 	test(
 		"heap: events",
@@ -1061,9 +1087,9 @@ describe("vendor tests", () => {
 			const job = await mp({}, "./testData/heap/heap-events-ex.json", { ...opts, recordType: "event", vendor: "heap", dryRun: true });
 			expect(job.dryRun.length).toBe(10000);
 
-			const jobWithMerge = await mp({}, "./testData/heap/events-can-merge.json", { ...opts, recordType: "event", vendor: "heap", dryRun: true, vendorOpts: {device_id_file: heapIdMap} });
+			const jobWithMerge = await mp({}, "./testData/heap/events-can-merge.json", { ...opts, recordType: "event", vendor: "heap", dryRun: true, vendorOpts: { device_id_file: heapIdMap } });
 			expect(jobWithMerge.dryRun.length).toBe(12685);
-			expect(jobWithMerge.dryRun.filter(a => a.properties.$user_id).length).toBe(11510)
+			expect(jobWithMerge.dryRun.filter(a => a.properties.$user_id).length).toBe(11510);
 		},
 		longTimeout
 	);
@@ -1073,14 +1099,32 @@ describe("vendor tests", () => {
 		async () => {
 			const job = await mp({}, "./testData/heap/heap-users-ex.json", { ...opts, recordType: "user", vendor: "heap", dryRun: true });
 			expect(job.dryRun.length).toBe(1500);
-
-		
 		},
 		longTimeout
 	);
 
 
-})
+	test(
+		"ga4: events",
+		async () => {
+			const job = await mp({}, "./testData/ga4/ga4_sample.json", { ...opts, recordType: "event", vendor: "ga4", dryRun: true });
+			expect(job.dryRun.length).toBe(10000);
+
+		},
+		longTimeout
+	);
+
+	test(
+		"ga4: users",
+		async () => {
+			const job = await mp({}, "./testData/ga4/ga4_sample.json", { ...opts, recordType: "user", vendor: "ga4", dryRun: true });
+			expect(job.dryRun.length).toBe(3276);
+		},
+		longTimeout
+	);
+
+
+});
 
 afterAll(async () => {
 	execSync(`npm run prune`);

@@ -268,7 +268,7 @@ declare namespace main {
 		/**
 		 * options for built in transform functions
 		 */
-		vendorOpts?: amplitudeOpts | heapOpts | {};
+		vendorOpts?: amplitudeOpts | heapOpts | ga4Opts | {};
     };
 
     /**
@@ -573,6 +573,13 @@ declare namespace main {
         user_id?: string;
         group_keys?: string[];
     };
+
+	type ga4Opts = {
+		user_id?: string;
+		device_id?: string;
+		group_keys?: string[];
+		insert_id_col?: string;
+	}
 
     /**
      * amplitude transform opts

@@ -5,6 +5,7 @@ const u = require('ak-tools');
 const transforms = require('./transforms.js');
 const { ampEventsToMp, ampUserToMp, ampGroupToMp } = require('../vendor/amplitude.js');
 const { heapEventsToMp, heapUserToMp, heapGroupToMp, heapParseErrorHandler } = require('../vendor/heap.js');
+const { gaEventsToMp, gaUserToMp, gaGroupsToMp } = require('../vendor/ga4.js');
 
 
 /** @typedef {import('../index.js').Creds} Creds */
@@ -106,7 +107,7 @@ class Job {
 		// ? tagging options
 		this.tags = parse(opts.tags) || {}; //tags for the import		
 		this.aliases = parse(opts.aliases) || {}; //aliases for the import
-		this.vendorOpts = opts.vendorOpts || {}; //options for vendor transforms
+		this.vendorOpts = parse(opts.vendorOpts) || {}; //options for vendor transforms
 
 		// ? whitelist/blacklist options
 		this.eventWhitelist = parse(opts.eventWhitelist) || [];
@@ -168,6 +169,9 @@ class Job {
 							transformFunc = ampEventsToMp(this.vendorOpts);
 							break;
 						case 'user':
+							//ALWAYS dedupe user profiles for amplitude
+							this.dedupe = true;
+							this.deduper = transforms.dedupeRecords(this);
 							transformFunc = ampUserToMp(this.vendorOpts);
 							break;
 						case 'group':
@@ -178,6 +182,7 @@ class Job {
 							break;
 					}
 					break;
+
 				case 'heap':
 					this.parseErrorHandler = heapParseErrorHandler;
 					switch (opts.recordType?.toLowerCase()) {
@@ -192,6 +197,25 @@ class Job {
 							break;
 						default:
 							transformFunc = heapEventsToMp(this.vendorOpts);
+							break;
+					}
+					break;
+				case 'ga4':
+					switch (opts.recordType?.toLowerCase()) {
+						case 'event':
+							transformFunc = gaEventsToMp(this.vendorOpts);
+							break;
+						case 'user':
+							//ALWAYS dedupe user profiles for ga4
+							this.dedupe = true;
+							this.deduper = transforms.dedupeRecords(this);
+							transformFunc = gaUserToMp(this.vendorOpts);
+							break;
+						case 'group':
+							transformFunc = gaGroupsToMp(this.vendorOpts);
+							break;
+						default:
+							transformFunc = gaEventsToMp(this.vendorOpts);
 							break;
 					}
 					break;
@@ -504,7 +528,7 @@ class Job {
 
 /** 
  * helper to parse values passed in from cli
- * @param {string | string[] | import('../index').genericObj | void} val - value to parse
+ * @param {string | string[] | import('../index').genericObj | void | any} val - value to parse
  * @param {any} [defaultVal] value if it can't be parsed
  * @return {Object<length, number>}
  */

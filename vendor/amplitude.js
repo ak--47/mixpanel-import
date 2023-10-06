@@ -84,7 +84,7 @@ function ampUserToMp(options) {
 		const userProps = ampEvent.user_properties;
 
 		//skip empty props
-		if (JSON.stringify(userProps) === "{}") return {};
+		if (Object.keys(userProps).length === 0) return {};
 
 		let distinct_id;
 		//canonical id resolution
@@ -122,7 +122,7 @@ function ampGroupToMp(options) {
 		const groupProps = ampEvent.group_properties;
 
 		//skip empty + no user_id
-		if (JSON.stringify(groupProps) === "{}") return {};
+		if (Object.keys(groupProps).length === 0) return {};
 		if (!ampEvent.user_id) return {};
 
 		const mixpanelGroup = {
