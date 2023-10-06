@@ -66,7 +66,6 @@ async function determineDataType(data, jobConfig) {
 		return stream.Readable.from(data, { objectMode: true, highWaterMark: jobConfig.highWater });
 	}
 
-	//todo: support array of files
 	try {
 		const { lineByLineFileExt, objectModeFileExt, tableFileExt, supportedFileExt, streamFormat, forceStream, highWater } = jobConfig;
 		let isArrayOfFileNames = false; // !ugh ... so disorganized 

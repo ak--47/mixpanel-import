@@ -255,6 +255,19 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'just transform data; don\'t send it',
 			type: 'boolean'
 		})
+		.options('vendor', {
+			demandOption: false,
+			default: '',
+			describe: 'transform amplitude, heap, ga4 data',
+			type: 'string'
+		})
+		.options('vendor-opts', {
+			demandOption: false,
+			default: "{}",
+			alias: 'vendorOpts',
+			describe: 'vendor transform options {user_id = ""} ',
+			type: 'string'
+		})
 		.help()
 		.wrap(null)
 		.argv;
