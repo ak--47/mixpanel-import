@@ -252,10 +252,10 @@ declare namespace main {
          * the end date of the export (events only)
          */
         end?: string;
-		/**
-		 * don't actually send the data to mixpanel, just transform it
-		 */
-		dryRun?: boolean;
+        /**
+         * don't actually send the data to mixpanel, just transform it
+         */
+        dryRun?: boolean;
     };
 
     /**
@@ -413,17 +413,17 @@ declare namespace main {
          * profile exports only: path to exported folders
          */
         folder?: string;
-		/**
-		 * for dry runs, what is the transformed data
-		 */
-		dryRun: ArrayOfObjects;
-		/**
-		 * the # of concurrent requests
-		 */
+        /**
+         * for dry runs, what is the transformed data
+         */
+        dryRun: ArrayOfObjects;
+        /**
+         * the # of concurrent requests
+         */
         workers: number;
-		/**
-		 * app version!
-		 */
+        /**
+         * app version!
+         */
         version: string;
     };
 
@@ -546,6 +546,24 @@ declare namespace main {
      * a user profile update payload
      */
     type mpUser = mpUserStandardProps & ProfileData;
+
+    /**
+     * amplitude transform opts
+     */
+    type amplitudeOpts = {
+        user_id?: string;
+        group_keys?: string[];
+    };
+
+    /**
+     * amplitude transform opts
+     */
+    type heapOpts = {
+        user_id?: string;
+        group_keys?: string[];
+		device_id_map?: Map<string, string>;
+		device_id_file?: string;
+    };
 }
 
 /**
