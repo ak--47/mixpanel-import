@@ -23,7 +23,7 @@ function gaEventsToMp(options) {
 			event: gaEvent.event_name,
 			properties: {
 				$device_id: gaEvent[device_id] || "",
-				time: dayjs.utc(parseInt(gaEvent.event_timestamp)).valueOf(),			
+				time: parseInt(gaEvent.event_timestamp),			
 			}
 		};
 
