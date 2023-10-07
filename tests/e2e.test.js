@@ -1109,7 +1109,6 @@ describe("vendor tests", () => {
 		async () => {
 			const job = await mp({}, "./testData/ga4/ga4_sample.json", { ...opts, recordType: "event", vendor: "ga4", dryRun: true });
 			expect(job.dryRun.length).toBe(10000);
-
 		},
 		longTimeout
 	);

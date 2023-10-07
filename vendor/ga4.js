@@ -23,9 +23,13 @@ function gaEventsToMp(options) {
 			event: gaEvent.event_name,
 			properties: {
 				$device_id: gaEvent[device_id] || "",
-				time: parseInt(gaEvent.event_timestamp),			
 			}
 		};
+
+		// micro => mili for time
+		const milliseconds = BigInt(gaEvent.event_timestamp) / 1000n;
+		const mp_time = Number(milliseconds);
+		mixpanelEvent.properties.time = mp_time;
 
 		//insert id creation
 		if (insert_id_col && gaEvent[insert_id_col]) {
@@ -85,7 +89,7 @@ function gaUserToMp(options) {
 		if (!distinct_id) return {};
 
 		const defaults = GAtoMixpanelDefaults(gaEvent);
-		
+
 
 		const mixpanelProfile = {
 			$distinct_id: distinct_id,
@@ -95,7 +99,7 @@ function gaUserToMp(options) {
 				...userProps
 			}
 		};
-		
+
 		return mixpanelProfile;
 	};
 }
@@ -160,7 +164,7 @@ function flattenGAParams(gaParams) {
 	const result = {};
 	for (let param of gaParams) {
 		if (param.key && param.value) {
-			const actualValueKey = Object.keys(param.value).filter(a => a.includes('value')).pop()
+			const actualValueKey = Object.keys(param.value).filter(a => a.includes('value')).pop();
 			if (actualValueKey) result[param.key] = param.value[actualValueKey];
 		}
 	}
@@ -172,5 +176,5 @@ function flattenGAParams(gaParams) {
 module.exports = {
 	gaEventsToMp,
 	gaUserToMp,
-	gaGroupsToMp	
+	gaGroupsToMp
 };
