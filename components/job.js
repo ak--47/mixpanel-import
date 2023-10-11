@@ -336,7 +336,7 @@ class Job {
 
 	// ? methods
 	report() {
-		return Object.assign(this);
+		return Object.assign({}, this);
 	}
 	store(response, success = true) {
 		if (!this.abridged) {
@@ -371,8 +371,9 @@ class Job {
 		}
 
 		else {
-			console.error('no secret or service account provided! quitting...');
-			process.exit(0);
+			console.error('no secret or service account provided!', { config: this.report() });
+			throw new Error('no secret or service account provided!');
+			// process.exit(0);
 		}
 
 	}
