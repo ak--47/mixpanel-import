@@ -747,6 +747,7 @@ describe("data fixes", () => {
 		async () => {
 			const job = await mp({}, badData, { ...opts, recordType: "user", fixData: true, transformFunc: badDataTrans });
 			expect(job.success).toBe(5077);
+			expect(job.unparsable).toBe(3);
 			expect(job.failed).toBe(0);
 			expect(job.total).toBe(5080);
 			expect(job.empty).toBe(3);

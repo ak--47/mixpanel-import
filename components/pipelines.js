@@ -141,6 +141,7 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 			jobConfig.requests++;
 			jobConfig.batches++;
 			jobConfig.batchLengths.push(batch.length);
+			jobConfig.lastBatchLength = batch.length;
 			if (jobConfig.dryRun) return _(Promise.resolve(batch));
 			return flush(batch, jobConfig);
 		}),

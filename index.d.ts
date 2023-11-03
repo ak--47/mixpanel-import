@@ -418,9 +418,13 @@ declare namespace main {
          * data points skipped due to blacklist
          */
         blackListSkipped: number;
+		/**
+		 * data points skipped due to parsing errors
+		 */
+		unparsable?: number;
         /**
          * event exports only: path to exported file
-         */
+         */	
         file?: string;
         /**
          * profile exports only: path to exported folders

@@ -111,9 +111,9 @@ async function flushToMixpanel(batch, jobConfig) {
 			jobConfig.success += res.num_records_imported || 0;
 			jobConfig.failed += res?.failed_records?.length || 0;
 		}
-		if (jobConfig.recordType === 'user' || jobConfig.recordType === 'group') {
-			if (!res.error || res.status) jobConfig.success += batch.length;
-			if (res.error || !res.status) jobConfig.failed += batch.length;
+		else if (jobConfig.recordType === 'user' || jobConfig.recordType === 'group') {
+			if (!res.error || res.status) jobConfig.success += res.num_good_events;
+			if (res.error || !res.status) jobConfig.failed += jobConfig.lastBatchLength;
 		}
 
 		jobConfig.store(res, success);

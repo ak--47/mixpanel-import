@@ -128,7 +128,7 @@ class Job {
 		this.whiteAndBlackLister = noop;
 		this.vendorTransform = noop;
 		this.epochFilter = noop;
-		this.parseErrorHandler = opts.parseErrorHandler || returnEmpty;
+		this.parseErrorHandler = opts.parseErrorHandler || returnEmpty(this);
 
 		// ? transform conditions
 		if (this.fixData) this.ezTransform = transforms.ezTransforms(this);
@@ -245,6 +245,8 @@ class Job {
 		this.whiteListSkipped = 0;
 		this.blackListSkipped = 0;
 		this.batchLengths = [];
+		this.lastBatchLength = 0;
+		this.unparsable = 0;
 		this.timer = u.time('etl');
 
 		// ? requests
@@ -335,6 +337,7 @@ class Job {
 	}
 
 	// ? methods
+
 	report() {
 		return Object.assign({}, this);
 	}
@@ -453,6 +456,7 @@ class Job {
 			duplicates: this.duplicates || 0,
 			whiteListSkipped: this.whiteListSkipped || 0,
 			blackListSkipped: this.blackListSkipped || 0,
+			unparsable: this.unparsable || 0,
 
 			startTime: this.startTime,
 			endTime: new Date().toISOString(),
@@ -555,9 +559,12 @@ function parse(val, defaultVal = []) {
 // a noop function
 function noop(a) { return a; }
 
-// eslint-disable-next-line no-unused-vars
-function returnEmpty(_err, _record, _reviver) {
-	return {};
+// for catching parse errors
+function returnEmpty(jobConfig) {
+	return function (_err, _record, _reviver) {
+		jobConfig.unparsable++;
+		return {};
+	};
 }
 
 module.exports = Job;
