@@ -173,7 +173,6 @@ async function determineDataType(data, jobConfig) {
 					return itemStream(files, "jsonl", jobConfig);
 				case 'json':
 					return itemStream(files, "json", jobConfig);
-				//todo csv case
 				case 'csv':
 					return csvStreamArray(files, jobConfig);
 				default:

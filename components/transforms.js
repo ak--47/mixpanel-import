@@ -118,6 +118,45 @@ function ezTransforms(jobConfig) {
 	return noop;
 }
 
+
+
+//flattener
+function flattenProperties(sep = ".") {
+	function flatPropertiesRecurse(properties, roots = []) {
+        return Object.keys(properties)
+            .reduce((memo, prop) => {
+                // Check if the property is an object but not an array
+                const isObjectNotArray = properties[prop] !== null 
+                                         && typeof properties[prop] === 'object' 
+                                         && !Array.isArray(properties[prop]);
+
+                return Object.assign({}, memo,
+                    isObjectNotArray
+                    ? flatPropertiesRecurse(properties[prop], roots.concat([prop]))
+                    : { [roots.concat([prop]).join(sep)]: properties[prop] }
+                );
+            }, {});
+    }
+
+    return function(record) {
+        if (record.properties && typeof record.properties === 'object') {
+            record.properties = flatPropertiesRecurse(record.properties);
+			return record;
+        }
+
+		if (record.$set && typeof record.$set === 'object') {
+			record.$set = flatPropertiesRecurse(record.$set);
+			return record;
+
+		}
+
+		return {}
+
+        
+    };
+}
+
+
 // side-effects; for efficiency
 // removes: null, '', undefined, {}, []
 function removeNulls(valuesToRemove = [null, "", undefined]) {
@@ -371,7 +410,7 @@ function isNotEmpty(data) {
 		if (data.length === 0) return false;
 	}
 	if (Object.keys(data).length === 0) return false;
-	return true;	
+	return true;
 }
 
 module.exports = {
@@ -383,5 +422,6 @@ module.exports = {
 	dedupeRecords,
 	whiteAndBlackLister,
 	epochFilter,
-	isNotEmpty
+	isNotEmpty,
+	flattenProperties
 };

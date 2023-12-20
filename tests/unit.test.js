@@ -11,7 +11,7 @@ const { Readable } = require("stream");
 
 // ! MODULES
 const Job = require("../components/job.js");
-const { UTCoffset, addTags, applyAliases, dedupeRecords, ezTransforms, removeNulls, whiteAndBlackLister } = require("../components/transforms.js");
+const { UTCoffset, addTags, applyAliases, dedupeRecords, ezTransforms, removeNulls, whiteAndBlackLister, flattenProperties } = require("../components/transforms.js");
 const { getEnvVars, JsonlParser, chunkForSize, determineDataType, existingStreamInterface, itemStream } = require("../components/parsers.js");
 const fakeCreds = { acct: "test", pass: "test", project: "test" };
 
@@ -73,6 +73,8 @@ describe("transforms", () => {
 		whiteListSkipped: 0,
 		blackListSkipped: 0
 	};
+
+	const flattenProps = flattenProperties();
 
 	test("fix time", () => {
 		const config = { recordType: "event" };
@@ -248,6 +250,112 @@ describe("transforms", () => {
 		expect(whiteAndBlackLister(sampleJobConfig, params)(recordAllowed)).toEqual(recordAllowed);
 		expect(whiteAndBlackLister(sampleJobConfig, params)(recordDisallowed)).toEqual({});
 	});
+
+
+	test("flatten: nested objects", () => {
+        const record = {
+            event: "foo", 
+            properties: {
+                nested: { key1: "value1", key2: "value2" },
+                key3: "value3"
+            }
+        };
+        expect(flattenProps(record)).toEqual({
+            event: "foo", 
+            properties: {
+                "nested.key1": "value1",
+                "nested.key2": "value2",
+                key3: "value3"
+            }
+        });
+    });
+
+    test("flatten: ignore arrays", () => {
+        const record = {
+            event: "foo", 
+            properties: {
+                array: [1, 2, 3],
+                key: "value"
+            }
+        };
+        expect(flattenProps(record)).toEqual({
+            event: "foo", 
+            properties: {
+                array: [1, 2, 3],
+                key: "value"
+            }
+        });
+    });
+
+    test("flatten: handle empty", () => {
+        const record = {
+            event: "foo", 
+            properties: {}
+        };
+        expect(flattenProps(record)).toEqual({
+            event: "foo", 
+            properties: {}
+        });
+    });
+
+    test("flatten: non-objects", () => {
+        const record = {
+            event: "foo", 
+            properties: {
+                key1: "value1",
+                key2: 123,
+                key3: true
+            }
+        };
+        expect(flattenProps(record)).toEqual({
+            event: "foo", 
+            properties: {
+                key1: "value1",
+                key2: 123,
+                key3: true
+            }
+        });
+    });
+
+    test("flatten: deep nested", () => {
+        const record = {
+            event: "foo", 
+            properties: {
+                nested: { level2: { key: "value" } },
+                key: "value"
+            }
+        };
+        expect(flattenProps(record)).toEqual({
+            event: "foo", 
+            properties: {
+                "nested.level2.key": "value",
+                key: "value"
+            }
+        });
+    });
+
+    test("flaten: $set as well", () => {
+        const record = {
+            event: "foo", 
+            $set: {
+                nested: { key1: "value1", key2: "value2" },
+                key3: "value3"
+            }
+        };
+        expect(flattenProps(record)).toEqual({
+            event: "foo", 
+            $set: {
+                "nested.key1": "value1",
+                "nested.key2": "value2",
+                key3: "value3"
+            }
+        });
+    });
+
+    test("flatten: don't break", () => {
+        const record = { event: "foo" };
+        expect(flattenProps(record)).toEqual({});
+    });
 });
 
 describe("parsers", () => {

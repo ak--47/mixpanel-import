@@ -108,11 +108,12 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'always use streams to load files',
 			type: 'boolean'
 		})
-		.option("streamSize", {
+		.option("water", {
 			demandOption: false,
 			default: 27,
 			describe: '2^n value of highWaterMark',
-			type: 'number'
+			type: 'number',
+			alias: 'streamSize'
 		})
 		.option("workers", {
 			demandOption: false,
@@ -120,11 +121,12 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'concurrent connections',
 			type: 'number'
 		})
-		.option("maxRetries", {
+		.option("retries", {
 			demandOption: false,
 			default: 10,
 			describe: 'max attempts on 429',
-			type: 'number'
+			type: 'number',
+			alias: "maxRetries"
 		})
 		.option("region", {
 			demandOption: false,
@@ -132,29 +134,33 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'either US or EU',
 			type: 'string'
 		})
-		.option("fixData", {
+		.option("fix", {
 			demandOption: false,
 			default: false,
 			describe: 'fix common mistakes',
-			type: 'boolean'
+			type: 'boolean',
+			alias: 'fixData'
 		})
-		.option("removeNulls", {
+		.option("clean", {
 			demandOption: false,
 			default: false,
 			describe: 'remove null values',
-			type: 'boolean'
+			type: 'boolean',
+			alias: 'removeNulls'
 		})
-		.option("recordsPerBatch", {
+		.option("batch", {
 			demandOption: false,
 			default: 2000,
 			describe: '# records in each request',
-			type: 'number'
+			type: 'number',
+			alias: 'recordsPerBatch'
 		})
-		.option("bytesPerBatch", {
+		.option("bytes", {
 			demandOption: false,
 			default: '2MB',
 			describe: 'max size of each request',
-			type: 'number'
+			type: 'number',
+			alias: 'bytesPerBatch'
 		})
 		.option("start", {
 			demandOption: false,
@@ -162,11 +168,12 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'start date (exports)',
 			type: 'string'
 		})
-		.option('timeOffset', {
+		.option('offset', {
 			demandOption: false,
 			default: 0,
 			describe: 'add or remove hours from data',
-			type: 'number'
+			type: 'number',
+			alias: 'timeOffset'
 		})
 		.option("end", {
 			demandOption: false,
@@ -267,6 +274,13 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			alias: 'vendorOpts',
 			describe: 'vendor transform options {user_id = ""} ',
 			type: 'string'
+		})
+		.options('flatten', {
+			demandOption: false,
+			default: false,
+			type: 'boolean',
+			describe: 'flatten nested objects (properties)',
+			align: 'fixData'
 		})
 		.help()
 		.wrap(null)

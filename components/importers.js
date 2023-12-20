@@ -59,6 +59,7 @@ async function flushToMixpanel(batch, jobConfig) {
 			agent: {
 				https: HTTP_AGENT
 			},
+			http2: false, 
 			hooks: {
 				// @ts-ignore
 				beforeRetry: [(req, error, count) => {
@@ -85,6 +86,13 @@ async function flushToMixpanel(batch, jobConfig) {
 			},
 			body
 		};
+
+		if (jobConfig.http2) {
+			options.http2 = true;			
+			delete options.headers?.Connection;
+	
+		}
+
 		// @ts-ignore
 		if (jobConfig.project) options.searchParams.project_id = jobConfig.project;
 

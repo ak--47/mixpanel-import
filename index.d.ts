@@ -269,6 +269,14 @@ declare namespace main {
 		 * options for built in transform functions
 		 */
 		vendorOpts?: amplitudeOpts | heapOpts | ga4Opts | {};
+		/**
+		 * whether or not to use http2; default `false` and http2 seems slower...
+		 */
+		 http2?: boolean;
+		 /**
+		  * whether or not to flatten the data; default `false`
+		  */
+		 flattenData?: boolean;
     };
 
     /**
@@ -447,7 +455,7 @@ declare namespace main {
 		 */
 		vendor?: string;
 		vendorOpts?: object;
-	
+
     };
 
     type genericObj = {

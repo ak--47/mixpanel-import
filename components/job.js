@@ -95,10 +95,12 @@ class Job {
 		this.verbose = u.isNil(opts.verbose) ? true : opts.verbose;  // print to stdout?
 		this.fixData = u.isNil(opts.fixData) ? false : opts.fixData; //apply transforms on the data
 		this.removeNulls = u.isNil(opts.removeNulls) ? false : opts.removeNulls; //remove null fields
+		this.flattenData = u.isNil(opts.flattenData) ? false : opts.flattenData; //flatten nested properties
 		this.abridged = u.isNil(opts.abridged) ? false : opts.abridged; //don't include success responses
 		this.forceStream = u.isNil(opts.forceStream) ? true : opts.forceStream; //don't ever buffer files into memory
 		this.dedupe = u.isNil(opts.dedupe) ? false : opts.dedupe; //remove duplicate records
 		this.dryRun = u.isNil(opts.dryRun) ? false : opts.dryRun; //don't actually send data
+		this.http2 = u.isNil(opts.http2) ? false : opts.http2; //use http2
 		this.shouldWhiteBlackList = false;
 		this.shouldEpochFilter = false;
 		this.shouldAddTags = false;
@@ -128,6 +130,7 @@ class Job {
 		this.whiteAndBlackLister = noop;
 		this.vendorTransform = noop;
 		this.epochFilter = noop;
+		this.flattener = noop;
 		this.parseErrorHandler = opts.parseErrorHandler || returnEmpty(this);
 
 		// ? transform conditions
@@ -135,6 +138,7 @@ class Job {
 		if (this.removeNulls) this.nullRemover = transforms.removeNulls();
 		if (this.timeOffset) this.UTCoffset = transforms.UTCoffset(this.timeOffset);
 		if (this.dedupe) this.deduper = transforms.dedupeRecords(this);
+		if (this.flattenData) this.flattener = transforms.flattenProperties(".");
 		if (Object.keys(this.tags).length > 0) {
 			this.shouldAddTags = true;
 			this.addTags = transforms.addTags(this);
@@ -282,6 +286,7 @@ class Job {
 		this.file = "";
 		this.folder = "";
 
+
 	}
 
 	// ? props
@@ -363,6 +368,10 @@ class Job {
 		//fallback method: secret auth
 		else if (this.secret) {
 			return `Basic ${Buffer.from(this.secret + ':', 'binary').toString('base64')}`;
+		}
+
+		else if (this.token) {
+			return `Basic ${Buffer.from(this.token + ':', 'binary').toString('base64')}`;
 		}
 
 		else if (this.bearer) {
