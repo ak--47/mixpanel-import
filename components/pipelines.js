@@ -46,9 +46,11 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 	// @ts-ignore
 	const mpPipeline = _.pipeline(
 
+		//todo: come up with good names for each step?!?!		
+
 		// * only JSON from stream
 		// @ts-ignore
-		_.filter((data) => {
+		_.filter(function FIRST_EXISTENCE(data) {
 			jobConfig.recordsProcessed++;
 			// very small chance of mem sampling
 			Math.random() <= 0.00005 ? jobConfig.memSamp() : null;
@@ -65,14 +67,14 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 
 		// * apply vendor transforms
 		// @ts-ignore
-		_.map((data) => {
+		_.map(function VENDOR_TRANSFORM(data) {
 			if (jobConfig.vendor && jobConfig.vendorTransform) data = jobConfig.vendorTransform(data);
 			return data;
 		}),
 
 		// * apply user defined transform
 		// @ts-ignore
-		_.map((data) => {
+		_.map(function USER_TRANSFORM(data){
 			if (jobConfig.transformFunc) data = jobConfig.transformFunc(data);
 			return data;
 		}),
@@ -83,14 +85,14 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 
 		// * dedupe
 		// @ts-ignore
-		_.map((data) => {
+		_.map(function DEDUPE(data) {
 			if (jobConfig.dedupe) data = jobConfig.deduper(data);
 			return data;
 		}),
 
 		// * post-transform filter to ignore nulls + empty objects
 		// @ts-ignore
-		_.filter((data) => {
+		_.filter(function SECOND_EXISTENCE(data) {
 			const exists = isNotEmpty(data);
 			if (exists) return true;
 			else {
@@ -102,7 +104,7 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 
 		// * helper transforms
 		// @ts-ignore
-		_.map((data) => {
+		_.map(function HELPER_TRANSFORMS(data) {
 			if (jobConfig.shouldApplyAliases) data = jobConfig.applyAliases(data);
 			if (jobConfig.fixData) data = jobConfig.ezTransform(data);
 			if (jobConfig.removeNulls) data = jobConfig.nullRemover(data);
@@ -110,12 +112,13 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 			if (jobConfig.shouldAddTags) data = jobConfig.addTags(data);
 			if (jobConfig.shouldWhiteBlackList) data = jobConfig.whiteAndBlackLister(data);
 			if (jobConfig.shouldEpochFilter) data = jobConfig.epochFilter(data);
+			if (jobConfig.flattenData) data = jobConfig.flattener(data);
 			return data;
 		}),
 
 		// * post-transform filter to ignore nulls + count byte size
 		// @ts-ignore
-		_.filter((data) => {
+		_.filter(function THIRD_EXISTENCE(data) {
 			const exists = isNotEmpty(data);
 			if (exists) {
 				jobConfig.bytesProcessed += Buffer.byteLength(JSON.stringify(data), 'utf-8');
@@ -137,7 +140,7 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 
 		// * send to mixpanel
 		// @ts-ignore
-		_.map((batch) => {
+		_.map(function HTTP_REQUESTS(batch) {
 			jobConfig.requests++;
 			jobConfig.batches++;
 			jobConfig.batchLengths.push(batch.length);
@@ -152,7 +155,7 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 
 		// * verbose
 		// @ts-ignore
-		_.doto((batch) => {
+		_.doto(function VERBOSE(batch) {
 			if (jobConfig.dryRun) {
 				batch.forEach(data => {
 					jobConfig.dryRunResults.push(data);
@@ -167,7 +170,7 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 
 		// * errors
 		// @ts-ignore
-		_.errors((e) => {
+		_.errors(function ERRORS(e)  {
 			throw e;
 		})
 	);
