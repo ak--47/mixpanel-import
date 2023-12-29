@@ -586,15 +586,19 @@ declare namespace main {
         group_keys?: string[];
     };
 
+	/**
+	 * GA4 transform opts
+	 */
 	type ga4Opts = {
 		user_id?: string;
 		device_id?: string;
 		group_keys?: string[];
 		insert_id_col?: string;
+		set_insert_id?: boolean;
 	}
 
     /**
-     * amplitude transform opts
+     * heap transform opts
      */
     type heapOpts = {
         user_id?: string;

@@ -16,7 +16,7 @@ TRANSFORMS
  * @param  {import('../index').ga4Opts} options
  */
 function gaEventsToMp(options) {
-	const { user_id = "user_id", device_id = "user_pseudo_id", insert_id_col = "" } = options;
+	const { user_id = "user_id", device_id = "user_pseudo_id", insert_id_col = "", set_insert_id = true } = options;
 
 	return function transform(gaEvent) {
 		const mixpanelEvent = {
@@ -32,13 +32,15 @@ function gaEventsToMp(options) {
 		mixpanelEvent.properties.time = mp_time;
 
 		//insert id creation
-		if (insert_id_col && gaEvent[insert_id_col]) {
-			mixpanelEvent.properties.$insert_id = gaEvent[insert_id_col];
-		}
-		else {
-			//create insert id from event
-			const insert_id = murmurhash.v3(stringify(mixpanelEvent)).toString();
-			mixpanelEvent.properties.$insert_id = insert_id;
+		if (set_insert_id) {
+			if (insert_id_col && gaEvent[insert_id_col]) {
+				mixpanelEvent.properties.$insert_id = gaEvent[insert_id_col];
+			}
+			else {
+				//create insert id from event
+				const insert_id = murmurhash.v3(stringify(mixpanelEvent)).toString();
+				mixpanelEvent.properties.$insert_id = insert_id;
+			}
 		}
 
 		//label
