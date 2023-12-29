@@ -2,7 +2,7 @@ const got = require('got');
 const https = require('https');
 const { gzip } = require('node-gzip');
 const u = require('ak-tools');
-const HTTP_AGENT = new https.Agent({ keepAlive: true, maxSockets: 100 })
+const HTTP_AGENT = new https.Agent({ keepAlive: true, maxSockets: 100 });
 
 /** @typedef {import('./job')} JobConfig */
 
@@ -59,7 +59,7 @@ async function flushToMixpanel(batch, jobConfig) {
 			agent: {
 				https: HTTP_AGENT
 			},
-			http2: false, 
+			http2: false,
 			hooks: {
 				// @ts-ignore
 				beforeRetry: [(req, error, count) => {
@@ -88,9 +88,9 @@ async function flushToMixpanel(batch, jobConfig) {
 		};
 
 		if (jobConfig.http2) {
-			options.http2 = true;			
+			options.http2 = true;
 			delete options.headers?.Connection;
-	
+
 		}
 
 		// @ts-ignore
@@ -120,7 +120,14 @@ async function flushToMixpanel(batch, jobConfig) {
 			jobConfig.failed += res?.failed_records?.length || 0;
 		}
 		else if (jobConfig.recordType === 'user' || jobConfig.recordType === 'group') {
-			if (!res.error || res.status) jobConfig.success += res.num_good_events;
+			if (!res.error || res.status) {
+				if (res.num_good_events) {
+					jobConfig.success += res.num_good_events;
+				}
+				else {
+					jobConfig.success += jobConfig.lastBatchLength;
+				}
+			}
 			if (res.error || !res.status) jobConfig.failed += jobConfig.lastBatchLength;
 		}
 
