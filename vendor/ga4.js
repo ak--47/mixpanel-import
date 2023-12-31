@@ -1,7 +1,7 @@
 const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc.js");
 const murmurhash = require("murmurhash");
-const stringify = require("json-stable-stringify");
+// const stringify = require("json-stable-stringify");
 dayjs.extend(utc);
 
 
@@ -16,7 +16,17 @@ TRANSFORMS
  * @param  {import('../index').ga4Opts} options
  */
 function gaEventsToMp(options) {
-	const { user_id = "user_id", device_id = "user_pseudo_id", insert_id_col = "", set_insert_id = true } = options;
+	const {
+		user_id = "user_id",
+		device_id = "user_pseudo_id",
+		insert_id_col = "",
+		set_insert_id = true,
+		insert_id_tup = ["event_name", "user_pseudo_id", "event_timestamp"]
+	} = options;
+	
+
+	if (!Array.isArray(insert_id_tup)) throw new Error("insert_id_tup must be an array");
+
 
 	return function transform(gaEvent) {
 		const mixpanelEvent = {
@@ -32,14 +42,23 @@ function gaEventsToMp(options) {
 		mixpanelEvent.properties.time = mp_time;
 
 		//insert id creation
+		// see: https://stackoverflow.com/a/75894260/4808195
 		if (set_insert_id) {
 			if (insert_id_col && gaEvent[insert_id_col]) {
 				mixpanelEvent.properties.$insert_id = gaEvent[insert_id_col];
 			}
 			else {
 				//create insert id from event
-				const insert_id = murmurhash.v3(stringify(mixpanelEvent)).toString();
-				mixpanelEvent.properties.$insert_id = insert_id;
+				const event_id_tuple = [];
+				for (const identifier of insert_id_tup) {
+					event_id_tuple.push(gaEvent[identifier]);
+				}
+				const event_id = event_id_tuple.join("-");
+				if (event_id) {
+					const insert_id = murmurhash.v3(event_id).toString();
+					mixpanelEvent.properties.$insert_id = insert_id;
+					mixpanelEvent.properties.event_id = event_id;
+				}
 			}
 		}
 
@@ -113,12 +132,12 @@ function gaUserToMp(options) {
 function gaGroupsToMp(options) {
 	// const { user_id, group_keys } = options;
 
-	return function transform(ampEvent) {
-		const groupProps = ampEvent.group_properties;
+	return function transform(gaEvent) {
+		const groupProps = gaEvent.group_properties;
 
 		//skip empty + no user_id
 		if (JSON.stringify(groupProps) === "{}") return {};
-		if (!ampEvent.user_id) return {};
+		if (!gaEvent.user_id) return {};
 
 		const mixpanelGroup = {
 			$group_key: null, //todo

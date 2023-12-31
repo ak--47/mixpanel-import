@@ -595,6 +595,7 @@ declare namespace main {
 		group_keys?: string[];
 		insert_id_col?: string;
 		set_insert_id?: boolean;
+		insert_id_tup?: string[];
 	}
 
     /**
