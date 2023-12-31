@@ -21,9 +21,10 @@ function gaEventsToMp(options) {
 		device_id = "user_pseudo_id",
 		insert_id_col = "",
 		set_insert_id = true,
-		insert_id_tup = ["event_name", "user_pseudo_id", "event_timestamp"]
+		insert_id_tup = ["event_name", "user_pseudo_id", "event_bundle_sequence_id"],
+		time_conversion = "seconds"
 	} = options;
-	
+
 
 	if (!Array.isArray(insert_id_tup)) throw new Error("insert_id_tup must be an array");
 
@@ -36,10 +37,19 @@ function gaEventsToMp(options) {
 			}
 		};
 
-		// micro => mili for time
-		const milliseconds = BigInt(gaEvent.event_timestamp) / 1000n;
-		const mp_time = Number(milliseconds);
-		mixpanelEvent.properties.time = mp_time;
+		if (time_conversion === "seconds" || time_conversion === "s") {
+			// micro => seconds 
+			const milliseconds = BigInt(gaEvent.event_timestamp) / 1000000n;
+			const mp_time = Number(milliseconds);
+			mixpanelEvent.properties.time = mp_time;
+		}
+
+		if (time_conversion === "milliseconds" || time_conversion === "ms") {
+			// micro => milliseconds
+			const milliseconds = BigInt(gaEvent.event_timestamp) / 1000n;
+			const mp_time = Number(milliseconds);
+			mixpanelEvent.properties.time = mp_time;
+		}
 
 		//insert id creation
 		// see: https://stackoverflow.com/a/75894260/4808195
@@ -48,10 +58,9 @@ function gaEventsToMp(options) {
 				mixpanelEvent.properties.$insert_id = gaEvent[insert_id_col];
 			}
 			else {
-				//create insert id from event
 				const event_id_tuple = [];
 				for (const identifier of insert_id_tup) {
-					event_id_tuple.push(gaEvent[identifier]);
+					if (gaEvent[identifier]) event_id_tuple.push(gaEvent[identifier]);
 				}
 				const event_id = event_id_tuple.join("-");
 				if (event_id) {
