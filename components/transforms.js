@@ -443,10 +443,11 @@ function addInsert(insert_tuple = []) {
 
 function fixJson() {
 	return function (record) {
+		try {
 		if (record.properties) {
 			for (const key in record.properties) {
 				if (mightBeJson(record.properties[key])) {
-					
+
 					//CASE: JSON, just stringified
 					try {
 						const attempt = JSON.parse(record.properties[key]);
@@ -474,6 +475,10 @@ function fixJson() {
 			}
 		}
 		return record;
+	}
+	catch (e) {
+		return record;
+	}
 	};
 }
 
@@ -485,20 +490,25 @@ function fixJson() {
  * @returns {boolean} - True if the string might be JSON, otherwise false.
  */
 function mightBeJson(input) {
-	if (typeof input !== 'string') return false;
-	const isItJson =
-		(input.startsWith(`{`) && input.endsWith(`}`)) ||
-		(input.startsWith(`"{`) && input.endsWith(`}"`)) ||
-		(input.startsWith(`'{`) && input.endsWith(`}'`)) ||
-		(input.startsWith(`\\"{`) && input.endsWith(`}'\\`)) ||
-		(input.startsWith(`\\'{`) && input.endsWith(`}'\\`)) ||
-		(input.startsWith(`[`) && input.endsWith(`]`)) ||
-		(input.startsWith(`"[`) && input.endsWith(`]"`)) ||
-		(input.startsWith(`'[`) && input.endsWith(`]'`)) ||
-		(input.startsWith(`\\"[`) && input.endsWith(`]"\\`)) ||
-		(input.startsWith(`\\'[`) && input.endsWith(`]'\\`));
+	try {
+		if (typeof input !== 'string') return false;
+		const isItJson =
+			(input.startsWith(`{`) && input.endsWith(`}`)) ||
+			(input.startsWith(`"{`) && input.endsWith(`}"`)) ||
+			(input.startsWith(`'{`) && input.endsWith(`}'`)) ||
+			(input.startsWith(`\\"{`) && input.endsWith(`}'\\`)) ||
+			(input.startsWith(`\\'{`) && input.endsWith(`}'\\`)) ||
+			(input.startsWith(`[`) && input.endsWith(`]`)) ||
+			(input.startsWith(`"[`) && input.endsWith(`]"`)) ||
+			(input.startsWith(`'[`) && input.endsWith(`]'`)) ||
+			(input.startsWith(`\\"[`) && input.endsWith(`]"\\`)) ||
+			(input.startsWith(`\\'[`) && input.endsWith(`]'\\`));
 
-	return isItJson;
+		return isItJson;
+	}
+	catch (e) {
+		return false;
+	}
 }
 
 
