@@ -280,8 +280,15 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			default: false,
 			type: 'boolean',
 			describe: 'flatten nested objects (properties)',
-			align: 'fixData'
+			alias: 'flattenData'
 		})
+		.options('fix-json', {
+			demandOption: false,
+			default: false,
+			type: 'boolean',
+			describe: 'attempt to fix malformed json',
+			alias: 'fixJson'
+		})		
 		.help()
 		.wrap(null)
 		.argv;

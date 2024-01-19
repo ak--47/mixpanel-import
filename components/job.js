@@ -42,8 +42,8 @@ class Job {
 		this.hashTable = new Set(); //used if de-dupe is on
 		this.memorySamples = []; //used to calculate memory usage
 		this.wasStream = null; //was the data loaded into memory or streamed?
-		this.dryRunResults = []; //results of dry run
-
+		this.dryRunResults = []; //results of dry run	
+		this.insertIdTuple = opts.insertIdTuple || []; //tuple of keys for insert_id	
 
 
 		//? dates
@@ -94,6 +94,7 @@ class Job {
 		this.where = u.isNil(opts.logs) ? '' : opts.where; // where to put logs
 		this.verbose = u.isNil(opts.verbose) ? true : opts.verbose;  // print to stdout?
 		this.fixData = u.isNil(opts.fixData) ? false : opts.fixData; //apply transforms on the data
+		this.fixJson = u.isNil(opts.fixJson) ? false : opts.fixJson; //fix json
 		this.removeNulls = u.isNil(opts.removeNulls) ? false : opts.removeNulls; //remove null fields
 		this.flattenData = u.isNil(opts.flattenData) ? false : opts.flattenData; //flatten nested properties
 		this.abridged = u.isNil(opts.abridged) ? false : opts.abridged; //don't include success responses
@@ -105,6 +106,7 @@ class Job {
 		this.shouldEpochFilter = false;
 		this.shouldAddTags = false;
 		this.shouldApplyAliases = false;
+		this.shouldCreateInsertId = false;
 
 		// ? tagging options
 		this.tags = parse(opts.tags) || {}; //tags for the import		
@@ -131,14 +133,22 @@ class Job {
 		this.vendorTransform = noop;
 		this.epochFilter = noop;
 		this.flattener = noop;
+		this.insertIdAdder = noop;
+		this.jsonFixer = noop;
 		this.parseErrorHandler = opts.parseErrorHandler || returnEmpty(this);
 
 		// ? transform conditions
 		if (this.fixData) this.ezTransform = transforms.ezTransforms(this);
+		if (this.fixJson) this.jsonFixer = transforms.fixJson();
 		if (this.removeNulls) this.nullRemover = transforms.removeNulls();
 		if (this.timeOffset) this.UTCoffset = transforms.UTCoffset(this.timeOffset);
 		if (this.dedupe) this.deduper = transforms.dedupeRecords(this);
 		if (this.flattenData) this.flattener = transforms.flattenProperties(".");
+
+		if (this.insertIdTuple.length > 0 && this.recordType === 'event') {
+			this.shouldCreateInsertId = true;
+			this.insertIdAdder = transforms.addInsert(this.insertIdTuple);
+		}
 		if (Object.keys(this.tags).length > 0) {
 			this.shouldAddTags = true;
 			this.addTags = transforms.addTags(this);

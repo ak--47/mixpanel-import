@@ -113,6 +113,8 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 			if (jobConfig.shouldWhiteBlackList) data = jobConfig.whiteAndBlackLister(data);
 			if (jobConfig.shouldEpochFilter) data = jobConfig.epochFilter(data);
 			if (jobConfig.flattenData) data = jobConfig.flattener(data);
+			if (jobConfig.fixJson) data = jobConfig.jsonFixer(data);
+			if (jobConfig.shouldCreateInsertId) data = jobConfig.insertIdAdder(data);
 			return data;
 		}),
 

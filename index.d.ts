@@ -277,7 +277,16 @@ declare namespace main {
 		  * whether or not to flatten the data; default `false`
 		  */
 		 flattenData?: boolean;
-    };
+		 /**
+		  * a tuple of column names to use as the insert_id; only set this if you want mixpanel-import to generate the insert_id for you
+		  * it will use mumurhash3
+		  */
+		 insertIdTuple?: string[];
+		 /**
+		  * attempt to parse values that poorly encoded json into valid json
+		  */
+		 fixJson?: boolean;
+    };	
 
     /**
      * - a transform function to `map()` over the data

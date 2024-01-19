@@ -123,26 +123,26 @@ function ezTransforms(jobConfig) {
 //flattener
 function flattenProperties(sep = ".") {
 	function flatPropertiesRecurse(properties, roots = []) {
-        return Object.keys(properties)
-            .reduce((memo, prop) => {
-                // Check if the property is an object but not an array
-                const isObjectNotArray = properties[prop] !== null 
-                                         && typeof properties[prop] === 'object' 
-                                         && !Array.isArray(properties[prop]);
+		return Object.keys(properties)
+			.reduce((memo, prop) => {
+				// Check if the property is an object but not an array
+				const isObjectNotArray = properties[prop] !== null
+					&& typeof properties[prop] === 'object'
+					&& !Array.isArray(properties[prop]);
 
-                return Object.assign({}, memo,
-                    isObjectNotArray
-                    ? flatPropertiesRecurse(properties[prop], roots.concat([prop]))
-                    : { [roots.concat([prop]).join(sep)]: properties[prop] }
-                );
-            }, {});
-    }
+				return Object.assign({}, memo,
+					isObjectNotArray
+						? flatPropertiesRecurse(properties[prop], roots.concat([prop]))
+						: { [roots.concat([prop]).join(sep)]: properties[prop] }
+				);
+			}, {});
+	}
 
-    return function(record) {
-        if (record.properties && typeof record.properties === 'object') {
-            record.properties = flatPropertiesRecurse(record.properties);
+	return function (record) {
+		if (record.properties && typeof record.properties === 'object') {
+			record.properties = flatPropertiesRecurse(record.properties);
 			return record;
-        }
+		}
 
 		if (record.$set && typeof record.$set === 'object') {
 			record.$set = flatPropertiesRecurse(record.$set);
@@ -150,10 +150,10 @@ function flattenProperties(sep = ".") {
 
 		}
 
-		return {}
+		return {};
 
-        
-    };
+
+	};
 }
 
 
@@ -413,6 +413,95 @@ function isNotEmpty(data) {
 	return true;
 }
 
+/**
+ * this function is used to add an insert_id to every record based on a tuple of keys OR murmurhash the whole record
+ * @param  {string[]} insert_tuple
+ */
+function addInsert(insert_tuple = []) {
+	return function (record) {
+		//empty record
+		if (!Object.keys(record)) return {};
+		if (insert_tuple.length === 0) return record;
+		const actual_tuple = [];
+		for (const key of insert_tuple) {
+			if (record[key]) actual_tuple.push(record[key]);
+			if (record?.properties?.[key]) actual_tuple.push(record.properties[key]);
+		}
+		if (actual_tuple.length === insert_tuple.length) {
+			const insert_id = murmurhash.v3(actual_tuple.join("-")).toString();
+			record.properties.$insert_id = insert_id;
+		}
+		// if the tuple can't be found, just hash the whole record
+		else {
+			const hash = murmurhash.v3(stringify(record)).toString();
+			record.properties.$insert_id = hash;
+		}
+
+		return record;
+	};
+}
+
+function fixJson() {
+	return function (record) {
+		if (record.properties) {
+			for (const key in record.properties) {
+				if (mightBeJson(record.properties[key])) {
+					
+					//CASE: JSON, just stringified
+					try {
+						const attempt = JSON.parse(record.properties[key]);
+						if (typeof attempt === "string") throw "failed";
+						record.properties[key] = attempt;
+
+					} catch (e) {
+						//CASE 2: JSON escaped
+						try {
+							const attempt = JSON.parse(record.properties[key].replace(/\\\\/g, '\\'));
+							if (typeof attempt === "string") throw "failed";
+							record.properties[key] = attempt;
+						}
+						catch (e) {
+							//CASE 3: Double Stringified JSON
+							const attempt = JSON.parse(JSON.parse(record.properties[key]));
+							if (typeof attempt === "string") throw "failed";
+							record.properties[key] = attempt;
+
+							// ok... we couldn't figure it out...early return
+							return record;
+						}
+					}
+				}
+			}
+		}
+		return record;
+	};
+}
+
+
+
+/**
+ * Quickly determine if a string might be JSON.
+ * @param {string} input - The string to check.
+ * @returns {boolean} - True if the string might be JSON, otherwise false.
+ */
+function mightBeJson(input) {
+	if (typeof input !== 'string') return false;
+	const isItJson =
+		(input.startsWith(`{`) && input.endsWith(`}`)) ||
+		(input.startsWith(`"{`) && input.endsWith(`}"`)) ||
+		(input.startsWith(`'{`) && input.endsWith(`}'`)) ||
+		(input.startsWith(`\\"{`) && input.endsWith(`}'\\`)) ||
+		(input.startsWith(`\\'{`) && input.endsWith(`}'\\`)) ||
+		(input.startsWith(`[`) && input.endsWith(`]`)) ||
+		(input.startsWith(`"[`) && input.endsWith(`]"`)) ||
+		(input.startsWith(`'[`) && input.endsWith(`]'`)) ||
+		(input.startsWith(`\\"[`) && input.endsWith(`]"\\`)) ||
+		(input.startsWith(`\\'[`) && input.endsWith(`]'\\`));
+
+	return isItJson;
+}
+
+
 module.exports = {
 	ezTransforms,
 	removeNulls,
@@ -423,5 +512,7 @@ module.exports = {
 	whiteAndBlackLister,
 	epochFilter,
 	isNotEmpty,
-	flattenProperties
+	flattenProperties,
+	addInsert,
+	fixJson
 };

@@ -8,10 +8,12 @@ const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc");
 dayjs.extend(utc);
 const { Readable } = require("stream");
+const murmurhash = require("murmurhash");
+const stringify = require("json-stable-stringify");
 
 // ! MODULES
 const Job = require("../components/job.js");
-const { UTCoffset, addTags, applyAliases, dedupeRecords, ezTransforms, removeNulls, whiteAndBlackLister, flattenProperties } = require("../components/transforms.js");
+const { UTCoffset, addTags, applyAliases, dedupeRecords, ezTransforms, removeNulls, whiteAndBlackLister, flattenProperties, addInsert, fixJson } = require("../components/transforms.js");
 const { getEnvVars, JsonlParser, chunkForSize, determineDataType, existingStreamInterface, itemStream } = require("../components/parsers.js");
 const fakeCreds = { acct: "test", pass: "test", project: "test" };
 
@@ -253,109 +255,225 @@ describe("transforms", () => {
 
 
 	test("flatten: nested objects", () => {
-        const record = {
-            event: "foo", 
-            properties: {
-                nested: { key1: "value1", key2: "value2" },
-                key3: "value3"
-            }
-        };
-        expect(flattenProps(record)).toEqual({
-            event: "foo", 
-            properties: {
-                "nested.key1": "value1",
-                "nested.key2": "value2",
-                key3: "value3"
-            }
-        });
+		const record = {
+			event: "foo",
+			properties: {
+				nested: { key1: "value1", key2: "value2" },
+				key3: "value3"
+			}
+		};
+		expect(flattenProps(record)).toEqual({
+			event: "foo",
+			properties: {
+				"nested.key1": "value1",
+				"nested.key2": "value2",
+				key3: "value3"
+			}
+		});
+	});
+
+	test("flatten: ignore arrays", () => {
+		const record = {
+			event: "foo",
+			properties: {
+				array: [1, 2, 3],
+				key: "value"
+			}
+		};
+		expect(flattenProps(record)).toEqual({
+			event: "foo",
+			properties: {
+				array: [1, 2, 3],
+				key: "value"
+			}
+		});
+	});
+
+	test("flatten: handle empty", () => {
+		const record = {
+			event: "foo",
+			properties: {}
+		};
+		expect(flattenProps(record)).toEqual({
+			event: "foo",
+			properties: {}
+		});
+	});
+
+	test("flatten: non-objects", () => {
+		const record = {
+			event: "foo",
+			properties: {
+				key1: "value1",
+				key2: 123,
+				key3: true
+			}
+		};
+		expect(flattenProps(record)).toEqual({
+			event: "foo",
+			properties: {
+				key1: "value1",
+				key2: 123,
+				key3: true
+			}
+		});
+	});
+
+	test("flatten: deep nested", () => {
+		const record = {
+			event: "foo",
+			properties: {
+				nested: { level2: { key: "value" } },
+				key: "value"
+			}
+		};
+		expect(flattenProps(record)).toEqual({
+			event: "foo",
+			properties: {
+				"nested.level2.key": "value",
+				key: "value"
+			}
+		});
+	});
+
+	test("flaten: $set as well", () => {
+		const record = {
+			event: "foo",
+			$set: {
+				nested: { key1: "value1", key2: "value2" },
+				key3: "value3"
+			}
+		};
+		expect(flattenProps(record)).toEqual({
+			event: "foo",
+			$set: {
+				"nested.key1": "value1",
+				"nested.key2": "value2",
+				key3: "value3"
+			}
+		});
+	});
+
+	test("flatten: don't break", () => {
+		const record = { event: "foo" };
+		expect(flattenProps(record)).toEqual({});
+	});
+
+
+	test("insert_id: basic", () => {
+		const record = {
+			event: "userLogin",
+			distinct_id: "user123",
+			time: "2021-01-01T00:00:00Z",
+			properties: {}
+		};
+		const enhanceRecord = addInsert(["event", "distinct_id", "time"]);
+		const enhancedRecord = enhanceRecord(record);
+		const expectedInsertId = murmurhash.v3([record.event, record.distinct_id, record.time].join("-")).toString();
+
+		expect(enhancedRecord.properties.$insert_id).toEqual(expectedInsertId);
+	});
+
+	test("insert_id: missing fields", () => {
+		const record = {
+			event: "userLogin",
+			distinct_id: "user123",
+			properties: {}
+		};
+		const enhanceRecord = addInsert(["event", "distinct_id", "time"]);
+		const expectedHash = murmurhash.v3(stringify(record)).toString();
+		const enhancedRecord = enhanceRecord(record);
+
+		expect(enhancedRecord.properties.$insert_id).toEqual(expectedHash);
+	});
+
+	test("insert_id: fields in props", () => {
+		const record = {
+			event: "userLogin",
+			properties: {
+				distinct_id: "user123",
+				time: "2021-01-01T00:00:00Z"
+			}
+		};
+		const expectedInsertId = murmurhash.v3([record.event, record.properties.distinct_id, record.properties.time].join("-")).toString();
+		const enhanceRecord = addInsert(["event", "distinct_id", "time"]);
+		const enhancedRecord = enhanceRecord(record);
+		expect(enhancedRecord.properties.$insert_id).toEqual(expectedInsertId);
+	});
+
+	test("insert_id: empty record", () => {
+		const record = {};
+		const enhanceRecord = addInsert();
+
+		expect(enhanceRecord(record)).toEqual(record);
+	});
+
+	test("insert_id: null", () => {
+		const record = {
+			event: null,
+			distinct_id: null,
+			time: null,
+			properties: {}
+		};
+		const enhanceRecord = addInsert("event", "distinct_id", "time");
+		const expectedHash = murmurhash.v3(stringify(record)).toString();
+		const enhancedRecord = enhanceRecord(record);
+
+
+		expect(enhancedRecord.properties.$insert_id).toEqual(expectedHash);
+	});
+
+	test("insert_id: fallback", () => {
+		const record = {
+			event: "userLogin",
+			properties: {
+				distinct_id: "user123"
+			}
+		};
+		const enhanceRecord = addInsert("event", "distinct_id", "time");
+		const expectedHash = murmurhash.v3(stringify(record)).toString();
+		const enhancedRecord = enhanceRecord(record);
+		expect(enhancedRecord.properties.$insert_id).toEqual(expectedHash);
+	});
+
+	const jsonProcessor = fixJson();
+
+	test('fix json: obj', () => {
+        const record = { properties: { key1: '{"name":"John"}' } };
+        expect(jsonProcessor(record)).toEqual({ properties: { key1: { name: 'John' } } });
     });
 
-    test("flatten: ignore arrays", () => {
-        const record = {
-            event: "foo", 
-            properties: {
-                array: [1, 2, 3],
-                key: "value"
-            }
-        };
-        expect(flattenProps(record)).toEqual({
-            event: "foo", 
-            properties: {
-                array: [1, 2, 3],
-                key: "value"
-            }
-        });
+    test('fix json: array', () => {
+        const record = { properties: { key1: '["apple", "banana"]' } };
+        expect(jsonProcessor(record)).toEqual({ properties: { key1: ["apple", "banana"] } });
     });
 
-    test("flatten: handle empty", () => {
-        const record = {
-            event: "foo", 
-            properties: {}
-        };
-        expect(flattenProps(record)).toEqual({
-            event: "foo", 
-            properties: {}
-        });
+    test('fix json: str', () => {
+        const record = { properties: { key1: JSON.stringify('{"name":"John"}') } };
+        expect(jsonProcessor(record)).toEqual({ properties: { key1: { name: 'John' } } });
     });
 
-    test("flatten: non-objects", () => {
-        const record = {
-            event: "foo", 
-            properties: {
-                key1: "value1",
-                key2: 123,
-                key3: true
-            }
-        };
-        expect(flattenProps(record)).toEqual({
-            event: "foo", 
-            properties: {
-                key1: "value1",
-                key2: 123,
-                key3: true
-            }
-        });
+    test('fix json: esc', () => {
+        const record = { properties: { key1: '{"name":"John \\\\ Doe"}' } };
+        expect(jsonProcessor(record)).toEqual({ properties: { key1: { name: 'John \\ Doe' } } });
     });
 
-    test("flatten: deep nested", () => {
-        const record = {
-            event: "foo", 
-            properties: {
-                nested: { level2: { key: "value" } },
-                key: "value"
-            }
-        };
-        expect(flattenProps(record)).toEqual({
-            event: "foo", 
-            properties: {
-                "nested.level2.key": "value",
-                key: "value"
-            }
-        });
+    test('fix json: double', () => {
+        const record = { properties: { key1: JSON.stringify(JSON.stringify({ name: 'John' })) } };
+        expect(jsonProcessor(record)).toEqual({ properties: { key1: { name: 'John' } } });
     });
 
-    test("flaten: $set as well", () => {
-        const record = {
-            event: "foo", 
-            $set: {
-                nested: { key1: "value1", key2: "value2" },
-                key3: "value3"
-            }
-        };
-        expect(flattenProps(record)).toEqual({
-            event: "foo", 
-            $set: {
-                "nested.key1": "value1",
-                "nested.key2": "value2",
-                key3: "value3"
-            }
-        });
+    test('fix json: all good', () => {
+        const record = { properties: { key1: 'Just a regular string' } };
+        expect(jsonProcessor(record)).toEqual({ properties: { key1: 'Just a regular string' } });
     });
 
-    test("flatten: don't break", () => {
-        const record = { event: "foo" };
-        expect(flattenProps(record)).toEqual({});
+    test('fix json: dont fail', () => {
+        const record = { properties: { key1: 'This is not a JSON string: {name:"John"}' } };
+        expect(jsonProcessor(record)).toEqual({ properties: { key1: 'This is not a JSON string: {name:"John"}' } });
     });
+
+
 });
 
 describe("parsers", () => {
