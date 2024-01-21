@@ -288,6 +288,12 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			type: 'boolean',
 			describe: 'attempt to fix malformed json',
 			alias: 'fixJson'
+		})
+		.options('cohort-id', {
+			demandOption: false,
+			type: 'number',
+			describe: 'cohort id for people exports',
+			alias: 'cohortId'
 		})		
 		.help()
 		.wrap(null)

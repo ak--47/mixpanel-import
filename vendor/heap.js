@@ -7,7 +7,7 @@ const md5 = require("md5");
 const fs = require("fs");
 const path = require("path");
 const { exportProfiles } = require('../components/exporters.js');
-const jobConfig = require('../components/job.js');
+
 
 /**
  * @typedef {Object<string, *>} StringKeyedObject
@@ -35,7 +35,7 @@ async function getDeviceIdMap(secret) {
 		recordType: 'peopleExport',
 		verbose: false,
 	};
-
+	const jobConfig = require('../components/job.js');
 	console.log(`\nDownloading User Profiles from Mixpanel\n`);
 	await exportProfiles('./mixpanel-exports', new jobConfig(creds, opts));
 

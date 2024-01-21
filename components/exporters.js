@@ -108,7 +108,8 @@ async function exportProfiles(folder, jobConfig) {
 		method: 'POST',
 		url: jobConfig.url,
 		headers: {
-			Authorization: auth
+			Authorization: auth,
+			'content-type': 'application/x-www-form-urlencoded'
 		},
 		searchParams: {},
 		responseType: 'json',
@@ -116,6 +117,8 @@ async function exportProfiles(folder, jobConfig) {
 	};
 	// @ts-ignore
 	if (jobConfig.project) options.searchParams.project_id = jobConfig.project;
+	
+	if (jobConfig.cohortId) options.body = `filter_by_cohort={"id": ${jobConfig.cohortId}}&include_all_users=true`;
 
 	// @ts-ignore
 	let request = await got(options).catch(e => {

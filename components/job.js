@@ -45,6 +45,7 @@ class Job {
 		this.dryRunResults = []; //results of dry run	
 		this.insertIdTuple = opts.insertIdTuple || []; //tuple of keys for insert_id	
 
+		// ? export stuff
 
 		//? dates
 		if (opts.start) {
@@ -60,6 +61,17 @@ class Job {
 
 		else {
 			this.end = dayjs().format(dateFormat);
+		}
+
+		if (opts.cohortId) {
+			try {
+				if (typeof opts.cohortId === 'string') this.cohort_id = parseInt(opts.cohortId);
+				else this.cohortId = opts.cohortId;
+			}
+			catch (e) {
+				console.error('cohort_id must be an integer');
+				throw e;
+			}
 		}
 
 		// ? string options
