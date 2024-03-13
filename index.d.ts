@@ -90,6 +90,7 @@ declare namespace main {
     | "ga4"
     | "adobe"
     | "pendo"
+	| "mparticle"
     | ""
     | void;
 
@@ -642,6 +643,15 @@ declare namespace main {
   type amplitudeOpts = {
     user_id?: string;
     group_keys?: string[];
+  };
+
+  /**
+   * amplitude transform opts
+   */
+  type mparticleOpts = {
+    user_id?: string;
+	device_id?: string;
+	insert_id?: string;
   };
 
   /**

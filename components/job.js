@@ -6,6 +6,7 @@ const transforms = require('./transforms.js');
 const { ampEventsToMp, ampUserToMp, ampGroupToMp } = require('../vendor/amplitude.js');
 const { heapEventsToMp, heapUserToMp, heapGroupToMp, heapParseErrorHandler } = require('../vendor/heap.js');
 const { gaEventsToMp, gaUserToMp, gaGroupsToMp } = require('../vendor/ga4.js');
+const {mparticleEventsToMixpanel, mParticleUserToMixpanel, mParticleGroupToMixpanel} = require('../vendor/mparticle.js');
 
 
 /** @typedef {import('../index.js').Creds} Creds */
@@ -226,6 +227,7 @@ class Job {
 							break;
 					}
 					break;
+
 				case 'ga4':
 					switch (opts.recordType?.toLowerCase()) {
 						case 'event':
@@ -242,6 +244,24 @@ class Job {
 							break;
 						default:
 							transformFunc = gaEventsToMp(this.vendorOpts);
+							break;
+					}
+					break;
+				case 'mparticle':
+					switch (opts.recordType?.toLowerCase()) {
+						case 'event':
+							transformFunc = mparticleEventsToMixpanel(this.vendorOpts);
+							break;
+						case 'user':
+							this.dedupe = true;
+							this.deduper = transforms.dedupeRecords(this);
+							transformFunc = mParticleUserToMixpanel(this.vendorOpts);
+							break;
+						case 'group':
+							transformFunc = mParticleGroupToMixpanel(this.vendorOpts);
+							break;
+						default:
+							transformFunc = mparticleEventsToMixpanel(this.vendorOpts);
 							break;
 					}
 					break;

@@ -1123,6 +1123,32 @@ describe("vendor tests", () => {
 		longTimeout
 	);
 
+	test(
+		"mparticle: events",
+		async () => {
+			const job = await mp({}, "./testData/mparticle/sample_data.txt", { ...opts, recordType: "event", vendor: "mparticle", dryRun: true });
+			expect(job.dryRun.length).toBe(177);
+			const { dryRun: data } = job;
+			expect(data.every(e => e.event)).toBe(true);
+			expect(data.every(e => e.properties)).toBe(true);
+			expect(data.every(e => e.properties?.$device_id || e.properties?.$user_id)).toBe(true);
+		},
+		longTimeout
+	);
+
+	test(
+		"mparticle: users",
+		async () => {
+			const job = await mp({}, "./testData/mparticle/sample_data.txt", { ...opts, recordType: "user", vendor: "mparticle", dryRun: true });
+			expect(job.dryRun.length).toBe(64);
+			const { dryRun: data } = job;
+			expect(data.every(u => u.$distinct_id)).toBe(true);
+			expect(data.every(u => u.$ip)).toBe(true);
+			expect(data.every(u => u.$set)).toBe(true);
+		},
+		longTimeout
+	);
+
 
 });
 
