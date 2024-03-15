@@ -72,6 +72,10 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 			return data;
 		}),
 
+		// * allow for "exploded" transforms [{},{},{}] to emit single events {}
+		// @ts-ignore
+		_.flatten(),
+
 		// * apply user defined transform
 		// @ts-ignore
 		_.map(function USER_TRANSFORM(data){
@@ -112,6 +116,7 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 			if (jobConfig.shouldAddTags) data = jobConfig.addTags(data);
 			if (jobConfig.shouldWhiteBlackList) data = jobConfig.whiteAndBlackLister(data);
 			if (jobConfig.shouldEpochFilter) data = jobConfig.epochFilter(data);
+			if (jobConfig.propertyScrubber) data = jobConfig.propertyScrubber(data);
 			if (jobConfig.flattenData) data = jobConfig.flattener(data);
 			if (jobConfig.fixJson) data = jobConfig.jsonFixer(data);
 			if (jobConfig.shouldCreateInsertId) data = jobConfig.insertIdAdder(data);

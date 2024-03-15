@@ -255,6 +255,13 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'don\'t send events with prop values on blacklist',
 			type: 'string'
 		})
+		.options('scrub-properties', {
+			demandOption: false,
+			default: '[]',
+			alias: 'scrubProperties',
+			describe: 'remove properties from events',
+			type: 'string'
+		})
 		.options('dry-run', {
 			demandOption: false,
 			alias: 'dryRun',

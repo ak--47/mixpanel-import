@@ -13,8 +13,27 @@ const stringify = require("json-stable-stringify");
 
 // ! MODULES
 const Job = require("../components/job.js");
-const { UTCoffset, addTags, applyAliases, dedupeRecords, ezTransforms, removeNulls, whiteAndBlackLister, flattenProperties, addInsert, fixJson } = require("../components/transforms.js");
-const { getEnvVars, JsonlParser, chunkForSize, determineDataType, existingStreamInterface, itemStream } = require("../components/parsers.js");
+const { UTCoffset,
+	addTags,
+	applyAliases,
+	dedupeRecords,
+	ezTransforms,
+	removeNulls,
+	whiteAndBlackLister,
+	flattenProperties,
+	addInsert,
+	fixJson,
+	resolveFallback,
+	scrubProperties
+} = require("../components/transforms.js");
+
+const { getEnvVars,
+	JsonlParser,
+	chunkForSize,
+	determineDataType,
+	existingStreamInterface,
+	itemStream
+} = require("../components/parsers.js");
 const fakeCreds = { acct: "test", pass: "test", project: "test" };
 
 describe("job config", () => {
@@ -439,39 +458,132 @@ describe("transforms", () => {
 	const jsonProcessor = fixJson();
 
 	test('fix json: obj', () => {
-        const record = { properties: { key1: '{"name":"John"}' } };
-        expect(jsonProcessor(record)).toEqual({ properties: { key1: { name: 'John' } } });
-    });
+		const record = { properties: { key1: '{"name":"John"}' } };
+		expect(jsonProcessor(record)).toEqual({ properties: { key1: { name: 'John' } } });
+	});
 
-    test('fix json: array', () => {
-        const record = { properties: { key1: '["apple", "banana"]' } };
-        expect(jsonProcessor(record)).toEqual({ properties: { key1: ["apple", "banana"] } });
-    });
+	test('fix json: array', () => {
+		const record = { properties: { key1: '["apple", "banana"]' } };
+		expect(jsonProcessor(record)).toEqual({ properties: { key1: ["apple", "banana"] } });
+	});
 
-    test('fix json: str', () => {
-        const record = { properties: { key1: JSON.stringify('{"name":"John"}') } };
-        expect(jsonProcessor(record)).toEqual({ properties: { key1: { name: 'John' } } });
-    });
+	test('fix json: str', () => {
+		const record = { properties: { key1: JSON.stringify('{"name":"John"}') } };
+		expect(jsonProcessor(record)).toEqual({ properties: { key1: { name: 'John' } } });
+	});
 
-    test('fix json: esc', () => {
-        const record = { properties: { key1: '{"name":"John \\\\ Doe"}' } };
-        expect(jsonProcessor(record)).toEqual({ properties: { key1: { name: 'John \\ Doe' } } });
-    });
+	test('fix json: esc', () => {
+		const record = { properties: { key1: '{"name":"John \\\\ Doe"}' } };
+		expect(jsonProcessor(record)).toEqual({ properties: { key1: { name: 'John \\ Doe' } } });
+	});
 
-    test('fix json: double', () => {
-        const record = { properties: { key1: JSON.stringify(JSON.stringify({ name: 'John' })) } };
-        expect(jsonProcessor(record)).toEqual({ properties: { key1: { name: 'John' } } });
-    });
+	test('fix json: double', () => {
+		const record = { properties: { key1: JSON.stringify(JSON.stringify({ name: 'John' })) } };
+		expect(jsonProcessor(record)).toEqual({ properties: { key1: { name: 'John' } } });
+	});
 
-    test('fix json: all good', () => {
-        const record = { properties: { key1: 'Just a regular string' } };
-        expect(jsonProcessor(record)).toEqual({ properties: { key1: 'Just a regular string' } });
-    });
+	test('fix json: all good', () => {
+		const record = { properties: { key1: 'Just a regular string' } };
+		expect(jsonProcessor(record)).toEqual({ properties: { key1: 'Just a regular string' } });
+	});
 
-    test('fix json: dont fail', () => {
-        const record = { properties: { key1: 'This is not a JSON string: {name:"John"}' } };
-        expect(jsonProcessor(record)).toEqual({ properties: { key1: 'This is not a JSON string: {name:"John"}' } });
-    });
+	test('fix json: dont fail', () => {
+		const record = { properties: { key1: 'This is not a JSON string: {name:"John"}' } };
+		expect(jsonProcessor(record)).toEqual({ properties: { key1: 'This is not a JSON string: {name:"John"}' } });
+	});
+
+	const fallBackData = {
+		key1: '',
+		key2: null,
+		key3: undefined,
+		key4: 'value4',
+		key5: 0,
+		key6: false,
+		key7: [],
+		key8: {}
+	};
+
+	test('resolve fallback: no keys', () => {
+		expect(resolveFallback(fallBackData, [])).toBeNull();
+	});
+
+	test('resolve fallback: no object', () => {
+		expect(resolveFallback(null, ['key1', 'key2'])).toBeNull();
+		expect(resolveFallback(undefined, ['key1', 'key2'])).toBeNull();
+	});
+
+	test('resolve fallback: should return null if none of the keys exist in the data object', () => {
+		expect(resolveFallback(fallBackData, ['key9', 'key10'])).toBeNull();
+	});
+
+	test('resolve fallback: first key', () => {
+		expect(resolveFallback(fallBackData, ['key1', 'key2', 'key3', 'key4'])).toBe('value4');
+		expect(resolveFallback(fallBackData, ['key4', 'key5', 'key6'])).toBe('value4');
+		expect(resolveFallback(fallBackData, ['key7', 'key8'])).toBeNull();
+	});
+
+	test('resolve fallback: non strings should be null', () => {
+		expect(resolveFallback(fallBackData, ['key5'])).toBe('0');
+		expect(resolveFallback(fallBackData, ['key6'])).toBe('false');
+	});
+
+	test('resolve fallback: nested keys', () => {
+		const nestedData = {
+			level1: {
+				level2: {
+					level3: 'nestedValue'
+				}
+			}
+		};
+		expect(resolveFallback(nestedData, ['level3'])).toBe('nestedValue');
+	});
+
+
+	test('scrub data', () => {
+		const data = {
+			event: 'test',
+			properties: {
+				$user_id: '123',
+				$device_id: '456',
+				email: 'ak@foo.com',
+				nested: {
+					foo: "bar",
+					baz: "qux"
+				},
+				cart: [{
+					item: "apple",
+					price: 1.02
+				}, {
+					item: "banana",
+					price: 2.03
+				}]
+			},
+		};
+
+		const scrubKeys = ['email', 'item', 'foo'];
+
+		const expected = {
+			event: 'test',
+			properties: {
+				$user_id: '123',
+				$device_id: '456',
+				nested: {
+					baz: "qux"
+				},
+				cart: [{
+					price: 1.02
+				}, {
+					price: 2.03
+				}]
+			},
+		};
+
+		const scrubber = scrubProperties(scrubKeys);
+		const scrubbed = scrubber(data);
+
+		expect(scrubbed).toEqual(expected);
+
+	});
 
 
 });

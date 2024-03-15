@@ -444,43 +444,116 @@ function addInsert(insert_tuple = []) {
 function fixJson() {
 	return function (record) {
 		try {
-		if (record.properties) {
-			for (const key in record.properties) {
-				if (mightBeJson(record.properties[key])) {
+			if (record.properties) {
+				for (const key in record.properties) {
+					if (mightBeJson(record.properties[key])) {
 
-					//CASE: JSON, just stringified
-					try {
-						const attempt = JSON.parse(record.properties[key]);
-						if (typeof attempt === "string") throw "failed";
-						record.properties[key] = attempt;
-
-					} catch (e) {
-						//CASE 2: JSON escaped
+						//CASE: JSON, just stringified
 						try {
-							const attempt = JSON.parse(record.properties[key].replace(/\\\\/g, '\\'));
-							if (typeof attempt === "string") throw "failed";
-							record.properties[key] = attempt;
-						}
-						catch (e) {
-							//CASE 3: Double Stringified JSON
-							const attempt = JSON.parse(JSON.parse(record.properties[key]));
+							const attempt = JSON.parse(record.properties[key]);
 							if (typeof attempt === "string") throw "failed";
 							record.properties[key] = attempt;
 
-							// ok... we couldn't figure it out...early return
-							return record;
+						} catch (e) {
+							//CASE 2: JSON escaped
+							try {
+								const attempt = JSON.parse(record.properties[key].replace(/\\\\/g, '\\'));
+								if (typeof attempt === "string") throw "failed";
+								record.properties[key] = attempt;
+							}
+							catch (e) {
+								//CASE 3: Double Stringified JSON
+								const attempt = JSON.parse(JSON.parse(record.properties[key]));
+								if (typeof attempt === "string") throw "failed";
+								record.properties[key] = attempt;
+
+								// ok... we couldn't figure it out...early return
+								return record;
+							}
 						}
 					}
 				}
 			}
+			return record;
 		}
-		return record;
-	}
-	catch (e) {
-		return record;
-	}
+		catch (e) {
+			return record;
+		}
 	};
 }
+
+
+
+/**
+ * Resolves the first non-empty value for the provided keys from the data object; recursively searches through objects and arrays.
+ * @param {object} data - The data object to search
+ * @param {string[]} keys - The keys to search in the data object
+ * @returns {string | null} - The first non-empty value found, or null if none found
+ */
+function resolveFallback(data, keys) {
+	if (!data || keys.length === 0) return null;
+
+	for (const key of keys) {
+		if (data?.hasOwnProperty(key)) {
+			const value = data[key];
+
+			// Check if the value is not undefined, not null, and not an empty string
+			if (value !== undefined && value !== null && value !== '') {
+				if (Array.isArray(value) && value.length === 0) return null;
+				if (typeof value === 'object' && Object.keys(value).length === 0) return null;
+				return value.toString();
+			}
+		}
+
+		// If the current key doesn't lead to a valid value, check if data is an object
+		// and recursively call the function for nested objects.
+		if (typeof data === 'object') {
+			for (const nestedKey in data) {
+				if (typeof data[nestedKey] === 'object') {
+					const result = resolveFallback(data[nestedKey], [key]);
+					if (result !== null) {
+						return result;
+					}
+				}
+			}
+		}
+	}
+
+	return null;
+}
+
+/**
+ * delete properties from an object; useful for removing PII or redacting sensitive or duplicate data
+ * @param  {string[]} keysToScrub
+ */
+function scrubProperties(keysToScrub = []) {
+	return function recursiveScrub(data) {
+		if (!data || keysToScrub.length === 0) return data;
+		scrubber(data, keysToScrub);
+		return data;
+	};
+}
+
+
+// performance optimized recursive function to scrub properties from an object
+// https://chat.openai.com/share/98f40372-2a3a-413c-a42c-c8cf28f6d074
+// MUTATES THE OBJECT
+function scrubber(obj, keysToScrub) {
+	if (Array.isArray(obj)) {
+		obj.forEach(element => scrubber(element, keysToScrub));
+	} else if (obj !== null && typeof obj === 'object') {
+		for (const key of keysToScrub) {
+			if (obj.hasOwnProperty(key)) {
+				delete obj[key];
+			}
+		}
+		for (const key in obj) {
+			scrubber(obj[key], keysToScrub);
+		}
+	}
+}
+
+
 
 
 
@@ -524,5 +597,7 @@ module.exports = {
 	isNotEmpty,
 	flattenProperties,
 	addInsert,
-	fixJson
+	fixJson,
+	resolveFallback,
+	scrubProperties
 };

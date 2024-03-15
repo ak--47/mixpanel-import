@@ -12,7 +12,8 @@
         "ecmaVersion": "latest"
     },
     "rules": {
-    },
+		"no-prototype-builtins": "off"
+	  },
 	"globals": {
 		"l" : true
 	},

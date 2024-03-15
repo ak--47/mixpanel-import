@@ -90,7 +90,7 @@ declare namespace main {
     | "ga4"
     | "adobe"
     | "pendo"
-	| "mparticle"
+    | "mparticle"
     | ""
     | void;
 
@@ -317,6 +317,11 @@ declare namespace main {
      * a cohort_id to use for peopleExport
      */
     cohortId?: string | number;
+    /**
+     * a list of properties to scrub from the data; this is useful for removing PII or other sensitive data
+     * the properties will be deleted from the data before it is sent to mixpanel
+     */
+    scrubProperties?: string[];
   };
 
   /**
@@ -649,9 +654,15 @@ declare namespace main {
    * amplitude transform opts
    */
   type mparticleOpts = {
-    user_id?: string;
-	device_id?: string;
-	insert_id?: string;
+    user_id?: string[];
+    device_id?: string[];
+    insert_id?: string;
+    user_attributes?: boolean;
+    context?: boolean;
+    identities?: boolean;
+    application_info?: boolean;
+    device_info?: boolean;
+    source_info: ?boolean;
   };
 
   /**

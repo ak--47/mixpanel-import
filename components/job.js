@@ -6,7 +6,7 @@ const transforms = require('./transforms.js');
 const { ampEventsToMp, ampUserToMp, ampGroupToMp } = require('../vendor/amplitude.js');
 const { heapEventsToMp, heapUserToMp, heapGroupToMp, heapParseErrorHandler } = require('../vendor/heap.js');
 const { gaEventsToMp, gaUserToMp, gaGroupsToMp } = require('../vendor/ga4.js');
-const {mparticleEventsToMixpanel, mParticleUserToMixpanel, mParticleGroupToMixpanel} = require('../vendor/mparticle.js');
+const {mParticleEventsToMixpanel, mParticleUserToMixpanel, mParticleGroupToMixpanel} = require('../vendor/mparticle.js');
 
 
 /** @typedef {import('../index.js').Creds} Creds */
@@ -133,6 +133,7 @@ class Job {
 		this.propKeyBlacklist = parse(opts.propKeyBlacklist) || [];
 		this.propValWhitelist = parse(opts.propValWhitelist) || [];
 		this.propValBlacklist = parse(opts.propValBlacklist) || [];
+		this.scrubProperties = parse(opts.scrubProperties) || [];
 
 		// ? transform options
 		this.transformFunc = opts.transformFunc || noop;
@@ -148,6 +149,7 @@ class Job {
 		this.flattener = noop;
 		this.insertIdAdder = noop;
 		this.jsonFixer = noop;
+		this.propertyScrubber = noop;
 		this.parseErrorHandler = opts.parseErrorHandler || returnEmpty(this);
 
 		// ? transform conditions
@@ -185,6 +187,10 @@ class Job {
 		if (opts.epochStart || opts.epochEnd) {
 			this.shouldEpochFilter = true;
 			this.epochFilter = transforms.epochFilter(this);
+		}
+
+		if (this.scrubProperties.length > 0) {
+			this.propertyScrubber = transforms.scrubProperties(this.scrubProperties);
 		}
 
 		if (opts.vendor) {
@@ -250,7 +256,7 @@ class Job {
 				case 'mparticle':
 					switch (opts.recordType?.toLowerCase()) {
 						case 'event':
-							transformFunc = mparticleEventsToMixpanel(this.vendorOpts);
+							transformFunc = mParticleEventsToMixpanel(this.vendorOpts);
 							break;
 						case 'user':
 							this.dedupe = true;
@@ -261,7 +267,7 @@ class Job {
 							transformFunc = mParticleGroupToMixpanel(this.vendorOpts);
 							break;
 						default:
-							transformFunc = mparticleEventsToMixpanel(this.vendorOpts);
+							transformFunc = mParticleEventsToMixpanel(this.vendorOpts);
 							break;
 					}
 					break;

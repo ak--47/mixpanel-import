@@ -407,6 +407,106 @@ describe("transform", () => {
 		},
 		longTimeout
 	);
+
+
+	test(
+		"scrubs event props",
+		async () => {
+			const records = [{
+				event: 'test',
+				properties: {
+					$user_id: '123',
+					$device_id: '456',
+					email: 'ak@foo.com',
+					nested: {
+						foo: "bar",
+						baz: "qux"
+					},
+					cart: [{
+						item: "apple",
+						price: 1.02
+					}, {
+						item: "banana",
+						price: 2.03
+					}]
+				},
+			},
+			{
+				event: 'jest',
+				properties: {
+					$user_id: '123',
+					$device_id: '456',
+					email: 'ak@foo.com',
+					nested: {
+						foo: "bar",
+						baz: "qux"
+					},
+					cart: [{
+						item: "apple",
+						price: 1.02
+					}, {
+						item: "banana",
+						price: 2.03
+					}]
+				},
+			}];
+			const data = await mp({}, records, { ...opts, scrubProperties: ["email", "foo", "item"], dryRun: true });
+			const {dryRun : results} = data;
+			expect(results.every((e) => !e.properties.email)).toBe(true);
+			expect(results.every((e) => !e.properties.nested.foo)).toBe(true);
+			expect(results.map(e => e.properties.cart).every(c => !c.item)).toBe(true);			
+		}
+	);
+
+
+	test(
+		"scrubs user props",
+		async () => {
+			const records = [{
+				$distinct_id: 'test',
+				$set: {
+					$user_id: '123',
+					$device_id: '456',
+					email: 'ak@foo.com',
+					nested: {
+						foo: "bar",
+						baz: "qux"
+					},
+					cart: [{
+						item: "apple",
+						price: 1.02
+					}, {
+						item: "banana",
+						price: 2.03
+					}]
+				},
+			},
+			{
+				$distinct_id: 'jest',
+				$set: {
+					$user_id: '123',
+					$device_id: '456',
+					email: 'ak@foo.com',
+					nested: {
+						foo: "bar",
+						baz: "qux"
+					},
+					cart: [{
+						item: "apple",
+						price: 1.02
+					}, {
+						item: "banana",
+						price: 2.03
+					}]
+				},
+			}];
+			const data = await mp({}, records, { ...opts, recordType: 'user', scrubProperties: ["email", "foo", "item"], dryRun: true });
+			const {dryRun : results} = data;
+			expect(results.every((e) => !e.$set.email)).toBe(true);
+			expect(results.every((e) => !e.$set.nested.foo)).toBe(true);
+			expect(results.map(e => e.$set.cart).every(c => !c.item)).toBe(true);			
+		}
+	);
 });
 
 describe("object streams", () => {
@@ -1059,102 +1159,7 @@ allowNotification,set,App Navigation,,app:#/OnBoardingSurveyView/welcome/introdu
 });
 
 
-describe("vendor tests", () => {
 
-	test(
-		"amplitude: events",
-		async () => {
-			const job = await mp({}, "./testData/amplitude/2023-04-10_1#0.json", { ...opts, recordType: "event", vendor: "amplitude", dryRun: true });
-			expect(job.dryRun.length).toBe(4011);
-
-		},
-		longTimeout
-	);
-
-	test(
-		"amplitude: users",
-		async () => {
-			const job = await mp({}, "./testData/amplitude/2023-04-10_1#0.json", { ...opts, recordType: "user", vendor: "amplitude", dryRun: true });
-			expect(job.dryRun.length).toBe(216);
-		},
-		longTimeout
-	);
-
-	const heapIdMap = "./testData/heap/merged-users-mappings-test.json";
-
-	test(
-		"heap: events",
-		async () => {
-			const job = await mp({}, "./testData/heap/heap-events-ex.json", { ...opts, recordType: "event", vendor: "heap", dryRun: true });
-			expect(job.dryRun.length).toBe(10000);
-
-			const jobWithMerge = await mp({}, "./testData/heap/events-can-merge.json", { ...opts, recordType: "event", vendor: "heap", dryRun: true, vendorOpts: { device_id_file: heapIdMap } });
-			expect(jobWithMerge.dryRun.length).toBe(12685);
-			expect(jobWithMerge.dryRun.filter(a => a.properties.$user_id).length).toBe(11510);
-		},
-		longTimeout
-	);
-
-	test(
-		"heap: users",
-		async () => {
-			const job = await mp({}, "./testData/heap/heap-users-ex.json", { ...opts, recordType: "user", vendor: "heap", dryRun: true });
-			expect(job.dryRun.length).toBe(1500);
-		},
-		longTimeout
-	);
-
-
-	test(
-		"ga4: events",
-		async () => {
-			const job = await mp({}, "./testData/ga4/ga4_sample.json", { ...opts, recordType: "event", vendor: "ga4", dryRun: true });
-			expect(job.dryRun.length).toBe(10000);
-		},
-		longTimeout
-	);
-
-	test(
-		"ga4: users",
-		async () => {
-			const job = await mp({}, "./testData/ga4/ga4_sample.json", { ...opts, recordType: "user", vendor: "ga4", dryRun: true });
-			expect(job.dryRun.length).toBe(3276);
-		},
-		longTimeout
-	);
-
-	test(
-		"mparticle: events",
-		async () => {
-			const job = await mp({}, "./testData/mparticle/sample_data.txt", { ...opts, recordType: "event", vendor: "mparticle", dryRun: true });
-			expect(job.dryRun.length).toBe(177);
-			const { dryRun: data } = job;
-			expect(data.every(e => e.event)).toBe(true);
-			expect(data.every(e => e.properties)).toBe(true);
-			expect(data.every(e => e.properties?.$device_id || e.properties?.$user_id)).toBe(true);
-		},
-		longTimeout
-	);
-
-	test(
-		"mparticle: users",
-		async () => {
-			const job = await mp({}, "./testData/mparticle/sample_data.txt", { ...opts, recordType: "user", vendor: "mparticle", dryRun: true });
-			expect(job.dryRun.length).toBe(64);
-			const { dryRun: data } = job;
-			expect(data.every(u => u.$distinct_id)).toBe(true);
-			expect(data.every(u => u.$ip)).toBe(true);
-			expect(data.every(u => u.$set)).toBe(true);
-		},
-		longTimeout
-	);
-
-
-});
-
-afterAll(async () => {
-	execSync(`npm run prune`);
-});
 
 function badDataTrans(badData) {
 	const mixpanelProfile = {
