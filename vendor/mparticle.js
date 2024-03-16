@@ -2,6 +2,29 @@ const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc.js");
 dayjs.extend(utc);
 const { flattenProperties } = require('../components/transforms');
+const murmurhash = require("murmurhash");
+
+
+const bad_user_ids = [
+	"-1",
+	"0",
+	"00000000-0000-0000-0000-000000000000",
+	"<nil>",
+	"]",
+	"anon",
+	"anonymous",
+	"false",
+	"lmy47d",
+	"n/a",
+	"na",
+	"nil",
+	"none",
+	"null",
+	"true",
+	"undefined",
+	"unknown",
+	"{}"
+];
 
 
 /*
@@ -36,6 +59,7 @@ function mParticleEventsToMixpanel(options) {
 		for (const id of user_id) {
 			const foundIdentity = mParticleEvents?.user_identities?.find(identity => identity.identity_type === id);
 			if (foundIdentity && foundIdentity.identity) {
+				if (bad_user_ids.includes(foundIdentity.identity?.toString())) break;
 				knownId = foundIdentity.identity?.toString();
 				break;
 			}
@@ -49,7 +73,7 @@ function mParticleEventsToMixpanel(options) {
 			}
 
 			if (mParticleEvents[id]) {
-				anonId = mParticleEvents[id];
+				anonId = mParticleEvents[id]?.toString();
 				break;
 			}
 		}
@@ -81,18 +105,20 @@ function mParticleEventsToMixpanel(options) {
 		// iterate over events
 		for (const mParticleEvent of events) {
 			const $insert_id = mParticleEvent?.data?.[insert_id];
+			const timestamp = mParticleEvent?.data?.timestamp_unixtime_ms;
 			//transform each event			
 			const mixpanelEvent = {
 				event: mParticleEvent.event_type,
 				properties: {
 					$device_id: anonId,
-					time: Number(mParticleEvent?.data?.timestamp_unixtime_ms),
+					time: Number(timestamp),
 					$source: `mparticle-to-mixpanel`
 				}
 			};
 
 			// handle insert_id
 			if ($insert_id) mixpanelEvent.properties.$insert_id = $insert_id;
+			if (!$insert_id) mixpanelEvent.properties.$insert_id = murmurhash.v3([anonId, timestamp, mParticleEvent.event_type].join("-")).toString();mParticleEvent.message_id;
 
 			// handle custom event names
 			if (mParticleEvent.event_type === "custom_event") mixpanelEvent.event = mParticleEvent?.data?.event_name;
@@ -131,6 +157,7 @@ function mParticleUserToMixpanel(options) {
 		for (const id of user_id) {
 			const foundIdentity = mParticleEvents?.user_identities?.find(identity => identity.identity_type === id);
 			if (foundIdentity && foundIdentity.identity) {
+				if (bad_user_ids.includes(foundIdentity.identity?.toString())) break;
 				knownId = foundIdentity.identity?.toString();
 				break;
 			}
