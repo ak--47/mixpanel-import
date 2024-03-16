@@ -36,7 +36,7 @@ function mParticleEventsToMixpanel(options) {
 		for (const id of user_id) {
 			const foundIdentity = mParticleEvents?.user_identities?.find(identity => identity.identity_type === id);
 			if (foundIdentity && foundIdentity.identity) {
-				knownId = foundIdentity.identity;
+				knownId = foundIdentity.identity?.toString();
 				break;
 			}
 		}
@@ -44,7 +44,7 @@ function mParticleEventsToMixpanel(options) {
 		for (const id of device_id) {
 			const foundIdentity = mParticleEvents?.user_identities?.find(identity => identity.identity_type === id);
 			if (foundIdentity && foundIdentity.identity) {
-				anonId = foundIdentity.identity;
+				anonId = foundIdentity.identity?.toString();
 				break;
 			}
 
@@ -131,7 +131,7 @@ function mParticleUserToMixpanel(options) {
 		for (const id of user_id) {
 			const foundIdentity = mParticleEvents?.user_identities?.find(identity => identity.identity_type === id);
 			if (foundIdentity && foundIdentity.identity) {
-				knownId = foundIdentity.identity;
+				knownId = foundIdentity.identity?.toString();
 				break;
 			}
 		}

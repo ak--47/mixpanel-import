@@ -422,6 +422,8 @@ function addInsert(insert_tuple = []) {
 		//empty record
 		if (!Object.keys(record)) return {};
 		if (insert_tuple.length === 0) return record;
+		// don't overwrite existing insert_id
+		if (record.properties.$insert_id) return record;
 		const actual_tuple = [];
 		for (const key of insert_tuple) {
 			if (record[key]) actual_tuple.push(record[key]);
