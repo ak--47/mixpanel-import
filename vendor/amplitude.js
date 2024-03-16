@@ -1,6 +1,9 @@
 const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc.js");
 dayjs.extend(utc);
+const murmurhash = require("murmurhash");
+
+
 
 
 /*
@@ -21,8 +24,7 @@ function ampEventsToMp(options) {
 			event: ampEvent.event_type,
 			properties: {
 				$device_id: ampEvent.device_id || "",
-				time: dayjs.utc(ampEvent.event_time).valueOf(),
-				$insert_id: ampEvent.$insert_id,
+				time: dayjs.utc(ampEvent.event_time).valueOf(),				
 				ip: ampEvent.ip_address,
 				$city: ampEvent.city,
 				$region: ampEvent.region,
@@ -30,6 +32,11 @@ function ampEventsToMp(options) {
 				$source: `amplitude-to-mixpanel`
 			}
 		};
+		
+		//insert_id resolution
+		const $insert_id = ampEvent.$insert_id;
+		if ($insert_id) mixpanelEvent.properties.$insert_id = $insert_id;
+		if (!$insert_id) mixpanelEvent.properties.$insert_id = murmurhash.v3([ampEvent.device_id, ampEvent.event_time, ampEvent.event_type].join("-")).toString();
 
 		//canonical id resolution
 		if (ampEvent?.user_properties?.[user_id]) mixpanelEvent.properties.$user_id = ampEvent.user_properties[user_id];

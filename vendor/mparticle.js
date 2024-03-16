@@ -118,7 +118,7 @@ function mParticleEventsToMixpanel(options) {
 
 			// handle insert_id
 			if ($insert_id) mixpanelEvent.properties.$insert_id = $insert_id;
-			if (!$insert_id) mixpanelEvent.properties.$insert_id = murmurhash.v3([anonId, timestamp, mParticleEvent.event_type].join("-")).toString();mParticleEvent.message_id;
+			if (!$insert_id) mixpanelEvent.properties.$insert_id = murmurhash.v3([anonId, timestamp, mParticleEvent.event_type].join("-")).toString();
 
 			// handle custom event names
 			if (mParticleEvent.event_type === "custom_event") mixpanelEvent.event = mParticleEvent?.data?.event_name;
