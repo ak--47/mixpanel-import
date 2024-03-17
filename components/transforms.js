@@ -541,17 +541,27 @@ function scrubProperties(keysToScrub = []) {
 // https://chat.openai.com/share/98f40372-2a3a-413c-a42c-c8cf28f6d074
 // MUTATES THE OBJECT
 function scrubber(obj, keysToScrub) {
-	if (Array.isArray(obj)) {
-		obj.forEach(element => scrubber(element, keysToScrub));
-	} else if (obj !== null && typeof obj === 'object') {
-		for (const key of keysToScrub) {
-			if (obj.hasOwnProperty(key)) {
-				delete obj[key];
+	try {
+		if (Array.isArray(obj)) {
+			obj.forEach(element => scrubber(element, keysToScrub));
+		} else if (obj !== null && typeof obj === 'object') {
+			for (const key of keysToScrub) {
+				try {
+					if (obj.hasOwnProperty(key)) {
+						delete obj[key];
+					}
+				}
+				catch (e) { 
+					// noop
+				}
+			}
+			for (const key in obj) {
+				scrubber(obj[key], keysToScrub);
 			}
 		}
-		for (const key in obj) {
-			scrubber(obj[key], keysToScrub);
-		}
+	}
+	catch (e) { 
+		// noop
 	}
 }
 

@@ -51,7 +51,7 @@ function mParticleEventsToMixpanel(options) {
 	} = options;
 
 	return function transform(mParticleEvents) {
-		const { events } = mParticleEvents;
+		const { events = [] } = mParticleEvents;
 		// Resolve user_id and device_id using fallback pattern
 		let knownId = '';
 		let anonId = '';
