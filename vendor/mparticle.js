@@ -4,7 +4,6 @@ dayjs.extend(utc);
 const { flattenProperties } = require('../components/transforms');
 const murmurhash = require("murmurhash");
 
-
 const bad_user_ids = [
 	"-1",
 	"0",
@@ -40,7 +39,7 @@ TRANSFORMS
  */
 function mParticleEventsToMixpanel(options) {
 	const { user_id = ["customer_id"],
-		device_id = ["mp_deviceid", "mpid"],
+		device_id = ["mp_deviceid", "mpid", "session_uuid"],
 		insert_id = "event_id",
 		user_attributes = false,
 		context = false,
@@ -59,24 +58,48 @@ function mParticleEventsToMixpanel(options) {
 		for (const id of user_id) {
 			const foundIdentity = mParticleEvents?.user_identities?.find(identity => identity.identity_type === id);
 			if (foundIdentity && foundIdentity.identity) {
-				if (bad_user_ids.includes(foundIdentity.identity?.toString())) break;
-				knownId = foundIdentity.identity?.toString();
-				break;
+				if (bad_user_ids.includes(foundIdentity.identity?.toString())) {
+					break;
+				}
+				if (foundIdentity.identity?.toString()) {
+					knownId = foundIdentity.identity?.toString();
+					break;
+				}
+
 			}
 		}
 
 		for (const id of device_id) {
+			//look through user_identities
 			const foundIdentity = mParticleEvents?.user_identities?.find(identity => identity.identity_type === id);
 			if (foundIdentity && foundIdentity.identity) {
-				anonId = foundIdentity.identity?.toString();
-				break;
+				if (foundIdentity.identity?.toString()) {
+					anonId = foundIdentity.identity?.toString();
+					break;
+				}
 			}
 
+			// look at top level
 			if (mParticleEvents[id]) {
-				anonId = mParticleEvents[id]?.toString();
-				break;
+				if (mParticleEvents[id]?.toString()) {
+					anonId = mParticleEvents[id]?.toString();
+					break;
+				}
+			}
+
+			// look at event properties
+			if (mParticleEvents?.events) {
+				const foundIdentity = mParticleEvents?.events?.find(event => event?.data?.[id]);
+				if (foundIdentity && foundIdentity?.data?.[id]?.toString()) {
+					anonId = foundIdentity?.data?.[id]?.toString();
+					break;
+				}
 			}
 		}
+
+		// ! EVENT DEBUGGER
+		// if (mParticleEvents?.events?.find(event => event?.data?.event_id === `-3316258325130631688`))  debugger;
+
 
 		// Initialize with default props
 		let inheritedProps = {
@@ -105,12 +128,13 @@ function mParticleEventsToMixpanel(options) {
 		// iterate over events
 		for (const mParticleEvent of events) {
 			const $insert_id = mParticleEvent?.data?.[insert_id];
+
 			const timestamp = mParticleEvent?.data?.timestamp_unixtime_ms;
 			//transform each event			
 			const mixpanelEvent = {
 				event: mParticleEvent.event_type,
 				properties: {
-					$device_id: anonId,
+					$device_id: anonId, //all events must have device_id
 					time: Number(timestamp),
 					$source: `mparticle-to-mixpanel`
 				}
@@ -158,8 +182,11 @@ function mParticleUserToMixpanel(options) {
 			const foundIdentity = mParticleEvents?.user_identities?.find(identity => identity.identity_type === id);
 			if (foundIdentity && foundIdentity.identity) {
 				if (bad_user_ids.includes(foundIdentity.identity?.toString())) break;
-				knownId = foundIdentity.identity?.toString();
-				break;
+
+				if (foundIdentity.identity?.toString()) {
+					knownId = foundIdentity.identity?.toString();
+					break;
+				}
 			}
 		}
 		if (!knownId) return {};
@@ -173,7 +200,7 @@ function mParticleUserToMixpanel(options) {
 			mpid: mParticleEvents.mpid,
 		};
 
-		//skip empty props
+		//skip empty profiles
 		if (Object.keys(userProps).length === 0) return {};
 
 		const mixpanelProfile = {
@@ -189,7 +216,8 @@ function mParticleUserToMixpanel(options) {
 }
 
 /**
- * returns a function that transforms an amplitude group into a mixpanel group
+ * TODO: implement
+ * returns a function that transforms an mparticle group into a mixpanel group
  * @param  {import('../index').mparticleOpts} options
  */
 function mParticleGroupToMixpanel(options) {
