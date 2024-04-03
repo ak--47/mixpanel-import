@@ -5,9 +5,11 @@ const { chunkForSize } = require("./parsers.js");
 // $ streamers
 const _ = require('highland');
 
-// $ networking
+// $ networking + filesystem
 const { exportEvents, exportProfiles } = require('./exporters');
 const { flushLookupTable, flushToMixpanel } = require('./importers.js');
+const fs = require('fs');
+
 
 // $ env
 const cliParams = require('./cli.js');
@@ -21,6 +23,8 @@ const dayjs = require('dayjs');
 const utc = require('dayjs/plugin/utc');
 dayjs.extend(utc);
 const { callbackify } = require('util');
+
+
 
 
 /** @typedef {import('./job')} JobConfig */
@@ -42,6 +46,11 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 	if (jobConfig.recordType === 'peopleExport' && typeof stream === 'string') return exportProfiles(stream, jobConfig);
 
 	const flush = _.wrapCallback(callbackify(flushToMixpanel));
+	let fileStream;
+	if (jobConfig.writeToFile) {
+		fileStream = fs.createWriteStream(jobConfig.outputFilePath, { flags: 'a', highWaterMark: jobConfig.highWater });
+	}
+
 
 	// @ts-ignore
 	const mpPipeline = _.pipeline(
@@ -78,7 +87,7 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 
 		// * apply user defined transform
 		// @ts-ignore
-		_.map(function USER_TRANSFORM(data){
+		_.map(function USER_TRANSFORM(data) {
 			if (jobConfig.transformFunc) data = jobConfig.transformFunc(data);
 			return data;
 		}),
@@ -153,6 +162,12 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 			jobConfig.batchLengths.push(batch.length);
 			jobConfig.lastBatchLength = batch.length;
 			if (jobConfig.dryRun) return _(Promise.resolve(batch));
+			if (jobConfig.writeToFile) {
+				batch.forEach(data => {
+					fileStream.write(JSON.stringify(data) + '\n');
+				});
+				return _(Promise.resolve(batch));
+			}
 			return flush(batch, jobConfig);
 		}),
 
@@ -177,7 +192,7 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 
 		// * errors
 		// @ts-ignore
-		_.errors(function ERRORS(e)  {
+		_.errors(function ERRORS(e) {
 			throw e;
 		})
 	);
@@ -188,7 +203,12 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 
 	// @ts-ignore
 	stream.pipe(mpPipeline);
-	return mpPipeline.collect().toPromise(Promise);
+	return mpPipeline.collect().toPromise(Promise)
+		.then(() => {
+			if (fileStream) {
+				fileStream.end();
+			}
+		});
 
 }
 

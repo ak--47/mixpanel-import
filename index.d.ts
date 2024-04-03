@@ -321,7 +321,16 @@ declare namespace main {
      * a list of properties to scrub from the data; this is useful for removing PII or other sensitive data
      * the properties will be deleted from the data before it is sent to mixpanel
      */
-    scrubProperties?: string[];
+    scrubProps?: string[];
+
+	/**
+	 * whether or not to write the transformed data to a file instead of sending it to mixpanel
+	 */
+	writeToFile?: boolean;
+	/**
+	 * the path to write the transformed data to	 
+	 */
+	outputFilePath?: string;
   };
 
   /**
@@ -399,10 +408,6 @@ declare namespace main {
      * - human readable timestamp
      */
     durationHuman: string;
-    /**
-     * - human readable timestamp [deprecated]
-     */
-    human: string;
     /**
      * - the number of times a 429 response was received (and the request was retried)
      */

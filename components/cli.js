@@ -255,10 +255,10 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'don\'t send events with prop values on blacklist',
 			type: 'string'
 		})
-		.options('scrub-properties', {
+		.options('scrub-props', {
 			demandOption: false,
 			default: '[]',
-			alias: 'scrubProperties',
+			alias: 'scrubProps',
 			describe: 'remove properties from events',
 			type: 'string'
 		})
@@ -267,6 +267,13 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			alias: 'dryRun',
 			default: false,
 			describe: 'just transform data; don\'t send it',
+			type: 'boolean'
+		})
+		.options('write-to-file', {
+			demandOption: false,
+			alias: 'writeToFile',
+			default: false,
+			describe: 'transform data + write locally',
 			type: 'boolean'
 		})
 		.options('vendor', {

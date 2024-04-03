@@ -120,6 +120,8 @@ class Job {
 		this.shouldAddTags = false;
 		this.shouldApplyAliases = false;
 		this.shouldCreateInsertId = false;
+		this.writeToFile = u.isNil(opts.writeToFile) ? false : opts.writeToFile; //write to file instead of sending
+		this.outputFilePath = opts.outputFilePath || './mixpanel-transform.json'; //where to write the file
 
 		// ? tagging options
 		this.tags = parse(opts.tags) || {}; //tags for the import		
@@ -133,7 +135,10 @@ class Job {
 		this.propKeyBlacklist = parse(opts.propKeyBlacklist) || [];
 		this.propValWhitelist = parse(opts.propValWhitelist) || [];
 		this.propValBlacklist = parse(opts.propValBlacklist) || [];
-		this.scrubProperties = parse(opts.scrubProperties) || [];
+		this.scrubProps = parse(opts.scrubProps) || [];
+		
+		// @ts-ignore backwards compatibility
+		if (opts?.scrubProperties) this.scrubProps = parse(opts.scrubProperties) || [];
 
 		// ? transform options
 		this.transformFunc = opts.transformFunc || noop;
@@ -189,8 +194,8 @@ class Job {
 			this.epochFilter = transforms.epochFilter(this);
 		}
 
-		if (this.scrubProperties.length > 0) {
-			this.propertyScrubber = transforms.scrubProperties(this.scrubProperties);
+		if (this.scrubProps.length > 0) {
+			this.propertyScrubber = transforms.scrubProperties(this.scrubProps);
 		}
 
 		if (opts.vendor) {
@@ -518,7 +523,6 @@ class Job {
 			startTime: this.startTime,
 			endTime: new Date().toISOString(),
 			duration: delta || 0,
-			human: human,
 			durationHuman: human,
 			bytes: this.bytesProcessed,
 			bytesHuman: u.bytesHuman(this.bytesProcessed),
