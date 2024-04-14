@@ -32,7 +32,7 @@ async function getDeviceIdMap(secret) {
 
 	/** @type {import('mixpanel-import').Options} */
 	const opts = {
-		recordType: 'peopleExport',
+		recordType: 'profile-export',
 		verbose: false,
 	};
 	const jobConfig = require('../components/job.js');

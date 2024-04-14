@@ -101,7 +101,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	// clean up
 	jobConfig.timer.end(false);
 	const summary = jobConfig.summary();
-	l(`${jobConfig.type === 'export' ? 'export' : 'import'} complete in ${summary.human}\n\n`);
+	l(`${jobConfig.type === 'export' ? 'export' : 'import'} complete in ${summary.durationHuman}\n\n`);
 	const stats = {
 		total: u.comma(summary.total),
 		success: u.comma(summary.success),

@@ -7,6 +7,7 @@ const u = require('ak-tools');
 
 
 function cliParams() {
+	// @ts-ignore
 	const args = yargs(process.argv.splice(2))
 		.scriptName("mixpanel-import")
 		.usage(`${welcome}\n\nusage:\nnpx $0 --yes [file or folder] [options]
@@ -61,7 +62,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			demandOption: false,
 			alias: "recordType",
 			default: 'event',
-			describe: 'event, user, group, table, export, or peopleExport',
+			describe: 'event, user, group, table, export, or profile-export',
 			type: 'string'
 		})
 		.option("compress", {
@@ -308,12 +309,19 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			type: 'number',
 			describe: 'cohort id for people exports',
 			alias: 'cohortId'
-		})		
+		})
+		.options('data-group-id', {
+			demandOption: false,
+			alias: 'dataGroupId',
+			type: 'number',
+			describe: 'data group id for group profile exports'
+		})			
 		.help()
 		.wrap(null)
 		.argv;
 	// @ts-ignore
 	if (args._.length === 0 && !args.type?.toLowerCase()?.includes('export')) {
+		// @ts-ignore
 		yargs.showHelp();
 		process.exit();
 	}
@@ -342,6 +350,7 @@ function showProgress(record, processed, requests) {
 	const percentHeap = (heapUsed / heapTotal) * 100;
 	const percentRSS = (heapUsed / rss) * 100;
 	const line = `${record}s: ${u.comma(processed)} | batches: ${u.comma(requests)} | memory: ${u.bytesHuman(heapUsed)} (heap: ${u.round(percentHeap)}% total:${u.round(percentRSS)}%)\t\t`;
+	// @ts-ignore
 	readline.cursorTo(process.stdout, 0);
 	process.stdout.write(line);
 }

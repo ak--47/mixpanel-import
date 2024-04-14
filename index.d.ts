@@ -29,7 +29,7 @@ declare namespace main {
     | "group"
     | "table"
     | "export"
-    | "peopleExport"
+    | "profile-export"
     | "events"
     | "users"
     | "groups"
@@ -314,23 +314,27 @@ declare namespace main {
      */
     fixJson?: boolean;
     /**
-     * a cohort_id to use for peopleExport
+     * a cohort_id to use for people profile exports
      */
     cohortId?: string | number;
+    /**
+     * a data_group_id to use for exporting group profiles
+     */
+    dataGroupId?: string;
     /**
      * a list of properties to scrub from the data; this is useful for removing PII or other sensitive data
      * the properties will be deleted from the data before it is sent to mixpanel
      */
     scrubProps?: string[];
 
-	/**
-	 * whether or not to write the transformed data to a file instead of sending it to mixpanel
-	 */
-	writeToFile?: boolean;
-	/**
-	 * the path to write the transformed data to	 
-	 */
-	outputFilePath?: string;
+    /**
+     * whether or not to write the transformed data to a file instead of sending it to mixpanel
+     */
+    writeToFile?: boolean;
+    /**
+     * the path to write the transformed data to
+     */
+    outputFilePath?: string;
   };
 
   /**

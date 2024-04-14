@@ -43,7 +43,7 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 
 	if (jobConfig.recordType === 'table') return flushLookupTable(stream, jobConfig);
 	if (jobConfig.recordType === 'export' && typeof stream === 'string') return exportEvents(stream, jobConfig);
-	if (jobConfig.recordType === 'peopleExport' && typeof stream === 'string') return exportProfiles(stream, jobConfig);
+	if (jobConfig.recordType === 'profile-export' && typeof stream === 'string') return exportProfiles(stream, jobConfig);
 
 	const flush = _.wrapCallback(callbackify(flushToMixpanel));
 	let fileStream;

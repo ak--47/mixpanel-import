@@ -98,9 +98,11 @@ async function exportEvents(filename, jobConfig) {
 async function exportProfiles(folder, jobConfig) {
 	const auth = jobConfig.auth;
 	const allFiles = [];
+	let entityName = `users`;
+	if (jobConfig.dataGroupId) entityName = `group`;
 
 	let iterations = 0;
-	let fileName = `people-${iterations}.json`;
+	let fileName = `${entityName}-${iterations}.json`;
 	let file = path.resolve(`${folder}/${fileName}`);
 
 	/** @type {got.Options} */
@@ -119,6 +121,8 @@ async function exportProfiles(folder, jobConfig) {
 	if (jobConfig.project) options.searchParams.project_id = jobConfig.project;
 	
 	if (jobConfig.cohortId) options.body = `filter_by_cohort={"id": ${jobConfig.cohortId}}&include_all_users=true`;
+	if (jobConfig.dataGroupId) options.body = `data_group_id=${jobConfig.dataGroupId}`;
+	options.body = encodeURIComponent(options.body);
 
 	// @ts-ignore
 	let request = await got(options).catch(e => {
@@ -166,7 +170,7 @@ async function exportProfiles(folder, jobConfig) {
 		page++;
 		iterations++;
 
-		fileName = `people-${iterations}.json`;
+		fileName = `${entityName}-${iterations}.json`;
 		file = path.resolve(`${folder}/${fileName}`);
 		// @ts-ignore
 		options.searchParams.page = page;

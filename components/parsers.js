@@ -38,7 +38,7 @@ async function determineDataType(data, jobConfig) {
 		return filename;
 	}
 
-	if (jobConfig.recordType === 'peopleExport') {
+	if (jobConfig.recordType === 'profile-export') {
 		if (jobConfig.where) {
 			return path.resolve(jobConfig.where);
 		}

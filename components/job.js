@@ -6,7 +6,7 @@ const transforms = require('./transforms.js');
 const { ampEventsToMp, ampUserToMp, ampGroupToMp } = require('../vendor/amplitude.js');
 const { heapEventsToMp, heapUserToMp, heapGroupToMp, heapParseErrorHandler } = require('../vendor/heap.js');
 const { gaEventsToMp, gaUserToMp, gaGroupsToMp } = require('../vendor/ga4.js');
-const {mParticleEventsToMixpanel, mParticleUserToMixpanel, mParticleGroupToMixpanel} = require('../vendor/mparticle.js');
+const { mParticleEventsToMixpanel, mParticleUserToMixpanel, mParticleGroupToMixpanel } = require('../vendor/mparticle.js');
 
 
 /** @typedef {import('../index.js').Creds} Creds */
@@ -75,6 +75,12 @@ class Job {
 			}
 		}
 
+		if (opts.dataGroupId) {
+			if (opts.dataGroupId?.startsWith('-')) this.dataGroupId = opts.dataGroupId.split("-")[1];
+			else this.dataGroupId = opts.dataGroupId;
+			
+		}
+
 		// ? string options
 		this.recordType = opts.recordType || `event`; // event, user, group or table		
 		this.streamFormat = opts.streamFormat || ''; // json or jsonl ... only relevant for streams
@@ -136,7 +142,7 @@ class Job {
 		this.propValWhitelist = parse(opts.propValWhitelist) || [];
 		this.propValBlacklist = parse(opts.propValBlacklist) || [];
 		this.scrubProps = parse(opts.scrubProps) || [];
-		
+
 		// @ts-ignore backwards compatibility
 		if (opts?.scrubProperties) this.scrubProps = parse(opts.scrubProperties) || [];
 
@@ -355,7 +361,7 @@ class Job {
 			group: `https://api.mixpanel.com/groups`,
 			table: `https://api.mixpanel.com/lookup-tables/`,
 			export: `https://data.mixpanel.com/api/2.0/export`,
-			peopleexport: `https://mixpanel.com/api/2.0/engage`
+			"profile-export": `https://mixpanel.com/api/2.0/engage`
 		},
 		eu: {
 			event: `https://api-eu.mixpanel.com/import`,
@@ -363,7 +369,7 @@ class Job {
 			group: `https://api-eu.mixpanel.com/groups`,
 			table: `https://api-eu.mixpanel.com/lookup-tables/`,
 			export: `https://data-eu.mixpanel.com/api/2.0/export`,
-			peopleexport: `https://eu.mixpanel.com/api/2.0/engage`
+			"profile-export": `https://eu.mixpanel.com/api/2.0/engage`
 		}
 
 	};
