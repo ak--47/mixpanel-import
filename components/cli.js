@@ -304,6 +304,13 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'attempt to fix malformed json',
 			alias: 'fixJson'
 		})
+		.options('add-token', {
+			demandOption: false,
+			default: false,
+			type: 'boolean',
+			describe: 'add token to each record',
+			alias: 'addToken'
+		})
 		.options('cohort-id', {
 			demandOption: false,
 			type: 'number',
@@ -315,7 +322,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			alias: 'dataGroupId',
 			type: 'number',
 			describe: 'data group id for group profile exports'
-		})			
+		})
 		.help()
 		.wrap(null)
 		.argv;

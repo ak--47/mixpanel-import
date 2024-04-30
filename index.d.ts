@@ -327,6 +327,11 @@ declare namespace main {
      */
     scrubProps?: string[];
 
+	/**
+	 * if true, will add a token or $token to the data
+	 */
+	addToken?: boolean;
+
     /**
      * whether or not to write the transformed data to a file instead of sending it to mixpanel
      */

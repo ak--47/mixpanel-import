@@ -24,7 +24,8 @@ const { UTCoffset,
 	addInsert,
 	fixJson,
 	resolveFallback,
-	scrubProperties
+	scrubProperties,
+	addToken
 } = require("../components/transforms.js");
 
 const { getEnvVars,
@@ -124,13 +125,35 @@ describe("transforms", () => {
 		expect(transformed.time).toBeUndefined();
 	});
 
-	test("adds token", () => {
+	test("adds token (implicit)", () => {
 		const config = { recordType: "user", token: "testToken" };
 		const record = {
 			$distinct_id: "123",
 			$set: { name: "John" }
 		};
 		const transformed = ezTransforms(config)(record);
+		expect(transformed.$token).toBe("testToken");
+		expect(transformed.$set.name).toBe("John");
+	});
+
+	test("adds events token (explicit)", () => {
+		const config = { recordType: "event", token: "testToken" };
+		const record = {
+			event: "foo",
+			properties: { name: "bar" }
+		};
+		const transformed = addToken(config)(record);
+		expect(transformed.properties.token).toBe("testToken");
+	});
+
+
+	test("adds users token (explicit)", () => {
+		const config = { recordType: "user", token: "testToken" };
+		const record = {
+			$distinct_id: "123",
+			$set: { name: "John" }
+		};
+		const transformed = addToken(config)(record);
 		expect(transformed.$token).toBe("testToken");
 		expect(transformed.$set.name).toBe("John");
 	});
@@ -586,6 +609,7 @@ describe("transforms", () => {
 	});
 
 
+
 });
 
 describe("parsers", () => {
@@ -668,7 +692,7 @@ describe("parsers", () => {
 
 	test("people export: where", async () => {
 		const jobConfig = {
-			recordType: "peopleExport",
+			recordType: "profile-export",
 			where: "/path/to/folder"
 		};
 		const result = await determineDataType({}, jobConfig);

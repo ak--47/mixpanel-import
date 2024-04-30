@@ -212,8 +212,9 @@ function addTags(jobConfig) {
 	};
 }
 
-// rename property keys
+
 /**
+ * rename property keys
  * @param  {JobConfig} jobConfig
  */
 function applyAliases(jobConfig) {
@@ -245,6 +246,28 @@ function applyAliases(jobConfig) {
 	};
 }
 
+/**
+ * adds mixpanel token
+ * @param  {JobConfig} jobConfig
+ */
+function addToken(jobConfig) {
+	const type = jobConfig.recordType;
+	const token = jobConfig.token;
+	return function (record) {
+		if (type === "event") {
+			if (record.properties) record.properties.token = token;
+			else {
+				record.properties = { token };
+			}
+			return record;
+		}
+		if (type === "user" || type === "group") {
+			if (record) record.$token = token;
+			return record;
+		}
+		return record;
+	};
+}
 
 /**
  * offset the time of events by an integer number of hours
@@ -484,8 +507,6 @@ function fixJson() {
 	};
 }
 
-
-
 /**
  * Resolves the first non-empty value for the provided keys from the data object; recursively searches through objects and arrays.
  * @param {object} data - The data object to search
@@ -551,7 +572,7 @@ function scrubber(obj, keysToScrub) {
 						delete obj[key];
 					}
 				}
-				catch (e) { 
+				catch (e) {
 					// noop
 				}
 			}
@@ -560,7 +581,7 @@ function scrubber(obj, keysToScrub) {
 			}
 		}
 	}
-	catch (e) { 
+	catch (e) {
 		// noop
 	}
 }
@@ -611,5 +632,6 @@ module.exports = {
 	addInsert,
 	fixJson,
 	resolveFallback,
-	scrubProperties
+	scrubProperties,
+	addToken
 };

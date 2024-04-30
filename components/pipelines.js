@@ -118,17 +118,18 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 		// * helper transforms
 		// @ts-ignore
 		_.map(function HELPER_TRANSFORMS(data) {
-			if (jobConfig.shouldApplyAliases) data = jobConfig.applyAliases(data);
+			if (jobConfig.shouldApplyAliases) jobConfig.applyAliases(data);
 			if (jobConfig.fixData) data = jobConfig.ezTransform(data);
-			if (jobConfig.removeNulls) data = jobConfig.nullRemover(data);
-			if (jobConfig.timeOffset) data = jobConfig.UTCoffset(data);
-			if (jobConfig.shouldAddTags) data = jobConfig.addTags(data);
+			if (jobConfig.removeNulls) jobConfig.nullRemover(data);
+			if (jobConfig.timeOffset) jobConfig.UTCoffset(data);
+			if (jobConfig.shouldAddTags) jobConfig.addTags(data);
 			if (jobConfig.shouldWhiteBlackList) data = jobConfig.whiteAndBlackLister(data);
 			if (jobConfig.shouldEpochFilter) data = jobConfig.epochFilter(data);
-			if (jobConfig.propertyScrubber) data = jobConfig.propertyScrubber(data);
-			if (jobConfig.flattenData) data = jobConfig.flattener(data);
-			if (jobConfig.fixJson) data = jobConfig.jsonFixer(data);
-			if (jobConfig.shouldCreateInsertId) data = jobConfig.insertIdAdder(data);
+			if (jobConfig.propertyScrubber) jobConfig.propertyScrubber(data);
+			if (jobConfig.flattenData) jobConfig.flattener(data);
+			if (jobConfig.fixJson) jobConfig.jsonFixer(data);
+			if (jobConfig.shouldCreateInsertId) jobConfig.insertIdAdder(data);
+			if (jobConfig.addToken) jobConfig.tokenAdder(data);
 			return data;
 		}),
 

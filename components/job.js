@@ -121,6 +121,7 @@ class Job {
 		this.dedupe = u.isNil(opts.dedupe) ? false : opts.dedupe; //remove duplicate records
 		this.dryRun = u.isNil(opts.dryRun) ? false : opts.dryRun; //don't actually send data
 		this.http2 = u.isNil(opts.http2) ? false : opts.http2; //use http2
+		this.addToken = u.isNil(opts.addToken) ? false : opts.addToken; //add token to each record
 		this.shouldWhiteBlackList = false;
 		this.shouldEpochFilter = false;
 		this.shouldAddTags = false;
@@ -162,6 +163,7 @@ class Job {
 		this.jsonFixer = noop;
 		this.propertyScrubber = noop;
 		this.parseErrorHandler = opts.parseErrorHandler || returnEmpty(this);
+		this.tokenAdder = noop;
 
 		// ? transform conditions
 		if (this.fixData) this.ezTransform = transforms.ezTransforms(this);
@@ -170,6 +172,7 @@ class Job {
 		if (this.timeOffset) this.UTCoffset = transforms.UTCoffset(this.timeOffset);
 		if (this.dedupe) this.deduper = transforms.dedupeRecords(this);
 		if (this.flattenData) this.flattener = transforms.flattenProperties(".");
+		if (this.addToken) this.tokenAdder = transforms.addToken(this);
 
 		if (this.insertIdTuple.length > 0 && this.recordType === 'event') {
 			this.shouldCreateInsertId = true;
