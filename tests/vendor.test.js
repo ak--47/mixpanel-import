@@ -32,8 +32,11 @@ describe("vendor tests", () => {
 	test(
 		"amplitude: events",
 		async () => {
-			const job = await mp({}, "./testData/amplitude/2023-04-10_1#0.json", { ...opts, recordType: "event", vendor: "amplitude", dryRun: true });
-			expect(job.dryRun.length).toBe(4011);
+			const job = await mp({}, "./testData/amplitude/2023-04-10_1#0.json", { ...opts, recordType: "event", vendor: "amplitude", dryRun: true, vendorOpts: { v2_compat: false }});
+			const numRecords = job.dryRun.length;
+			const numDistinctIds = job.dryRun.filter(a => a.properties.distinct_id).length;
+			expect(numRecords).toBe(4011);
+			expect(numDistinctIds).toBe(0);
 
 		},
 		longTimeout
@@ -44,6 +47,21 @@ describe("vendor tests", () => {
 		async () => {
 			const job = await mp({}, "./testData/amplitude/2023-04-10_1#0.json", { ...opts, recordType: "user", vendor: "amplitude", dryRun: true });
 			expect(job.dryRun.length).toBe(216);
+		},
+		longTimeout
+	);
+
+
+	test(
+		"amplitude: events v2 compat",
+		async () => {
+			const job = await mp({}, "./testData/amplitude/2023-04-10_1#0.json", { ...opts, recordType: "event", vendor: "amplitude", dryRun: true, vendorOpts: { v2_compat: true } });
+			const numRecords = job.dryRun.length;
+			const numDistinctIds = job.dryRun.filter(a => a.properties.distinct_id).length;
+			expect(numRecords).toBe(4011);
+			expect(numDistinctIds).toBe(numRecords);
+			
+
 		},
 		longTimeout
 	);
