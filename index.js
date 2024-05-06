@@ -32,6 +32,9 @@ const { logger, writeLogs } = require('./components/logs.js');
 // $ utils
 const u = require('ak-tools');
 
+// $ validators
+const { validateToken } = require('./components/validators.js');
+
 const dayjs = require('dayjs');
 const utc = require('dayjs/plugin/utc');
 dayjs.extend(utc);
@@ -111,7 +114,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 		"rate (per sec)": u.comma(summary.eps)
 	};
 
-	l("STATS");	
+	l("STATS");
 	l(stats, true);
 	l('\n');
 
@@ -171,6 +174,7 @@ EXPORTS
 -------
 */
 
+main.validateToken = validateToken;
 const mpImport = module.exports = main;
 mpImport.createMpStream = pipeInterface;
 

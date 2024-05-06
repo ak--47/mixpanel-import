@@ -20,6 +20,13 @@ declare namespace main {
     opts: Options,
     finish?: Function
   ): import("stream").Transform;
+  async function validateToken(
+    token: string
+  ): Promise<{
+    token: string;
+    valid: boolean;
+    type: "idmgmt_v2" | "idmgmt_v3" | "unknown";
+  }>;
   /**
    * valid records types which can be imported
    */
@@ -327,10 +334,10 @@ declare namespace main {
      */
     scrubProps?: string[];
 
-	/**
-	 * if true, will add a token or $token to the data
-	 */
-	addToken?: boolean;
+    /**
+     * if true, will add a token or $token to the data
+     */
+    addToken?: boolean;
 
     /**
      * whether or not to write the transformed data to a file instead of sending it to mixpanel
@@ -662,7 +669,7 @@ declare namespace main {
   type amplitudeOpts = {
     user_id?: string;
     group_keys?: string[];
-	v2_compat?: boolean; // use v2 api
+    v2_compat?: boolean; // use v2 api
   };
 
   /**
