@@ -14,17 +14,19 @@ TRANSFORMS
 
 /**
  * returns a function that transforms an amplitude event into a mixpanel event
+ * v2_compat sets distinct_id, but will not implicitly join user_id/device_id
+ * ^ in order to do this we would need to return [{ $identify },{ ogEvent }] and pass it down the stream
  * @param  {import('../index').amplitudeOpts} options
  */
 function ampEventsToMp(options) {
-	const { user_id = "user_id" } = options;
+	const { user_id = "user_id", v2_compat = true } = options;
 
 	return function transform(ampEvent) {
 		const mixpanelEvent = {
 			event: ampEvent.event_type,
 			properties: {
 				$device_id: ampEvent.device_id || "",
-				time: dayjs.utc(ampEvent.event_time).valueOf(),				
+				time: dayjs.utc(ampEvent.event_time).valueOf(),
 				ip: ampEvent.ip_address,
 				$city: ampEvent.city,
 				$region: ampEvent.region,
@@ -32,7 +34,7 @@ function ampEventsToMp(options) {
 				$source: `amplitude-to-mixpanel`
 			}
 		};
-		
+
 		//insert_id resolution
 		const $insert_id = ampEvent.$insert_id;
 		if ($insert_id) mixpanelEvent.properties.$insert_id = $insert_id;
@@ -41,6 +43,10 @@ function ampEventsToMp(options) {
 		//canonical id resolution
 		if (ampEvent?.user_properties?.[user_id]) mixpanelEvent.properties.$user_id = ampEvent.user_properties[user_id];
 		if (ampEvent[user_id]) mixpanelEvent.properties.$user_id = ampEvent[user_id];
+
+		//v2 compat requires distinct_id; 
+		if (v2_compat) mixpanelEvent.properties.distinct_id = mixpanelEvent.properties.$user_id || mixpanelEvent.properties.$device_id;
+			
 
 		//get all custom props + group props + user props
 		mixpanelEvent.properties = {

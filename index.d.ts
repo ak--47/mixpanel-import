@@ -662,6 +662,7 @@ declare namespace main {
   type amplitudeOpts = {
     user_id?: string;
     group_keys?: string[];
+	v2_compat?: boolean; // use v2 api
   };
 
   /**
