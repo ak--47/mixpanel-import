@@ -137,7 +137,7 @@ describe("transforms", () => {
 		expect(transformed.properties.$insert_id).toBeTruthy();
 		expect(transformed.properties.$user_id).toBe("123");
 		expect(transformed.properties.user_id).toBeUndefined();
-		
+
 	});
 
 	test("gets device_id", () => {
@@ -152,7 +152,7 @@ describe("transforms", () => {
 		expect(transformed.properties.$insert_id).toBeTruthy();
 		expect(transformed.properties.$device_id).toBe("123");
 		expect(transformed.properties.device_id).toBeUndefined();
-		
+
 	});
 
 	test("gets source", () => {
@@ -168,7 +168,46 @@ describe("transforms", () => {
 		expect(transformed.properties.$insert_id).toBeTruthy();
 		expect(transformed.properties.$source).toBe("web");
 		expect(transformed.properties.source).toBeUndefined();
-		
+
+	});
+
+	test("reservied props", () => {
+		const config = { recordType: "user" };
+		const record = {
+			distinct_id: "123",
+			group_id: "456",
+			token: "789",
+			group_key: "101112",
+			name: "foo",
+			first_name: "bar",
+			last_name: "baz",
+			email: "qux@mux.com",
+			phone: "123-456-789",
+			avatar: "http://foo.com",
+			created: "2020-04-20",
+			ip: "168.196.1.1"
+
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.$distinct_id).toBe("123");
+		const { $set: props, ...outside } = transformed;
+		expect(props).toHaveProperty("$avatar", "http://foo.com");
+		expect(props).toHaveProperty("$created", "2020-04-20");
+		expect(props).toHaveProperty("$email", "qux@mux.com");
+		expect(props).toHaveProperty("$first_name", "bar");
+		expect(props).toHaveProperty("$last_name", "baz");
+		expect(props).toHaveProperty("$phone", "123-456-789");
+		expect(outside).toHaveProperty("$distinct_id", "123");
+		expect(outside).toHaveProperty("$ip", "168.196.1.1");
+		expect(outside).toHaveProperty("$group_id", "456");
+		expect(outside).toHaveProperty("$token", "789");
+		expect(outside).toHaveProperty("$group_key", "101112");
+
+
+		// expect(transformed.properties.time).toBeNumber();
+		// expect(transformed.properties.$insert_id).toBeTruthy();
+
+		// expect(transformed.$set.name).toBe("John");
 	});
 
 	test("adds token (implicit)", () => {
@@ -179,7 +218,8 @@ describe("transforms", () => {
 		};
 		const transformed = ezTransforms(config)(record);
 		expect(transformed.$token).toBe("testToken");
-		expect(transformed.$set.name).toBe("John");
+		expect(transformed.$set.$name).toBe("John");
+		expect(transformed.$set.name).toBeUndefined();
 	});
 
 	test("adds events token (explicit)", () => {
@@ -212,8 +252,9 @@ describe("transforms", () => {
 		};
 		const transformed = ezTransforms(config)(record);
 		expect(transformed.$token).toBe("testToken");
-		expect(transformed.$set.name).toBe("John");
+		expect(transformed.$set.$name).toBe("John");
 		expect(transformed.name).toBeUndefined();
+		expect(transformed.$set.name).toBeUndefined();
 	});
 
 	test("add group token", () => {
@@ -226,7 +267,8 @@ describe("transforms", () => {
 		const transformed = ezTransforms(config)(record);
 		expect(transformed.$token).toBe("testToken");
 		expect(transformed.$group_key).toBe("customGroupKey");
-		expect(transformed.$set.name).toBe("GroupA");
+		expect(transformed.$set.$name).toBe("GroupA");
+		expect(transformed.$set.name).toBeUndefined();
 	});
 
 	test("fix group shape", () => {
@@ -238,8 +280,9 @@ describe("transforms", () => {
 		const transformed = ezTransforms(config)(record);
 		expect(transformed.$token).toBe("testToken");
 		expect(transformed.$group_key).toBe("testGroupKey");
-		expect(transformed.$set.name).toBe("GroupA");
+		expect(transformed.$set.$name).toBe("GroupA");
 		expect(transformed.name).toBeUndefined();
+		expect(transformed.$set.name).toBeUndefined();
 	});
 
 	test("noop if good", () => {

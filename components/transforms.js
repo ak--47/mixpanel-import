@@ -5,6 +5,9 @@ dayjs.extend(utc);
 const u = require("ak-tools");
 const stringify = require("json-stable-stringify");
 const validOperations = ["$set", "$set_once", "$add", "$union", "$append", "$remove", "$unset"];
+// ? https://docs.mixpanel.com/docs/data-structure/user-profiles#reserved-profile-properties
+const specialProps = ["name", "first_name", "last_name", "email", "phone", "avatar", "created",];
+const outsideProps = ["distinct_id", "group_id", "token", "group_key", "ip"]; //these are the props that are outside of the $set
 
 /** @typedef {import('./job')} JobConfig */
 /** @typedef {import('../index').Data} Data */
@@ -56,7 +59,7 @@ function ezTransforms(jobConfig) {
 			//renaming "device_id" to "$device_id"
 			if (record.properties.device_id) {
 				record.properties.$device_id = record.properties.device_id;
-				delete record.properties.device_id;				
+				delete record.properties.device_id;
 			}
 
 			//renaming "source" to "$source"
@@ -98,6 +101,29 @@ function ezTransforms(jobConfig) {
 			//catch missing token
 			if (!user.$token && jobConfig.token) user.$token = jobConfig.token;
 
+			//rename special props
+			for (const key in user) {
+				if (typeof user[key] === "object") {
+					for (const prop in user[key]) {
+						if (specialProps.includes(prop)) {
+							user[key][`$${prop}`] = user[key][prop];
+							delete user[key][prop];
+						}
+
+						if (outsideProps.includes(prop)) {
+							user[`$${prop}`] = user[key][prop];
+							delete user[key][prop];
+						}
+					}
+				}
+				else {
+					if (outsideProps.includes(key)) {
+						user[`$${key}`] = user[key];
+						delete user[key];
+					}
+				}
+			}
+
 			return user;
 		};
 	}
@@ -128,6 +154,29 @@ function ezTransforms(jobConfig) {
 
 			//catch group key
 			if (!group.$group_key && jobConfig.groupKey) group.$group_key = jobConfig.groupKey;
+
+			//rename special props
+			for (const key in group) {
+				if (typeof group[key] === "object") {
+					for (const prop in group[key]) {
+						if (specialProps.includes(prop)) {
+							group[key][`$${prop}`] = group[key][prop];
+							delete group[key][prop];
+						}
+
+						if (outsideProps.includes(prop)) {
+							group[`$${prop}`] = group[key][prop];
+							delete group[key][prop];
+						}
+					}
+				}
+				else {
+					if (outsideProps.includes(key)) {
+						group[`$${key}`] = group[key];
+						delete group[key];
+					}
+				}
+			}
 
 			return group;
 		};
