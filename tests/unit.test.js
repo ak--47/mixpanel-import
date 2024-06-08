@@ -125,6 +125,52 @@ describe("transforms", () => {
 		expect(transformed.time).toBeUndefined();
 	});
 
+	test("gets user_id", () => {
+		const config = { recordType: "event" };
+		const record = {
+			event: "TestEvent",
+			time: dayjs().toString(),
+			user_id: "123"
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.properties.time).toBeNumber();
+		expect(transformed.properties.$insert_id).toBeTruthy();
+		expect(transformed.properties.$user_id).toBe("123");
+		expect(transformed.properties.user_id).toBeUndefined();
+		
+	});
+
+	test("gets device_id", () => {
+		const config = { recordType: "event" };
+		const record = {
+			event: "TestEvent",
+			time: dayjs().toString(),
+			device_id: "123"
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.properties.time).toBeNumber();
+		expect(transformed.properties.$insert_id).toBeTruthy();
+		expect(transformed.properties.$device_id).toBe("123");
+		expect(transformed.properties.device_id).toBeUndefined();
+		
+	});
+
+	test("gets source", () => {
+		const config = { recordType: "event" };
+		const record = {
+			event: "TestEvent",
+			time: dayjs().toString(),
+			device_id: "123",
+			source: "web"
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.properties.time).toBeNumber();
+		expect(transformed.properties.$insert_id).toBeTruthy();
+		expect(transformed.properties.$source).toBe("web");
+		expect(transformed.properties.source).toBeUndefined();
+		
+	});
+
 	test("adds token (implicit)", () => {
 		const config = { recordType: "user", token: "testToken" };
 		const record = {
@@ -414,6 +460,63 @@ describe("transforms", () => {
 		const expectedInsertId = murmurhash.v3([record.event, record.distinct_id, record.time].join("-")).toString();
 
 		expect(enhancedRecord.properties.$insert_id).toEqual(expectedInsertId);
+	});
+
+	test("insert_id: always the same", () => {
+		const record = {
+			"event": "addNewAddressAction",
+			"properties": {
+				"$soure": "mp-historical-import-apr-2024",
+				"appType": {
+					"member0": "SNAPLITE"
+				},
+				"time": 1704392999755,
+				"distinct_id": "94f91ab1-76bf-49ef-9c7b-c406a2cc5953",
+				"assetVersion": "125",
+				"browserDetails": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+				"clientTimestamp": "1704392998944",
+				"cookie": "170439279814661197",
+				"deviceType": "WAP",
+				"dpDay": "4",
+				"dpHour": "23",
+				"dpMonth": "1",
+				"dpYM": "202401",
+				"dpYMD": "20240104",
+				"dpYear": "2024",
+				"eventId": "1704392998931_5082_170439279814661197",
+				"eventKey": "addNewAddressAction",
+				"eventName": "addNewAddressAction",
+				"eventType": "clickStream",
+				"imsId": "VjUwIzFjOWM4OTQwLTQyY2EtNDY3Zi05N2NjLTlkMmE0ZmMzNmVmNw",
+				"inTime": "1704392999757",
+				"isBot": false,
+				"isRestrictedIp": false,
+				"isSystemUpdatedEvent": false,
+				"locale": "undefined",
+				"newSession": false,
+				"orgId": "1001_1",
+				"outTime": "1704392999758",
+				"platformType": "Linux armv81",
+				"refPage": "paymentShippingNew",
+				"refPageId": "1704392951585_7181_170439279814661197",
+				"sessionFirstChannel": "FacebookPaid",
+				"sessionId": "170439280188907439",
+				"sessionInfoId": "1",
+				"sessionLastChannel": "FacebookPaid",
+				"sourceChannelName": "Direct",
+				"sourceChannelType": "Organic",
+				"storeTime": "202401050005",
+				"timestamp": "1704392999755",
+				"transactional": false
+			}
+		};
+
+		const enhanceRecord = addInsert(["eventId"]);
+		const unExpectedHash = murmurhash.v3(stringify(record)).toString();
+		const expectedHash = murmurhash.v3([record.properties.eventId].join("-")).toString();
+		const enhancedRecord = enhanceRecord(record);
+		expect(enhancedRecord.properties.$insert_id).toEqual(expectedHash);
+		expect(enhancedRecord.properties.$insert_id).not.toEqual(unExpectedHash);
 	});
 
 	test("insert_id: missing fields", () => {

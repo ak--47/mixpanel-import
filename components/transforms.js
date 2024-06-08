@@ -47,6 +47,24 @@ function ezTransforms(jobConfig) {
 				}
 			}
 
+			//renaming "user_id" to "$user_id"
+			if (record.properties.user_id) {
+				record.properties.$user_id = record.properties.user_id;
+				delete record.properties.user_id;
+			}
+
+			//renaming "device_id" to "$device_id"
+			if (record.properties.device_id) {
+				record.properties.$device_id = record.properties.device_id;
+				delete record.properties.device_id;				
+			}
+
+			//renaming "source" to "$source"
+			if (record.properties.source) {
+				record.properties.$source = record.properties.source;
+				delete record.properties.source;
+			}
+
 			return record;
 		};
 	}
