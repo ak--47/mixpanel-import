@@ -186,7 +186,7 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 				});
 			}
 			else {
-				if (jobConfig.verbose) counter(jobConfig.recordType, jobConfig.recordsProcessed, jobConfig.requests);
+				if (jobConfig.verbose || jobConfig.showProgress) counter(jobConfig.recordType, jobConfig.recordsProcessed, jobConfig.requests);
 			}
 
 		}),

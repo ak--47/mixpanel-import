@@ -159,6 +159,11 @@ declare namespace main {
      * - default `true`
      */
     verbose?: boolean;
+	/**
+	 * - show the progress bar; only matters if verbose is unset
+	 * - default `false`
+	 */
+	showProgress?: boolean
     /**
      * - apply various transformations to ensure data is properly ingested
      * - default `true`

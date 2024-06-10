@@ -6,7 +6,7 @@ const u = require("ak-tools");
 const stringify = require("json-stable-stringify");
 const validOperations = ["$set", "$set_once", "$add", "$union", "$append", "$remove", "$unset"];
 // ? https://docs.mixpanel.com/docs/data-structure/user-profiles#reserved-profile-properties
-const specialProps = ["name", "first_name", "last_name", "email", "phone", "avatar", "created",];
+const specialProps = ["name", "first_name", "last_name", "email", "phone", "avatar", "created", "insert_id"];
 const outsideProps = ["distinct_id", "group_id", "token", "group_key", "ip"]; //these are the props that are outside of the $set
 
 /** @typedef {import('./job')} JobConfig */
