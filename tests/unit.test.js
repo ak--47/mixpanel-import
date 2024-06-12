@@ -371,6 +371,36 @@ describe("transforms", () => {
 		expect($radio).toBe("2G");
 	});
 
+	test("user: special keys", () => {
+		const testUser = {
+			distinct_id: "5acc0bda-4def-50d5-bfb6-57a02bad184e",
+			name: "Chad Cherici",
+			email: "C.Cherici@icloud.co.uk",
+			avatar: "https://randomuser.me/api/portraits/men/44.jpg",
+			created: "2024-01-03",
+			country_code: "US",
+			region: "Arizona",
+			city: "Phoenix",
+			title: "Professional Athlete",
+			luckyNumber: 322,
+			spiritAnimal: "rove beetle",
+		};
+		const transformed = ezTransforms({ recordType: "user" })(testUser);
+		const { $distinct_id } = transformed;
+		const { $name, $email, $avatar, $created, $country_code, $region, $city } = transformed.$set;
+
+		expect($distinct_id).toBe("5acc0bda-4def-50d5-bfb6-57a02bad184e");
+		expect($name).toBe("Chad Cherici");
+		expect($email).toBe("C.Cherici@icloud.co.uk");
+		expect($avatar).toBe("https://randomuser.me/api/portraits/men/44.jpg");
+		expect($created).toBe("2024-01-03");
+		expect($country_code).toBe("US");
+		expect($region).toBe("Arizona");
+		expect($city).toBe("Phoenix");
+
+
+	});
+
 	test("event: whitelist", () => {
 		const params = {
 			eventWhitelist: ["allowedEvent"]

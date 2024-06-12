@@ -122,8 +122,8 @@ function ezTransforms(jobConfig) {
 				if (typeof user[key] === "object") {
 					for (const prop in user[key]) {
 						if (specialProps.includes(prop)) {
-							if (prop === "country") {
-								user[key][`$${prop}_code`] = user[key][prop].toUpperCase();
+							if (prop === "country" || prop === "country_code") {
+								user[key][`$country_code`] = user[key][prop].toUpperCase();
 								delete user[key][prop];
 							}
 							else {
