@@ -35,6 +35,7 @@ const { getEnvVars,
 	existingStreamInterface,
 	itemStream
 } = require("../components/parsers.js");
+const exp = require("constants");
 const fakeCreds = { acct: "test", pass: "test", project: "test" };
 
 describe("job config", () => {
@@ -310,12 +311,64 @@ describe("transforms", () => {
 		const record = { properties: { time: now.unix() } };
 		expect(UTCoffset(-2)(record).properties.time.toString().slice(0, 10)).toEqual(twoHoursAgo.toString().slice(0, 10));
 	});
+
 	test("dedupe", () => {
 		const record1 = { event: "click", properties: { key: "value" } };
 		const record2 = { event: "click", properties: { key: "value" } };
 
 		expect(dedupeRecords(sampleJobConfig)(record1)).toEqual(record1);
 		expect(dedupeRecords(sampleJobConfig)(record2)).toEqual({}); // this should be filtered out
+	});
+
+	test("event: special keys", () => {
+		const testEvent = {
+			event: "view item",
+			source: "dm4",
+			time: "2024-01-20T10:49:36.407Z",
+			user_id: "f465ba0f-64d4-5fa3-bed5-b46f7e22d5d5",
+			isFeaturedItem: true,
+			itemCategory: "Sports",
+			dateItemListed: "2024-01-29",
+			itemId: 4161,
+			platform: "kiosk",
+			currentTheme: "custom",
+			country: "United States",
+			region: "Illinois",
+			city: "Chicago",
+			browser: "Chrome",
+			model: "Pixel 7 Pro",
+			screen_height: "3120",
+			screen_width: "1440",
+			os: "Android",
+			carrier: "us cellular",
+			radio: "2G",
+		};
+
+		const transformed = ezTransforms({ recordType: "event" })(testEvent);
+		const { $source,
+			$user_id,
+			mp_country_code,
+			$region,
+			$city,
+			$browser,
+			$model,
+			$screen_height,
+			$screen_width,
+			$os,
+			$carrier,
+			$radio } = transformed.properties;
+		expect($source).toBe("dm4");
+		expect($user_id).toBe("f465ba0f-64d4-5fa3-bed5-b46f7e22d5d5");
+		expect(mp_country_code).toBe("United States");
+		expect($region).toBe("Illinois");
+		expect($city).toBe("Chicago");
+		expect($browser).toBe("Chrome");
+		expect($model).toBe("Pixel 7 Pro");
+		expect($screen_height).toBe("3120");
+		expect($screen_width).toBe("1440");
+		expect($os).toBe("Android");
+		expect($carrier).toBe("us cellular");
+		expect($radio).toBe("2G");
 	});
 
 	test("event: whitelist", () => {

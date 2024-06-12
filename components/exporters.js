@@ -122,6 +122,7 @@ async function exportProfiles(folder, jobConfig) {
 	
 	if (jobConfig.cohortId) options.body = `filter_by_cohort={"id": ${jobConfig.cohortId}}&include_all_users=true`;
 	if (jobConfig.dataGroupId) options.body = `data_group_id=${jobConfig.dataGroupId}`;
+	// @ts-ignore
 	options.body = encodeURIComponent(options.body);
 
 	// @ts-ignore
@@ -230,6 +231,7 @@ function downloadProgress(amount) {
 		//noop
 	}
 	else {
+		// @ts-ignore
 		readline.cursorTo(process.stdout, 0);
 		process.stdout.write(`\tdownloaded: ${u.bytesHuman(amount, 2, true)}    \t`);
 	}
