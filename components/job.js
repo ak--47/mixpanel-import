@@ -104,7 +104,7 @@ class Job {
 		// ? don't allow batches bigger than API limits
 		if (this.recordType === 'event' && this.recordsPerBatch > 2000) this.recordsPerBatch = 2000;
 		if (this.recordType === 'user' && this.recordsPerBatch > 2000) this.recordsPerBatch = 2000;
-		if (this.recordType === 'group' && this.recordsPerBatch > 200) this.recordsPerBatch = 200;
+		if (this.recordType === 'group' && this.recordsPerBatch > 2000) this.recordsPerBatch = 2000;
 
 		// ? boolean options
 		this.compress = u.isNil(opts.compress) ? true : opts.compress; //gzip data (events only)
