@@ -481,22 +481,21 @@ function whiteAndBlackLister(jobConfig, params) {
 			if (!pass) return {};
 		}
 
-		//check for combo whitelist
+		//check for combo whitelist		
 		if (Object.keys(comboWhiteList).length) {
-			pass = false;
-			for (const key in comboBlackList) {
-				let propVals = comboBlackList[key];
-				if (!Array.isArray(propVals)) propVals = [propVals];
-				for (const val of propVals) {
-					if (record?.properties?.[key] === val) pass = true;
+			let pass = false; // Assume the record does not pass initially
+			for (const key in comboWhiteList) {
+				let propVals = Array.isArray(comboWhiteList[key]) ? comboWhiteList[key] : [comboWhiteList[key]];
+				if (propVals.includes(record?.properties?.[key])) {
+					pass = true; // If any key-value matches, set pass to true
+					break; // Break early since at least one condition is satisfied
 				}
 			}
-			if (!pass) {
+			if (!pass) { // If after checking all, no match was found
 				jobConfig.whiteListSkipped++;
-				return {};
+				return {}; // Skip the record
 			}
 		}
-
 
 		//check for combo blacklist
 		if (Object.keys(comboBlackList).length) {
@@ -504,8 +503,13 @@ function whiteAndBlackLister(jobConfig, params) {
 			for (const key in comboBlackList) {
 				let propVals = comboBlackList[key];
 				if (!Array.isArray(propVals)) propVals = [propVals];
+				let foundMatch = false;
 				for (const val of propVals) {
-					if (record?.properties?.[key] === val) pass = false;
+					if (record?.properties?.[key] === val) foundMatch = true;
+				}
+				if (foundMatch) {
+					pass = false;
+					break;
 				}
 			}
 			if (!pass) {
