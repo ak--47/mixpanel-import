@@ -79,7 +79,7 @@ function ezTransforms(jobConfig) {
 						delete record.properties[key];
 					}
 				}
-		
+
 
 
 			}
@@ -405,10 +405,13 @@ function whiteAndBlackLister(jobConfig, params) {
 		propKeyWhitelist = [],
 		propKeyBlacklist = [],
 		propValBlacklist = [],
-		propValWhitelist = []
+		propValWhitelist = [],
+		comboWhiteList = {},
+		comboBlackList = {}
 	} = params;
 
 	return function whiteAndBlackList(record) {
+		let pass;
 		//check for event whitelist
 		if (eventWhitelist.length) {
 			if (!eventWhitelist.includes(record?.event)) {
@@ -427,7 +430,7 @@ function whiteAndBlackLister(jobConfig, params) {
 
 		//check for prop key whitelist
 		if (propKeyWhitelist.length) {
-			let pass = false;
+			pass = false;
 			for (const key in record?.properties) {
 				if (propKeyWhitelist.includes(key)) {
 					pass = true;
@@ -441,7 +444,7 @@ function whiteAndBlackLister(jobConfig, params) {
 
 		//check for prop key blacklist
 		if (propKeyBlacklist.length) {
-			let pass = true;
+			pass = true;
 			for (const key in record?.properties) {
 				if (propKeyBlacklist.includes(key)) {
 					jobConfig.blackListSkipped++;
@@ -453,7 +456,7 @@ function whiteAndBlackLister(jobConfig, params) {
 
 		//check for prop val whitelist
 		if (propValWhitelist.length) {
-			let pass = false;
+			pass = false;
 			for (const key in record?.properties) {
 				if (propValWhitelist.includes(record.properties[key])) {
 
@@ -468,7 +471,7 @@ function whiteAndBlackLister(jobConfig, params) {
 
 		//check for prop val blacklist
 		if (propValBlacklist.length) {
-			let pass = true;
+			pass = true;
 			for (const key in record?.properties) {
 				if (propValBlacklist.includes(record.properties[key])) {
 					jobConfig.blackListSkipped++;
@@ -476,6 +479,39 @@ function whiteAndBlackLister(jobConfig, params) {
 				}
 			}
 			if (!pass) return {};
+		}
+
+		//check for combo whitelist
+		if (Object.keys(comboWhiteList).length) {
+			pass = false;
+			for (const key in comboBlackList) {
+				let propVals = comboBlackList[key];
+				if (!Array.isArray(propVals)) propVals = [propVals];
+				for (const val of propVals) {
+					if (record?.properties?.[key] === val) pass = true;
+				}
+			}
+			if (!pass) {
+				jobConfig.whiteListSkipped++;
+				return {};
+			}
+		}
+
+
+		//check for combo blacklist
+		if (Object.keys(comboBlackList).length) {
+			pass = true;
+			for (const key in comboBlackList) {
+				let propVals = comboBlackList[key];
+				if (!Array.isArray(propVals)) propVals = [propVals];
+				for (const val of propVals) {
+					if (record?.properties?.[key] === val) pass = false;
+				}
+			}
+			if (!pass) {
+				jobConfig.blackListSkipped++;
+				return {};
+			}
 		}
 
 		return record;

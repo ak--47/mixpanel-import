@@ -20,9 +20,7 @@ declare namespace main {
     opts: Options,
     finish?: Function
   ): import("stream").Transform;
-  async function validateToken(
-    token: string
-  ): Promise<{
+  async function validateToken(token: string): Promise<{
     token: string;
     valid: boolean;
     type: "idmgmt_v2" | "idmgmt_v3" | "unknown";
@@ -108,6 +106,8 @@ declare namespace main {
     propKeyBlacklist: string[];
     propValWhitelist: string[];
     propValBlacklist: string[];
+    comboWhiteList: { [key: string]: string[] };
+    comboBlackList: { [key: string]: string[] };
   };
 
   type Regions = "US" | "EU";
@@ -159,11 +159,11 @@ declare namespace main {
      * - default `true`
      */
     verbose?: boolean;
-	/**
-	 * - show the progress bar; only matters if verbose is unset
-	 * - default `false`
-	 */
-	showProgress?: boolean
+    /**
+     * - show the progress bar; only matters if verbose is unset
+     * - default `false`
+     */
+    showProgress?: boolean;
     /**
      * - apply various transformations to ensure data is properly ingested
      * - default `true`
@@ -288,6 +288,14 @@ declare namespace main {
      * don't import events with property values on the blacklist
      */
     propValBlacklist?: string[];
+	/**
+	 * only import events which have property keys and values on the whilelist
+	 */
+	comboWhiteList?: {[key: string]: string[]};
+	/**
+	 * don't import events which have property keys and values on the blacklist
+	 */
+	comboBlackList?: {[key: string]: string[]};
     /**
      * the start date of the export (events only)
      */

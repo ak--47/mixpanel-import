@@ -468,6 +468,90 @@ describe("transforms", () => {
 	});
 
 
+	// Sample job config for testing
+
+	// comboWhitelist tests
+	test("combo: whitelist", () => {
+		const sampleJobConfig = {
+			whiteListSkipped: 0,
+			blackListSkipped: 0,
+		};
+
+		const params = {
+			comboWhiteList: {
+				key1: ["allowedValue1", "allowedValue2"],
+				key2: "allowedValue3"
+			}
+		};
+		const recordAllowed1 = { properties: { key1: "allowedValue1", key2: "allowedValue3" } };
+		const recordAllowed2 = { properties: { key1: "allowedValue2", key2: "allowedValue3" } };
+		const recordDisallowed = { properties: { key1: "disallowedValue", key2: "allowedValue3" } };
+
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordAllowed1)).toEqual(recordAllowed1);
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordAllowed2)).toEqual(recordAllowed2);
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordDisallowed)).toEqual({});
+	});
+
+	// comboBlacklist tests
+	test("combo: blacklist", () => {
+		const sampleJobConfig = {
+			whiteListSkipped: 0,
+			blackListSkipped: 0,
+		};
+
+		const params = {
+			comboBlackList: {
+				key1: ["disallowedValue1", "disallowedValue2"],
+				key2: "disallowedValue3"
+			}
+		};
+		const recordAllowed = { event: "foo", properties: { key1: "allowedValue", key2: "allowedValue" } };
+		const recordDisallowed1 = { event: "bar", properties: { key1: "disallowedValue1", key2: "allowedValue" } };
+		const recordDisallowed2 = { event: "baz", properties: { key1: "allowedValue", key2: "disallowedValue3" } };
+
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordAllowed)).toEqual(recordAllowed);
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordDisallowed1)).toEqual({});
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordDisallowed2)).toEqual({});
+	});
+
+	test("combo: whitelist", () => {
+		const params = {
+			comboWhiteList: {
+				key1: "value1",
+				key2: ["value2", "value3"] // Test with multiple values
+			}
+		};
+
+		const recordAllowed1 = { properties: { key1: "value1" } };
+		const recordAllowed2 = { properties: { key2: "value2" } };
+		const recordAllowed3 = { properties: { key2: "value3" } }; // Test with multiple values
+		const recordDisallowed = { properties: { key1: "wrongValue" } };
+
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordAllowed1)).toEqual(recordAllowed1);
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordAllowed2)).toEqual(recordAllowed2);
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordAllowed3)).toEqual(recordAllowed3);
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordDisallowed)).toEqual({});
+	});
+
+	test("combo: blacklist", () => {
+		const params = {
+			comboBlackList: {
+				key1: "value1",
+				key2: ["value2", "value3"] // Test with multiple values
+			}
+		};
+
+		const recordAllowed = { properties: { key1: "wrongValue" } };
+		const recordDisallowed1 = { properties: { key1: "value1" } };
+		const recordDisallowed2 = { properties: { key2: "value2" } };
+		const recordDisallowed3 = { properties: { key2: "value3" } }; // Test with multiple values
+
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordAllowed)).toEqual(recordAllowed);
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordDisallowed1)).toEqual({});
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordDisallowed2)).toEqual({});
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordDisallowed3)).toEqual({});
+	});
+
 	test("flatten: nested objects", () => {
 		const record = {
 			event: "foo",
