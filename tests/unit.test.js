@@ -511,7 +511,7 @@ describe("transforms", () => {
 		expect(sampleJobConfig.whiteListSkipped).toBe(1);
 	});
 
-	test("combo: whitelist with non-matching types", () => {
+	test("combo: whitelist stringify all", () => {
 		params = {
 			comboWhiteList: {
 				count: [10] // Expecting a number
@@ -519,7 +519,7 @@ describe("transforms", () => {
 		};
 		const recordString = { properties: { count: '10' } }; // String type instead of number
 		const recordNumber = { properties: { count: 10 } }; // Correct type
-		expect(whiteAndBlackLister(sampleJobConfig, params)(recordString)).toEqual({});
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordString)).toEqual(recordString);
 		expect(whiteAndBlackLister(sampleJobConfig, params)(recordNumber)).toEqual(recordNumber);
 	});
 

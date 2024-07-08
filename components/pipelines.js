@@ -54,8 +54,7 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 
 	// @ts-ignore
 	const mpPipeline = _.pipeline(
-
-		//todo: come up with good names for each step?!?!		
+	
 
 		// * only JSON from stream
 		// @ts-ignore
