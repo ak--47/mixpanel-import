@@ -143,6 +143,8 @@ class Job {
 		this.propKeyBlacklist = parse(opts.propKeyBlacklist) || [];
 		this.propValWhitelist = parse(opts.propValWhitelist) || [];
 		this.propValBlacklist = parse(opts.propValBlacklist) || [];
+		this.comboWhiteList = parse(opts.comboWhiteList) || {};
+		this.comboBlackList = parse(opts.comboBlackList) || {};
 		this.scrubProps = parse(opts.scrubProps) || [];
 
 		// @ts-ignore backwards compatibility
@@ -193,12 +195,19 @@ class Job {
 			propKeyWhitelist: this.propKeyWhitelist,
 			propKeyBlacklist: this.propKeyBlacklist,
 			propValWhitelist: this.propValWhitelist,
-			propValBlacklist: this.propValBlacklist
+			propValBlacklist: this.propValBlacklist,
+			comboWhiteList: this.comboWhiteList,
+			comboBlackList: this.comboBlackList
 		};
 		if (Object.values(whiteOrBlacklist).some(array => array.length >= 1)) {
 			this.whiteAndBlackLister = transforms.whiteAndBlackLister(this, whiteOrBlacklist);
 			this.shouldWhiteBlackList = true;
 		}
+		if (Object.keys(this.comboWhiteList).length > 0 || Object.keys(this.comboBlackList).length > 0) {
+			this.whiteAndBlackLister = transforms.whiteAndBlackLister(this, whiteOrBlacklist);
+			this.shouldWhiteBlackList = true;
+		}
+
 		if (opts.epochStart || opts.epochEnd) {
 			this.shouldEpochFilter = true;
 			this.epochFilter = transforms.epochFilter(this);
@@ -632,6 +641,7 @@ function noop(a) { return a; }
 
 // for catching parse errors
 function returnEmpty(jobConfig) {
+	// eslint-disable-next-line no-unused-vars
 	return function (_err, _record, _reviver) {
 		jobConfig.unparsable++;
 		return {};

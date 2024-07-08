@@ -1,6 +1,6 @@
 {
   "name": "mixpanel-import",
-  "version": "2.5.553",
+  "version": "2.5.554",
   "description": "stream and import data to mixpanel from node.js",
   "main": "index.js",
   "types": "index.d.ts",
@@ -38,7 +38,7 @@
   },
   "homepage": "https://github.com/ak--47/mixpanel-import#readme",
   "dependencies": {
-    "ak-tools": "^1.0.43",
+    "ak-tools": "^1.0.63",
     "chance": "^1.1.7",
     "dayjs": "^1.11.7",
     "dotenv": "^10.0.0",

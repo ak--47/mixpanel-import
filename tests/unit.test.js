@@ -468,6 +468,95 @@ describe("transforms", () => {
 	});
 
 
+	test("combo: whitelist", () => {
+		params = {
+			comboWhiteList: {
+				color: ['blue'], // whitelist records with color blue
+				size: ['large']  // or size large
+			}
+		};
+		const recordAllowed1 = { properties: { color: 'blue', size: 'medium' } }; // Should pass (color matches)
+		const recordAllowed2 = { properties: { color: 'red', size: 'large' } };   // Should pass (size matches)
+		const recordDisallowed = { properties: { color: 'red', size: 'medium' } }; // Should not pass (no match)
+
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordAllowed1)).toEqual(recordAllowed1);
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordAllowed2)).toEqual(recordAllowed2);
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordDisallowed)).toEqual({});
+	});
+
+	test("combo: blacklist", () => {
+		params = {
+			comboBlackList: {
+				color: ['blue'], // blacklist records with color blue
+				size: ['small']  // or size small
+			}
+		};
+		const recordAllowed = { properties: { color: 'red', size: 'medium' } };    // Should pass (no match)
+		const recordDisallowed1 = { properties: { color: 'blue', size: 'medium' } }; // Should not pass (color matches)
+		const recordDisallowed2 = { properties: { color: 'red', size: 'small' } };   // Should not pass (size matches)
+
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordAllowed)).toEqual(recordAllowed);
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordDisallowed1)).toEqual({});
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordDisallowed2)).toEqual({});
+	});
+
+	test("combo: whitelist with empty properties", () => {
+		params = {
+			comboWhiteList: {
+				color: ['blue']
+			}
+		};
+		const recordEmpty = { properties: {} }; // Empty properties
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordEmpty)).toEqual({});
+		expect(sampleJobConfig.whiteListSkipped).toBe(1);
+	});
+
+	test("combo: whitelist stringify all", () => {
+		params = {
+			comboWhiteList: {
+				count: [10] // Expecting a number
+			}
+		};
+		const recordString = { properties: { count: '10' } }; // String type instead of number
+		const recordNumber = { properties: { count: 10 } }; // Correct type
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordString)).toEqual(recordString);
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordNumber)).toEqual(recordNumber);
+	});
+
+	test("combo: blacklist nested props are OK", () => {
+		params = {
+			comboBlackList: {
+				age: [30] // Number type
+			}
+		};
+		const recordNotAllowed = { properties: { details: { size: 'small' }, age: 30 } }; // Mixed pass and fail conditions
+		const recordAllowed = { properties: { details: { size: 'large' }, age: 29 } }; // Should not pass (size matches)
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordNotAllowed)).toEqual({});
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordAllowed)).toEqual(recordAllowed);
+	});
+
+	test("combo: whitelist and blacklist empty", () => {
+		params = {
+			comboWhiteList: {},
+			comboBlackList: {}
+		};
+		const recordAny = { properties: { anyKey: 'anyValue' } };
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordAny)).toEqual(recordAny);
+	});
+
+	test("combo: blacklist with some properties matching", () => {
+		params = {
+			comboBlackList: {
+				key1: ['value1'],
+				key2: ['value2']
+			}
+		};
+		const recordAllMatch = { properties: { key1: 'value1', key2: 'value2' } };
+		const recordPartialMatch = { properties: { key1: 'value1', key2: 'otherValue' } };
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordAllMatch)).toEqual({});
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordPartialMatch)).toEqual({});
+	});
+
 	test("flatten: nested objects", () => {
 		const record = {
 			event: "foo",

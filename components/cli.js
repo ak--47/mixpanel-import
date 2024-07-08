@@ -359,6 +359,8 @@ function showProgress(record, processed, requests) {
 	const line = `${record}s: ${u.comma(processed)} | batches: ${u.comma(requests)} | memory: ${u.bytesHuman(heapUsed)} (heap: ${u.round(percentHeap)}% total:${u.round(percentRSS)}%)\t\t`;
 	// @ts-ignore
 	readline.cursorTo(process.stdout, 0);
+	// @ts-ignore
+	readline.clearLine(process.stdout, 0);
 	process.stdout.write(line);
 }
 

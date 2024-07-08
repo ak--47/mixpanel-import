@@ -208,7 +208,7 @@ describe("in memory", () => {
 	test(
 		"users",
 		async () => {
-			const data = await mp({ token: MP_TOKEN }, moarPpl, { ...opts, recordType: "user", fixData: true});
+			const data = await mp({ token: MP_TOKEN }, moarPpl, { ...opts, recordType: "user", fixData: true });
 			expect(data.success).toBe(10000);
 			expect(data.failed).toBe(0);
 			expect(data.duration).toBeGreaterThan(0);
@@ -1141,6 +1141,30 @@ describe("white + blacklist", () => {
 			expect(job.blackListSkipped).toBe(1);
 		},
 		longTimeout
+	);
+
+	test(
+		"combo blacklist",
+		async () => {
+			const job = await mp({}, data, { ...opts, recordType: "event", comboBlackList: { happy: "nope" } });
+			expect(job.success).toBe(4);
+			expect(job.failed).toBe(0);
+			expect(job.total).toBe(5);
+			expect(job.empty).toBe(1);
+			expect(job.blackListSkipped).toBe(1);
+		}, longTimeout
+	);
+
+	test(
+		"combo whiteList",
+		async () => {
+			const job = await mp({}, data, { ...opts, recordType: "event", comboWhiteList: { happy: "nope" } });
+			expect(job.success).toBe(1);
+			expect(job.failed).toBe(0);
+			expect(job.total).toBe(5);
+			expect(job.empty).toBe(4);
+			expect(job.whiteListSkipped).toBe(4);
+		}, longTimeout
 	);
 
 	test("dry runs", async () => {
