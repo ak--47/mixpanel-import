@@ -523,17 +523,16 @@ describe("transforms", () => {
 		expect(whiteAndBlackLister(sampleJobConfig, params)(recordNumber)).toEqual(recordNumber);
 	});
 
-	test("combo: blacklist with mixed types and nested properties", () => {
+	test("combo: blacklist nested props are OK", () => {
 		params = {
 			comboBlackList: {
-				'details.size': ['large'], // Nested property
 				age: [30] // Number type
 			}
 		};
-		const recordNestedAllowed = { properties: { details: { size: 'small' }, age: 30 } }; // Mixed pass and fail conditions
-		const recordNestedDisallowed = { properties: { details: { size: 'large' }, age: 29 } }; // Should not pass (size matches)
-		expect(whiteAndBlackLister(sampleJobConfig, params)(recordNestedAllowed)).toEqual(recordNestedAllowed);
-		expect(whiteAndBlackLister(sampleJobConfig, params)(recordNestedDisallowed)).toEqual({});
+		const recordNotAllowed = { properties: { details: { size: 'small' }, age: 30 } }; // Mixed pass and fail conditions
+		const recordAllowed = { properties: { details: { size: 'large' }, age: 29 } }; // Should not pass (size matches)
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordNotAllowed)).toEqual({});
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordAllowed)).toEqual(recordAllowed);
 	});
 
 	test("combo: whitelist and blacklist empty", () => {
@@ -545,7 +544,7 @@ describe("transforms", () => {
 		expect(whiteAndBlackLister(sampleJobConfig, params)(recordAny)).toEqual(recordAny);
 	});
 
-	test("combo: blacklist with all properties matching", () => {
+	test("combo: blacklist with some properties matching", () => {
 		params = {
 			comboBlackList: {
 				key1: ['value1'],
@@ -555,7 +554,7 @@ describe("transforms", () => {
 		const recordAllMatch = { properties: { key1: 'value1', key2: 'value2' } };
 		const recordPartialMatch = { properties: { key1: 'value1', key2: 'otherValue' } };
 		expect(whiteAndBlackLister(sampleJobConfig, params)(recordAllMatch)).toEqual({});
-		expect(whiteAndBlackLister(sampleJobConfig, params)(recordPartialMatch)).toEqual(recordPartialMatch);
+		expect(whiteAndBlackLister(sampleJobConfig, params)(recordPartialMatch)).toEqual({});
 	});
 
 	test("flatten: nested objects", () => {

@@ -203,6 +203,11 @@ class Job {
 			this.whiteAndBlackLister = transforms.whiteAndBlackLister(this, whiteOrBlacklist);
 			this.shouldWhiteBlackList = true;
 		}
+		if (Object.keys(this.comboWhiteList).length > 0 || Object.keys(this.comboBlackList).length > 0) {
+			this.whiteAndBlackLister = transforms.whiteAndBlackLister(this, whiteOrBlacklist);
+			this.shouldWhiteBlackList = true;
+		}
+
 		if (opts.epochStart || opts.epochEnd) {
 			this.shouldEpochFilter = true;
 			this.epochFilter = transforms.epochFilter(this);
