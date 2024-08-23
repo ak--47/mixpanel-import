@@ -164,7 +164,7 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 		finish(e, config.summary());
 	});
 
-	return pipeToMe;
+	return pipeToMe.toNodeStream();
 }
 
 

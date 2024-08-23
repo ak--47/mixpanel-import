@@ -532,6 +532,7 @@ describe("object streams", () => {
 			done();
 		});
 		streamInMem.pipe(mpStream);
+		
 	});
 
 	test("users", done => {

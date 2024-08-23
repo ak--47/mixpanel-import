@@ -27,6 +27,9 @@ const { callbackify } = require('util');
 
 
 
+
+
+
 /** @typedef {import('./job')} JobConfig */
 /** @typedef {import('../index').Data} Data */
 /** @typedef {import('../index').Options} Options */
@@ -185,7 +188,7 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 				});
 			}
 			else {
-				if (jobConfig.verbose || jobConfig.showProgress) counter(jobConfig.recordType, jobConfig.recordsProcessed, jobConfig.requests);
+				if (jobConfig.verbose || jobConfig.showProgress) counter(jobConfig.recordType, jobConfig.recordsProcessed, jobConfig.requests, jobConfig.getEps());
 			}
 
 		}),

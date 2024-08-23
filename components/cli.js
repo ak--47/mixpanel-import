@@ -132,7 +132,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 		.option("region", {
 			demandOption: false,
 			default: 'US',
-			describe: 'either US or EU',
+			describe: 'either US, EU, or IN',
 			type: 'string'
 		})
 		.option("fix", {
@@ -352,11 +352,12 @@ cliParams.welcome = welcome;
  * @param  {number} processed
  * @param  {number} requests
  */
-function showProgress(record, processed, requests) {
-	const { rss, heapTotal, heapUsed } = process.memoryUsage();
-	const percentHeap = (heapUsed / heapTotal) * 100;
-	const percentRSS = (heapUsed / rss) * 100;
-	const line = `${record}s: ${u.comma(processed)} | batches: ${u.comma(requests)} | memory: ${u.bytesHuman(heapUsed)} (heap: ${u.round(percentHeap)}% total:${u.round(percentRSS)}%)\t\t`;
+function showProgress(record, processed, requests, eps) {
+	const { heapUsed } = process.memoryUsage();
+	// const { rss, heapTotal, heapUsed } = process.memoryUsage();
+	// const percentHeap = (heapUsed / heapTotal) * 100;
+	// const percentRSS = (heapUsed / rss) * 100;
+	const line = `${record}s: ${u.comma(processed)} | batches: ${u.comma(requests)}| eps: ${u.comma(eps)} | memory: ${u.bytesHuman(heapUsed)}\t\t`;
 	// @ts-ignore
 	readline.cursorTo(process.stdout, 0);
 	// @ts-ignore

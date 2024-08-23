@@ -78,13 +78,13 @@ class Job {
 		if (opts.dataGroupId) {
 			if (opts.dataGroupId?.startsWith('-')) this.dataGroupId = opts.dataGroupId.split("-")[1];
 			else this.dataGroupId = opts.dataGroupId;
-			
+
 		}
 
 		// ? string options
 		this.recordType = opts.recordType || `event`; // event, user, group or table		
 		this.streamFormat = opts.streamFormat || ''; // json or jsonl ... only relevant for streams
-		this.region = opts.region || `US`; // US or EU
+		this.region = opts.region || `US`; // US or EU or IN
 		this.vendor = opts.vendor || ''; // heap or amplitude
 
 		// ? number options
@@ -383,6 +383,13 @@ class Job {
 			table: `https://api-eu.mixpanel.com/lookup-tables/`,
 			export: `https://data-eu.mixpanel.com/api/2.0/export`,
 			"profile-export": `https://eu.mixpanel.com/api/2.0/engage`
+		},
+		in: {
+			event: `https://api-in.mixpanel.com/import`,
+			user: `https://api-in.mixpanel.com/engage`,
+			group: `https://api-in.mixpanel.com/groups`,
+			table: `https://api-in.mixpanel.com/lookup-tables/`,
+			export: `https://data-in.mixpanel.com/api/2.0/export`,
 		}
 
 	};
@@ -515,6 +522,11 @@ class Job {
 	// Clear the samples
 	memRest() {
 		this.samples = [];
+	}
+	getEps() {
+		const duration =  (Date.now() -dayjs(this.startTime).valueOf() ) / 1000;
+		const eps = this.recordsProcessed / duration;
+		return eps.toFixed(2);
 	}
 	/**
 	 * summary of the results of an import
