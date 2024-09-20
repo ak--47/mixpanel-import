@@ -77,11 +77,14 @@ async function validateToken(token) {
 
 /**
  * enriches the jobConfig with SCD specific details
+ * todo: https://developer.mixpanel.com/reference/create-service-account
+ * 
  * @param  {JobConfig} job
  */
 async function prepareSCD(job) {
 	const { acct = '', pass = '', project = '', token = '',
-		scdKey = '', scdLabel = '', scdType = 'string'
+		scdKey = '', scdLabel = '', scdType = 'string',
+		groupKey = "", dataGroupId = ""
 	} = job;
 	if (!acct || !pass) {
 		throw new Error('Missing Credentials; both `acct` and `pass` are required');
@@ -114,6 +117,7 @@ async function prepareSCD(job) {
 		const projectId = Object.keys(meData.workspaces)[0];
 		// const projectDetails = meData.workspaces[projectId]
 		job.project = projectId;
+
 	}
 
 	if (!token) {
@@ -126,6 +130,25 @@ async function prepareSCD(job) {
 		const { secret, token } = metadata;
 		job.secret = secret;
 		job.token = token;
+	}
+
+	if (groupKey && !dataGroupId) {
+		/** @type {got.Options} */
+		const requestData = {
+			url: `https://mixpanel.com/api/app/projects/${job.project}/data-groups/`,
+			...auth
+		};
+		const { results: metadata } = await got(requestData).json();
+		const groupEntry = metadata.find((group) => group?.property_name === groupKey);
+		const foundDataGroupId = groupEntry?.data_group_id;
+
+		if (!foundDataGroupId) {
+			debugger;
+			throw new Error(`could not find dataGroupId for ${groupKey}`);
+		}
+		job.dataGroupId = foundDataGroupId;
+
+
 	}
 
 	// DATA DFNs API
@@ -144,7 +167,7 @@ async function prepareSCD(job) {
 
 	const dataDfn = await got(dataDfnReq).json();
 	const { results: dfnResults } = dataDfn;
-	const scdId = dfnResults.id
+	const scdId = dfnResults.id;
 	if (!scdId) {
 		throw new Error('SCD not created');
 	}
@@ -162,7 +185,7 @@ async function prepareSCD(job) {
 		...auth
 	};
 
-	if (job.dataGroupId) propsReq.body.dataGroupId = job.dataGroupId;
+	if (job.dataGroupId) propsReq.json.dataGroupId = job.dataGroupId;
 
 	const propDfn = await got(propsReq).json();
 	const { results: propResults } = propDfn;
@@ -171,7 +194,7 @@ async function prepareSCD(job) {
 		throw new Error('Property not created');
 	}
 	job.scdPropId = propId;
-	
+
 
 	return job;
 }

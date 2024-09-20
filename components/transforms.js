@@ -772,7 +772,7 @@ function scdTransform(job) {
 			mpSCDEvent.properties[groupKey] = record?.[groupKey] || record?.["distinct_id"] || record?.["$distinct_id"] 
 		}
 
-		if (!dataGroupId) {
+		if (!dataGroupId || !groupKey) {
 			mpSCDEvent.properties["distinct_id"] = record?.distinct_id || record?.user_id || record?.device_id;
 		}
 

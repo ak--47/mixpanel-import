@@ -371,6 +371,7 @@ declare namespace main {
 	scdType?: "string" | "number" | "boolean";
 	scdId?: string;
 	scdPropId?: string;
+	groupKey?: string | number;
 
 
   };

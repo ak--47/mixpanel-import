@@ -36,7 +36,7 @@ class Job {
 		this.bearer = creds.bearer || ``;
 		this.token = creds.token || ``; //project token 
 		this.lookupTableId = creds.lookupTableId || ``; //lookup table id
-		this.groupKey = creds.groupKey || ``; //group key id
+		this.groupKey = creds.groupKey || opts.groupKey || ``; //group key id
 		this.auth = this.resolveProjInfo();
 		this.startTime = new Date().toISOString();
 		this.endTime = null;

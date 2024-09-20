@@ -57,6 +57,7 @@ const eventsCSV = `./testData/eventAsTable.csv`;
 const dupePeople = `./testData/pplWithDupes.ndjson`;
 const heapParseError = `./testData/heap-parse-error.jsonl`;
 const scdUserNps = `./testData/scd/user-nps-scd-small.json`;
+const scdCompanyPlan = `./testData/scd/company-plan-scd.json`;
 
 const opts = {
 	recordType: `event`,
@@ -138,9 +139,23 @@ describe("filenames", () => {
 	);
 
 	test(
-		"scd",
+		"scd (user)",
 		async () => {
 			const result = await mp({}, scdUserNps, { ...opts, recordType: `scd`, scdKey: "NPS", scdType: "number", scdLabel: 'net-promo-score', fixData: true });
+			const { success, failed, duration, total } = result;
+			expect(success).toBe(2005);
+			expect(failed).toBe(0);
+			expect(duration).toBeGreaterThan(0);
+			expect(total).toBe(2005);
+
+
+		}
+	);
+
+	test(
+		"scd (group)",
+		async () => {
+			const result = await mp({}, scdCompanyPlan, { ...opts,  groupKey: "company_id",  recordType: `scd`, scdKey: "plan", scdType: "string", scdLabel: 'company-plan-change', fixData: true });
 			const { success, failed, duration, total } = result;
 			expect(success).toBe(2005);
 			expect(failed).toBe(0);
