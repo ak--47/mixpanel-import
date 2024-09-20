@@ -3,12 +3,12 @@ const u = require('ak-tools');
 /** @typedef {import('./job')} JobConfig */
 
 /**
- * @param  {JobConfig} jobConfig
+ * @param  {JobConfig} job
  */
-function logger(jobConfig) {
+function logger(job) {
 	return (message, isTable = false) => {		
-		if (jobConfig.verbose && isTable) console.table(message);
-		else if (jobConfig.verbose) console.log(message);
+		if (job.verbose && isTable) console.table(message);
+		else if (job.verbose) console.log(message);
 		return;
 	};
 }

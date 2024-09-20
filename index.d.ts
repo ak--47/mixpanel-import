@@ -38,7 +38,8 @@ declare namespace main {
     | "events"
     | "users"
     | "groups"
-    | "tables";
+    | "tables"
+    | "scd";
   /**
    * - a path to a file/folder, objects in memory, or a readable object/file stream that contains data you wish to import
    */
@@ -288,14 +289,14 @@ declare namespace main {
      * don't import events with property values on the blacklist
      */
     propValBlacklist?: string[];
-	/**
-	 * only import events which have property keys and values on the whilelist
-	 */
-	comboWhiteList?: {[key: string]: string[]};
-	/**
-	 * don't import events which have property keys and values on the blacklist
-	 */
-	comboBlackList?: {[key: string]: string[]};
+    /**
+     * only import events which have property keys and values on the whilelist
+     */
+    comboWhiteList?: { [key: string]: string[] };
+    /**
+     * don't import events which have property keys and values on the blacklist
+     */
+    comboBlackList?: { [key: string]: string[] };
     /**
      * the start date of the export (events only)
      */
@@ -360,6 +361,18 @@ declare namespace main {
      * the path to write the transformed data to
      */
     outputFilePath?: string;
+
+	/**
+	 * SCD STUFF
+	 */
+
+	scdLabel?: string;
+	scdKey?: string;
+	scdType?: "string" | "number" | "boolean";
+	scdId?: string;
+	scdPropId?: string;
+
+
   };
 
   /**

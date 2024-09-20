@@ -93,13 +93,13 @@ async function exportEvents(filename, jobConfig) {
 
 /**
  * @param  {string} folder
- * @param  {jobConfig} jobConfig
+ * @param  {jobConfig} job
  */
-async function exportProfiles(folder, jobConfig) {
-	const auth = jobConfig.auth;
+async function exportProfiles(folder, job) {
+	const auth = job.auth;
 	const allFiles = [];
 	let entityName = `users`;
-	if (jobConfig.dataGroupId) entityName = `group`;
+	if (job.dataGroupId) entityName = `group`;
 
 	let iterations = 0;
 	let fileName = `${entityName}-${iterations}.json`;
@@ -108,7 +108,7 @@ async function exportProfiles(folder, jobConfig) {
 	/** @type {got.Options} */
 	const options = {
 		method: 'POST',
-		url: jobConfig.url,
+		url: job.url,
 		headers: {
 			Authorization: auth,
 			'content-type': 'application/x-www-form-urlencoded'
@@ -118,17 +118,17 @@ async function exportProfiles(folder, jobConfig) {
 		retry: { limit: 50 }
 	};
 	// @ts-ignore
-	if (jobConfig.project) options.searchParams.project_id = jobConfig.project;
+	if (job.project) options.searchParams.project_id = job.project;
 	
-	if (jobConfig.cohortId) options.body = `filter_by_cohort={"id": ${jobConfig.cohortId}}&include_all_users=true`;
-	if (jobConfig.dataGroupId) options.body = `data_group_id=${jobConfig.dataGroupId}`;
+	if (job.cohortId) options.body = `filter_by_cohort={"id": ${job.cohortId}}&include_all_users=true`;
+	if (job.dataGroupId) options.body = `data_group_id=${job.dataGroupId}`;
 	// @ts-ignore
 	options.body = encodeURIComponent(options.body);
 
 	// @ts-ignore
 	let request = await got(options).catch(e => {
-		jobConfig.failed++;
-		jobConfig.responses.push({
+		job.failed++;
+		job.responses.push({
 			status: e.statusCode,
 			ip: e.ip,
 			url: e.requestUrl,
@@ -152,17 +152,17 @@ async function exportProfiles(folder, jobConfig) {
 	allFiles.push(firstFile);
 
 	//update config
-	jobConfig.recordsProcessed += profiles.length;
-	jobConfig.success += profiles.length;
-	jobConfig.requests++;
-	jobConfig.responses.push({
+	job.recordsProcessed += profiles.length;
+	job.success += profiles.length;
+	job.requests++;
+	job.responses.push({
 		status: request.statusCode,
 		ip: request.ip,
 		url: request.requestUrl,
 		...request.headers
 	});
 
-	showProgress("profile", jobConfig.success, iterations + 1);
+	showProgress("profile", job.success, iterations + 1);
 
 
 	// recursively consume all profiles
@@ -180,8 +180,8 @@ async function exportProfiles(folder, jobConfig) {
 
 		// @ts-ignore
 		request = await got(options).catch(e => {
-			jobConfig.failed++;
-			jobConfig.responses.push({
+			job.failed++;
+			job.responses.push({
 				status: e.statusCode,
 				ip: e.ip,
 				url: e.requestUrl,
@@ -192,16 +192,16 @@ async function exportProfiles(folder, jobConfig) {
 		response = request.body;
 
 		//update config
-		jobConfig.requests++;
-		jobConfig.responses.push({
+		job.requests++;
+		job.responses.push({
 			status: request.statusCode,
 			ip: request.ip,
 			url: request.requestUrl,
 			...request.headers
 		});
-		jobConfig.success += profiles.length;
-		jobConfig.recordsProcessed += profiles.length;
-		showProgress("profile", jobConfig.success, iterations + 1);
+		job.success += profiles.length;
+		job.recordsProcessed += profiles.length;
+		showProgress("profile", job.success, iterations + 1);
 
 		profiles = response.results;
 
@@ -216,8 +216,8 @@ async function exportProfiles(folder, jobConfig) {
 	console.log('\n\ndownload finished\n\n');
 
 	// @ts-ignore
-	jobConfig.file = allFiles;
-	jobConfig.folder = folder;
+	job.file = allFiles;
+	job.folder = folder;
 
 	return null;
 

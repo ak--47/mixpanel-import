@@ -15,6 +15,7 @@ const utc = require('dayjs/plugin/utc');
 dayjs.extend(utc);
 const dateFormat = `YYYY-MM-DD`;
 const Papa = require('papaparse');
+const { prepareSCD } = require('./validators.js');
 
 
 /** @typedef {import('./job')} JobConfig */
@@ -23,14 +24,14 @@ const Papa = require('papaparse');
 
 /**
  * @param  {any} data
- * @param  {JobConfig} jobConfig
+ * @param  {JobConfig} job
  */
-async function determineDataType(data, jobConfig) {
+async function determineDataType(data, job) {
 
 	//exports are saved locally
-	if (jobConfig.recordType === 'export') {
-		if (jobConfig.where) {
-			return path.resolve(jobConfig.where);
+	if (job.recordType === 'export') {
+		if (job.where) {
+			return path.resolve(job.where);
 		}
 		const folder = u.mkdir('./mixpanel-exports');
 		const filename = path.resolve(`${folder}/export-${dayjs().format(dateFormat)}-${u.rand()}.ndjson`);
@@ -38,36 +39,47 @@ async function determineDataType(data, jobConfig) {
 		return filename;
 	}
 
-	if (jobConfig.recordType === 'profile-export') {
-		if (jobConfig.where) {
-			return path.resolve(jobConfig.where);
+	if (job.recordType === 'profile-export') {
+		if (job.where) {
+			return path.resolve(job.where);
 		}
 		const folder = u.mkdir('./mixpanel-exports');
 		return path.resolve(folder);
 	}
 
 	// lookup tables are not streamed
-	if (jobConfig.recordType === 'table') {
-		jobConfig.wasStream = false;
+	if (job.recordType === 'table') {
+		job.wasStream = false;
 		if (fs.existsSync(path.resolve(data))) return await u.load(data);
 		return data;
 	}
 
+	// scd props need a whole crazy slew of things
+	if (job.recordType === 'scd') {
+		try {
+		await prepareSCD(job);
+		}
+		catch (e) {			
+			throw new Error(`SCD preparation failed: ${e.message}`);
+		}
+
+	}
+
 	// data is already a stream
 	if (data.pipe || data instanceof stream.Stream) {
-		jobConfig.wasStream = true;
+		job.wasStream = true;
 		if (data.readableObjectMode) return data;
 		return _(existingStreamInterface(data));
 	}
 
 	// data is an object in memory
 	if (Array.isArray(data) && data.every(item => typeof item === 'object' && item !== null)) {
-		jobConfig.wasStream = true;
-		return stream.Readable.from(data, { objectMode: true, highWaterMark: jobConfig.highWater });
+		job.wasStream = true;
+		return stream.Readable.from(data, { objectMode: true, highWaterMark: job.highWater });
 	}
 
 	try {
-		const { lineByLineFileExt, objectModeFileExt, tableFileExt, supportedFileExt, streamFormat, forceStream, highWater } = jobConfig;
+		const { lineByLineFileExt, objectModeFileExt, tableFileExt, supportedFileExt, streamFormat, forceStream, highWater } = job;
 		let isArrayOfFileNames = false; // !ugh ... so disorganized 
 		//data might be an array of filenames
 		if (Array.isArray(data) && data.every(item => typeof item === 'string')) {
@@ -93,7 +105,7 @@ async function determineDataType(data, jobConfig) {
 
 					if (parsingCase === 'jsonl') {
 						if (loadIntoMemory) {
-							jobConfig.wasStream = false;
+							job.wasStream = false;
 							try {
 								const file = /** @type {string} */ (await u.load(path.resolve(data)));
 								const parsed = file.trim().split('\n').map(line => JSON.parse(line));
@@ -103,14 +115,14 @@ async function determineDataType(data, jobConfig) {
 								// probably a memory crash, so we'll try to stream it
 							}
 						}
-						jobConfig.wasStream = true;
-						return itemStream(path.resolve(data), "jsonl", jobConfig);
+						job.wasStream = true;
+						return itemStream(path.resolve(data), "jsonl", job);
 					}
 
 					if (parsingCase === 'json') {
 						if (loadIntoMemory) {
 							try {
-								jobConfig.wasStream = false;
+								job.wasStream = false;
 								const file = await u.load(path.resolve(data), true);
 								// @ts-ignore
 								return stream.Readable.from(file, { objectMode: true, highWaterMark: highWater });
@@ -121,24 +133,24 @@ async function determineDataType(data, jobConfig) {
 						}
 
 						//otherwise, stream it
-						jobConfig.wasStream = true;
-						return itemStream(path.resolve(data), "json", jobConfig);
+						job.wasStream = true;
+						return itemStream(path.resolve(data), "json", job);
 					}
 
 					//csv case
 					if (parsingCase === 'csv') {
 						if (loadIntoMemory) {
 							try {
-								jobConfig.wasStream = false;
-								return await csvMemory(path.resolve(data), jobConfig);
+								job.wasStream = false;
+								return await csvMemory(path.resolve(data), job);
 							}
 							catch (e) {
 								// probably a memory crash, so we'll try to stream it
 							}
 
 						}
-						jobConfig.wasStream = true;
-						return csvStreamer(path.resolve(data), jobConfig);
+						job.wasStream = true;
+						return csvStreamer(path.resolve(data), job);
 
 					}
 				}
@@ -148,7 +160,7 @@ async function determineDataType(data, jobConfig) {
 
 		//folder or array of files case
 		if (isArrayOfFileNames || (fs.existsSync(path.resolve(data)) && fs.lstatSync(path.resolve(data)).isDirectory())) {
-			jobConfig.wasStream = true;
+			job.wasStream = true;
 			let files;
 			let exampleFile;
 			let parsingCase;
@@ -170,13 +182,13 @@ async function determineDataType(data, jobConfig) {
 
 			switch (parsingCase) {
 				case 'jsonl':
-					return itemStream(files, "jsonl", jobConfig);
+					return itemStream(files, "jsonl", job);
 				case 'json':
-					return itemStream(files, "json", jobConfig);
+					return itemStream(files, "json", job);
 				case 'csv':
-					return csvStreamArray(files, jobConfig);
+					return csvStreamArray(files, job);
 				default:
-					return itemStream(files, "jsonl", jobConfig);
+					return itemStream(files, "jsonl", job);
 			}
 		}
 	}
@@ -192,7 +204,7 @@ async function determineDataType(data, jobConfig) {
 
 		//stringified JSON
 		try {
-			return stream.Readable.from(JSON.parse(data), { objectMode: true, highWaterMark: jobConfig.highWater });
+			return stream.Readable.from(JSON.parse(data), { objectMode: true, highWaterMark: job.highWater });
 		}
 		catch (e) {
 			//noop
@@ -201,7 +213,7 @@ async function determineDataType(data, jobConfig) {
 		//stringified JSONL
 		try {
 			// @ts-ignore
-			return stream.Readable.from(data.trim().split('\n').map(JSON.parse), { objectMode: true, highWaterMark: jobConfig.highWater });
+			return stream.Readable.from(data.trim().split('\n').map(JSON.parse), { objectMode: true, highWaterMark: job.highWater });
 		}
 
 		catch (e) {
@@ -210,7 +222,7 @@ async function determineDataType(data, jobConfig) {
 
 		//CSV or TSV
 		try {
-			return stream.Readable.from(Papa.parse(data, { header: true, skipEmptyLines: true }).data, { objectMode: true, highWaterMark: jobConfig.highWater });
+			return stream.Readable.from(Papa.parse(data, { header: true, skipEmptyLines: true }).data, { objectMode: true, highWaterMark: job.highWater });
 		}
 		catch (e) {
 			//noop
@@ -264,14 +276,14 @@ function createEnsureNewlineTransform() {
 /**
  * @param  {string | string[]} filePath
  * @param  {import('../index').SupportedFormats} type="jsonl"
- * @param {JobConfig} jobConfig
+ * @param {JobConfig} job
  */
-function itemStream(filePath, type = "jsonl", jobConfig) {
+function itemStream(filePath, type = "jsonl", job) {
 	let stream;
 	let parsedStream;
 	const parser = type === "jsonl" ? JsonlParser.parser : StreamArray.withParser;
 	const streamOpts = {
-		highWaterMark: jobConfig.highWater,
+		highWaterMark: job.highWater,
 		autoClose: true,
 		emitClose: true
 
@@ -282,7 +294,7 @@ function itemStream(filePath, type = "jsonl", jobConfig) {
 		if (type === "jsonl") {
 			stream = new MultiStream(filePath.map((file) => fs.createReadStream(file, streamOpts).pipe(createEnsureNewlineTransform())), streamOpts);
 			// @ts-ignore
-			parsedStream = stream.pipe(parser({ includeUndecided: false, errorIndicator: jobConfig.parseErrorHandler, ...streamOpts })).map(token => token.value);
+			parsedStream = stream.pipe(parser({ includeUndecided: false, errorIndicator: job.parseErrorHandler, ...streamOpts })).map(token => token.value);
 			return parsedStream;
 
 		}
@@ -298,7 +310,7 @@ function itemStream(filePath, type = "jsonl", jobConfig) {
 	else {
 		stream = fs.createReadStream(filePath, streamOpts);
 		// @ts-ignore
-		parsedStream = stream.pipe(parser({ includeUndecided: false, errorIndicator: jobConfig.parseErrorHandler, ...streamOpts })).map(token => token.value);
+		parsedStream = stream.pipe(parser({ includeUndecided: false, errorIndicator: job.parseErrorHandler, ...streamOpts })).map(token => token.value);
 	}
 
 	return parsedStream;

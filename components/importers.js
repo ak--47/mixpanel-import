@@ -8,28 +8,28 @@ const HTTP_AGENT = new https.Agent({ keepAlive: true, maxSockets: 100 });
 
 /**
  * @param  {Object[]} batch
- * @param  {JobConfig} jobConfig
+ * @param  {JobConfig} job
  */
-async function flushToMixpanel(batch, jobConfig) {
+async function flushToMixpanel(batch, job) {
 	try {
 		/** @type {Buffer | string} */
 		let body = typeof batch === 'string' ? batch : JSON.stringify(batch);
-		if (jobConfig.recordType === 'event' && jobConfig.compress) {
-			body = await gzip(body, { level: jobConfig.compressionLevel || 6 });
-			jobConfig.encoding = 'gzip';
+		if (job.recordType === 'event' && job.compress) {
+			body = await gzip(body, { level: job.compressionLevel || 6 });
+			job.encoding = 'gzip';
 		}
 
 		/** @type {got.Options} */
 		const options = {
-			url: jobConfig.url,
+			url: job.url,
 			searchParams: {
 				ip: 0,
 				verbose: 1,
-				strict: Number(jobConfig.strict)
+				strict: Number(job.strict)
 			},
-			method: jobConfig.reqMethod || 'POST',
+			method: job.reqMethod || 'POST',
 			retry: {
-				limit: jobConfig.maxRetries || 10,
+				limit: job.maxRetries || 10,
 				statusCodes: [429, 500, 501, 503, 524, 502, 408, 504],
 				errorCodes: [
 					`ETIMEDOUT`,
@@ -49,9 +49,9 @@ async function flushToMixpanel(batch, jobConfig) {
 				methods: ['POST']
 			},
 			headers: {
-				"Authorization": `${jobConfig.auth}`,
-				"Content-Type": jobConfig.contentType,
-				"Content-Encoding": jobConfig.encoding,
+				"Authorization": `${job.auth}`,
+				"Content-Type": job.contentType,
+				"Content-Encoding": job.encoding,
 				'Connection': 'keep-alive',
 				'Accept': 'application/json'
 			},
@@ -70,16 +70,16 @@ async function flushToMixpanel(batch, jobConfig) {
 					catch (e) {
 						//noop
 					}
-					jobConfig.retries++;
-					jobConfig.requests++;
+					job.retries++;
+					job.requests++;
 					if (error?.response?.statusCode?.toString() === "429") {
-						jobConfig.rateLimited++;
+						job.rateLimited++;
 					}
 					else if (error?.response?.statusCode?.toString()?.startsWith("5")) {
-						jobConfig.serverErrors++;
+						job.serverErrors++;
 					}
 					else {
-						jobConfig.clientErrors++;
+						job.clientErrors++;
 					}
 				}],
 
@@ -87,14 +87,14 @@ async function flushToMixpanel(batch, jobConfig) {
 			body
 		};
 
-		if (jobConfig.http2) {
+		if (job.http2) {
 			options.http2 = true;
 			delete options.headers?.Connection;
 
 		}
 
 		// @ts-ignore
-		if (jobConfig.project) options.searchParams.project_id = jobConfig.project;
+		if (job.project) options.searchParams.project_id = job.project;
 
 		let req, res, success;
 		try {
@@ -115,23 +115,23 @@ async function flushToMixpanel(batch, jobConfig) {
 
 		}
 
-		if (jobConfig.recordType === 'event') {
-			jobConfig.success += res.num_records_imported || 0;
-			jobConfig.failed += res?.failed_records?.length || 0;
+		if (job.recordType === 'event' || job.recordType === "scd") {
+			job.success += res.num_records_imported || 0;
+			job.failed += res?.failed_records?.length || 0;
 		}
-		else if (jobConfig.recordType === 'user' || jobConfig.recordType === 'group') {
+		else if (job.recordType === 'user' || job.recordType === 'group') {
 			if (!res.error || res.status) {
 				if (res.num_good_events) {
-					jobConfig.success += res.num_good_events;
+					job.success += res.num_good_events;
 				}
 				else {
-					jobConfig.success += jobConfig.lastBatchLength;
+					job.success += job.lastBatchLength;
 				}
 			}
-			if (res.error || !res.status) jobConfig.failed += jobConfig.lastBatchLength;
+			if (res.error || !res.status) job.failed += job.lastBatchLength;
 		}
 
-		jobConfig.store(res, success);
+		job.store(res, success);
 		return res;
 	}
 

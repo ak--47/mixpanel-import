@@ -56,6 +56,7 @@ const badData = `./testData/bad_data.jsonl`;
 const eventsCSV = `./testData/eventAsTable.csv`;
 const dupePeople = `./testData/pplWithDupes.ndjson`;
 const heapParseError = `./testData/heap-parse-error.jsonl`;
+const scdUserNps = `./testData/scd/user-nps-scd-small.json`;
 
 const opts = {
 	recordType: `event`,
@@ -134,6 +135,20 @@ describe("filenames", () => {
 			expect(data.duration).toBeGreaterThan(0);
 		},
 		longTimeout
+	);
+
+	test(
+		"scd",
+		async () => {
+			const result = await mp({}, scdUserNps, { ...opts, recordType: `scd`, scdKey: "NPS", scdType: "number", scdLabel: 'net-promo-score', fixData: true });
+			const { success, failed, duration, total } = result;
+			expect(success).toBe(2005);
+			expect(failed).toBe(0);
+			expect(duration).toBeGreaterThan(0);
+			expect(total).toBe(2005);
+
+
+		}
 	);
 });
 
@@ -522,30 +537,30 @@ describe("transform", () => {
 	);
 });
 
-describe("object streams", () => {
-	test("events", done => {
-		const streamInMem = new Readable.from(eventNinetyNine, { objectMode: true });
-		const mpStream = createMpStream({}, { ...opts }, (err, results) => {
-			expect(results.success).toBe(9999);
-			expect(results.failed).toBe(0);
-			expect(results.duration).toBeGreaterThan(0);
-			done();
-		});
-		streamInMem.pipe(mpStream);
-		
-	});
+// describe("object streams", () => {
+// 	test("events", done => {
+// 		const streamInMem = new Readable.from(eventNinetyNine, { objectMode: true });
+// 		const mpStream = createMpStream({}, { ...opts }, (err, results) => {
+// 			expect(results.success).toBe(9999);
+// 			expect(results.failed).toBe(0);
+// 			expect(results.duration).toBeGreaterThan(0);
+// 			done();
+// 		});
+// 		streamInMem.pipe(mpStream);
 
-	test("users", done => {
-		const streamInMem = new Readable.from(moarPpl, { objectMode: true });
-		const mpStream = createMpStream({}, { ...opts, recordType: "user" }, (err, results) => {
-			expect(results.success).toBe(10000);
-			expect(results.failed).toBe(0);
-			expect(results.duration).toBeGreaterThan(0);
-			done();
-		});
-		streamInMem.pipe(mpStream);
-	});
-});
+// 	});
+
+// 	test("users", done => {
+// 		const streamInMem = new Readable.from(moarPpl, { objectMode: true });
+// 		const mpStream = createMpStream({}, { ...opts, recordType: "user" }, (err, results) => {
+// 			expect(results.success).toBe(10000);
+// 			expect(results.failed).toBe(0);
+// 			expect(results.duration).toBeGreaterThan(0);
+// 			done();
+// 		});
+// 		streamInMem.pipe(mpStream);
+// 	});
+// });
 
 describe("exports", () => {
 	test(

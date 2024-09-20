@@ -39,19 +39,19 @@ const { callbackify } = require('util');
 /**
  * the core pipeline 
  * @param {ReadableStream | null} stream 
- * @param {JobConfig} jobConfig 
+ * @param {JobConfig} job 
  * @returns {Promise<ImportResults> | Promise<null>} a promise
  */
-function corePipeline(stream, jobConfig, toNodeStream = false) {
+function corePipeline(stream, job, toNodeStream = false) {
 
-	if (jobConfig.recordType === 'table') return flushLookupTable(stream, jobConfig);
-	if (jobConfig.recordType === 'export' && typeof stream === 'string') return exportEvents(stream, jobConfig);
-	if (jobConfig.recordType === 'profile-export' && typeof stream === 'string') return exportProfiles(stream, jobConfig);
+	if (job.recordType === 'table') return flushLookupTable(stream, job);
+	if (job.recordType === 'export' && typeof stream === 'string') return exportEvents(stream, job);
+	if (job.recordType === 'profile-export' && typeof stream === 'string') return exportProfiles(stream, job);
 
 	const flush = _.wrapCallback(callbackify(flushToMixpanel));
 	let fileStream;
-	if (jobConfig.writeToFile) {
-		fileStream = fs.createWriteStream(jobConfig.outputFilePath, { flags: 'a', highWaterMark: jobConfig.highWater });
+	if (job.writeToFile) {
+		fileStream = fs.createWriteStream(job.outputFilePath, { flags: 'a', highWaterMark: job.highWater });
 	}
 
 
@@ -62,14 +62,14 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 		// * only JSON from stream
 		// @ts-ignore
 		_.filter(function FIRST_EXISTENCE(data) {
-			jobConfig.recordsProcessed++;
+			job.recordsProcessed++;
 			// very small chance of mem sampling
-			Math.random() <= 0.00005 ? jobConfig.memSamp() : null;
+			Math.random() <= 0.00005 ? job.memSamp() : null;
 
 			const exists = isNotEmpty(data);
 			if (exists) return true;
 			else {
-				jobConfig.empty++;
+				job.empty++;
 				return false;
 			}
 
@@ -79,7 +79,7 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 		// * apply vendor transforms
 		// @ts-ignore
 		_.map(function VENDOR_TRANSFORM(data) {
-			if (jobConfig.vendor && jobConfig.vendorTransform) data = jobConfig.vendorTransform(data);
+			if (job.vendor && job.vendorTransform) data = job.vendorTransform(data);
 			return data;
 		}),
 
@@ -90,7 +90,7 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 		// * apply user defined transform
 		// @ts-ignore
 		_.map(function USER_TRANSFORM(data) {
-			if (jobConfig.transformFunc) data = jobConfig.transformFunc(data);
+			if (job.transformFunc) data = job.transformFunc(data);
 			return data;
 		}),
 
@@ -101,7 +101,7 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 		// * dedupe
 		// @ts-ignore
 		_.map(function DEDUPE(data) {
-			if (jobConfig.dedupe) data = jobConfig.deduper(data);
+			if (job.dedupe) data = job.deduper(data);
 			return data;
 		}),
 
@@ -111,7 +111,7 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 			const exists = isNotEmpty(data);
 			if (exists) return true;
 			else {
-				jobConfig.empty++;
+				job.empty++;
 				return false;
 			}
 
@@ -120,18 +120,19 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 		// * helper transforms
 		// @ts-ignore
 		_.map(function HELPER_TRANSFORMS(data) {
-			if (jobConfig.shouldApplyAliases) jobConfig.applyAliases(data);
-			if (jobConfig.fixData) data = jobConfig.ezTransform(data);
-			if (jobConfig.removeNulls) jobConfig.nullRemover(data);
-			if (jobConfig.timeOffset) jobConfig.UTCoffset(data);
-			if (jobConfig.shouldAddTags) jobConfig.addTags(data);
-			if (jobConfig.shouldWhiteBlackList) data = jobConfig.whiteAndBlackLister(data);
-			if (jobConfig.shouldEpochFilter) data = jobConfig.epochFilter(data);
-			if (jobConfig.propertyScrubber) jobConfig.propertyScrubber(data);
-			if (jobConfig.flattenData) jobConfig.flattener(data);
-			if (jobConfig.fixJson) jobConfig.jsonFixer(data);
-			if (jobConfig.shouldCreateInsertId) jobConfig.insertIdAdder(data);
-			if (jobConfig.addToken) jobConfig.tokenAdder(data);
+			if (job.shouldApplyAliases) job.applyAliases(data);
+			if (job.recordType === "scd") data = job.scdTransform(data);
+			if (job.fixData) data = job.ezTransform(data);
+			if (job.removeNulls) job.nullRemover(data);
+			if (job.timeOffset) job.UTCoffset(data);
+			if (job.shouldAddTags) job.addTags(data);
+			if (job.shouldWhiteBlackList) data = job.whiteAndBlackLister(data);
+			if (job.shouldEpochFilter) data = job.epochFilter(data);
+			if (job.propertyScrubber) job.propertyScrubber(data);
+			if (job.flattenData) job.flattener(data);
+			if (job.fixJson) job.jsonFixer(data);
+			if (job.shouldCreateInsertId) job.insertIdAdder(data);
+			if (job.addToken) job.tokenAdder(data);
 			return data;
 		}),
 
@@ -140,55 +141,55 @@ function corePipeline(stream, jobConfig, toNodeStream = false) {
 		_.filter(function THIRD_EXISTENCE(data) {
 			const exists = isNotEmpty(data);
 			if (exists) {
-				jobConfig.bytesProcessed += Buffer.byteLength(JSON.stringify(data), 'utf-8');
+				job.bytesProcessed += Buffer.byteLength(JSON.stringify(data), 'utf-8');
 				return true;
 			}
 			else {
-				jobConfig.empty++;
+				job.empty++;
 				return false;
 			}
 		}),
 
 		// * batch for # of items
 		// @ts-ignore
-		_.batch(jobConfig.recordsPerBatch),
+		_.batch(job.recordsPerBatch),
 
 		// * batch for req size
 		// @ts-ignore
-		_.consume(chunkForSize(jobConfig)),
+		_.consume(chunkForSize(job)),
 
 		// * send to mixpanel
 		// @ts-ignore
 		_.map(function HTTP_REQUESTS(batch) {
-			jobConfig.requests++;
-			jobConfig.batches++;
-			jobConfig.batchLengths.push(batch.length);
-			jobConfig.lastBatchLength = batch.length;
-			if (jobConfig.dryRun) return _(Promise.resolve(batch));
-			if (jobConfig.writeToFile) {
+			job.requests++;
+			job.batches++;
+			job.batchLengths.push(batch.length);
+			job.lastBatchLength = batch.length;
+			if (job.dryRun) return _(Promise.resolve(batch));
+			if (job.writeToFile) {
 				batch.forEach(data => {
 					fileStream.write(JSON.stringify(data) + '\n');
 				});
 				return _(Promise.resolve(batch));
 			}
-			return flush(batch, jobConfig);
+			return flush(batch, job);
 		}),
 
 		// * concurrency
 		// @ts-ignore
-		_.mergeWithLimit(jobConfig.workers),
+		_.mergeWithLimit(job.workers),
 
 		// * verbose
 		// @ts-ignore
 		_.doto(function VERBOSE(batch) {
-			if (jobConfig.dryRun) {
+			if (job.dryRun) {
 				batch.forEach(data => {
-					jobConfig.dryRunResults.push(data);
-					if (jobConfig.verbose) console.log(JSON.stringify(data, null, 2));
+					job.dryRunResults.push(data);
+					if (job.verbose) console.log(JSON.stringify(data, null, 2));
 				});
 			}
 			else {
-				if (jobConfig.verbose || jobConfig.showProgress) counter(jobConfig.recordType, jobConfig.recordsProcessed, jobConfig.requests, jobConfig.getEps());
+				if (job.verbose || job.showProgress) counter(job.recordType, job.recordsProcessed, job.requests, job.getEps());
 			}
 
 		}),
