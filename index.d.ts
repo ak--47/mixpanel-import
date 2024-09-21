@@ -362,18 +362,39 @@ declare namespace main {
      */
     outputFilePath?: string;
 
-	/**
-	 * SCD STUFF
-	 */
+    /**
+     * SCD STUFF
+     */
 
-	scdLabel?: string;
-	scdKey?: string;
-	scdType?: "string" | "number" | "boolean";
-	scdId?: string;
-	scdPropId?: string;
-	groupKey?: string | number;
+    /**
+     * the internal label for the SCD; visible only in data definitions
+     */
+    scdLabel?: string;
 
-
+    /**
+     * the scd key that will be in the data (like NPS or plan)
+     */
+    scdKey?: string;
+    /**
+     * the datatype for the SCD
+     */
+    scdType?: "string" | "number" | "boolean";
+    /**
+     * created dynamically; an id for the SCD in data definitions
+     */
+    scdId?: string;
+    /**
+     * an id for the SCD in prop definitions
+     */
+    scdPropId?: string;
+    /**
+     * for group profiles + group analytics
+     */
+    groupKey?: string | number;
+    /**
+     * after imported the SCD, should we create profiles for the SCD
+     */
+    createProfiles?: boolean;
   };
 
   /**

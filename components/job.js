@@ -51,6 +51,7 @@ class Job {
 		this.scdId = opts.scdId || ''; //scd id
 		this.scdPropId = opts.scdPropId || ''; //scd prop id
 
+
 		// ? export stuff
 
 		//? dates
@@ -125,6 +126,7 @@ class Job {
 		this.abridged = u.isNil(opts.abridged) ? false : opts.abridged; //don't include success responses
 		this.forceStream = u.isNil(opts.forceStream) ? true : opts.forceStream; //don't ever buffer files into memory
 		this.dedupe = u.isNil(opts.dedupe) ? false : opts.dedupe; //remove duplicate records
+		this.createProfiles = u.isNil(opts.createProfiles) ? false : opts.createProfiles; //remove duplicate records
 		this.dryRun = u.isNil(opts.dryRun) ? false : opts.dryRun; //don't actually send data
 		this.http2 = u.isNil(opts.http2) ? false : opts.http2; //use http2
 		this.addToken = u.isNil(opts.addToken) ? false : opts.addToken; //add token to each record

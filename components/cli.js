@@ -62,7 +62,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			demandOption: false,
 			alias: "recordType",
 			default: 'event',
-			describe: 'event, user, group, table, export, or profile-export',
+			describe: 'event, user, group, table, export, scd, or profile-export',
 			type: 'string'
 		})
 		.option("compress", {
@@ -141,6 +141,30 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'fix common mistakes',
 			type: 'boolean',
 			alias: 'fixData'
+		})
+		.option("createProfiles", {
+			demandOption: false,
+			default: false,
+			describe: 'create profiles for SCD',
+			type: 'boolean'
+		})
+		.option("scdType", {
+			demandOption: false,
+			default: 'string',
+			describe: 'string/number/boolean',
+			type: 'string'
+		})
+		.option("scdKey", {
+			demandOption: false,
+			default: '',
+			describe: 'prop KEY value for SCD',
+			type: 'string'
+		})
+		.option("scdLabel", {
+			demandOption: false,
+			default: '',
+			describe: 'label for SCD',
+			type: 'string'
 		})
 		.option("clean", {
 			demandOption: false,
