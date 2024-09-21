@@ -36,7 +36,7 @@ class Job {
 		this.bearer = creds.bearer || ``;
 		this.token = creds.token || ``; //project token 
 		this.lookupTableId = creds.lookupTableId || ``; //lookup table id
-		this.groupKey = creds.groupKey || ``; //group key id
+		this.groupKey = creds.groupKey || opts.groupKey || ``; //group key id
 		this.auth = this.resolveProjInfo();
 		this.startTime = new Date().toISOString();
 		this.endTime = null;
@@ -45,6 +45,12 @@ class Job {
 		this.wasStream = null; //was the data loaded into memory or streamed?
 		this.dryRunResults = []; //results of dry run	
 		this.insertIdTuple = opts.insertIdTuple || []; //tuple of keys for insert_id	
+		this.scdLabel = opts.scdLabel || ''; //scd label
+		this.scdKey = opts.scdKey || ''; //scd key
+		this.scdType = opts.scdType || 'string'; //scd type
+		this.scdId = opts.scdId || ''; //scd id
+		this.scdPropId = opts.scdPropId || ''; //scd prop id
+
 
 		// ? export stuff
 
@@ -120,6 +126,7 @@ class Job {
 		this.abridged = u.isNil(opts.abridged) ? false : opts.abridged; //don't include success responses
 		this.forceStream = u.isNil(opts.forceStream) ? true : opts.forceStream; //don't ever buffer files into memory
 		this.dedupe = u.isNil(opts.dedupe) ? false : opts.dedupe; //remove duplicate records
+		this.createProfiles = u.isNil(opts.createProfiles) ? false : opts.createProfiles; //remove duplicate records
 		this.dryRun = u.isNil(opts.dryRun) ? false : opts.dryRun; //don't actually send data
 		this.http2 = u.isNil(opts.http2) ? false : opts.http2; //use http2
 		this.addToken = u.isNil(opts.addToken) ? false : opts.addToken; //add token to each record
@@ -167,6 +174,7 @@ class Job {
 		this.propertyScrubber = noop;
 		this.parseErrorHandler = opts.parseErrorHandler || returnEmpty(this);
 		this.tokenAdder = noop;
+		this.scdTransform = noop;
 
 		// ? transform conditions
 		if (this.fixData) this.ezTransform = transforms.ezTransforms(this);
@@ -176,6 +184,7 @@ class Job {
 		if (this.dedupe) this.deduper = transforms.dedupeRecords(this);
 		if (this.flattenData) this.flattener = transforms.flattenProperties(".");
 		if (this.addToken) this.tokenAdder = transforms.addToken(this);
+		if (this.recordType === 'scd') this.scdTransform = transforms.scdTransform(this);
 
 		if (this.insertIdTuple.length > 0 && this.recordType === 'event') {
 			this.shouldCreateInsertId = true;
@@ -333,6 +342,9 @@ class Job {
 		this.responses = [];
 		this.errors = [];
 
+		// SCD cannot be strict mode -_-
+		if (this.recordType === "scd") this.strict = false;
+
 
 		// ? allow plurals
 		// @ts-ignore
@@ -370,6 +382,7 @@ class Job {
 	endpoints = {
 		us: {
 			event: `https://api.mixpanel.com/import`,
+			scd: `https://api.mixpanel.com/import`,
 			user: `https://api.mixpanel.com/engage`,
 			group: `https://api.mixpanel.com/groups`,
 			table: `https://api.mixpanel.com/lookup-tables/`,
@@ -378,6 +391,7 @@ class Job {
 		},
 		eu: {
 			event: `https://api-eu.mixpanel.com/import`,
+			scd: `https://api-eu.mixpanel.com/import`,
 			user: `https://api-eu.mixpanel.com/engage`,
 			group: `https://api-eu.mixpanel.com/groups`,
 			table: `https://api-eu.mixpanel.com/lookup-tables/`,
@@ -386,6 +400,7 @@ class Job {
 		},
 		in: {
 			event: `https://api-in.mixpanel.com/import`,
+			scd: `https://api-eu.mixpanel.com/import`,
 			user: `https://api-in.mixpanel.com/engage`,
 			group: `https://api-in.mixpanel.com/groups`,
 			table: `https://api-in.mixpanel.com/lookup-tables/`,
@@ -524,7 +539,7 @@ class Job {
 		this.samples = [];
 	}
 	getEps() {
-		const duration =  (Date.now() -dayjs(this.startTime).valueOf() ) / 1000;
+		const duration = (Date.now() - dayjs(this.startTime).valueOf()) / 1000;
 		const eps = this.recordsProcessed / duration;
 		return eps.toFixed(2);
 	}

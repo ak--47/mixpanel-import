@@ -20,10 +20,10 @@ const outsideProps = ["distinct_id", "group_id", "token", "group_key", "ip"]; //
 function noop(a) { return a; }
 
 /**
- * @param  {JobConfig} jobConfig
+ * @param  {JobConfig} job
  */
-function ezTransforms(jobConfig) {
-	if (jobConfig.recordType === `event`) {
+function ezTransforms(job) {
+	if (job.recordType === `event`) {
 		return function FixShapeAndAddInsertIfAbsentAndFixTime(record) {
 			//wrong shape
 			if (!record.properties) {
@@ -89,7 +89,7 @@ function ezTransforms(jobConfig) {
 	}
 
 	//for user imports, make sure every record has a $token and the right shape
-	if (jobConfig.recordType === `user`) {
+	if (job.recordType === `user`) {
 		return function addUserTokenIfAbsent(user) {
 
 			//wrong shape; fix it
@@ -98,7 +98,7 @@ function ezTransforms(jobConfig) {
 				if (user.$distinct_id) uuidKey = "$distinct_id";
 				else if (user.distinct_id) uuidKey = "distinct_id";
 				else {
-					if (jobConfig.verbose) console.log(`user record has no uuid:\n${JSON.stringify(user)}\n skipping record`);
+					if (job.verbose) console.log(`user record has no uuid:\n${JSON.stringify(user)}\n skipping record`);
 					return {};
 				}
 				user = { $set: { ...user } };
@@ -115,7 +115,7 @@ function ezTransforms(jobConfig) {
 			}
 
 			//catch missing token
-			if (!user.$token && jobConfig.token) user.$token = jobConfig.token;
+			if (!user.$token && job.token) user.$token = job.token;
 
 			//rename special props
 			for (const key in user) {
@@ -151,7 +151,7 @@ function ezTransforms(jobConfig) {
 	}
 
 	//for group imports, make sure every record has a $token and the right shape
-	if (jobConfig.recordType === `group`) {
+	if (job.recordType === `group`) {
 		return function addGroupKeysIfAbsent(group) {
 			//wrong shape; fix it
 			if (!(group.$set || group.$set_once || group.$add || group.$union || group.$append || group.$remove || group.$unset)) {
@@ -161,7 +161,7 @@ function ezTransforms(jobConfig) {
 				else if (group.$group_id) uuidKey = "$group_id";
 				else if (group.group_id) uuidKey = "group_id";
 				else {
-					if (jobConfig.verbose) console.log(`group record has no uuid:\n${JSON.stringify(group)}\n skipping record`);
+					if (job.verbose) console.log(`group record has no uuid:\n${JSON.stringify(group)}\n skipping record`);
 					return {};
 				}
 				group = { $set: { ...group } };
@@ -172,10 +172,10 @@ function ezTransforms(jobConfig) {
 			}
 
 			//catch missing token
-			if (!group.$token && jobConfig.token) group.$token = jobConfig.token;
+			if (!group.$token && job.token) group.$token = job.token;
 
 			//catch group key
-			if (!group.$group_key && jobConfig.groupKey) group.$group_key = jobConfig.groupKey;
+			if (!group.$group_key && job.groupKey) group.$group_key = job.groupKey;
 
 			//rename special props
 			for (const key in group) {
@@ -747,6 +747,45 @@ function mightBeJson(input) {
 }
 
 
+
+/**
+ * rename property keys
+ * @param  {JobConfig} job
+ */
+function scdTransform(job) {
+	const { groupKey, dataGroupId, scdLabel, scdKey } = job;
+	return function (record) {
+		const mpSCDEvent = {
+			"event": scdLabel,
+			"properties": {
+				"$mp_updated_at": record?.insertTime || record?.insert_time || new Date().toISOString(),
+				"time": record?.startTime || record?.start_time || record?.timestamp || new Date().toISOString(),
+			}
+		};
+
+		const value = record[scdKey] || record[scdLabel]
+		if (!value) return {};
+
+		mpSCDEvent.properties[scdKey] = value;
+
+		if (dataGroupId || groupKey) {
+			mpSCDEvent.properties[groupKey] = record?.[groupKey] || record?.["distinct_id"] || record?.["$distinct_id"] 
+		}
+
+		if (!dataGroupId || !groupKey) {
+			mpSCDEvent.properties["distinct_id"] = record?.distinct_id || record?.user_id || record?.device_id;
+		}
+
+		if (typeof mpSCDEvent.properties.time !== "number") {
+			mpSCDEvent.properties.time = dayjs.utc(mpSCDEvent.properties.time).valueOf();
+		}
+
+		return mpSCDEvent;
+		
+	};
+}
+
+
 module.exports = {
 	ezTransforms,
 	removeNulls,
@@ -762,5 +801,6 @@ module.exports = {
 	fixJson,
 	resolveFallback,
 	scrubProperties,
-	addToken
+	addToken,
+	scdTransform
 };

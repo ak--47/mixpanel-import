@@ -75,21 +75,21 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 		cliData = cli._[0];
 	}
 
-	const jobConfig = new importJob({ ...envVar, ...cli, ...creds }, { ...envVar, ...cli, ...opts });
+	const job = new importJob({ ...envVar, ...cli, ...creds }, { ...envVar, ...cli, ...opts });
 
-	if (isCLI) jobConfig.verbose = true;
-	const l = logger(jobConfig);
+	if (isCLI) job.verbose = true;
+	const l = logger(job);
 	l(cliParams.welcome);
 	if (isCLI) global.l = l; // hacky way to make logger available globally
 
 	// ETL
-	jobConfig.timer.start();
+	job.timer.start();
 
-	const stream = await determineDataType(data || cliData, jobConfig); // always stream[]
+	const stream = await determineDataType(data || cliData, job); // always stream[]
 
 	try {
 
-		await corePipeline(stream, jobConfig).finally(() => {
+		await corePipeline(stream, job).finally(() => {
 			l(`\n\nFINISHED!\n\n`);
 		});
 	}
@@ -100,11 +100,38 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	}
 
 	l('\n');
+	if (job.createProfiles) {
+		job.transform = function (record) {
+			const { groupKey, token } = job;
+			const profile = {
+				$token: token,
+				$ip: 0,
+				$set: {}
+			};
+
+			if (groupKey) {
+				profile.$group_key = groupKey;
+				profile.$group_id = record[groupKey] || record.distinct_id || record.$distinct_id || record.user_id || record.$user_id;
+				profile.$set.id = record[groupKey] || record.distinct_id || record.$distinct_id || record.user_id || record.$user_id;
+			}
+			if (!groupKey) {
+				profile.$distinct_id = record.distinct_id || record.$distinct_id || record.user_id || record.$user_id;
+				profile.$set.id = record.distinct_id || record.$distinct_id || record.user_id || record.$user_id;
+			}
+
+			return profile;
+		};
+		job.recordType = 'user';
+		const copyStream = await determineDataType(data || cliData, job);
+		const copyPipeline = await corePipeline(copyStream, job);
+		
+
+	}
 
 	// clean up
-	jobConfig.timer.end(false);
-	const summary = jobConfig.summary();
-	l(`${jobConfig.type === 'export' ? 'export' : 'import'} complete in ${summary.durationHuman}\n\n`);
+	job.timer.end(false);
+	const summary = job.summary();
+	l(`${job.type === 'export' ? 'export' : 'import'} complete in ${summary.durationHuman}\n\n`);
 	const stats = {
 		total: u.comma(summary.total),
 		success: u.comma(summary.success),
@@ -118,7 +145,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	l(stats, true);
 	l('\n');
 
-	if (jobConfig.logs) await writeLogs(summary);
+	if (job.logs) await writeLogs(summary);
 	return summary;
 }
 
@@ -167,6 +194,10 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 	return pipeToMe.toNodeStream();
 }
 
+
+async function createProfilesFromSCD() {
+
+}
 
 /*
 -------
