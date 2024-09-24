@@ -87,7 +87,11 @@ declare namespace main {
 	/**
 	 *  - a workspace id (data views)
 	 */
-	workspace?: string;
+	workspace?: string | number;
+	/**
+	 * - an organization id (data views)
+	 */
+	org?: string | number;
   };
 
   /**

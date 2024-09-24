@@ -111,14 +111,16 @@ async function prepareSCD(job) {
 			throw new Error('Invalid Credentials');
 		}
 
-		// const orgId = Object.keys(meData.organizations)[0];
+		
 		// config.org = orgId;
 
-		const projectId = Object.keys(meData.project)[0];
+		const projectId = Object.keys(meData.projecs)[0];
 		const workspaceId = Object.keys(meData.workspaces)[0];
+		const orgId = Object.keys(meData.organizations)[0];
 		// const projectDetails = meData.workspaces[projectId]
 		job.project = projectId;
 		job.workspace = workspaceId;
+		job.org = orgId;
 
 	}
 
