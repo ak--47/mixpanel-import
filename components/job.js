@@ -32,6 +32,7 @@ class Job {
 		this.acct = creds.acct || ``; //service acct username
 		this.pass = creds.pass || ``; //service acct secret
 		this.project = creds.project || ``; //project id
+		this.workspace = creds.workspace || ``; //workspace id
 		this.secret = creds.secret || ``; //api secret (deprecated auth)
 		this.bearer = creds.bearer || ``;
 		this.token = creds.token || ``; //project token 

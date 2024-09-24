@@ -84,6 +84,10 @@ declare namespace main {
      * - a bearer token (https://mixpanel.com/oauth/access_token) which be used for exports
      */
     bearer?: string;
+	/**
+	 *  - a workspace id (data views)
+	 */
+	workspace?: string;
   };
 
   /**
