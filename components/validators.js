@@ -111,7 +111,7 @@ async function prepareSCD(job) {
 			throw new Error('Invalid Credentials');
 		}
 
-		
+
 		// config.org = orgId;
 
 		const projectId = Object.keys(meData.projects)[0];
@@ -164,7 +164,8 @@ async function prepareSCD(job) {
 		method: "PATCH",
 		json: {
 			"name": scdLabel,
-			"isScd": true
+			"isScd": true,
+			"hidden": true
 		},
 		...auth
 	};
