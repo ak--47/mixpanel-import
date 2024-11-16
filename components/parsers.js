@@ -1,6 +1,6 @@
 const readline = require('readline');
 const stream = require('stream');
-const { Transform } = require('stream');
+const { Transform, Readable } = require('stream');
 const MultiStream = require('multistream');
 const path = require('path');
 const fs = require('fs');
@@ -16,6 +16,7 @@ dayjs.extend(utc);
 const dateFormat = `YYYY-MM-DD`;
 const Papa = require('papaparse');
 const { prepareSCD } = require('./validators.js');
+var parquet = require('@dsnp/parquetjs');
 
 
 /** @typedef {import('./job')} JobConfig */
@@ -98,6 +99,7 @@ async function determineDataType(data, job) {
 					if (streamFormat === 'jsonl' || lineByLineFileExt.includes(path.extname(data))) parsingCase = 'jsonl';
 					else if (streamFormat === 'json' || objectModeFileExt.includes(path.extname(data))) parsingCase = 'json';
 					else if (streamFormat === 'csv' || tableFileExt.includes(path.extname(data))) parsingCase = 'csv';
+					else if (streamFormat === 'parquet' || data?.endsWith('.parquet')) parsingCase = 'parquet';
 
 					let loadIntoMemory = false;
 					if (fileInfo.size < os.freemem() * .50) loadIntoMemory = true;
@@ -151,7 +153,11 @@ async function determineDataType(data, job) {
 						}
 						job.wasStream = true;
 						return csvStreamer(path.resolve(data), job);
+					}
 
+					//parquet case
+					if (parsingCase === 'parquet') {
+						return await parquetStream(path.resolve(data));
 					}
 				}
 
@@ -271,6 +277,57 @@ function createEnsureNewlineTransform() {
 			callback();
 		}
 	});
+}
+
+/**
+ * Creates an object-mode stream that reads Parquet files row by row.
+ * @param {string} filename - Path to the Parquet file.
+ * @returns {Readable} - A readable stream emitting Parquet rows.
+ */
+async function parquetStream(filename) {
+	const filePath = path.resolve(filename);
+	let reader = null;
+	let cursor = null;
+	let isReading = false; // To prevent concurrent reads
+	reader = await parquet.ParquetReader.openFile(filePath);
+	cursor = reader.getCursor();
+
+	const stream = new Readable({
+		objectMode: true,
+		read() {
+			if (isReading) return; // Prevent concurrent reads
+			isReading = true;
+
+			(async () => {
+				try {
+					const record = await cursor.next();
+					if (record) {
+						this.push(record);
+					} else {
+						// End of file reached
+						await reader.close();
+						this.push(null);
+					}
+				} catch (err) {
+					this.destroy(err);
+				} finally {
+					isReading = false;
+				}
+			})();
+		},
+		async destroy(err, callback) {
+			try {
+				if (reader) {
+					await reader.close();
+				}
+				callback(err);
+			} catch (closeErr) {
+				callback(closeErr || err);
+			}
+		},
+	});
+
+	return stream;
 }
 
 /**
