@@ -58,9 +58,9 @@ async function determineDataType(data, job) {
 	// scd props need a whole crazy slew of things
 	if (job.recordType === 'scd') {
 		try {
-		await prepareSCD(job);
+			await prepareSCD(job);
 		}
-		catch (e) {			
+		catch (e) {
 			throw new Error(`SCD preparation failed: ${e.message}`);
 		}
 
@@ -97,9 +97,9 @@ async function determineDataType(data, job) {
 					//it's a file
 					let parsingCase = '';
 					if (streamFormat === 'jsonl' || lineByLineFileExt.includes(path.extname(data))) parsingCase = 'jsonl';
-					else if (streamFormat === 'json' || objectModeFileExt.includes(path.extname(data))) parsingCase = 'json';
-					else if (streamFormat === 'csv' || tableFileExt.includes(path.extname(data))) parsingCase = 'csv';
-					else if (streamFormat === 'parquet' || data?.endsWith('.parquet')) parsingCase = 'parquet';
+					if (streamFormat === 'json' || objectModeFileExt.includes(path.extname(data))) parsingCase = 'json';
+					if (streamFormat === 'csv' || tableFileExt.includes(path.extname(data))) parsingCase = 'csv';
+					if (streamFormat === 'parquet' || data?.endsWith('.parquet')) parsingCase = 'parquet';
 
 					let loadIntoMemory = false;
 					if (fileInfo.size < os.freemem() * .50) loadIntoMemory = true;
@@ -183,8 +183,9 @@ async function determineDataType(data, job) {
 			}
 
 			if (streamFormat === 'jsonl' || lineByLineFileExt.includes(exampleFile)) parsingCase = 'jsonl';
-			else if (streamFormat === 'json' || objectModeFileExt.includes(exampleFile)) parsingCase = 'json';
-			else if (streamFormat === 'csv' || tableFileExt.includes(exampleFile)) parsingCase = 'csv';
+			if (streamFormat === 'json' || objectModeFileExt.includes(exampleFile)) parsingCase = 'json';
+			if (streamFormat === 'csv' || tableFileExt.includes(exampleFile)) parsingCase = 'csv';
+			if (streamFormat === 'parquet' || data?.endsWith('.parquet')) parsingCase = 'parquet';
 
 			switch (parsingCase) {
 				case 'jsonl':
@@ -193,6 +194,8 @@ async function determineDataType(data, job) {
 					return itemStream(files, "json", job);
 				case 'csv':
 					return csvStreamArray(files, job);
+				case 'parquet':
+					return await parquetStreamArray(files);
 				default:
 					return itemStream(files, "jsonl", job);
 			}
@@ -279,56 +282,6 @@ function createEnsureNewlineTransform() {
 	});
 }
 
-/**
- * Creates an object-mode stream that reads Parquet files row by row.
- * @param {string} filename - Path to the Parquet file.
- * @returns {Readable} - A readable stream emitting Parquet rows.
- */
-async function parquetStream(filename) {
-	const filePath = path.resolve(filename);
-	let reader = null;
-	let cursor = null;
-	let isReading = false; // To prevent concurrent reads
-	reader = await parquet.ParquetReader.openFile(filePath);
-	cursor = reader.getCursor();
-
-	const stream = new Readable({
-		objectMode: true,
-		read() {
-			if (isReading) return; // Prevent concurrent reads
-			isReading = true;
-
-			(async () => {
-				try {
-					const record = await cursor.next();
-					if (record) {
-						this.push(record);
-					} else {
-						// End of file reached
-						await reader.close();
-						this.push(null);
-					}
-				} catch (err) {
-					this.destroy(err);
-				} finally {
-					isReading = false;
-				}
-			})();
-		},
-		async destroy(err, callback) {
-			try {
-				if (reader) {
-					await reader.close();
-				}
-				callback(err);
-			} catch (closeErr) {
-				callback(closeErr || err);
-			}
-		},
-	});
-
-	return stream;
-}
 
 /**
  * @param  {string | string[]} filePath
@@ -372,6 +325,101 @@ function itemStream(filePath, type = "jsonl", job) {
 
 	return parsedStream;
 
+}
+
+/**
+ * Creates an object-mode stream that reads Parquet files row by row.
+ * @param {string} filename - Path to the Parquet file.
+ * @returns {Promise<Readable>} - A readable stream emitting Parquet rows.
+ */
+async function parquetStream(filename) {
+	const filePath = path.resolve(filename);
+	let reader = null;
+	let cursor = null;
+	let isReading = false; // To prevent concurrent reads
+	reader = await parquet.ParquetReader.openFile(filePath);
+	cursor = reader.getCursor();
+
+	const stream = new Readable({
+		objectMode: true,
+		read() {
+			if (isReading) return; // Prevent concurrent reads
+			isReading = true;
+
+			(async () => {
+				try {
+					const record = await cursor.next();
+					if (record) {
+						for (const key in record) {
+							const value = record[key];
+							if (value instanceof Date) {
+								record[key] = dayjs.utc(value).toISOString();
+							}
+							//big int
+							if (typeof value === 'bigint') {
+								try {
+									// Check if the bigint is within safe integer range
+									if (value <= Number.MAX_SAFE_INTEGER && value >= Number.MIN_SAFE_INTEGER) {
+										record[key] = Number(value);
+									} else {
+										record[key] = value.toString();
+									}
+								} catch {
+									record[key] = value.toString();
+								}
+							}
+
+							if (Buffer.isBuffer(value)) {
+								record[key] = value.toString('utf-8'); // or 'base64' if needed
+							}
+
+							if (value === undefined) {
+								record[key] = null;
+							}
+
+
+						}
+						this.push(record);
+					}
+					else {
+						// End of file reached
+						await reader.close();
+						this.push(null);
+						reader = null;
+					}
+				} catch (err) {
+					this.destroy(err);
+				} finally {
+					isReading = false;
+				}
+			})();
+		},
+		async destroy(err, callback) {
+			try {
+				if (reader) {
+					await reader.close();
+				}
+				callback(err);
+			} catch (closeErr) {
+				callback(closeErr || err);
+			}
+		},
+	});
+
+	return stream;
+}
+
+/**
+ * wraps parquetStream with MultiStream to turn a folder of parquet files into a single stream
+ * @param  {string[]} filePaths
+ */
+async function parquetStreamArray(filePaths) {
+	const streams = [];
+	for (const filePath of filePaths) {
+		const stream = await parquetStream(filePath);
+		streams.push(stream);
+	}
+	return MultiStream.obj(streams);
 }
 
 /**

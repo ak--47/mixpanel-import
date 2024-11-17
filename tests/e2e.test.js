@@ -141,7 +141,7 @@ describe("filenames", () => {
 	test(
 		"scd (user)",
 		async () => {
-			const result = await mp({}, scdUserNps, { ...opts,  recordType: `scd`, scdKey: "NPS", scdType: "number", scdLabel: 'net-promo-score', fixData: true });
+			const result = await mp({}, scdUserNps, { ...opts, recordType: `scd`, scdKey: "NPS", scdType: "number", scdLabel: 'net-promo-score', fixData: true });
 			const { success, failed, duration, total } = result;
 			expect(success).toBe(2005);
 			expect(failed).toBe(0);
@@ -170,7 +170,7 @@ describe("filenames", () => {
 	test(
 		"scd (+ profiles)",
 		async () => {
-			const result = await mp({}, scdUserNps, { ...opts, createProfiles: true,  recordType: `scd`, scdKey: "NPS", scdType: "number", scdLabel: 'net-promo-score', fixData: true });
+			const result = await mp({}, scdUserNps, { ...opts, createProfiles: true, recordType: `scd`, scdKey: "NPS", scdType: "number", scdLabel: 'net-promo-score', fixData: true });
 			const { success, failed, duration, total } = result;
 			expect(success).toBe(2015);
 			expect(failed).toBe(0);
@@ -1242,7 +1242,35 @@ allowNotification,set,App Navigation,,app:#/OnBoardingSurveyView/welcome/introdu
 });
 
 
+describe("parquet", () => {
 
+	test('events', async () => {
+		const job = await mp({}, './testData/parquet/reviews.parquet', {
+			recordType: "event",
+			streamFormat: "parquet",
+			fixData: true,
+		});
+		const total = 14925;
+		const atLeast = 999;
+		expect(job.success).toBeGreaterThan(atLeast);
+		expect(job.total).toBe(total);
+	}, longTimeout);
+
+	test('users', async () => {
+		const job = await mp({}, './testData/parquet/users.parquet', {
+			recordType: "user",
+			streamFormat: "parquet",
+			fixData: true,
+		});
+		const records = 90214;
+		expect(job.success).toBe(records);
+		expect(job.total).toBe(records);
+		expect(job.failed).toBe(0);
+	}, longTimeout);
+
+
+
+});
 
 function badDataTrans(badData) {
 	const mixpanelProfile = {

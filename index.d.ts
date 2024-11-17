@@ -120,7 +120,7 @@ declare namespace main {
   };
 
   type Regions = "US" | "EU";
-  type SupportedFormats = "json" | "jsonl" | "csv";
+  type SupportedFormats = "json" | "jsonl" | "csv" | "parquet";
 
   /**
    * options for the import job
