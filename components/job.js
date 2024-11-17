@@ -377,7 +377,7 @@ class Job {
 
 	// ? props
 	version = this.getVersion();
-	lineByLineFileExt = ['.txt', '.jsonl', '.ndjson'];
+	lineByLineFileExt = ['.txt', '.jsonl', '.ndjson', '.parquet'];
 	objectModeFileExt = ['.json'];
 	tableFileExt = ['.csv', '.tsv'];
 	supportedFileExt = [...this.lineByLineFileExt, ...this.objectModeFileExt, ...this.tableFileExt];

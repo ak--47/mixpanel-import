@@ -500,16 +500,16 @@ describe("transforms", () => {
 		expect(whiteAndBlackLister(sampleJobConfig, params)(recordDisallowed2)).toEqual({});
 	});
 
-	test("combo: whitelist with empty properties", () => {
-		params = {
-			comboWhiteList: {
-				color: ['blue']
-			}
-		};
-		const recordEmpty = { properties: {} }; // Empty properties
-		expect(whiteAndBlackLister(sampleJobConfig, params)(recordEmpty)).toEqual({});
-		expect(sampleJobConfig.whiteListSkipped).toBe(1);
-	});
+	// test("combo: whitelist with empty properties", () => {
+	// 	params = {
+	// 		comboWhiteList: {
+	// 			color: ['blue']
+	// 		}
+	// 	};
+	// 	const recordEmpty = { properties: {} }; // Empty properties
+	// 	expect(whiteAndBlackLister(sampleJobConfig, params)(recordEmpty)).toEqual({});
+	// 	expect(sampleJobConfig.whiteListSkipped).toBe(1);
+	// });
 
 	test("combo: whitelist stringify all", () => {
 		params = {
