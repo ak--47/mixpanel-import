@@ -184,7 +184,7 @@ declare namespace main {
      */
     removeNulls?: boolean;
     /**
-     * - included only error responses; not successes
+     * - included only error responses; not successes; also abbreviate error responses
      * - default `false`
      */
     abridged?: boolean;
@@ -471,7 +471,7 @@ declare namespace main {
     /**
      * - failed import records (400s)
      */
-    errors: any[];
+    errors: any;
     /**
      * - the elapsed time in ms
      */

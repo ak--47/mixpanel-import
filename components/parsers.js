@@ -232,7 +232,9 @@ async function determineDataType(data, job) {
 
 		//CSV or TSV
 		try {
-			return stream.Readable.from(Papa.parse(data, { header: true, skipEmptyLines: true }).data, { objectMode: true, highWaterMark: job.highWater });
+			if (data.length > 420) {
+				return stream.Readable.from(Papa.parse(data, { header: true, skipEmptyLines: true }).data, { objectMode: true, highWaterMark: job.highWater });
+			}
 		}
 		catch (e) {
 			//noop
@@ -354,8 +356,12 @@ async function parquetStream(filename, job) {
 		});
 	}
 
-	const errorHandler = job?.parseErrorHandler || function () {
-		// console.error(`Error processing record in ${filePath}:`, err);
+	const fileErrorHandler = function (err) {
+		console.error(`Error processing ${filePath}:`, err?.message || err);
+		return null;
+	};
+
+	const rowErrorHandler = job?.parseErrorHandler || function (err, record) {
 		return {};
 	};
 
@@ -371,7 +377,7 @@ async function parquetStream(filename, job) {
 					try {
 						record = await cursor.next();
 					} catch (err) {
-						const handledError = errorHandler(err);
+						const handledError = fileErrorHandler(err);
 						this.push(handledError);
 						isReading = false;
 						return; // Continue with next read
@@ -408,7 +414,7 @@ async function parquetStream(filename, job) {
 							}
 							this.push(record);
 						} catch (err) {
-							const handledError = errorHandler(err);
+							const handledError = rowErrorHandler(err);
 							this.push(handledError);
 
 						}
@@ -461,7 +467,7 @@ function createParquetFactory(filePaths, job) {
 		currentIndex++;
 		// console.log(`Processing parquet file: ${currentPath}`);
 		parquetStream(currentPath, job)
-			.then(stream => {				
+			.then(stream => {
 				// Add error handler to prevent stream from breaking
 				stream.on('error', (err) => {
 					console.error(`Error processing ${currentPath}:`, err);
@@ -484,7 +490,8 @@ function createParquetFactory(filePaths, job) {
  */
 function parquetStreamArray(filePaths, job) {
 	// @ts-ignore
-	return MultiStream.obj(createParquetFactory(filePaths, job));
+	const lazyStreamGen = createParquetFactory(filePaths, job);
+	return MultiStream.obj(lazyStreamGen);
 	// const streams = [];
 	// loopPaths: for (const filePath of filePaths) {
 	// 	try {

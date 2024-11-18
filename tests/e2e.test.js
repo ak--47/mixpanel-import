@@ -712,6 +712,18 @@ describe("options", () => {
 	);
 
 	test(
+		"abridged mode: errors (files)",
+		async () => {
+			const badDataFile = `./testData/bad-data-event.ndjson`;
+			const data = await mp({}, badDataFile, { ...opts, fixDate: false, abridged: true, strict: true, streamFormat: "jsonl" });
+			const { errors, success, failed } = data;
+			expect(success).toBe(2);
+			expect(failed).toBe(3);
+			expect(Object.keys(errors).length).toBe(3);
+		}, longTimeout
+	);
+	
+	test(
 		"properly removes nulls",
 		async () => {
 			const data = await mp(
@@ -1274,11 +1286,11 @@ describe("parquet", () => {
 			streamFormat: "parquet",
 			fixData: true,
 		});
-		const total = 37949;		
+		const total = 37949;
 		expect(job.success).toBe(total);
 		expect(job.total).toBe(total);
 		expect(job.failed).toBe(0);
-	}, longTimeout)
+	}, longTimeout);
 
 });
 

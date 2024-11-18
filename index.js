@@ -195,9 +195,9 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 }
 
 
-async function createProfilesFromSCD() {
+// async function createProfilesFromSCD() {
 
-}
+// }
 
 /*
 -------

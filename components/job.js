@@ -344,6 +344,9 @@ class Job {
 		this.responses = [];
 		this.errors = [];
 
+		// if we're in abridged mode errors is a hash
+		if (this.abridged) this.errors = {};
+
 		// SCD cannot be strict mode -_-
 		if (this.recordType === "scd") this.strict = false;
 
@@ -445,9 +448,28 @@ class Job {
 	store(response, success = true) {
 		if (!this.abridged) {
 			if (success) this.responses.push(response);
+			return;
 		}
 
-		if (!success) this.errors.push(response);
+		if (!success) {
+			if (!this.abridged) {
+				this.errors.push(response);
+				return;
+			}
+
+			// summarize the error + count
+			if (response?.failed_records) {
+				if (Array.isArray(response.failed_records)) {
+					response.failed_records.forEach(failure => {
+						const { message = "unknown error" } = failure;
+						if (!this.errors[message]) this.errors[message] = 1;
+						this.errors[message]++;
+					});					
+					return;
+				}
+			}
+
+		}
 	}
 	getVersion() {
 		const { version } = require('../package.json');
