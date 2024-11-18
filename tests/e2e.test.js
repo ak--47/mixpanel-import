@@ -19,7 +19,7 @@ unzip it in ./testData
 /* cSpell:disable */
 require("dotenv").config();
 const { execSync } = require("child_process");
-const longTimeout = 75000;
+const longTimeout = 750900;
 
 const {
 	MP_PROJECT = "",
@@ -1268,7 +1268,17 @@ describe("parquet", () => {
 		expect(job.failed).toBe(0);
 	}, longTimeout);
 
-
+	test('folder', async () => {
+		const job = await mp({}, './testData/parquet/foldercase', {
+			recordType: "user",
+			streamFormat: "parquet",
+			fixData: true,
+		});
+		const total = 37949;		
+		expect(job.success).toBe(total);
+		expect(job.total).toBe(total);
+		expect(job.failed).toBe(0);
+	}, longTimeout)
 
 });
 

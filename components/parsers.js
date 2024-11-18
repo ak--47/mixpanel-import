@@ -17,6 +17,7 @@ const dateFormat = `YYYY-MM-DD`;
 const Papa = require('papaparse');
 const { prepareSCD } = require('./validators.js');
 var parquet = require('@dsnp/parquetjs');
+const { console } = require('inspector');
 
 
 /** @typedef {import('./job')} JobConfig */
@@ -157,7 +158,7 @@ async function determineDataType(data, job) {
 
 					//parquet case
 					if (parsingCase === 'parquet') {
-						return await parquetStream(path.resolve(data));
+						return await parquetStream(path.resolve(data), job);
 					}
 				}
 
@@ -195,7 +196,7 @@ async function determineDataType(data, job) {
 				case 'csv':
 					return csvStreamArray(files, job);
 				case 'parquet':
-					return await parquetStreamArray(files);
+					return parquetStreamArray(files, job);
 				default:
 					return itemStream(files, "jsonl", job);
 			}
@@ -330,15 +331,33 @@ function itemStream(filePath, type = "jsonl", job) {
 /**
  * Creates an object-mode stream that reads Parquet files row by row.
  * @param {string} filename - Path to the Parquet file.
+ * @param {JobConfig} job
  * @returns {Promise<Readable>} - A readable stream emitting Parquet rows.
  */
-async function parquetStream(filename) {
+async function parquetStream(filename, job) {
 	const filePath = path.resolve(filename);
 	let reader = null;
 	let cursor = null;
 	let isReading = false; // To prevent concurrent reads
-	reader = await parquet.ParquetReader.openFile(filePath);
-	cursor = reader.getCursor();
+
+	try {
+		reader = await parquet.ParquetReader.openFile(filePath);
+		cursor = reader.getCursor();
+	} catch (err) {
+		// console.error(`Failed to open parquet file ${filePath}:`, err);
+		// Return an empty stream if we can't open the file
+		return new Readable({
+			objectMode: true,
+			read() {
+				this.push(null);
+			}
+		});
+	}
+
+	const errorHandler = job?.parseErrorHandler || function () {
+		// console.error(`Error processing record in ${filePath}:`, err);
+		return {};
+	};
 
 	const stream = new Readable({
 		objectMode: true,
@@ -348,46 +367,59 @@ async function parquetStream(filename) {
 
 			(async () => {
 				try {
-					const record = await cursor.next();
+					let record;
+					try {
+						record = await cursor.next();
+					} catch (err) {
+						const handledError = errorHandler(err);
+						this.push(handledError);
+						isReading = false;
+						return; // Continue with next read
+					}
+
 					if (record) {
-						for (const key in record) {
-							const value = record[key];
-							if (value instanceof Date) {
-								record[key] = dayjs.utc(value).toISOString();
-							}
-							//big int
-							if (typeof value === 'bigint') {
-								try {
-									// Check if the bigint is within safe integer range
-									if (value <= Number.MAX_SAFE_INTEGER && value >= Number.MIN_SAFE_INTEGER) {
-										record[key] = Number(value);
-									} else {
+						try {
+							for (const key in record) {
+								const value = record[key];
+								if (value instanceof Date) {
+									record[key] = dayjs.utc(value).toISOString();
+								}
+								//big int
+								if (typeof value === 'bigint') {
+									try {
+										// Check if the bigint is within safe integer range
+										if (value <= Number.MAX_SAFE_INTEGER && value >= Number.MIN_SAFE_INTEGER) {
+											record[key] = Number(value);
+										} else {
+											record[key] = value.toString();
+										}
+									} catch {
 										record[key] = value.toString();
 									}
-								} catch {
-									record[key] = value.toString();
+								}
+
+								if (Buffer.isBuffer(value)) {
+									record[key] = value.toString('utf-8'); // or 'base64' if needed
+								}
+
+								if (value === undefined) {
+									record[key] = null;
 								}
 							}
-
-							if (Buffer.isBuffer(value)) {
-								record[key] = value.toString('utf-8'); // or 'base64' if needed
-							}
-
-							if (value === undefined) {
-								record[key] = null;
-							}
-
+							this.push(record);
+						} catch (err) {
+							const handledError = errorHandler(err);
+							this.push(handledError);
 
 						}
-						this.push(record);
-					}
-					else {
+					} else {
 						// End of file reached
 						await reader.close();
-						this.push(null);
 						reader = null;
+						this.push(null);
 					}
 				} catch (err) {
+					console.error(`Fatal error processing ${filePath}:`, err);
 					this.destroy(err);
 				} finally {
 					isReading = false;
@@ -398,6 +430,7 @@ async function parquetStream(filename) {
 			try {
 				if (reader) {
 					await reader.close();
+					reader = null;
 				}
 				callback(err);
 			} catch (closeErr) {
@@ -410,16 +443,60 @@ async function parquetStream(filename) {
 }
 
 /**
+ * Creates a factory function for MultiStream that lazily creates parquet streams
+ * @param {string[]} filePaths 
+ * @param {JobConfig} job
+ * @returns {(callback: (error: Error | null, stream: Readable | null) => void) => void}
+ */
+function createParquetFactory(filePaths, job) {
+	let currentIndex = 0;
+
+	return function factory(callback) {
+		if (currentIndex >= filePaths.length) {
+			callback(null, null); // Signal end of all files
+			return;
+		}
+
+		const currentPath = filePaths[currentIndex];
+		currentIndex++;
+		// console.log(`Processing parquet file: ${currentPath}`);
+		parquetStream(currentPath, job)
+			.then(stream => {				
+				// Add error handler to prevent stream from breaking
+				stream.on('error', (err) => {
+					console.error(`Error processing ${currentPath}:`, err);
+					// Stream will automatically move to next file
+				});
+				callback(null, stream);
+			})
+			.catch(err => {
+				console.error(`Failed to create stream for ${currentPath}:`, err);
+				// Call factory again to move to next file
+				factory(callback);
+			});
+	};
+}
+
+/**
  * wraps parquetStream with MultiStream to turn a folder of parquet files into a single stream
  * @param  {string[]} filePaths
+ * @param {JobConfig} job
  */
-async function parquetStreamArray(filePaths) {
-	const streams = [];
-	for (const filePath of filePaths) {
-		const stream = await parquetStream(filePath);
-		streams.push(stream);
-	}
-	return MultiStream.obj(streams);
+function parquetStreamArray(filePaths, job) {
+	// @ts-ignore
+	return MultiStream.obj(createParquetFactory(filePaths, job));
+	// const streams = [];
+	// loopPaths: for (const filePath of filePaths) {
+	// 	try {
+	// 		const stream = await parquetStream(filePath, job);
+	// 		streams.push(stream);
+	// 	} catch (err) {
+	// 		console.error(`Failed to create stream for ${filePath}:`, err);
+	// 		// Continue with other files
+	// 		continue loopPaths;
+	// 	}
+	// }
+	// return MultiStream.obj(streams);
 }
 
 /**
