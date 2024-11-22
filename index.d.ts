@@ -35,6 +35,7 @@ declare namespace main {
     | "table"
     | "export"
     | "profile-export"
+	| "profile-delete"
     | "events"
     | "users"
     | "groups"
@@ -84,14 +85,14 @@ declare namespace main {
      * - a bearer token (https://mixpanel.com/oauth/access_token) which be used for exports
      */
     bearer?: string;
-	/**
-	 *  - a workspace id (data views)
-	 */
-	workspace?: string | number;
-	/**
-	 * - an organization id (data views)
-	 */
-	org?: string | number;
+    /**
+     *  - a workspace id (data views)
+     */
+    workspace?: string | number;
+    /**
+     * - an organization id (data views)
+     */
+    org?: string | number;
   };
 
   /**
@@ -232,6 +233,12 @@ declare namespace main {
      * - default `./`
      */
     where?: string;
+    /**
+     * should only be used with `export` or `profile-export` record types
+     * exported data will be held in memory and not written to disk
+	 * default DOES write to disk
+     */
+    skipWriteToDisk?: boolean;
     /**
      * - a transform function to `map()` over the data
      * - if it returns `{}` the record will be skipped

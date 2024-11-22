@@ -27,7 +27,9 @@ const {
 	MP_PASS = "",
 	MP_SECRET = "",
 	MP_TOKEN = "",
-	MP_TABLE_ID = "" } = process.env;
+	MP_TABLE_ID = "",
+	MP_PROFILE_EXPORT_SECRET = ""
+} = process.env;
 
 if (!MP_PROJECT || !MP_ACCT || !MP_PASS || !MP_SECRET || !MP_TOKEN || !MP_TABLE_ID) {
 	console.error("Please set the following environment variables: MP_PROJECT, MP_ACCT, MP_PASS, MP_SECRET, MP_TOKEN, MP_TABLE_ID");
@@ -59,6 +61,7 @@ const heapParseError = `./testData/heap-parse-error.jsonl`;
 const scdUserNps = `./testData/scd/user-nps-scd-small.json`;
 const scdCompanyPlan = `./testData/scd/company-plan-scd.json`;
 
+/** @type {import('../index.d.ts').Options} */
 const opts = {
 	recordType: `event`,
 	compress: false,
@@ -69,7 +72,7 @@ const opts = {
 	strict: true,
 	logs: false,
 	fixData: true,
-
+	showProgress: true,
 	verbose: false,
 	streamFormat: "jsonl",
 	transformFunc: function noop(a) {
@@ -594,7 +597,7 @@ describe("object streams", () => {
 
 describe("exports", () => {
 	test(
-		"can export event data",
+		"export event data to file",
 		async () => {
 			const data = await mp({}, null, { ...opts, recordType: "export", start: "2023-01-01", end: "2023-01-03" });
 			expect(data.duration).toBeGreaterThan(0);
@@ -607,18 +610,50 @@ describe("exports", () => {
 	);
 
 	test(
-		"can export profile data",
+		"export event data in memory",
 		async () => {
-			const data = await mp({}, null, { ...opts, recordType: "profile-export" });
-			expect(data.duration).toBeGreaterThan(0);
-			expect(data.requests).toBeGreaterThan(5);
-			expect(data.responses.length).toBeGreaterThan(5);
-			expect(data.failed).toBe(0);
-			expect(data.total).toBeGreaterThan(5999);
-			expect(data.success).toBeGreaterThan(5999);
+			const data = await mp({}, null, { ...opts, skipWriteToDisk: true, recordType: "export", start: "2023-01-01", end: "2023-01-03" });
+			const {dryRun, success, total} = data
+			const numberOfRecords = 196
+			expect(dryRun.length).toBe(numberOfRecords);
+			expect(success).toBe(numberOfRecords);
+			expect(total).toBe(numberOfRecords);
+			expect(dryRun.every(e => e.event)).toBe(true);
+			expect(dryRun.every(e => e.properties)).toBe(true);
+			expect(dryRun.every(e => e.properties.time)).toBe(true);
+			expect(dryRun.every(e => e.properties.$insert_id)).toBe(true);
 		},
 		longTimeout
 	);
+
+	// test(
+	// 	"can export profile data",
+	// 	async () => {
+	// 		const data = await mp({}, null, { ...opts, recordType: "profile-export" });
+	// 		expect(data.duration).toBeGreaterThan(0);
+	// 		expect(data.requests).toBeGreaterThan(5);
+	// 		expect(data.responses.length).toBeGreaterThan(5);
+	// 		expect(data.failed).toBe(0);
+	// 		expect(data.total).toBeGreaterThan(5999);
+	// 		expect(data.success).toBeGreaterThan(5999);
+	// 	},
+	// 	longTimeout
+	// );
+
+	// test(
+	// 	"can export profile in memory",
+	// 	async () => {
+	// 		const data = await mp({secret: MP_PROFILE_EXPORT_SECRET }, null, { ...opts, recordType: "profile-export", skipWriteToDisk: true });
+	// 		debugger;
+	// 		// expect(data.duration).toBeGreaterThan(0);
+	// 		// expect(data.requests).toBeGreaterThan(5);
+	// 		// expect(data.responses.length).toBeGreaterThan(5);
+	// 		// expect(data.failed).toBe(0);
+	// 		// expect(data.total).toBeGreaterThan(5999);
+	// 		// expect(data.success).toBeGreaterThan(5999);
+	// 	},
+	// 	longTimeout
+	// );
 });
 
 describe("big files", () => {

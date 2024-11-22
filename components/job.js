@@ -139,6 +139,7 @@ class Job {
 		this.shouldCreateInsertId = false;
 		this.writeToFile = u.isNil(opts.writeToFile) ? false : opts.writeToFile; //write to file instead of sending
 		this.outputFilePath = opts.outputFilePath || './mixpanel-transform.json'; //where to write the file
+		this.skipWriteToDisk = u.isNil(opts.skipWriteToDisk) ? false : opts.skipWriteToDisk; //don't write to disk
 
 		// ? tagging options
 		this.tags = parse(opts.tags) || {}; //tags for the import		

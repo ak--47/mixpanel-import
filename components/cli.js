@@ -376,12 +376,31 @@ cliParams.welcome = welcome;
  * @param  {number} processed
  * @param  {number} requests
  */
-function showProgress(record, processed, requests, eps) {
+function showProgress(record = "", processed = 0, requests = 0, eps = "", amountSent = 0) {
 	const { heapUsed } = process.memoryUsage();
 	// const { rss, heapTotal, heapUsed } = process.memoryUsage();
 	// const percentHeap = (heapUsed / heapTotal) * 100;
 	// const percentRSS = (heapUsed / rss) * 100;
-	const line = `${record}s: ${u.comma(processed)} | batches: ${u.comma(requests)}| eps: ${u.comma(eps)} | memory: ${u.bytesHuman(heapUsed)}\t\t`;
+	let line = `${record}s: ${u.comma(processed)}`;
+	if (requests) {
+		line += ` | req: ${u.comma(requests)} reqs`;
+	}
+	if (eps) {
+		line += ` | eps: ${u.comma(eps)} `;
+	}
+	if (heapUsed) {
+		line += ` | mem: ${u.bytesHuman(heapUsed)}`;
+	}
+	if (amountSent) {
+		line += ` | proc: ${u.bytesHuman(amountSent)}`;
+	}
+	// Get the terminal width
+	const terminalWidth = process.stdout.columns || 80; // Default to 80 if columns is undefined
+
+	// Pad the line with spaces to fill the terminal width
+	if (line.length < terminalWidth) {
+		line = line.padEnd(terminalWidth, ' ');
+	}
 	// @ts-ignore
 	readline.cursorTo(process.stdout, 0);
 	// @ts-ignore
