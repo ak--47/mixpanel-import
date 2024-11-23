@@ -8,6 +8,15 @@ const { promisify } = require('util');
 const u = require('ak-tools');
 const showProgress = require('./cli').showProgress;
 
+let mainFunc;
+function getMain() {
+  if (!mainFunc) {
+    mainFunc = require('../index.js');
+  }
+  return mainFunc;
+}
+
+
 /** @typedef {import('./job')} jobConfig */
 
 /**
@@ -81,7 +90,7 @@ async function exportEvents(filename, job) {
 	const fileStream = fs.createWriteStream(filename);
 	let buffer = "";
 	const memoryStream = new stream.Writable({
-		write(chunk, encoding, callback) {						
+		write(chunk, encoding, callback) {
 
 			// Convert the chunk to a string and append it to the buffer
 			buffer += chunk.toString();
@@ -300,7 +309,25 @@ async function exportProfiles(folder, job) {
 
 
 async function deleteProfiles(job) {
-	job;
+	if (!job?.creds?.token) throw new Error("missing token");
+	const { token } = job.creds;
+	let recordType = "user";
+	// todo! if job has dataGroupId, it's a groups export
+	const exportJob = new job.constructor({ ...job.creds }, { skipWriteToDisk: true, recordType: "profile-export" });
+	const exportedProfiles = await exportProfiles("", exportJob);
+	const deleteObjects = exportedProfiles.map(profile => {
+		// ? https://developer.mixpanel.com/reference/delete-profile
+		return {
+			$token: job.token,
+			$distinct_id: profile.$distinct_id,
+			$delete: "null",
+			$ignore_alias: false
+
+		};
+	});
+	getMain()
+	const deleteJob = await mainFunc({ token }, deleteObjects, { recordType });
+	return deleteJob;
 }
 
 /**
@@ -316,7 +343,6 @@ function downloadProgress(amount) {
 		process.stdout.write(`\tdownloaded: ${u.bytesHuman(amount, 2, true)}    \t`);
 	}
 }
-
 
 
 async function countFileLines(filePath) {

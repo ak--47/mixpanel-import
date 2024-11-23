@@ -49,8 +49,11 @@ async function determineDataType(data, job) {
 		return path.resolve(folder);
 	}
 
-	//todo!
 	if (job.recordType === 'profile-delete') return null;
+
+	if (job.recordType === 'annotations') return data;
+	if (job.recordType === 'get-annotations') return null;
+	if (job.recordType === 'delete-annotations') return null;
 		
 
 	// lookup tables are not streamed

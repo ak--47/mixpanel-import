@@ -8,6 +8,7 @@ const _ = require('highland');
 // $ networking + filesystem
 const { exportEvents, exportProfiles, deleteProfiles } = require('./exporters');
 const { flushLookupTable, flushToMixpanel } = require('./importers.js');
+const { replaceAnnotations, getAnnotations, deleteAnnotations } = require('./meta.js');
 const fs = require('fs');
 
 
@@ -49,9 +50,14 @@ function corePipeline(stream, job, toNodeStream = false) {
 	if (job.recordType === 'export' && typeof stream === 'string') return exportEvents(stream, job);
 	// @ts-ignore
 	if (job.recordType === 'profile-export' && typeof stream === 'string') return exportProfiles(stream, job);
+	// @ts-ignore
+	if (job.recordType === 'annotations') return replaceAnnotations(stream, job);
+	
 
-	//todo!
+	if (job.recordType === 'get-annotations') return getAnnotations(job);
+	if (job.recordType === 'delete-annotations') return deleteAnnotations(job);
 	if (job.recordType === 'profile-delete') return deleteProfiles(job);
+
 
 
 

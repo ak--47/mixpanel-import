@@ -35,12 +35,15 @@ declare namespace main {
     | "table"
     | "export"
     | "profile-export"
-	| "profile-delete"
+    | "profile-delete"
     | "events"
     | "users"
     | "groups"
     | "tables"
-    | "scd";
+    | "scd"
+    | "annotations"
+    | "get-annotations"
+	| "delete-annotations";
   /**
    * - a path to a file/folder, objects in memory, or a readable object/file stream that contains data you wish to import
    */
@@ -236,7 +239,7 @@ declare namespace main {
     /**
      * should only be used with `export` or `profile-export` record types
      * exported data will be held in memory and not written to disk
-	 * default DOES write to disk
+     * default DOES write to disk
      */
     skipWriteToDisk?: boolean;
     /**
