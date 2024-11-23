@@ -6,8 +6,9 @@ const { chunkForSize } = require("./parsers.js");
 const _ = require('highland');
 
 // $ networking + filesystem
-const { exportEvents, exportProfiles } = require('./exporters');
+const { exportEvents, exportProfiles, deleteProfiles } = require('./exporters');
 const { flushLookupTable, flushToMixpanel } = require('./importers.js');
+const { replaceAnnotations, getAnnotations, deleteAnnotations } = require('./meta.js');
 const fs = require('fs');
 
 
@@ -40,13 +41,25 @@ const { callbackify } = require('util');
  * the core pipeline 
  * @param {ReadableStream | null} stream 
  * @param {JobConfig} job 
- * @returns {Promise<ImportResults> | Promise<null>} a promise
+ * @returns {Promise<ImportResults>} a promise
  */
 function corePipeline(stream, job, toNodeStream = false) {
 
 	if (job.recordType === 'table') return flushLookupTable(stream, job);
+	// @ts-ignore
 	if (job.recordType === 'export' && typeof stream === 'string') return exportEvents(stream, job);
+	// @ts-ignore
 	if (job.recordType === 'profile-export' && typeof stream === 'string') return exportProfiles(stream, job);
+	// @ts-ignore
+	if (job.recordType === 'annotations') return replaceAnnotations(stream, job);
+	
+
+	if (job.recordType === 'get-annotations') return getAnnotations(job);
+	if (job.recordType === 'delete-annotations') return deleteAnnotations(job);
+	if (job.recordType === 'profile-delete') return deleteProfiles(job);
+
+
+
 
 	const flush = _.wrapCallback(callbackify(flushToMixpanel));
 	let fileStream;
@@ -57,7 +70,7 @@ function corePipeline(stream, job, toNodeStream = false) {
 
 	// @ts-ignore
 	const mpPipeline = _.pipeline(
-	
+
 
 		// * only JSON from stream
 		// @ts-ignore
@@ -189,7 +202,7 @@ function corePipeline(stream, job, toNodeStream = false) {
 				});
 			}
 			else {
-				if (job.verbose || job.showProgress) counter(job.recordType, job.recordsProcessed, job.requests, job.getEps());
+				if (job.verbose || job.showProgress) counter(job.recordType, job.recordsProcessed, job.requests, job.getEps(), job.bytesProcessed);
 			}
 
 		}),

@@ -5,29 +5,39 @@ const https = require('https');
 const path = require('path');
 const fs = require('fs');
 const { promisify } = require('util');
-const u = require('ak-tools')
+const u = require('ak-tools');
 const showProgress = require('./cli').showProgress;
+
+let mainFunc;
+function getMain() {
+	if (!mainFunc) {
+		mainFunc = require('../index.js');
+	}
+	return mainFunc;
+}
+
 
 /** @typedef {import('./job')} jobConfig */
 
 /**
  * @param  {string} filename
- * @param  {jobConfig} jobConfig
+ * @param  {jobConfig} job
  */
-async function exportEvents(filename, jobConfig) {
+async function exportEvents(filename, job) {
 	const pipeline = promisify(stream.pipeline);
+	const { skipWriteToDisk = false } = job;
 
 	/** @type {got.Options} */
 	const options = {
-		url: jobConfig.url,
+		url: job.url,
 		searchParams: {
-			from_date: jobConfig.start,
-			to_date: jobConfig.end
+			from_date: job.start,
+			to_date: job.end
 		},
-		method: jobConfig.reqMethod,
+		method: job.reqMethod,
 		retry: { limit: 50 },
 		headers: {
-			"Authorization": `${jobConfig.auth}`
+			"Authorization": `${job.auth}`
 		},
 		agent: {
 			https: new https.Agent({ keepAlive: true })
@@ -37,21 +47,21 @@ async function exportEvents(filename, jobConfig) {
 			beforeRetry: [(err, count) => {
 				// @ts-ignore
 				l(`retrying request...#${count}`);
-				jobConfig.retries++;
+				job.retries++;
 			}]
 		},
 
 	};
 
 	// @ts-ignore
-	if (jobConfig.project) options.searchParams.project_id = jobConfig.project;
+	if (job.project) options.searchParams.project_id = job.project;
 
 	// @ts-ignore
 	const request = got.stream(options);
 
 	request.on('response', (res) => {
-		jobConfig.requests++;
-		jobConfig.responses.push({
+		job.requests++;
+		job.responses.push({
 			status: res.statusCode,
 			ip: res.ip,
 			url: res.requestUrl,
@@ -60,8 +70,8 @@ async function exportEvents(filename, jobConfig) {
 	});
 
 	request.on('error', (e) => {
-		jobConfig.failed++;
-		jobConfig.responses.push({
+		job.failed++;
+		job.responses.push({
 			status: e.statusCode,
 			ip: e.ip,
 			url: e.requestUrl,
@@ -76,19 +86,72 @@ async function exportEvents(filename, jobConfig) {
 		downloadProgress(progress.transferred);
 	});
 
-	await pipeline(
-		request,
-		fs.createWriteStream(filename)
-	);
+	// Define streams upfront
+	const fileStream = fs.createWriteStream(filename);
+	let buffer = "";
+	const memoryStream = new stream.Writable({
+		write(chunk, encoding, callback) {
 
+			// Convert the chunk to a string and append it to the buffer
+			buffer += chunk.toString();
+
+			// Split the buffer into lines
+			const lines = buffer.split("\n");
+
+			// Keep the last partial line in the buffer (if any)
+			buffer = lines.pop() || "";
+
+			// Push each complete line into the results array
+			lines.forEach(line => {
+				try {
+					const row = JSON.parse(line.trim());
+					allResults.push(row);
+				}
+				catch (e) {
+					// console.log(e);
+				}
+			});
+
+			callback();
+		},
+
+		final(callback) {
+			// Push the remaining data in the buffer as the last line
+			if (buffer) {
+				try {
+					allResults.push(JSON.parse(buffer.trim()));
+				}
+				catch (e) {
+					// console.log
+				}
+			}
+			callback();
+		}
+	});
+
+	const allResults = [];
+
+	// Choose the appropriate stream
+	const outputStream = skipWriteToDisk ? memoryStream : fileStream;
+
+	// Use the chosen stream in the pipeline
+	await pipeline(request, outputStream);
 	console.log('\n\ndownload finished\n\n');
+	if (skipWriteToDisk) {
+		job.recordsProcessed += allResults.length;
+		job.success += allResults.length;
+		job.dryRunResults.push(...allResults);
+		return allResults;
+	}
 
 	const lines = await countFileLines(filename);
-	jobConfig.recordsProcessed += lines;
-	jobConfig.success += lines;
-	jobConfig.file = filename;
+	job.recordsProcessed += lines;
+	job.success += lines;
+	job.file = filename;
 
-	return null;
+
+	return filename;
+
 }
 
 /**
@@ -97,7 +160,9 @@ async function exportEvents(filename, jobConfig) {
  */
 async function exportProfiles(folder, job) {
 	const auth = job.auth;
-	const allFiles = [];
+	const { skipWriteToDisk = false } = job;
+	// EITHER be a list of files ^ OR a list of objects in memory
+	const allResults = [];
 	let entityName = `users`;
 	if (job.dataGroupId) entityName = `group`;
 
@@ -119,11 +184,19 @@ async function exportProfiles(folder, job) {
 	};
 	// @ts-ignore
 	if (job.project) options.searchParams.project_id = job.project;
-	
-	if (job.cohortId) options.body = `filter_by_cohort={"id": ${job.cohortId}}&include_all_users=true`;
-	if (job.dataGroupId) options.body = `data_group_id=${job.dataGroupId}`;
+
+	if (job.cohortId) {
+		options.body = `filter_by_cohort={"id": ${job.cohortId}}&include_all_users=true`;
+		options.body = encodeURIComponent(options.body);
+	}
+	// if (job.dataGroupId) options.body = `data_group_id=${job.dataGroupId}`;
 	// @ts-ignore
-	options.body = encodeURIComponent(options.body);
+
+	if (job.dataGroupId) {
+		const encodedParams = new URLSearchParams();
+		encodedParams.set('data_group_id', job.dataGroupId);
+		options.body = encodedParams.toString();
+	}
 
 	// @ts-ignore
 	let request = await got(options).catch(e => {
@@ -147,9 +220,16 @@ async function exportProfiles(folder, job) {
 
 	// write first page of profiles
 	let profiles = response.results;
-	const firstFile = await u.touch(file, profiles, true);
-	let nextFile;
-	allFiles.push(firstFile);
+	let firstFile, nextFile;
+	if (skipWriteToDisk) {
+		allResults.push(...profiles);
+	}
+	if (!skipWriteToDisk) {
+		firstFile = await u.touch(file, profiles, true);
+		allResults.push(firstFile);
+	}
+
+
 
 	//update config
 	job.recordsProcessed += profiles.length;
@@ -205,8 +285,13 @@ async function exportProfiles(folder, job) {
 
 		profiles = response.results;
 
-		nextFile = await u.touch(file, profiles, true);
-		allFiles.push(nextFile);
+		if (skipWriteToDisk) {
+			allResults.push(...profiles);
+		}
+		if (!skipWriteToDisk) {
+			nextFile = await u.touch(file, profiles, true);
+			allResults.push(nextFile);
+		}
 
 		// update recursion
 		lastNumResults = response.results.length;
@@ -216,11 +301,58 @@ async function exportProfiles(folder, job) {
 	console.log('\n\ndownload finished\n\n');
 
 	// @ts-ignore
-	job.file = allFiles;
-	job.folder = folder;
+	if (skipWriteToDisk) {
+		job.dryRunResults.push(...allResults);
+	}
+	if (!skipWriteToDisk) {
+		// @ts-ignore
+		job.file = allResults;
+		job.folder = folder;
+	}
 
-	return null;
 
+	return allResults;
+
+}
+
+
+async function deleteProfiles(job) {
+	if (!job?.creds?.token) throw new Error("missing token");
+	const { token } = job.creds;
+	let recordType = "user";
+	let deleteIdentityKey = "$distinct_id";
+	const exportOptions = { skipWriteToDisk: true, recordType: "profile-export" };
+	if (job.dataGroupId) {
+		recordType = "group";
+		exportOptions.dataGroupId = job.dataGroupId;
+		if (job.groupKey) deleteIdentityKey = job.groupKey;
+		else throw new Error("missing groupKey");
+	}
+	const exportJob = new job.constructor({ ...job.creds }, exportOptions);
+	const exportedProfiles = await exportProfiles("", exportJob);
+	const deleteObjects = exportedProfiles.map(profile => {
+		// ? https://developer.mixpanel.com/reference/delete-profile
+		const deleteObj = {
+			$token: job.token,
+			$delete: "null"
+
+		};
+		if (recordType === "user") {
+			deleteObj.$ignore_alias = false;
+			deleteObj.$distinct_id = profile.$distinct_id;
+		}
+		if (recordType === "group") {
+			deleteObj.$group_key = deleteIdentityKey;
+			deleteObj.$group_id = profile.$distinct_id;
+		}
+		return deleteObj;
+	});
+	getMain();
+	const deleteOpts = { recordType };
+	if (job.groupKey) deleteOpts.groupKey = job.groupKey;
+	const deleteJob = await mainFunc({ token }, deleteObjects, deleteOpts);
+	job.dryRunResults = deleteJob
+	return deleteJob;
 }
 
 /**
@@ -236,7 +368,6 @@ function downloadProgress(amount) {
 		process.stdout.write(`\tdownloaded: ${u.bytesHuman(amount, 2, true)}    \t`);
 	}
 }
-
 
 
 async function countFileLines(filePath) {
@@ -257,4 +388,4 @@ async function countFileLines(filePath) {
 	});
 }
 
-module.exports = { exportEvents, exportProfiles };
+module.exports = { exportEvents, exportProfiles, deleteProfiles };
