@@ -10,10 +10,10 @@ const showProgress = require('./cli').showProgress;
 
 let mainFunc;
 function getMain() {
-  if (!mainFunc) {
-    mainFunc = require('../index.js');
-  }
-  return mainFunc;
+	if (!mainFunc) {
+		mainFunc = require('../index.js');
+	}
+	return mainFunc;
 }
 
 
@@ -185,10 +185,18 @@ async function exportProfiles(folder, job) {
 	// @ts-ignore
 	if (job.project) options.searchParams.project_id = job.project;
 
-	if (job.cohortId) options.body = `filter_by_cohort={"id": ${job.cohortId}}&include_all_users=true`;
-	if (job.dataGroupId) options.body = `data_group_id=${job.dataGroupId}`;
+	if (job.cohortId) {
+		options.body = `filter_by_cohort={"id": ${job.cohortId}}&include_all_users=true`;
+		options.body = encodeURIComponent(options.body);
+	}
+	// if (job.dataGroupId) options.body = `data_group_id=${job.dataGroupId}`;
 	// @ts-ignore
-	options.body = encodeURIComponent(options.body);
+
+	if (job.dataGroupId) {
+		const encodedParams = new URLSearchParams();
+		encodedParams.set('data_group_id', job.dataGroupId);
+		options.body = encodedParams.toString();
+	}
 
 	// @ts-ignore
 	let request = await got(options).catch(e => {
@@ -312,21 +320,38 @@ async function deleteProfiles(job) {
 	if (!job?.creds?.token) throw new Error("missing token");
 	const { token } = job.creds;
 	let recordType = "user";
-	// todo! if job has dataGroupId, it's a groups export
-	const exportJob = new job.constructor({ ...job.creds }, { skipWriteToDisk: true, recordType: "profile-export" });
+	let deleteIdentityKey = "$distinct_id";
+	const exportOptions = { skipWriteToDisk: true, recordType: "profile-export" };
+	if (job.dataGroupId) {
+		recordType = "group";
+		exportOptions.dataGroupId = job.dataGroupId;
+		if (job.groupKey) deleteIdentityKey = job.groupKey;
+		else throw new Error("missing groupKey");
+	}
+	const exportJob = new job.constructor({ ...job.creds }, exportOptions);
 	const exportedProfiles = await exportProfiles("", exportJob);
 	const deleteObjects = exportedProfiles.map(profile => {
 		// ? https://developer.mixpanel.com/reference/delete-profile
-		return {
+		const deleteObj = {
 			$token: job.token,
-			$distinct_id: profile.$distinct_id,
-			$delete: "null",
-			$ignore_alias: false
+			$delete: "null"
 
 		};
+		if (recordType === "user") {
+			deleteObj.$ignore_alias = false;
+			deleteObj.$distinct_id = profile.$distinct_id;
+		}
+		if (recordType === "group") {
+			deleteObj.$group_key = deleteIdentityKey;
+			deleteObj.$group_id = profile.$distinct_id;
+		}
+		return deleteObj;
 	});
-	getMain()
-	const deleteJob = await mainFunc({ token }, deleteObjects, { recordType });
+	getMain();
+	const deleteOpts = { recordType };
+	if (job.groupKey) deleteOpts.groupKey = job.groupKey;
+	const deleteJob = await mainFunc({ token }, deleteObjects, deleteOpts);
+	job.dryRunResults = deleteJob
 	return deleteJob;
 }
 
