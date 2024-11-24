@@ -84,9 +84,13 @@ class Job {
 		}
 
 		if (opts.dataGroupId) {
+			// this is a hack to PREVENT negative dataGroupId from scd endpoint... which is weird
 			if (opts.recordType === "scd") {
 				if (opts.dataGroupId?.startsWith('-')) this.dataGroupId = opts.dataGroupId.split("-")[1];
 				else this.dataGroupId = opts.dataGroupId;
+			}
+			else {
+				this.dataGroupId = opts.dataGroupId;
 			}
 
 		}
