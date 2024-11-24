@@ -84,8 +84,10 @@ class Job {
 		}
 
 		if (opts.dataGroupId) {
-			if (opts.dataGroupId?.startsWith('-')) this.dataGroupId = opts.dataGroupId.split("-")[1];
-			else this.dataGroupId = opts.dataGroupId;
+			if (opts.recordType === "scd") {
+				if (opts.dataGroupId?.startsWith('-')) this.dataGroupId = opts.dataGroupId.split("-")[1];
+				else this.dataGroupId = opts.dataGroupId;
+			}
 
 		}
 
@@ -465,7 +467,7 @@ class Job {
 						const { message = "unknown error" } = failure;
 						if (!this.errors[message]) this.errors[message] = 1;
 						this.errors[message]++;
-					});					
+					});
 					return;
 				}
 			}
