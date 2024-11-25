@@ -308,7 +308,7 @@ declare namespace main {
      */
     propValBlacklist?: string[];
     /**
-     * only import events which have property keys and values on the whilelist
+     * only import events which have property keys and values on the whitelist
      */
     comboWhiteList?: { [key: string]: string[] };
     /**
@@ -413,6 +413,16 @@ declare namespace main {
      * after imported the SCD, should we create profiles for the SCD
      */
     createProfiles?: boolean;
+	/**
+	 * just for exports, limit the number of records returned
+	 */
+	limit?: number;
+	/**
+	 * just for export
+	 * ? https://developer.mixpanel.com/reference/segmentation-expressions
+	 */
+	whereClause?: string; 
+
   };
 
   /**

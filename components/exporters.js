@@ -25,7 +25,7 @@ function getMain() {
  */
 async function exportEvents(filename, job) {
 	const pipeline = promisify(stream.pipeline);
-	const { skipWriteToDisk = false } = job;
+	const { skipWriteToDisk = false, limit, whereClause } = job;
 
 	/** @type {got.Options} */
 	const options = {
@@ -52,6 +52,11 @@ async function exportEvents(filename, job) {
 		},
 
 	};
+
+	// @ts-ignore
+	if (limit && typeof limit === 'number') options.searchParams.limit = limit;
+	// @ts-ignore
+	if (whereClause && typeof whereClause === 'string') options.searchParams.where = whereClause;
 
 	// @ts-ignore
 	if (job.project) options.searchParams.project_id = job.project;
@@ -351,7 +356,7 @@ async function deleteProfiles(job) {
 	const deleteOpts = { recordType };
 	if (job.groupKey) deleteOpts.groupKey = job.groupKey;
 	const deleteJob = await mainFunc({ token }, deleteObjects, deleteOpts);
-	job.dryRunResults = deleteJob
+	job.dryRunResults = deleteJob;
 	return deleteJob;
 }
 

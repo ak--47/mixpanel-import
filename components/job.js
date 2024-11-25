@@ -53,8 +53,13 @@ class Job {
 		this.scdId = opts.scdId || ''; //scd id
 		this.scdPropId = opts.scdPropId || ''; //scd prop id
 
-
 		// ? export stuff
+		if (opts.limit) {
+			this.limit = opts.limit;
+		}
+		if (opts.whereClause) {
+			this.whereClause = opts.whereClause;
+		}
 
 		//? dates
 		if (opts.start) {
