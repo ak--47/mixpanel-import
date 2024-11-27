@@ -123,7 +123,7 @@ declare namespace main {
     comboBlackList: { [key: string]: string[] };
   };
 
-  type Regions = "US" | "EU";
+  type Regions = "US" | "EU" | "IN";
   type SupportedFormats = "json" | "jsonl" | "csv" | "parquet";
 
   /**
