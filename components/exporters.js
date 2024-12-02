@@ -247,7 +247,7 @@ async function exportProfiles(folder, job) {
 		...request.headers
 	});
 
-	showProgress("profile", job.success, iterations + 1);
+	if (job.verbose || job.showProgress) showProgress("profile", job.success, iterations + 1);
 
 
 	// recursively consume all profiles
@@ -286,7 +286,7 @@ async function exportProfiles(folder, job) {
 		});
 		job.success += profiles.length;
 		job.recordsProcessed += profiles.length;
-		showProgress("profile", job.success, iterations + 1);
+		if (job.verbose || job.showProgress) showProgress("profile", job.success, iterations + 1);
 
 		profiles = response.results;
 

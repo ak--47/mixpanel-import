@@ -130,7 +130,7 @@ class Job {
 		this.strict = u.isNil(opts.strict) ? true : opts.strict; // use strict mode?
 		this.logs = u.isNil(opts.logs) ? false : opts.logs; //create log file
 		this.where = u.isNil(opts.logs) ? '' : opts.where; // where to put logs
-		this.verbose = u.isNil(opts.verbose) ? true : opts.verbose;  // print to stdout?
+		this.verbose = u.isNil(opts.verbose) ? false : opts.verbose;  // print to stdout?
 		this.showProgress = u.isNil(opts.showProgress) ? false : opts.showProgress; // show progress bar
 		this.fixData = u.isNil(opts.fixData) ? false : opts.fixData; //apply transforms on the data
 		this.fixJson = u.isNil(opts.fixJson) ? false : opts.fixJson; //fix json
