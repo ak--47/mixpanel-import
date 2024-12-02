@@ -669,6 +669,28 @@ class Job {
 			summary.folder = this.folder;
 		}
 
+		if (this.abridged) {
+			const includeOnly = [
+				"bytes",
+				"bytesHuman",
+				"duration",
+				"durationHuman",
+				"dryRun",
+				"eps",
+				"rateLimit",
+				"recordType",
+				"requests",
+				"success",
+				"total",
+				"failed",
+				"errors"
+			];
+			for (const key in summary) {
+				if (!includeOnly.includes(key)) delete summary[key];
+			}
+			if (!summary.dryRun.length) delete summary.dryRun;			
+		}
+
 		return summary;
 	}
 }
@@ -678,7 +700,8 @@ class Job {
  * helper to parse values passed in from cli
  * @param {string | string[] | import('../index').genericObj | void | any} val - value to parse
  * @param {any} [defaultVal] value if it can't be parsed
- * @return {Object<length, number>}
+ * @return {Object<length,
+ *  number>}
  */
 function parse(val, defaultVal = []) {
 	if (typeof val === 'string') {
