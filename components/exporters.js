@@ -326,7 +326,7 @@ async function deleteProfiles(job) {
 	const { token } = job.creds;
 	let recordType = "user";
 	let deleteIdentityKey = "$distinct_id";
-	const exportOptions = { skipWriteToDisk: true, recordType: "profile-export" };
+	const exportOptions = { skipWriteToDisk: true, recordType: "profile-export", verbose: false };
 	if (job.dataGroupId) {
 		recordType = "group";
 		exportOptions.dataGroupId = job.dataGroupId;

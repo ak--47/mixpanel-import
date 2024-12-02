@@ -79,7 +79,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 
 	if (isCLI) job.verbose = true;
 	const l = logger(job);
-	l(cliParams.welcome);
+	if (isCLI) l(cliParams.welcome);
 	if (isCLI) global.l = l; // hacky way to make logger available globally
 
 	// ETL
@@ -124,14 +124,14 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 		job.recordType = 'user';
 		const copyStream = await determineDataType(data || cliData, job);
 		const copyPipeline = await corePipeline(copyStream, job);
-		
+
 
 	}
 
 	// clean up
 	job.timer.end(false);
 	const summary = job.summary();
-	l(`${job.type === 'export' ? 'export' : 'import'} complete in ${summary.durationHuman}\n\n`);
+	if (isCLI) l(`${job.type === 'export' ? 'export' : 'import'} complete in ${summary.durationHuman}\n\n`);
 	const stats = {
 		total: u.comma(summary.total),
 		success: u.comma(summary.success),
@@ -141,9 +141,11 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 		"rate (per sec)": u.comma(summary.eps)
 	};
 
-	l("STATS");
-	l(stats, true);
-	l('\n');
+	if (isCLI) {
+		l("STATS");
+		l(stats, true);
+		l('\n');
+	}
 
 	if (job.logs) await writeLogs(summary);
 	return summary;
