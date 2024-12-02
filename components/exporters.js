@@ -141,7 +141,7 @@ async function exportEvents(filename, job) {
 
 	// Use the chosen stream in the pipeline
 	await pipeline(request, outputStream);
-	console.log('\n\ndownload finished\n\n');
+	if (job.verbose) console.log('\n\ndownload finished\n\n');
 	if (skipWriteToDisk) {
 		job.recordsProcessed += allResults.length;
 		job.success += allResults.length;
@@ -303,7 +303,7 @@ async function exportProfiles(folder, job) {
 
 	}
 
-	console.log('\n\ndownload finished\n\n');
+	if (job.verbose) console.log('\n\ndownload finished\n\n');
 
 	// @ts-ignore
 	if (skipWriteToDisk) {
