@@ -104,10 +104,11 @@ async function determineDataType(data, job) {
 					const fileInfo = fs.lstatSync(path.resolve(data));
 					//it's a file
 					let parsingCase = '';
-					if (streamFormat === 'jsonl' || lineByLineFileExt.includes(path.extname(data))) parsingCase = 'jsonl';
-					if (streamFormat === 'json' || objectModeFileExt.includes(path.extname(data))) parsingCase = 'json';
-					if (streamFormat === 'csv' || tableFileExt.includes(path.extname(data))) parsingCase = 'csv';
-					if (streamFormat === 'parquet' || data?.endsWith('.parquet')) parsingCase = 'parquet';
+					if (lineByLineFileExt.includes(path.extname(data))) parsingCase = 'jsonl';
+					else if (objectModeFileExt.includes(path.extname(data))) parsingCase = 'json';
+					else if (tableFileExt.includes(path.extname(data))) parsingCase = 'csv';
+					else if (data?.endsWith('.parquet')) parsingCase = 'parquet';
+					if (['jsonl', 'json', 'csv', 'parquet'].includes(streamFormat)) parsingCase = streamFormat;
 
 					let loadIntoMemory = false;
 					if (fileInfo.size < os.freemem() * .50) loadIntoMemory = true;
@@ -190,10 +191,11 @@ async function determineDataType(data, job) {
 				exampleFile = path.extname(files[0]);
 			}
 
-			if (streamFormat === 'jsonl' || lineByLineFileExt.includes(exampleFile)) parsingCase = 'jsonl';
-			if (streamFormat === 'json' || objectModeFileExt.includes(exampleFile)) parsingCase = 'json';
-			if (streamFormat === 'csv' || tableFileExt.includes(exampleFile)) parsingCase = 'csv';
-			if (streamFormat === 'parquet' || data?.endsWith('.parquet')) parsingCase = 'parquet';
+			if (lineByLineFileExt.includes(exampleFile)) parsingCase = 'jsonl';
+			else if (objectModeFileExt.includes(exampleFile)) parsingCase = 'json';
+			else if (tableFileExt.includes(exampleFile)) parsingCase = 'csv';
+			else if (exampleFile?.endsWith('.parquet')) parsingCase = 'parquet';
+			if (['jsonl', 'json', 'csv', 'parquet'].includes(streamFormat)) parsingCase = streamFormat;
 
 			switch (parsingCase) {
 				case 'jsonl':
@@ -499,18 +501,6 @@ function parquetStreamArray(filePaths, job) {
 	// @ts-ignore
 	const lazyStreamGen = createParquetFactory(filePaths, job);
 	return MultiStream.obj(lazyStreamGen);
-	// const streams = [];
-	// loopPaths: for (const filePath of filePaths) {
-	// 	try {
-	// 		const stream = await parquetStream(filePath, job);
-	// 		streams.push(stream);
-	// 	} catch (err) {
-	// 		console.error(`Failed to create stream for ${filePath}:`, err);
-	// 		// Continue with other files
-	// 		continue loopPaths;
-	// 	}
-	// }
-	// return MultiStream.obj(streams);
 }
 
 /**

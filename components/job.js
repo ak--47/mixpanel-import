@@ -392,10 +392,11 @@ class Job {
 
 	// ? props
 	version = this.getVersion();
-	lineByLineFileExt = ['.txt', '.jsonl', '.ndjson', '.parquet'];
+	lineByLineFileExt = ['.txt', '.jsonl', '.ndjson'];
 	objectModeFileExt = ['.json'];
 	tableFileExt = ['.csv', '.tsv'];
-	supportedFileExt = [...this.lineByLineFileExt, ...this.objectModeFileExt, ...this.tableFileExt];
+	otherFormats = ['.parquet']
+	supportedFileExt = [...this.lineByLineFileExt, ...this.objectModeFileExt, ...this.tableFileExt, ...this.otherFormats];
 	endpoints = {
 		us: {
 			event: `https://api.mixpanel.com/import`,
