@@ -52,14 +52,15 @@ function corePipeline(stream, job, toNodeStream = false) {
 	if (job.recordType === 'profile-export' && typeof stream === 'string') return exportProfiles(stream, job);
 	// @ts-ignore
 	if (job.recordType === 'annotations') return replaceAnnotations(stream, job);
-	
+
 
 	if (job.recordType === 'get-annotations') return getAnnotations(job);
 	if (job.recordType === 'delete-annotations') return deleteAnnotations(job);
 	if (job.recordType === 'profile-delete') return deleteProfiles(job);
 
 
-
+	const LOG_INTERVAL = 100; // ms
+	let lastLogUpdate = Date.now();
 
 	const flush = _.wrapCallback(callbackify(flushToMixpanel));
 	let fileStream;
@@ -202,7 +203,11 @@ function corePipeline(stream, job, toNodeStream = false) {
 				});
 			}
 			else {
-				if (job.verbose || job.showProgress) counter(job.recordType, job.recordsProcessed, job.requests, job.getEps(), job.bytesProcessed);
+				const now = Date.now();
+				if ((job.verbose || job.showProgress) && (now - lastLogUpdate >= LOG_INTERVAL)) {
+					counter(job.recordType, job.recordsProcessed, job.requests, job.getEps(), job.bytesProcessed);
+					lastLogUpdate = now;
+				}											
 			}
 
 		}),

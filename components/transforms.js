@@ -84,6 +84,17 @@ function ezTransforms(job) {
 
 			}
 
+			//make sure id is a string
+			if (record.properties.distinct_id) {
+				record.properties.distinct_id = record.properties.distinct_id.toString();
+			}
+			if (record.properties.$user_id) {
+				record.properties.$user_id = record.properties.$user_id.toString();
+			}
+			if (record.properties.$device_id) {
+				record.properties.$device_id = record.properties.$device_id.toString();
+			}
+
 			return record;
 		};
 	}
