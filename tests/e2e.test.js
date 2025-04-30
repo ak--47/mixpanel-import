@@ -613,8 +613,8 @@ describe("exports", () => {
 		"export event data in memory",
 		async () => {
 			const data = await mp({}, null, { ...opts, skipWriteToDisk: true, recordType: "export", start: "2023-01-01", end: "2023-01-03" });
-			const {dryRun, success, total} = data
-			const numberOfRecords = 196
+			const { dryRun, success, total } = data;
+			const numberOfRecords = 196;
 			expect(dryRun.length).toBe(numberOfRecords);
 			expect(success).toBe(numberOfRecords);
 			expect(total).toBe(numberOfRecords);
@@ -757,7 +757,7 @@ describe("options", () => {
 			expect(Object.keys(errors).length).toBe(3);
 		}, longTimeout
 	);
-	
+
 	test(
 		"properly removes nulls",
 		async () => {
@@ -1296,9 +1296,15 @@ describe("parquet", () => {
 			recordType: "event",
 			streamFormat: "parquet",
 			fixData: true,
+			abridged: true
 		});
 		const total = 14925;
 		const atLeast = 999;
+		const errorSummaries = [
+			Object.keys(job.errors).find(a => a.includes('retention')),
+			Object.keys(job.errors).find(a => a.includes('is invalid'))
+		].filter(a => a);
+		expect(errorSummaries.length).toBe(2);
 		expect(job.success).toBeGreaterThan(atLeast);
 		expect(job.total).toBe(total);
 	}, longTimeout);

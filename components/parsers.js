@@ -1,6 +1,7 @@
 const readline = require('readline');
 const stream = require('stream');
 const { Transform, Readable } = require('stream');
+const duckdb = require('duckdb');
 const MultiStream = require('multistream');
 const path = require('path');
 const fs = require('fs');
@@ -16,7 +17,6 @@ dayjs.extend(utc);
 const dateFormat = `YYYY-MM-DD`;
 const Papa = require('papaparse');
 const { prepareSCD } = require('./validators.js');
-var parquet = require('@dsnp/parquetjs');
 const { console } = require('inspector');
 
 
@@ -54,7 +54,7 @@ async function determineDataType(data, job) {
 	if (job.recordType === 'annotations') return data;
 	if (job.recordType === 'get-annotations') return null;
 	if (job.recordType === 'delete-annotations') return null;
-		
+
 
 	// lookup tables are not streamed
 	if (job.recordType === 'table') {
@@ -214,7 +214,7 @@ async function determineDataType(data, job) {
 
 
 	catch (e) {
-
+		debugger;
 		//noop
 	}
 
@@ -254,8 +254,6 @@ async function determineDataType(data, job) {
 	process.exit(1);
 
 }
-
-
 
 /**
  * @param  {import("stream").Readable} stream
@@ -345,7 +343,7 @@ function itemStream(filePath, type = "jsonl", job) {
  * @param {JobConfig} job
  * @returns {Promise<Readable>} - A readable stream emitting Parquet rows.
  */
-async function parquetStream(filename, job) {
+async function parquetStream_OLD_IMPLEMENTATION(filename, job) {
 	const filePath = path.resolve(filename);
 	let reader = null;
 	let cursor = null;
@@ -502,6 +500,99 @@ function parquetStreamArray(filePaths, job) {
 	const lazyStreamGen = createParquetFactory(filePaths, job);
 	return MultiStream.obj(lazyStreamGen);
 }
+
+/**
+ * Streams rows from a Parquet file via DuckDB's each-row API, but
+ * detects EOF by first querying COUNT(*) and then counting callbacks.
+ *
+ * @param {string}   filename – path to the Parquet file
+ * @param {object}   [job]    – may include parseErrorHandler/fileErrorHandler
+ * @returns {Promise<Readable>} – object-mode Readable of sanitized rows
+ */
+async function parquetStream(filename, job = {}) {
+	const filePath = path.resolve(filename);
+	const db = new duckdb.Database(':memory:');
+	const conn = db.connect();
+
+	// SQL pieces, with single-quotes escaped
+	const esc = filePath.replace(/'/g, "''");
+	const dataSQL = `SELECT * FROM read_parquet('${esc}')`;
+	const countSQL = `SELECT COUNT(*) AS cnt FROM read_parquet('${esc}')`;
+
+	// Handlers
+	const fileErrorHandler = job.fileErrorHandler || (err => {
+		console.error(`Error reading ${filePath}:`, err.message || err);
+		return null;
+	});
+	const rowErrorHandler = job.parseErrorHandler || ((err, row) => {
+		console.error(`Error parsing row from ${filePath}:`, err);
+		return {};
+	});
+
+	// 1) Get total row count (cheap, returns a single number)
+	let total = await new Promise(resolve => {
+		conn.all(countSQL, (err, rows) => {
+			if (err) {
+				console.error(`Failed to count ${filePath}:`, err);
+				resolve(0);
+			} else {
+				resolve(rows[0]?.cnt ?? 0);
+			}
+		});
+	});
+	total = Number(total); // Ensure it's a number
+
+	// 2) Build our output Readable
+	const out = new Readable({
+		objectMode: true,
+		read() { }
+	});
+	out._destroy = (err, cb) => db.close(() => cb(err));
+
+	// 3) Zero-row shortcut
+	if (total === 0) {
+		process.nextTick(() => db.close(() => out.push(null)));
+		return out;
+	}
+
+	// 4) Stream rows, counting as we go
+	let seen = 0;
+	conn.each(
+		dataSQL,
+		(err, row) => {
+			seen++;
+			if (err) {
+				out.push(fileErrorHandler(err));
+			} else {
+				// sanitize in-place
+				for (const k of Object.keys(row)) {
+					const v = row[k];
+					if (v?.toISOString) row[k] = dayjs.utc(v).toISOString();
+					else if (typeof v === 'bigint') row[k] =
+						(v <= Number.MAX_SAFE_INTEGER && v >= Number.MIN_SAFE_INTEGER)
+							? Number(v)
+							: v.toString();
+					else if (Buffer.isBuffer(v)) row[k] = v.toString('utf-8');
+					else if (v === undefined) row[k] = null;
+				}
+				out.push(row);
+			}
+
+			// If we've now emitted the last row, close & EOF
+			if (seen >= total) {
+				db.close(closeErr => {
+					if (closeErr) out.destroy(closeErr);
+					else out.push(null);
+				});
+			}
+		}
+		// no completion callback here ☝️
+	);
+
+	return out;
+}
+
+
 
 /**
  * wraps csvStream with MultiStream to turn a folder of csv files into a single stream

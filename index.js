@@ -89,9 +89,10 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 
 	try {
 
-		await corePipeline(stream, job).finally(() => {
-			l(`\n\nFINISHED!\n\n`);
-		});
+		await corePipeline(stream, job)
+			.finally(() => {
+				l(`\n\nFINISHED!\n\n`);
+			});
 	}
 
 	catch (e) {

@@ -395,7 +395,7 @@ class Job {
 	lineByLineFileExt = ['.txt', '.jsonl', '.ndjson'];
 	objectModeFileExt = ['.json'];
 	tableFileExt = ['.csv', '.tsv'];
-	otherFormats = ['.parquet']
+	otherFormats = ['.parquet'];
 	supportedFileExt = [...this.lineByLineFileExt, ...this.objectModeFileExt, ...this.tableFileExt, ...this.otherFormats];
 	endpoints = {
 		us: {
@@ -459,31 +459,39 @@ class Job {
 		return Object.assign({}, this);
 	}
 	store(response, success = true) {
-		if (!this.abridged) {
+		const isVerbose = !this.abridged;
+		if (isVerbose) {
 			if (success) this.responses.push(response);
-			return;
+			if (!success) {
+				if (!this.abridged) {
+					this.errors.push(response);
+
+				}
+
+			}
 		}
 
-		if (!success) {
-			if (!this.abridged) {
-				this.errors.push(response);
-				return;
-			}
-
-			// summarize the error + count
-			if (response?.failed_records) {
+		if (!isVerbose) {
+			// summarize the error + count			
+			if (!success && response?.failed_records) {
 				if (Array.isArray(response.failed_records)) {
 					response.failed_records.forEach(failure => {
 						const { message = "unknown error" } = failure;
 						if (!this.errors[message]) this.errors[message] = 1;
 						this.errors[message]++;
 					});
-					return;
+
 				}
 			}
 
 		}
+
+		return;
+
+
+
 	}
+
 	getVersion() {
 		const { version } = require('../package.json');
 		if (version) return version;
@@ -689,7 +697,7 @@ class Job {
 			for (const key in summary) {
 				if (!includeOnly.includes(key)) delete summary[key];
 			}
-			if (!summary.dryRun.length) delete summary.dryRun;			
+			if (!summary.dryRun.length) delete summary.dryRun;
 		}
 
 		return summary;
