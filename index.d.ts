@@ -740,6 +740,15 @@ declare namespace main {
   type mpUser = mpUserStandardProps & ProfileData;
 
   /**
+   * posthog transform opts
+   */
+  type postHogOpts = {
+	device_id_map?: Map<string, string>;
+	device_id_file?: string;
+	v2_compat?: boolean; // use v2 api
+  }
+
+  /**
    * amplitude transform opts
    */
   type amplitudeOpts = {

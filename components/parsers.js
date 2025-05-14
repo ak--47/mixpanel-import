@@ -522,6 +522,7 @@ async function parquetStream(filename, job = {}) {
 	// Handlers
 	const fileErrorHandler = job.fileErrorHandler || (err => {
 		console.error(`Error reading ${filePath}:`, err.message || err);
+		throw new Error(`Error reading ${filePath}: ${err.message || err}`);
 		return null;
 	});
 	const rowErrorHandler = job.parseErrorHandler || ((err, row) => {
@@ -772,7 +773,60 @@ function getEnvVars() {
 	return envCreds;
 }
 
+
+/**
+ * @param {string} filePath  Path to either:
+ *   • a JSON file containing an array of {id, distinct_id} objects, OR
+ *   • an NDJSON file (one JSON object per line)
+ * @returns {Map<string,string>}  Maps item.id → item.distinct_id
+ */
+function buildDeviceIdMap(filePath, keyOne = "distinct_id", keyTwo = "person_id") {
+
+	if (!filePath) {
+		return new Map();
+	}
+
+	const fileContents = fs.readFileSync(path.resolve(filePath), "utf-8");
+	let records;
+
+	// Try parsing as a JSON array first…
+	try {
+		if (!fileContents.startsWith('[')) throw new Error("probably not a json array");
+		const parsed = JSON.parse(fileContents);
+		if (!Array.isArray(parsed)) {
+			throw new Error("Not an array");
+		}
+		records = parsed;
+	} catch {
+		// Fallback to NDJSON: one JSON object per line
+		records = fileContents
+			.split(/\r?\n/)
+			.filter(line => line.trim().length > 0)
+			.map((line, idx) => {
+				try {
+					return JSON.parse(line);
+				} catch (e) {
+					throw new Error(`Invalid JSON on line ${idx + 1}: ${e.message}`);
+				}
+			});
+	}
+
+	// Build the Map<id, distinct_id>
+	const idMap = records.reduce((map, item) => {
+		if (item[keyOne] == null || item[keyTwo] == null) {
+			// you can choose to warn or skip silently
+			return map;
+		}
+		map.set(item[keyOne], item[keyTwo]);
+		return map;
+	}, new Map());
+
+	return idMap;
+}
+
+
 module.exports = {
+	buildDeviceIdMap,
 	JsonlParser,
 	determineDataType,
 	existingStreamInterface,

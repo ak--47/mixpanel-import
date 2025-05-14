@@ -32,7 +32,7 @@ describe("vendor tests", () => {
 	test(
 		"amplitude: events",
 		async () => {
-			const job = await mp({}, "./testData/amplitude/2023-04-10_1#0.json", { ...opts, recordType: "event", vendor: "amplitude", dryRun: true, vendorOpts: { v2_compat: false }});
+			const job = await mp({}, "./testData/amplitude/2023-04-10_1#0.json", { ...opts, recordType: "event", vendor: "amplitude", dryRun: true, vendorOpts: { v2_compat: false } });
 			const numRecords = job.dryRun.length;
 			const numDistinctIds = job.dryRun.filter(a => a.properties.distinct_id).length;
 			expect(numRecords).toBe(4011);
@@ -60,7 +60,7 @@ describe("vendor tests", () => {
 			const numDistinctIds = job.dryRun.filter(a => a.properties.distinct_id).length;
 			expect(numRecords).toBe(4011);
 			expect(numDistinctIds).toBe(numRecords);
-			
+
 
 		},
 		longTimeout
@@ -76,7 +76,7 @@ describe("vendor tests", () => {
 
 			const jobWithMerge = await mp({}, "./testData/heap/events-can-merge.json", { ...opts, recordType: "event", vendor: "heap", dryRun: true, vendorOpts: { device_id_file: heapIdMap } });
 			expect(jobWithMerge.dryRun.length).toBe(12685);
-			expect(jobWithMerge.dryRun.filter(a => a.properties.$user_id).length).toBe(12685) //.toBe(11510);
+			expect(jobWithMerge.dryRun.filter(a => a.properties.$user_id).length).toBe(12685); //.toBe(11510);
 		},
 		longTimeout
 	);
@@ -131,6 +131,42 @@ describe("vendor tests", () => {
 			expect(data.every(u => u.$distinct_id)).toBe(true);
 			expect(data.every(u => u.$ip)).toBe(true);
 			expect(data.every(u => u.$set)).toBe(true);
+		},
+		longTimeout
+	);
+
+	test(
+		"posthog: events",
+		async () => {
+			const job = await mp({}, "./testData/posthog/events-all.parquet",
+				{
+					...opts,
+					streamFormat: 'parquet',
+					recordType: "event",
+					vendor: "posthog",
+					dryRun: true,
+					verbose: true,
+					vendorOpts: {
+						// device_id_file: "./testData/posthog/persons-smol.ndjson",
+						device_id_file: "./testData/posthog/persons-med.ndjson"
+					}
+				}
+			);
+			expect(job.dryRun.length).toBe(177);
+			const { dryRun: data } = job;
+			expect(data.every(e => e.event)).toBe(true);
+		},
+		longTimeout);
+
+
+
+	test(
+		"posthog: users",
+		async () => {
+			const job = await mp({}, "./testData/posthog/persons.parquet", { ...opts, streamFormat: 'parquet', recordType: "user", vendor: "posthog", dryRun: true });
+			expect(job.dryRun.length).toBe(177);
+			const { dryRun: data } = job;
+			expect(data.every(e => e.event)).toBe(true);
 		},
 		longTimeout
 	);

@@ -1,4 +1,5 @@
 #! /usr/bin/env node
+/* eslint-disable no-unused-vars */
 
 /*
 ----
@@ -194,6 +195,7 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 		finish(e, config.summary());
 	});
 
+	// @ts-ignore
 	return pipeToMe.toNodeStream();
 }
 

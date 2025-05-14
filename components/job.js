@@ -7,6 +7,7 @@ const { ampEventsToMp, ampUserToMp, ampGroupToMp } = require('../vendor/amplitud
 const { heapEventsToMp, heapUserToMp, heapGroupToMp, heapParseErrorHandler } = require('../vendor/heap.js');
 const { gaEventsToMp, gaUserToMp, gaGroupsToMp } = require('../vendor/ga4.js');
 const { mParticleEventsToMixpanel, mParticleUserToMixpanel, mParticleGroupToMixpanel } = require('../vendor/mparticle.js');
+const { postHogEventsToMp, postHogPersonToMpProfile } = require('../vendor/posthog.js');
 
 
 /** @typedef {import('../index.js').Creds} Creds */
@@ -315,6 +316,24 @@ class Job {
 							break;
 						default:
 							transformFunc = mParticleEventsToMixpanel(this.vendorOpts);
+							break;
+					}
+					break;
+				case 'posthog':
+					switch (opts.recordType?.toLowerCase()) {
+						case 'event':
+							transformFunc = postHogEventsToMp(this.vendorOpts);
+							break;
+						case 'user':
+							this.dedupe = true;
+							this.deduper = transforms.dedupeRecords(this);
+							transformFunc = postHogPersonToMpProfile(this.vendorOpts);
+							break;
+						case 'group':
+							throw new Error('posthog does not support groups');							
+							break;
+						default:
+							transformFunc = postHogEventsToMp(this.vendorOpts);
 							break;
 					}
 					break;
@@ -666,7 +685,7 @@ class Job {
 		summary.errors = this.errors;
 
 
-		if (includeResponses) {
+		if (includeResponses && this?.responses?.length) {
 			summary.responses = this.responses;
 		}
 
