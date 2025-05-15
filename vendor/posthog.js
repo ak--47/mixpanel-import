@@ -22,7 +22,8 @@ TRANSFORMS
 function postHogEventsToMp(options) {
 	const {
 		device_id_file = "",
-		v2_compat = true,
+		v2_compat = false,
+		ignore = ["$feature", "$set", "$webvitals", "$pageleave"],
 	} = options;
 
 	if (!device_id_file) throw new Error("device_id_file is required for posthog transform");
@@ -42,7 +43,8 @@ function postHogEventsToMp(options) {
 
 		} = postHogEvent;
 
-		if (!mpEventName) debugger;
+		if (ignore.some(prefix => mpEventName.startsWith(prefix))) return {};
+
 
 
 		//json resolution
@@ -60,15 +62,18 @@ function postHogEventsToMp(options) {
 			$geoip_country_code: mpCountryCode,
 			$geoip_latitude: mpLatitude,
 			$geoip_longitude: mpLongitude,
+			$user_id: postHogUserId,
+			$device_id: postHogDeviceId,
 			...remainingPostHogProperties
 		} = parsedPostHogProperties;
 
 		const props = {
 			time: dayjs.utc(mpTimestamp).valueOf(),
 			$source: `posthog-to-mixpanel`,
-			$device_id: postHogDistinctId,
+
 		};
 
+		//defaults
 		addIfDefined(props, 'ip', mpIp);
 		addIfDefined(props, '$city', mpCity);
 		addIfDefined(props, '$region', mpCountryCode);
@@ -78,26 +83,75 @@ function postHogEventsToMp(options) {
 		addIfDefined(props, '$longitude', mpLongitude);
 
 
-
-		//v2 compat requires distinct_id; 
-		if (v2_compat) {
-			props.distinct_id = postHogDistinctId;
-		}
+		//identities
+		let user_id;
+		let device_id;
+		let foundUserIdInMap = false;
+		if (postHogDistinctId) device_id = postHogDistinctId;
+		if (postHogDeviceId) device_id = postHogDeviceId;
+		if (postHogUserId) user_id = postHogUserId;
 
 		if (personMap.has(postHogDistinctId)) {
-			const person_id = personMap.get(postHogDistinctId);
-			props.$user_id = person_id;
+			user_id = personMap.get(postHogDistinctId);
+			foundUserIdInMap = true;
+		}
+
+		if (user_id) props.$user_id = user_id;
+		if (device_id) props.$device_id = device_id;
+
+		const deleteKeyPrefixes = [
+			"$feature/",
+			"$feature_flag_",
+			"$replay_",
+			"$sdk_debug",
+			"$session_recording",
+			"$set",
+			"$set_once",
+			"token"
+		];
+		for (const key in remainingPostHogProperties) {
+			if (deleteKeyPrefixes.some(prefix => key.startsWith(prefix))) {
+				delete remainingPostHogProperties[key];
+			}
+		}
+
+		const mixpanelEvent = { event: mpEventName, properties: { ...props, ...remainingPostHogProperties } };
+		if (mixpanelEvent.properties.token) delete mixpanelEvent.properties.token;
+
+		if (v2_compat) {
+			if (device_id) mixpanelEvent.properties.distinct_id = device_id;
+			if (user_id) mixpanelEvent.properties.distinct_id = user_id;
+		}
+
+		if (!v2_compat) {
+			// no identify events in simplified
+			if (mixpanelEvent.event === "$identify") {
+				return {};
+			}
 		}
 
 
-		const mixpanelEvent = { event: mpEventName, properties: props };
-		// //fill in defaults & delete from amp data (if found)
-		// for (let ampMixPair of postHogMixPairs) {
-		// 	if (postHogEvent[ampMixPair[0]]) {
-		// 		mixpanelEvent.properties[ampMixPair[1]] = postHogEvent[ampMixPair[0]];
-		// 		delete postHogEvent[ampMixPair[0]];
-		// 	}
-		// }
+		// if (!v2_compat) delete mixpanelEvent.properties.distinct_id;
+
+		//v2 compat requires distinct_id; prefer user_id if available
+		if (v2_compat) {
+			// if (device_id) mixpanelEvent.properties.distinct_id = device_id;
+			// if (user_id) mixpanelEvent.properties.distinct_id = user_id;
+
+			//todo: v2 also requires identify events...
+			if (mpEventName?.startsWith("$identify")) {
+				if (foundUserIdInMap) {
+					//todo
+					debugger;
+				}
+
+				if (!foundUserIdInMap) {
+					//todo
+					debugger;
+				}
+			}
+
+		}
 
 		return mixpanelEvent;
 	};

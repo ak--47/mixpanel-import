@@ -138,17 +138,17 @@ describe("vendor tests", () => {
 	test(
 		"posthog: events",
 		async () => {
-			const job = await mp({}, "./testData/posthog/events-all.parquet",
+			const job = await mp({}, "./testData/posthog/events001.parquet",
 				{
 					...opts,
 					streamFormat: 'parquet',
 					recordType: "event",
 					vendor: "posthog",
-					dryRun: true,
+					dryRun: false,
 					verbose: true,
+					showProgress: true,
 					vendorOpts: {
-						// device_id_file: "./testData/posthog/persons-smol.ndjson",
-						device_id_file: "./testData/posthog/persons-med.ndjson"
+						device_id_file: "./testData/posthog/persons-smol.ndjson",
 					}
 				}
 			);

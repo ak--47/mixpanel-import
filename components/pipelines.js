@@ -15,6 +15,7 @@ const fs = require('fs');
 // $ env
 const cliParams = require('./cli.js');
 const counter = cliParams.showProgress;
+const { logger } = require('../components/logs.js');
 
 // $ transforms
 const { isNotEmpty } = require('./transforms.js');
@@ -44,7 +45,7 @@ const { callbackify } = require('util');
  * @returns {Promise<ImportResults>} a promise
  */
 function corePipeline(stream, job, toNodeStream = false) {
-
+	const l = logger(job);
 	if (job.recordType === 'table') return flushLookupTable(stream, job);
 	// @ts-ignore
 	if (job.recordType === 'export' && typeof stream === 'string') return exportEvents(stream, job);
@@ -199,7 +200,7 @@ function corePipeline(stream, job, toNodeStream = false) {
 			if (job.dryRun) {
 				batch.forEach(data => {
 					job.dryRunResults.push(data);
-					if (job.verbose) console.log(JSON.stringify(data, null, 2));
+					// if (job.verbose) console.log(JSON.stringify(data, null, 2));
 				});
 			}
 			else {
@@ -207,7 +208,7 @@ function corePipeline(stream, job, toNodeStream = false) {
 				if ((job.verbose || job.showProgress) && (now - lastLogUpdate >= LOG_INTERVAL)) {
 					counter(job.recordType, job.recordsProcessed, job.requests, job.getEps(), job.bytesProcessed);
 					lastLogUpdate = now;
-				}											
+				}
 			}
 
 		}),
@@ -218,6 +219,12 @@ function corePipeline(stream, job, toNodeStream = false) {
 			throw e;
 		})
 	);
+
+	// log exactly once, on the very first data record
+	mpPipeline.once('data', () => {
+		l(`\n\nDATA FLOWING\n`);
+	});
+
 
 	if (toNodeStream) {
 		return mpPipeline;

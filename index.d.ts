@@ -110,6 +110,7 @@ declare namespace main {
     | "pendo"
     | "mparticle"
     | ""
+	| "posthog"
     | void;
 
   type WhiteAndBlackListParams = {
@@ -746,6 +747,7 @@ declare namespace main {
 	device_id_map?: Map<string, string>;
 	device_id_file?: string;
 	v2_compat?: boolean; // use v2 api
+	ignore?: string[]; // ignore these events
   }
 
   /**

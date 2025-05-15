@@ -84,15 +84,17 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	if (isCLI) global.l = l; // hacky way to make logger available globally
 
 	// ETL
+	l(`\n\nETL STARTED!\n\n`);
 	job.timer.start();
 
 	const stream = await determineDataType(data || cliData, job); // always stream[]
+	l(`\n\nSTREAM CREATED!\n\n`);
 
 	try {
 
 		await corePipeline(stream, job)
 			.finally(() => {
-				l(`\n\nFINISHED!\n\n`);
+				l(`\n\nSTREAM CONSUMED!\n\n`);
 			});
 	}
 
