@@ -127,6 +127,13 @@ declare namespace main {
   type Regions = "US" | "EU" | "IN";
   type SupportedFormats = "json" | "jsonl" | "csv" | "parquet";
 
+  type dependentTables = {
+	filePath: string;
+	keyOne: string;
+	keyTwo: string;
+	label?: string;
+  }
+
   /**
    * options for the import job
    */
@@ -247,7 +254,7 @@ declare namespace main {
      * - a transform function to `map()` over the data
      * - if it returns `{}` the record will be skipped
      * - if it returns `[{},{},{}]` the record will be split into multiple records
-     * - default `undefined`
+     * - default `null`
      */
     transformFunc?: transFunc;
     /**
@@ -424,6 +431,13 @@ declare namespace main {
 	 */
 	whereClause?: string; 
 
+	/**
+	 * allowing arbitrary lookups which get turned into maps() in heavyObject
+	 * this should be provided to the transformer function and lets you do on-the-fly lookups
+	 * 
+	 */
+	dimensionMaps?: dependentTables[]; 
+
   };
 
   /**
@@ -432,7 +446,8 @@ declare namespace main {
    * - if it returns `[{},{},{}]` the record will be split into multiple records
    */
   type transFunc = (
-    data: any
+    data: any,
+	heavyObjects?: any
   ) => mpEvent | mpUser | mpGroup | Object[] | Object;
   /**
    * - a transform function to handle parsing errors
@@ -586,7 +601,7 @@ declare namespace main {
     /**
      * for dry runs, what is the transformed data
      */
-    dryRun: ArrayOfObjects;
+    dryRun?: ArrayOfObjects;
     /**
      * the # of concurrent requests
      */

@@ -147,9 +147,14 @@ describe("vendor tests", () => {
 					dryRun: false,
 					verbose: true,
 					showProgress: true,
-					vendorOpts: {
-						device_id_file: "./testData/posthog/persons-smol.ndjson",
-					}
+					dimensionMaps: [
+						{
+							filePath: "./testData/posthog/persons-smol.ndjson",
+							keyOne: "distinct_id",
+							keyTwo: "person_id",
+							label: "people",
+						}
+					]					
 				}
 			);
 			expect(job.dryRun.length).toBe(177);

@@ -20,6 +20,10 @@ const { prepareSCD } = require('./validators.js');
 const { console } = require('inspector');
 // const { logger } = require('../components/logs.js');
 
+const { Storage } = require('@google-cloud/storage');
+const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+
+
 
 /** @typedef {import('./job')} JobConfig */
 /** @typedef {import('../index').Data} Data */
@@ -214,9 +218,9 @@ async function determineDataType(data, job) {
 	}
 
 
-	catch (e) {
+	catch (e) {		
 		debugger;
-		//noop
+		
 	}
 
 	// data is a string, and we have to guess what it is
@@ -381,6 +385,7 @@ function createParquetFactory(filePaths, job) {
 function parquetStreamArray(filePaths, job) {
 	// @ts-ignore
 	const lazyStreamGen = createParquetFactory(filePaths, job);
+	// @ts-ignore
 	return MultiStream.obj(lazyStreamGen);
 }
 
@@ -406,7 +411,7 @@ async function parquetStream(filename, job = {}) {
 	const fileErrorHandler = job.fileErrorHandler || (err => {
 		console.error(`Error reading ${filePath}:`, err.message || err);
 		throw new Error(`Error reading ${filePath}: ${err.message || err}`);
-		return null;
+		// return null;
 	});
 	const rowErrorHandler = job.parseErrorHandler || ((err, row) => {
 		console.error(`Error parsing row from ${filePath}:`, err);
@@ -658,18 +663,42 @@ function getEnvVars() {
 
 
 /**
+ * a general purpose function that can fetch data 
  * @param {string} filePath  Path to either:
  *   • a JSON file containing an array of {id, distinct_id} objects, OR
  *   • an NDJSON file (one JSON object per line)
- * @returns {Map<string,string>}  Maps item.id → item.distinct_id
+ * @param {string} keyOne    The key for the id (e.g., "person_id")
+ * @param {string} keyTwo    The key for the distinct_id (e.g., "distinct_id")
+ * @returns {Promise<Map<string,string>>}  Maps item.id → item.distinct_id
  */
-function buildDeviceIdMap(filePath, keyOne = "distinct_id", keyTwo = "person_id") {
+async function buildMapFromPath(filePath, keyOne, keyTwo) {
+	if (!keyOne || !keyTwo || !filePath) throw new Error("keyOne and keyTwo are required");
 
-	if (!filePath) {
-		return new Map();
+	// Local file validation only
+	if (!filePath.startsWith('gs://') && !filePath.startsWith('s3://')) {
+		if (!fs.existsSync(path.resolve(filePath))) {
+			throw new Error(`buildMapFromPath: File not found: ${filePath}`);
+		}
 	}
 
-	const fileContents = fs.readFileSync(path.resolve(filePath), "utf-8");
+	//check if file has a valid extension
+	const validExtensions = ['.json', '.jsonl', '.ndjson']; //todo: add csv + parquet
+	const fileExtension = path.extname(filePath);
+	if (!validExtensions.includes(fileExtension)) {
+		throw new Error(`buildMapFromPath: Invalid file extension: ${fileExtension}`);
+	}
+
+	let fileContents;
+
+	//a gcp bucket
+	if (filePath?.startsWith('gs://')) fileContents = await fetchFromGCS(filePath);
+	//an s3 bucket
+	else if (filePath?.startsWith('s3://')) fileContents = await fetchFromS3(filePath);
+	//a local file
+	else {
+		fileContents = fs.readFileSync(path.resolve(filePath), "utf-8");
+	}
+
 	let records;
 
 	// Try parsing as a JSON array first…
@@ -694,7 +723,7 @@ function buildDeviceIdMap(filePath, keyOne = "distinct_id", keyTwo = "person_id"
 			});
 	}
 
-	// Build the Map<id, distinct_id>
+	// Build the Map<keyOne, keyTwo>
 	const idMap = records.reduce((map, item) => {
 		if (item[keyOne] == null || item[keyTwo] == null) {
 			// you can choose to warn or skip silently
@@ -704,12 +733,89 @@ function buildDeviceIdMap(filePath, keyOne = "distinct_id", keyTwo = "person_id"
 		return map;
 	}, new Map());
 
+	// clear file contents so we don't keep it in memory
+	fileContents = null;
 	return idMap;
 }
 
+/**
+ * Fetch a file from Google Cloud Storage
+ * @param {string} gcsPath Path in format gs://bucket-name/path/to/file.json
+ * @returns {Promise<string>} File contents as a string
+ */
+async function fetchFromGCS(gcsPath) {
+
+
+	// Create a storage client using application default credentials
+	const storage = new Storage();
+
+	// Extract bucket and file path from the GCS path
+	// gs://bucket-name/path/to/file.json -> bucket="bucket-name", filePath="path/to/file.json"
+	const matches = gcsPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
+	if (!matches) {
+		throw new Error(`Invalid GCS path: ${gcsPath}`);
+	}
+
+	const bucketName = matches[1];
+	const filePath = matches[2];
+
+	try {
+		// Download the file
+		const [contents] = await storage.bucket(bucketName).file(filePath).download();
+
+		// Convert Buffer to string
+		return contents.toString('utf-8');
+	} catch (error) {
+		throw new Error(`Error fetching from GCS: ${error.message}`);
+	}
+}
+
+/**
+ * Fetch a file from Amazon S3
+ * @param {string} s3Path Path in format s3://bucket-name/path/to/file.json
+ * @returns {Promise<string>} File contents as a string
+ */
+async function fetchFromS3(s3Path) {
+
+
+	// Create an S3 client using application default credentials
+	const s3Client = new S3Client({});
+
+	// Extract bucket and key from the S3 path
+	// s3://bucket-name/path/to/file.json -> bucket="bucket-name", key="path/to/file.json"
+	const matches = s3Path.match(/^s3:\/\/([^\/]+)\/(.+)$/);
+	if (!matches) {
+		throw new Error(`Invalid S3 path: ${s3Path}`);
+	}
+
+	const bucketName = matches[1];
+	const key = matches[2];
+
+	try {
+		// Configure the GetObject operation
+		const command = new GetObjectCommand({
+			Bucket: bucketName,
+			Key: key
+		});
+
+		// Download the file
+		const response = await s3Client.send(command);
+
+		// AWS SDK v3 returns a readable byte stream
+		// Convert it directly to a string
+		let content = '';
+		// @ts-ignore
+		for await (const chunk of response.Body) {
+			content += chunk.toString('utf-8');
+		}
+		return content;
+	} catch (error) {
+		throw new Error(`Error fetching from S3: ${error.message}`);
+	}
+}
 
 module.exports = {
-	buildDeviceIdMap,
+	buildMapFromPath,
 	JsonlParser,
 	determineDataType,
 	existingStreamInterface,

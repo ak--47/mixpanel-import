@@ -76,25 +76,31 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 		cliData = cli._[0];
 	}
 
+	
 	const job = new importJob({ ...envVar, ...cli, ...creds }, { ...envVar, ...cli, ...opts });
+	
 
 	if (isCLI) job.verbose = true;
 	const l = logger(job);
 	if (isCLI) l(cliParams.welcome);
 	if (isCLI) global.l = l; // hacky way to make logger available globally
+	l(`\nMIXPANEL IMPORTER\n`)
+	l(`\nJOB CREATED!\n`);
+	await job.init();
+	l(`\nDEPS LOADED!\n`);
 
 	// ETL
-	l(`\n\nETL STARTED!\n\n`);
+	l(`\nETL STARTED!\n`);
 	job.timer.start();
 
 	const stream = await determineDataType(data || cliData, job); // always stream[]
-	l(`\n\nSTREAM CREATED!\n\n`);
+	l(`\nSTREAM CREATED!\n`);
 
 	try {
 
 		await corePipeline(stream, job)
 			.finally(() => {
-				l(`\n\nSTREAM CONSUMED!\n\n`);
+				l(`\nSTREAM CONSUMED!\n`);
 			});
 	}
 
@@ -135,7 +141,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	// clean up
 	job.timer.end(false);
 	const summary = job.summary();
-	if (isCLI) l(`${job.type === 'export' ? 'export' : 'import'} complete in ${summary.durationHuman}\n\n`);
+	if (isCLI) l(`${job.type === 'export' ? 'export' : 'import'} complete in ${summary.durationHuman}\n`);
 	const stats = {
 		total: u.comma(summary.total),
 		success: u.comma(summary.success),
@@ -222,7 +228,7 @@ if (require.main === module) {
 	main(undefined, undefined, undefined, true).then(() => {
 		//noop
 	}).catch((e) => {
-		console.log('\n\nUH OH! something went wrong; the error is:\n\n');
+		console.log('\nUH OH! something went wrong; the error is:\n');
 		console.error(e);
 		process.exit(1);
 	}).finally(() => {

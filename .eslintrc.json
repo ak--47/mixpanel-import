@@ -1,21 +1,31 @@
 {
-    "env": {
-        "browser": false,
+	"env": {
+		"browser": false,
 		"node": true,
-        "commonjs": true,
-        "es2021": true
-    },
-    "extends": "eslint:recommended",
-    "overrides": [
-    ],
-    "parserOptions": {
-        "ecmaVersion": "latest"
-    },
-    "rules": {
-		"no-prototype-builtins": "off"
-	  },
-	"globals": {
-		"l" : true
+		"commonjs": true,
+		"es2021": true
 	},
-	"ignorePatterns": ["benchmarks/*"]
+	"extends": "eslint:recommended",
+	"overrides": [],
+	"parserOptions": {
+		"ecmaVersion": "latest"
+	},
+	"rules": {
+		"no-prototype-builtins": "off",
+		"no-debugger": "off",
+		"no-useless-escape" : "off",
+		"no-unused-vars": [
+			"warn",
+			{
+				"argsIgnorePattern": "^_",
+				"varsIgnorePattern": "^_"
+			}
+		]
+	},
+	"globals": {
+		"l": true
+	},
+	"ignorePatterns": [
+		"benchmarks/*"
+	]
 }

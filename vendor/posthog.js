@@ -2,7 +2,7 @@ const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc.js");
 dayjs.extend(utc);
 // const murmurhash = require("murmurhash");
-const { buildDeviceIdMap } = require("../components/parsers.js");
+// const { buildMapFromPath } = require("../components/parsers.js");
 
 
 
@@ -18,17 +18,23 @@ TRANSFORMS
  * v2_compat sets distinct_id, but will not implicitly join user_id/device_id
  * ^ in order to do this we would need to return [{ $identify },{ ogEvent }] and pass it down the stream
  * @param  {import('../index').postHogOpts} options
+ * 
  */
-function postHogEventsToMp(options) {
-	const {
-		device_id_file = "",
+function postHogEventsToMp(options, heavyObjects) {
+	const {	
 		v2_compat = false,
 		ignore = ["$feature", "$set", "$webvitals", "$pageleave"],
 	} = options;
 
-	if (!device_id_file) throw new Error("device_id_file is required for posthog transform");
+	let personMap;
+	if (Object.keys(heavyObjects).length === 0) {
+		console.warn("heavyObjects is empty, id mgmt is not possible");
+		personMap = new Map();
+	}
 
-	const personMap = buildDeviceIdMap(device_id_file);
+	else {
+		personMap = heavyObjects.people;
+	}
 
 
 	return function transform(postHogEvent) {

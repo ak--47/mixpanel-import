@@ -70,6 +70,7 @@ function corePipeline(stream, job, toNodeStream = false) {
 	}
 
 
+
 	// @ts-ignore
 	const mpPipeline = _.pipeline(
 
@@ -94,7 +95,8 @@ function corePipeline(stream, job, toNodeStream = false) {
 		// * apply vendor transforms
 		// @ts-ignore
 		_.map(function VENDOR_TRANSFORM(data) {
-			if (job.vendor && job.vendorTransform) data = job.vendorTransform(data);
+			// @ts-ignore
+			if (job.vendor && job.vendorTransform) data = job.vendorTransform(data, job.heavyObjects);
 			return data;
 		}),
 
@@ -105,7 +107,7 @@ function corePipeline(stream, job, toNodeStream = false) {
 		// * apply user defined transform
 		// @ts-ignore
 		_.map(function USER_TRANSFORM(data) {
-			if (job.transformFunc) data = job.transformFunc(data);
+			if (job.transformFunc) data = job.transformFunc(data, job.heavyObjects);
 			return data;
 		}),
 
