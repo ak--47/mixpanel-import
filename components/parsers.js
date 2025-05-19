@@ -218,9 +218,9 @@ async function determineDataType(data, job) {
 	}
 
 
-	catch (e) {		
+	catch (e) {
 		debugger;
-		
+
 	}
 
 	// data is a string, and we have to guess what it is
@@ -394,7 +394,7 @@ function parquetStreamArray(filePaths, job) {
  * detects EOF by first querying COUNT(*) and then counting callbacks.
  *
  * @param {string}   filename – path to the Parquet file
- * @param {object}   [job]    – may include parseErrorHandler/fileErrorHandler
+ * @param {object}   [job]    - may include parseErrorHandler/fileErrorHandler
  * @returns {Promise<Readable>} – object-mode Readable of sanitized rows
  */
 async function parquetStream(filename, job = {}) {
@@ -414,7 +414,7 @@ async function parquetStream(filename, job = {}) {
 		// return null;
 	});
 	const rowErrorHandler = job.parseErrorHandler || ((err, row) => {
-		console.error(`Error parsing row from ${filePath}:`, err);
+		console.error(`Error parsing row`, row, `from ${filePath}:`, err);
 		return {};
 	});
 
@@ -453,18 +453,25 @@ async function parquetStream(filename, job = {}) {
 			if (err) {
 				out.push(fileErrorHandler(err));
 			} else {
-				// sanitize in-place
-				for (const k of Object.keys(row)) {
-					const v = row[k];
-					if (v?.toISOString) row[k] = dayjs.utc(v).toISOString();
-					else if (typeof v === 'bigint') row[k] =
-						(v <= Number.MAX_SAFE_INTEGER && v >= Number.MIN_SAFE_INTEGER)
-							? Number(v)
-							: v.toString();
-					else if (Buffer.isBuffer(v)) row[k] = v.toString('utf-8');
-					else if (v === undefined) row[k] = null;
+				try {
+					// sanitize in-place
+					for (const k of Object.keys(row)) {
+						const v = row[k];
+						if (v?.toISOString) row[k] = dayjs.utc(v).toISOString();
+						else if (typeof v === 'bigint') row[k] =
+							(v <= Number.MAX_SAFE_INTEGER && v >= Number.MIN_SAFE_INTEGER)
+								? Number(v)
+								: v.toString();
+						else if (Buffer.isBuffer(v)) row[k] = v.toString('utf-8');
+						else if (v === undefined) row[k] = null;
+					}
+					out.push(row);
 				}
-				out.push(row);
+
+				catch (err) {
+					out.push(rowErrorHandler(err, row));
+				}
+			
 			}
 
 			// If we've now emitted the last row, close & EOF

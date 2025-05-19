@@ -144,22 +144,26 @@ describe("vendor tests", () => {
 					streamFormat: 'parquet',
 					recordType: "event",
 					vendor: "posthog",
-					dryRun: false,
-					verbose: true,
-					showProgress: true,
+					vendorOpts: {
+						v2_compat: true,
+
+					},
+					dryRun: true,
 					dimensionMaps: [
 						{
 							filePath: "./testData/posthog/persons-smol.ndjson",
 							keyOne: "distinct_id",
 							keyTwo: "person_id",
 							label: "people",
+
 						}
-					]					
+					]
 				}
 			);
-			expect(job.dryRun.length).toBe(177);
+			expect(job.dryRun.length).toBe(17);
 			const { dryRun: data } = job;
 			expect(data.every(e => e.event)).toBe(true);
+			expect(data.every(e => e.properties)).toBe(true);
 		},
 		longTimeout);
 
@@ -168,10 +172,21 @@ describe("vendor tests", () => {
 	test(
 		"posthog: users",
 		async () => {
-			const job = await mp({}, "./testData/posthog/persons.parquet", { ...opts, streamFormat: 'parquet', recordType: "user", vendor: "posthog", dryRun: true });
-			expect(job.dryRun.length).toBe(177);
+			const job = await mp({}, "./testData/posthog/people-abbrev.parquet",
+				{
+					...opts,
+					streamFormat: 'parquet',
+					recordType: "user",
+					vendor: "posthog",
+					dedupe: true,
+					dryRun: true
+				});
+			
+			expect(job.total).toBe(500);
+			expect(job.dryRun.length).toBe(500);
+			expect(job.duplicates).toBe(0);			
 			const { dryRun: data } = job;
-			expect(data.every(e => e.event)).toBe(true);
+			expect(data.every(e => e.$distinct_id)).toBe(true);
 		},
 		longTimeout
 	);

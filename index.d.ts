@@ -342,7 +342,7 @@ declare namespace main {
     /**
      * options for built in transform functions
      */
-    vendorOpts?: amplitudeOpts | heapOpts | ga4Opts | {};
+    vendorOpts?: amplitudeOpts | heapOpts | ga4Opts | postHogOpts | {};
     /**
      * whether or not to use http2; default `false` and http2 seems slower...
      */
@@ -762,7 +762,8 @@ declare namespace main {
 	device_id_map?: Map<string, string>;
 	device_id_file?: string;
 	v2_compat?: boolean; // use v2 api
-	ignore?: string[]; // ignore these events
+	ignore_events?: string[]; // ignore these events
+	ignore_props?: string[]; // strip these properties
   }
 
   /**

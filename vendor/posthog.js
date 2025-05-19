@@ -21,21 +21,21 @@ TRANSFORMS
  * 
  */
 function postHogEventsToMp(options, heavyObjects) {
-	const {	
+	const {
 		v2_compat = false,
-		ignore = ["$feature", "$set", "$webvitals", "$pageleave"],
+		ignore_events = ["$feature", "$set", "$webvitals", "$pageleave"],
+		ignore_props = ["$feature/", "$feature_flag_", "$replay_", "$sdk_debug", "$session_recording", "$set", "$set_once"]
 	} = options;
 
 	let personMap;
-	if (Object.keys(heavyObjects).length === 0) {
-		console.warn("heavyObjects is empty, id mgmt is not possible");
-		personMap = new Map();
-	}
 
-	else {
+	if (heavyObjects.people) {
 		personMap = heavyObjects.people;
 	}
-
+	else {
+		console.warn("heavyObjects.people is empty, id mgmt is not possible");
+		personMap = new Map();
+	}
 
 	return function transform(postHogEvent) {
 		const {
@@ -45,11 +45,11 @@ function postHogEventsToMp(options, heavyObjects) {
 			timestamp: mpTimestamp,
 			uuid: mpInsertId,
 			properties: postHogProperties,
-			...postHogTopFields
+			...postHotTopLevelFields
 
 		} = postHogEvent;
 
-		if (ignore.some(prefix => mpEventName.startsWith(prefix))) return {};
+		if (ignore_events.some(prefix => mpEventName.startsWith(prefix))) return {};
 
 
 
@@ -63,6 +63,7 @@ function postHogEventsToMp(options, heavyObjects) {
 			throw new Error("posthog properties must be a string or object");
 		}
 
+		//extraction
 		const {
 			$geoip_city_name: mpCity,
 			$geoip_country_code: mpCountryCode,
@@ -73,20 +74,20 @@ function postHogEventsToMp(options, heavyObjects) {
 			...remainingPostHogProperties
 		} = parsedPostHogProperties;
 
-		const props = {
+		const mp_props = {
 			time: dayjs.utc(mpTimestamp).valueOf(),
 			$source: `posthog-to-mixpanel`,
 
 		};
 
-		//defaults
-		addIfDefined(props, 'ip', mpIp);
-		addIfDefined(props, '$city', mpCity);
-		addIfDefined(props, '$region', mpCountryCode);
-		addIfDefined(props, 'mp_country_code', postHogEvent.country);
-		addIfDefined(props, '$insert_id', mpInsertId);
-		addIfDefined(props, '$latitude', mpLatitude);
-		addIfDefined(props, '$longitude', mpLongitude);
+		//defaults props
+		addIfDefined(mp_props, 'ip', mpIp);
+		addIfDefined(mp_props, '$city', mpCity);
+		addIfDefined(mp_props, '$region', mpCountryCode);
+		addIfDefined(mp_props, 'mp_country_code', postHogEvent.country);
+		addIfDefined(mp_props, '$insert_id', mpInsertId);
+		addIfDefined(mp_props, '$latitude', mpLatitude);
+		addIfDefined(mp_props, '$longitude', mpLongitude);
 
 
 		//identities
@@ -102,18 +103,14 @@ function postHogEventsToMp(options, heavyObjects) {
 			foundUserIdInMap = true;
 		}
 
-		if (user_id) props.$user_id = user_id;
-		if (device_id) props.$device_id = device_id;
+		if (user_id) mp_props.$user_id = user_id;
+		if (device_id) mp_props.$device_id = device_id;
 
+
+		// cleaning
 		const deleteKeyPrefixes = [
-			"$feature/",
-			"$feature_flag_",
-			"$replay_",
-			"$sdk_debug",
-			"$session_recording",
-			"$set",
-			"$set_once",
-			"token"
+			"token",
+			...ignore_props
 		];
 		for (const key in remainingPostHogProperties) {
 			if (deleteKeyPrefixes.some(prefix => key.startsWith(prefix))) {
@@ -121,43 +118,38 @@ function postHogEventsToMp(options, heavyObjects) {
 			}
 		}
 
-		const mixpanelEvent = { event: mpEventName, properties: { ...props, ...remainingPostHogProperties } };
+		//assemble
+		const mixpanelEvent = { event: mpEventName, properties: { ...mp_props, ...remainingPostHogProperties } };
 		if (mixpanelEvent.properties.token) delete mixpanelEvent.properties.token;
 
+		//idmerge v2
 		if (v2_compat) {
 			if (device_id) mixpanelEvent.properties.distinct_id = device_id;
 			if (user_id) mixpanelEvent.properties.distinct_id = user_id;
+
+			// shape of identify events for v2
+			if (mpEventName?.startsWith("$identify")) {
+				const identified_id = user_id;
+				const anon_id = device_id;
+				const identify_props = { $identified_id: identified_id, $anon_id: anon_id };
+
+				mixpanelEvent.properties = identify_props;
+
+			}
+
+
+
+
 		}
 
+		//idmerge v3
 		if (!v2_compat) {
-			// no identify events in simplified
+			// don't send identify events in simplified mode
 			if (mixpanelEvent.event === "$identify") {
 				return {};
 			}
 		}
 
-
-		// if (!v2_compat) delete mixpanelEvent.properties.distinct_id;
-
-		//v2 compat requires distinct_id; prefer user_id if available
-		if (v2_compat) {
-			// if (device_id) mixpanelEvent.properties.distinct_id = device_id;
-			// if (user_id) mixpanelEvent.properties.distinct_id = user_id;
-
-			//todo: v2 also requires identify events...
-			if (mpEventName?.startsWith("$identify")) {
-				if (foundUserIdInMap) {
-					//todo
-					debugger;
-				}
-
-				if (!foundUserIdInMap) {
-					//todo
-					debugger;
-				}
-			}
-
-		}
 
 		return mixpanelEvent;
 	};
@@ -167,9 +159,44 @@ function postHogEventsToMp(options, heavyObjects) {
  * returns a function that transforms an amplitude user into a mixpanel user
  * @param  {import('../index').postHogOpts} options
  */
-function postHogPersonToMpProfile(options) {
+function postHogPersonToMpProfile(options, heavyObjects = {}) {
+	// let personMap;
+
+	// if (heavyObjects.people) {
+	// 	personMap = heavyObjects.people;
+	// }
+	// else {
+	// 	console.warn("heavyObjects.people is empty, id mgmt is not possible");
+	// 	personMap = new Map();
+	// }
+
+
 	return function transform(postHogPerson) {
-		return postHogPerson;
+		const {
+			person_id: distinct_id,
+			created_at,
+			team_id,
+		} = postHogPerson;
+
+		if (!distinct_id) return {};
+		const postHogProperties = JSON.parse(postHogPerson.properties) || {};
+
+		const mpProps = {};
+
+		loopProps: for (const key in postHogProperties) {
+			if (key.startsWith("$")) continue loopProps;
+			if (!postHogProperties[key]) continue loopProps;
+			mpProps[`posthog_${key}`] = postHogProperties[key];
+		}
+
+		const mpProfile = {
+			$distinct_id: distinct_id,
+			created_at: dayjs.unix(created_at).toISOString(),
+			team_id,
+			...mpProps
+		};
+
+		return mpProfile;
 	};
 }
 
