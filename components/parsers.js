@@ -18,6 +18,11 @@ const dateFormat = `YYYY-MM-DD`;
 const Papa = require('papaparse');
 const { prepareSCD } = require('./validators.js');
 const { console } = require('inspector');
+// const { logger } = require('../components/logs.js');
+
+const { Storage } = require('@google-cloud/storage');
+const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+
 
 
 /** @typedef {import('./job')} JobConfig */
@@ -29,7 +34,7 @@ const { console } = require('inspector');
  * @param  {JobConfig} job
  */
 async function determineDataType(data, job) {
-
+	// const l = logger(job);
 	//exports are saved locally
 	if (job.recordType === 'export') {
 		if (job.where) {
@@ -215,7 +220,7 @@ async function determineDataType(data, job) {
 
 	catch (e) {
 		debugger;
-		//noop
+
 	}
 
 	// data is a string, and we have to guess what it is
@@ -338,124 +343,6 @@ function itemStream(filePath, type = "jsonl", job) {
 }
 
 /**
- * Creates an object-mode stream that reads Parquet files row by row.
- * @param {string} filename - Path to the Parquet file.
- * @param {JobConfig} job
- * @returns {Promise<Readable>} - A readable stream emitting Parquet rows.
- */
-async function parquetStream_OLD_IMPLEMENTATION(filename, job) {
-	const filePath = path.resolve(filename);
-	let reader = null;
-	let cursor = null;
-	let isReading = false; // To prevent concurrent reads
-
-	try {
-		reader = await parquet.ParquetReader.openFile(filePath);
-		cursor = reader.getCursor();
-	} catch (err) {
-		// console.error(`Failed to open parquet file ${filePath}:`, err);
-		// Return an empty stream if we can't open the file
-		return new Readable({
-			objectMode: true,
-			read() {
-				this.push(null);
-			}
-		});
-	}
-
-	const fileErrorHandler = function (err) {
-		console.error(`Error processing ${filePath}:`, err?.message || err);
-		return null;
-	};
-
-	const rowErrorHandler = job?.parseErrorHandler || function (err, record) {
-		return {};
-	};
-
-	const stream = new Readable({
-		objectMode: true,
-		read() {
-			if (isReading) return; // Prevent concurrent reads
-			isReading = true;
-
-			(async () => {
-				try {
-					let record;
-					try {
-						record = await cursor.next();
-					} catch (err) {
-						const handledError = fileErrorHandler(err);
-						this.push(handledError);
-						isReading = false;
-						return; // Continue with next read
-					}
-
-					if (record) {
-						try {
-							for (const key in record) {
-								const value = record[key];
-								if (value instanceof Date) {
-									record[key] = dayjs.utc(value).toISOString();
-								}
-								//big int
-								if (typeof value === 'bigint') {
-									try {
-										// Check if the bigint is within safe integer range
-										if (value <= Number.MAX_SAFE_INTEGER && value >= Number.MIN_SAFE_INTEGER) {
-											record[key] = Number(value);
-										} else {
-											record[key] = value.toString();
-										}
-									} catch {
-										record[key] = value.toString();
-									}
-								}
-
-								if (Buffer.isBuffer(value)) {
-									record[key] = value.toString('utf-8'); // or 'base64' if needed
-								}
-
-								if (value === undefined) {
-									record[key] = null;
-								}
-							}
-							this.push(record);
-						} catch (err) {
-							const handledError = rowErrorHandler(err);
-							this.push(handledError);
-
-						}
-					} else {
-						// End of file reached
-						await reader.close();
-						reader = null;
-						this.push(null);
-					}
-				} catch (err) {
-					console.error(`Fatal error processing ${filePath}:`, err);
-					this.destroy(err);
-				} finally {
-					isReading = false;
-				}
-			})();
-		},
-		async destroy(err, callback) {
-			try {
-				if (reader) {
-					await reader.close();
-					reader = null;
-				}
-				callback(err);
-			} catch (closeErr) {
-				callback(closeErr || err);
-			}
-		},
-	});
-
-	return stream;
-}
-
-/**
  * Creates a factory function for MultiStream that lazily creates parquet streams
  * @param {string[]} filePaths 
  * @param {JobConfig} job
@@ -498,6 +385,7 @@ function createParquetFactory(filePaths, job) {
 function parquetStreamArray(filePaths, job) {
 	// @ts-ignore
 	const lazyStreamGen = createParquetFactory(filePaths, job);
+	// @ts-ignore
 	return MultiStream.obj(lazyStreamGen);
 }
 
@@ -506,7 +394,7 @@ function parquetStreamArray(filePaths, job) {
  * detects EOF by first querying COUNT(*) and then counting callbacks.
  *
  * @param {string}   filename – path to the Parquet file
- * @param {object}   [job]    – may include parseErrorHandler/fileErrorHandler
+ * @param {object}   [job]    - may include parseErrorHandler/fileErrorHandler
  * @returns {Promise<Readable>} – object-mode Readable of sanitized rows
  */
 async function parquetStream(filename, job = {}) {
@@ -522,10 +410,11 @@ async function parquetStream(filename, job = {}) {
 	// Handlers
 	const fileErrorHandler = job.fileErrorHandler || (err => {
 		console.error(`Error reading ${filePath}:`, err.message || err);
-		return null;
+		throw new Error(`Error reading ${filePath}: ${err.message || err}`);
+		// return null;
 	});
 	const rowErrorHandler = job.parseErrorHandler || ((err, row) => {
-		console.error(`Error parsing row from ${filePath}:`, err);
+		console.error(`Error parsing row`, row, `from ${filePath}:`, err);
 		return {};
 	});
 
@@ -564,18 +453,25 @@ async function parquetStream(filename, job = {}) {
 			if (err) {
 				out.push(fileErrorHandler(err));
 			} else {
-				// sanitize in-place
-				for (const k of Object.keys(row)) {
-					const v = row[k];
-					if (v?.toISOString) row[k] = dayjs.utc(v).toISOString();
-					else if (typeof v === 'bigint') row[k] =
-						(v <= Number.MAX_SAFE_INTEGER && v >= Number.MIN_SAFE_INTEGER)
-							? Number(v)
-							: v.toString();
-					else if (Buffer.isBuffer(v)) row[k] = v.toString('utf-8');
-					else if (v === undefined) row[k] = null;
+				try {
+					// sanitize in-place
+					for (const k of Object.keys(row)) {
+						const v = row[k];
+						if (v?.toISOString) row[k] = dayjs.utc(v).toISOString();
+						else if (typeof v === 'bigint') row[k] =
+							(v <= Number.MAX_SAFE_INTEGER && v >= Number.MIN_SAFE_INTEGER)
+								? Number(v)
+								: v.toString();
+						else if (Buffer.isBuffer(v)) row[k] = v.toString('utf-8');
+						else if (v === undefined) row[k] = null;
+					}
+					out.push(row);
 				}
-				out.push(row);
+
+				catch (err) {
+					out.push(rowErrorHandler(err, row));
+				}
+			
 			}
 
 			// If we've now emitted the last row, close & EOF
@@ -772,7 +668,161 @@ function getEnvVars() {
 	return envCreds;
 }
 
+
+/**
+ * a general purpose function that can fetch data 
+ * @param {string} filePath  Path to either:
+ *   • a JSON file containing an array of {id, distinct_id} objects, OR
+ *   • an NDJSON file (one JSON object per line)
+ * @param {string} keyOne    The key for the id (e.g., "person_id")
+ * @param {string} keyTwo    The key for the distinct_id (e.g., "distinct_id")
+ * @returns {Promise<Map<string,string>>}  Maps item.id → item.distinct_id
+ */
+async function buildMapFromPath(filePath, keyOne, keyTwo) {
+	if (!keyOne || !keyTwo || !filePath) throw new Error("keyOne and keyTwo are required");
+
+	// Local file validation only
+	if (!filePath.startsWith('gs://') && !filePath.startsWith('s3://')) {
+		if (!fs.existsSync(path.resolve(filePath))) {
+			throw new Error(`buildMapFromPath: File not found: ${filePath}`);
+		}
+	}
+
+	//check if file has a valid extension
+	const validExtensions = ['.json', '.jsonl', '.ndjson']; //todo: add csv + parquet
+	const fileExtension = path.extname(filePath);
+	if (!validExtensions.includes(fileExtension)) {
+		throw new Error(`buildMapFromPath: Invalid file extension: ${fileExtension}`);
+	}
+
+	let fileContents;
+
+	//a gcp bucket
+	if (filePath?.startsWith('gs://')) fileContents = await fetchFromGCS(filePath);
+	//an s3 bucket
+	else if (filePath?.startsWith('s3://')) fileContents = await fetchFromS3(filePath);
+	//a local file
+	else {
+		fileContents = fs.readFileSync(path.resolve(filePath), "utf-8");
+	}
+
+	let records;
+
+	// Try parsing as a JSON array first…
+	try {
+		if (!fileContents.startsWith('[')) throw new Error("probably not a json array");
+		const parsed = JSON.parse(fileContents);
+		if (!Array.isArray(parsed)) {
+			throw new Error("Not an array");
+		}
+		records = parsed;
+	} catch {
+		// Fallback to NDJSON: one JSON object per line
+		records = fileContents
+			.split(/\r?\n/)
+			.filter(line => line.trim().length > 0)
+			.map((line, idx) => {
+				try {
+					return JSON.parse(line);
+				} catch (e) {
+					throw new Error(`Invalid JSON on line ${idx + 1}: ${e.message}`);
+				}
+			});
+	}
+
+	// Build the Map<keyOne, keyTwo>
+	const idMap = records.reduce((map, item) => {
+		if (item[keyOne] == null || item[keyTwo] == null) {
+			// you can choose to warn or skip silently
+			return map;
+		}
+		map.set(item[keyOne], item[keyTwo]);
+		return map;
+	}, new Map());
+
+	// clear file contents so we don't keep it in memory
+	fileContents = null;
+	return idMap;
+}
+
+/**
+ * Fetch a file from Google Cloud Storage
+ * @param {string} gcsPath Path in format gs://bucket-name/path/to/file.json
+ * @returns {Promise<string>} File contents as a string
+ */
+async function fetchFromGCS(gcsPath) {
+
+
+	// Create a storage client using application default credentials
+	const storage = new Storage();
+
+	// Extract bucket and file path from the GCS path
+	// gs://bucket-name/path/to/file.json -> bucket="bucket-name", filePath="path/to/file.json"
+	const matches = gcsPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
+	if (!matches) {
+		throw new Error(`Invalid GCS path: ${gcsPath}`);
+	}
+
+	const bucketName = matches[1];
+	const filePath = matches[2];
+
+	try {
+		// Download the file
+		const [contents] = await storage.bucket(bucketName).file(filePath).download();
+
+		// Convert Buffer to string
+		return contents.toString('utf-8');
+	} catch (error) {
+		throw new Error(`Error fetching from GCS: ${error.message}`);
+	}
+}
+
+/**
+ * Fetch a file from Amazon S3
+ * @param {string} s3Path Path in format s3://bucket-name/path/to/file.json
+ * @returns {Promise<string>} File contents as a string
+ */
+async function fetchFromS3(s3Path) {
+
+
+	// Create an S3 client using application default credentials
+	const s3Client = new S3Client({});
+
+	// Extract bucket and key from the S3 path
+	// s3://bucket-name/path/to/file.json -> bucket="bucket-name", key="path/to/file.json"
+	const matches = s3Path.match(/^s3:\/\/([^\/]+)\/(.+)$/);
+	if (!matches) {
+		throw new Error(`Invalid S3 path: ${s3Path}`);
+	}
+
+	const bucketName = matches[1];
+	const key = matches[2];
+
+	try {
+		// Configure the GetObject operation
+		const command = new GetObjectCommand({
+			Bucket: bucketName,
+			Key: key
+		});
+
+		// Download the file
+		const response = await s3Client.send(command);
+
+		// AWS SDK v3 returns a readable byte stream
+		// Convert it directly to a string
+		let content = '';
+		// @ts-ignore
+		for await (const chunk of response.Body) {
+			content += chunk.toString('utf-8');
+		}
+		return content;
+	} catch (error) {
+		throw new Error(`Error fetching from S3: ${error.message}`);
+	}
+}
+
 module.exports = {
+	buildMapFromPath,
 	JsonlParser,
 	determineDataType,
 	existingStreamInterface,

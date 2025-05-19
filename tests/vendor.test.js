@@ -32,7 +32,7 @@ describe("vendor tests", () => {
 	test(
 		"amplitude: events",
 		async () => {
-			const job = await mp({}, "./testData/amplitude/2023-04-10_1#0.json", { ...opts, recordType: "event", vendor: "amplitude", dryRun: true, vendorOpts: { v2_compat: false }});
+			const job = await mp({}, "./testData/amplitude/2023-04-10_1#0.json", { ...opts, recordType: "event", vendor: "amplitude", dryRun: true, vendorOpts: { v2_compat: false } });
 			const numRecords = job.dryRun.length;
 			const numDistinctIds = job.dryRun.filter(a => a.properties.distinct_id).length;
 			expect(numRecords).toBe(4011);
@@ -60,7 +60,7 @@ describe("vendor tests", () => {
 			const numDistinctIds = job.dryRun.filter(a => a.properties.distinct_id).length;
 			expect(numRecords).toBe(4011);
 			expect(numDistinctIds).toBe(numRecords);
-			
+
 
 		},
 		longTimeout
@@ -76,7 +76,7 @@ describe("vendor tests", () => {
 
 			const jobWithMerge = await mp({}, "./testData/heap/events-can-merge.json", { ...opts, recordType: "event", vendor: "heap", dryRun: true, vendorOpts: { device_id_file: heapIdMap } });
 			expect(jobWithMerge.dryRun.length).toBe(12685);
-			expect(jobWithMerge.dryRun.filter(a => a.properties.$user_id).length).toBe(12685) //.toBe(11510);
+			expect(jobWithMerge.dryRun.filter(a => a.properties.$user_id).length).toBe(12685); //.toBe(11510);
 		},
 		longTimeout
 	);
@@ -131,6 +131,62 @@ describe("vendor tests", () => {
 			expect(data.every(u => u.$distinct_id)).toBe(true);
 			expect(data.every(u => u.$ip)).toBe(true);
 			expect(data.every(u => u.$set)).toBe(true);
+		},
+		longTimeout
+	);
+
+	test(
+		"posthog: events",
+		async () => {
+			const job = await mp({}, "./testData/posthog/events001.parquet",
+				{
+					...opts,
+					streamFormat: 'parquet',
+					recordType: "event",
+					vendor: "posthog",
+					vendorOpts: {
+						v2_compat: true,
+
+					},
+					dryRun: true,
+					dimensionMaps: [
+						{
+							filePath: "./testData/posthog/persons-smol.ndjson",
+							keyOne: "distinct_id",
+							keyTwo: "person_id",
+							label: "people",
+
+						}
+					]
+				}
+			);
+			expect(job.dryRun.length).toBe(17);
+			const { dryRun: data } = job;
+			expect(data.every(e => e.event)).toBe(true);
+			expect(data.every(e => e.properties)).toBe(true);
+		},
+		longTimeout);
+
+
+
+	test(
+		"posthog: users",
+		async () => {
+			const job = await mp({}, "./testData/posthog/people-abbrev.parquet",
+				{
+					...opts,
+					streamFormat: 'parquet',
+					recordType: "user",
+					vendor: "posthog",
+					dedupe: true,
+					dryRun: true
+				});
+			
+			expect(job.total).toBe(500);
+			expect(job.dryRun.length).toBe(500);
+			expect(job.duplicates).toBe(0);			
+			const { dryRun: data } = job;
+			expect(data.every(e => e.$distinct_id)).toBe(true);
 		},
 		longTimeout
 	);

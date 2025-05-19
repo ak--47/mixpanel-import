@@ -7,6 +7,8 @@ const { ampEventsToMp, ampUserToMp, ampGroupToMp } = require('../vendor/amplitud
 const { heapEventsToMp, heapUserToMp, heapGroupToMp, heapParseErrorHandler } = require('../vendor/heap.js');
 const { gaEventsToMp, gaUserToMp, gaGroupsToMp } = require('../vendor/ga4.js');
 const { mParticleEventsToMixpanel, mParticleUserToMixpanel, mParticleGroupToMixpanel } = require('../vendor/mparticle.js');
+const { postHogEventsToMp, postHogPersonToMpProfile } = require('../vendor/posthog.js');
+const { buildMapFromPath } = require('./parsers.js');
 
 
 /** @typedef {import('../index.js').Creds} Creds */
@@ -52,6 +54,16 @@ class Job {
 		this.scdType = opts.scdType || 'string'; //scd type
 		this.scdId = opts.scdId || ''; //scd id
 		this.scdPropId = opts.scdPropId || ''; //scd prop id
+
+		this.dimensionMaps = opts.dimensionMaps || []; //dimension map for scd
+		this.heavyObjects = {}; //used to store heavy objects
+		this.insertHeavyObjects = async function (arrayOfKeysAndFilesPaths = this.dimensionMaps) {
+			for (const keyFilePath of arrayOfKeysAndFilesPaths) {
+				const { filePath, keyOne, keyTwo, label = u.makeName(3, '-') } = keyFilePath;
+				const result = await buildMapFromPath(filePath, keyOne, keyTwo);
+				this.heavyObjects[label] = result;
+			}
+		};
 
 		// ? export stuff
 		if (opts.limit) {
@@ -172,7 +184,8 @@ class Job {
 		if (opts?.scrubProperties) this.scrubProps = parse(opts.scrubProperties) || [];
 
 		// ? transform options
-		this.transformFunc = opts.transformFunc || noop;
+		this.transformFunc = opts.transformFunc || null;
+		this.vendorTransform = null;
 		this.ezTransform = noop;
 		this.nullRemover = noop;
 		this.UTCoffset = noop;
@@ -180,7 +193,7 @@ class Job {
 		this.applyAliases = noop;
 		this.deduper = noop;
 		this.whiteAndBlackLister = noop;
-		this.vendorTransform = noop;
+
 		this.epochFilter = noop;
 		this.flattener = noop;
 		this.insertIdAdder = noop;
@@ -240,91 +253,7 @@ class Job {
 			this.propertyScrubber = transforms.scrubProperties(this.scrubProps);
 		}
 
-		if (opts.vendor) {
-			let transformFunc = noop;
-			switch (opts.vendor.toLowerCase()) {
-				case 'amplitude':
-					switch (opts.recordType?.toLowerCase()) {
-						case 'event':
-							transformFunc = ampEventsToMp(this.vendorOpts);
-							break;
-						case 'user':
-							//ALWAYS dedupe user profiles for amplitude
-							this.dedupe = true;
-							this.deduper = transforms.dedupeRecords(this);
-							transformFunc = ampUserToMp(this.vendorOpts);
-							break;
-						case 'group':
-							transformFunc = ampGroupToMp(this.vendorOpts);
-							break;
-						default:
-							transformFunc = ampEventsToMp(this.vendorOpts);
-							break;
-					}
-					break;
-
-				case 'heap':
-					this.parseErrorHandler = heapParseErrorHandler;
-					switch (opts.recordType?.toLowerCase()) {
-						case 'event':
-							transformFunc = heapEventsToMp(this.vendorOpts);
-							break;
-						case 'user':
-							transformFunc = heapUserToMp(this.vendorOpts);
-							break;
-						case 'group':
-							transformFunc = heapGroupToMp(this.vendorOpts);
-							break;
-						default:
-							transformFunc = heapEventsToMp(this.vendorOpts);
-							break;
-					}
-					break;
-
-				case 'ga4':
-					switch (opts.recordType?.toLowerCase()) {
-						case 'event':
-							transformFunc = gaEventsToMp(this.vendorOpts);
-							break;
-						case 'user':
-							//ALWAYS dedupe user profiles for ga4
-							this.dedupe = true;
-							this.deduper = transforms.dedupeRecords(this);
-							transformFunc = gaUserToMp(this.vendorOpts);
-							break;
-						case 'group':
-							transformFunc = gaGroupsToMp(this.vendorOpts);
-							break;
-						default:
-							transformFunc = gaEventsToMp(this.vendorOpts);
-							break;
-					}
-					break;
-				case 'mparticle':
-					switch (opts.recordType?.toLowerCase()) {
-						case 'event':
-							transformFunc = mParticleEventsToMixpanel(this.vendorOpts);
-							break;
-						case 'user':
-							this.dedupe = true;
-							this.deduper = transforms.dedupeRecords(this);
-							transformFunc = mParticleUserToMixpanel(this.vendorOpts);
-							break;
-						case 'group':
-							transformFunc = mParticleGroupToMixpanel(this.vendorOpts);
-							break;
-						default:
-							transformFunc = mParticleEventsToMixpanel(this.vendorOpts);
-							break;
-					}
-					break;
-				default:
-					transformFunc = noop;
-					break;
-			}
-			this.vendorTransform = transformFunc;
-		}
-
+		this.vendor = opts.vendor || '';
 
 
 		// ? counters
@@ -454,6 +383,117 @@ class Job {
 	}
 
 	// ? methods
+
+	async init() {
+		// await job.insertHeavyObjects(job.dimensionMaps)
+		await this.insertHeavyObjects();
+
+		//setup the vendor transforms
+		if (this.vendor) {
+			let vendorTransformFunc = noop;
+			const chosenVendor = this.vendor.toLowerCase();
+			const recordType = this.recordType?.toLowerCase();
+			switch (chosenVendor) {
+				case 'amplitude':
+					switch (recordType) {
+						case 'event':
+							vendorTransformFunc = ampEventsToMp(this.vendorOpts);
+							break;
+						case 'user':
+							//ALWAYS dedupe user profiles for amplitude
+							this.dedupe = true;
+							this.deduper = transforms.dedupeRecords(this);
+							vendorTransformFunc = ampUserToMp(this.vendorOpts);
+							break;
+						case 'group':
+							vendorTransformFunc = ampGroupToMp(this.vendorOpts);
+							break;
+						default:
+							vendorTransformFunc = ampEventsToMp(this.vendorOpts);
+							break;
+					}
+					break;
+
+				case 'heap':
+					this.parseErrorHandler = heapParseErrorHandler;
+					switch (recordType) {
+						case 'event':
+							vendorTransformFunc = heapEventsToMp(this.vendorOpts);
+							break;
+						case 'user':
+							vendorTransformFunc = heapUserToMp(this.vendorOpts);
+							break;
+						case 'group':
+							vendorTransformFunc = heapGroupToMp(this.vendorOpts);
+							break;
+						default:
+							vendorTransformFunc = heapEventsToMp(this.vendorOpts);
+							break;
+					}
+					break;
+
+				case 'ga4':
+					switch (recordType) {
+						case 'event':
+							vendorTransformFunc = gaEventsToMp(this.vendorOpts);
+							break;
+						case 'user':
+							//ALWAYS dedupe user profiles for ga4
+							this.dedupe = true;
+							this.deduper = transforms.dedupeRecords(this);
+							vendorTransformFunc = gaUserToMp(this.vendorOpts);
+							break;
+						case 'group':
+							vendorTransformFunc = gaGroupsToMp(this.vendorOpts);
+							break;
+						default:
+							vendorTransformFunc = gaEventsToMp(this.vendorOpts);
+							break;
+					}
+					break;
+				case 'mparticle':
+					switch (recordType) {
+						case 'event':
+							vendorTransformFunc = mParticleEventsToMixpanel(this.vendorOpts);
+							break;
+						case 'user':
+							this.dedupe = true;
+							this.deduper = transforms.dedupeRecords(this);
+							vendorTransformFunc = mParticleUserToMixpanel(this.vendorOpts);
+							break;
+						case 'group':
+							vendorTransformFunc = mParticleGroupToMixpanel(this.vendorOpts);
+							break;
+						default:
+							vendorTransformFunc = mParticleEventsToMixpanel(this.vendorOpts);
+							break;
+					}
+					break;
+				case 'posthog':
+					switch (recordType) {
+						case 'event':
+							vendorTransformFunc = postHogEventsToMp(this.vendorOpts, this.heavyObjects);
+							break;
+						case 'user':
+							this.dedupe = true;
+							this.deduper = transforms.dedupeRecords(this);
+							vendorTransformFunc = postHogPersonToMpProfile(this.vendorOpts);
+							break;
+						case 'group':
+							throw new Error('posthog does not support groups');
+						default:
+							vendorTransformFunc = postHogEventsToMp(this.vendorOpts, this.heavyObjects);
+							break;
+					}
+					break;
+				default:
+					vendorTransformFunc = noop;
+					break;
+			}
+			this.vendorTransform = vendorTransformFunc;
+
+		}
+	}
 
 	report() {
 		return Object.assign({}, this);
@@ -666,7 +706,7 @@ class Job {
 		summary.errors = this.errors;
 
 
-		if (includeResponses) {
+		if (includeResponses && this?.responses?.length) {
 			summary.responses = this.responses;
 		}
 
@@ -697,7 +737,7 @@ class Job {
 			for (const key in summary) {
 				if (!includeOnly.includes(key)) delete summary[key];
 			}
-			if (!summary.dryRun.length) delete summary.dryRun;
+			if (!summary?.dryRun?.length) delete summary.dryRun;
 		}
 
 		return summary;

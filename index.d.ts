@@ -110,6 +110,7 @@ declare namespace main {
     | "pendo"
     | "mparticle"
     | ""
+	| "posthog"
     | void;
 
   type WhiteAndBlackListParams = {
@@ -125,6 +126,13 @@ declare namespace main {
 
   type Regions = "US" | "EU" | "IN";
   type SupportedFormats = "json" | "jsonl" | "csv" | "parquet";
+
+  type dependentTables = {
+	filePath: string;
+	keyOne: string;
+	keyTwo: string;
+	label?: string;
+  }
 
   /**
    * options for the import job
@@ -246,7 +254,7 @@ declare namespace main {
      * - a transform function to `map()` over the data
      * - if it returns `{}` the record will be skipped
      * - if it returns `[{},{},{}]` the record will be split into multiple records
-     * - default `undefined`
+     * - default `null`
      */
     transformFunc?: transFunc;
     /**
@@ -334,7 +342,7 @@ declare namespace main {
     /**
      * options for built in transform functions
      */
-    vendorOpts?: amplitudeOpts | heapOpts | ga4Opts | {};
+    vendorOpts?: amplitudeOpts | heapOpts | ga4Opts | postHogOpts | {};
     /**
      * whether or not to use http2; default `false` and http2 seems slower...
      */
@@ -423,6 +431,13 @@ declare namespace main {
 	 */
 	whereClause?: string; 
 
+	/**
+	 * allowing arbitrary lookups which get turned into maps() in heavyObject
+	 * this should be provided to the transformer function and lets you do on-the-fly lookups
+	 * 
+	 */
+	dimensionMaps?: dependentTables[]; 
+
   };
 
   /**
@@ -431,7 +446,8 @@ declare namespace main {
    * - if it returns `[{},{},{}]` the record will be split into multiple records
    */
   type transFunc = (
-    data: any
+    data: any,
+	heavyObjects?: any
   ) => mpEvent | mpUser | mpGroup | Object[] | Object;
   /**
    * - a transform function to handle parsing errors
@@ -585,7 +601,7 @@ declare namespace main {
     /**
      * for dry runs, what is the transformed data
      */
-    dryRun: ArrayOfObjects;
+    dryRun?: ArrayOfObjects;
     /**
      * the # of concurrent requests
      */
@@ -738,6 +754,17 @@ declare namespace main {
    * a user profile update payload
    */
   type mpUser = mpUserStandardProps & ProfileData;
+
+  /**
+   * posthog transform opts
+   */
+  type postHogOpts = {
+	device_id_map?: Map<string, string>;
+	device_id_file?: string;
+	v2_compat?: boolean; // use v2 api
+	ignore_events?: string[]; // ignore these events
+	ignore_props?: string[]; // strip these properties
+  }
 
   /**
    * amplitude transform opts
