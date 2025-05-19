@@ -270,7 +270,7 @@ all options are... optional... for a full list of what these do, see [the type d
 ```typescript
 export type Options = {
 	recordType?: RecordType;
-	vendor?: "amplitude" | "heap" | "mixpanel" | "ga4" | "adobe" | "pendo" | "mparticle"
+	vendor?: "amplitude" | "heap" | "mixpanel" | "ga4" | "adobe" | "pendo" | "mparticle" | "posthog"
 	region?: Regions;
 	streamFormat?: SupportedFormats;
 	compress?: boolean;
