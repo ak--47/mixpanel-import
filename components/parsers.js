@@ -18,10 +18,12 @@ const dateFormat = `YYYY-MM-DD`;
 const Papa = require('papaparse');
 const { prepareSCD } = require('./validators.js');
 const { console } = require('inspector');
+const {streamEvents, streamProfiles} = require('../components/exporters.js')
 // const { logger } = require('../components/logs.js');
 
 const { Storage } = require('@google-cloud/storage');
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+
 
 
 
@@ -44,6 +46,19 @@ async function determineDataType(data, job) {
 		const filename = path.resolve(`${folder}/export-${dayjs().format(dateFormat)}-${u.rand()}.ndjson`);
 		await u.touch(filename);
 		return filename;
+	}
+
+	if (job.recordType === 'export-import-events') {
+		job.recordType = 'event';
+		job.fixData = true;
+		return streamEvents(job);
+	}
+
+	if (job.recordType === 'export-import-profiles') {
+		if (job.dataGroupId || job.groupKey) job.recordType = 'group';
+		else job.recordType = 'profile';
+		job.fixData = true;
+		return streamProfiles(job);
 	}
 
 	if (job.recordType === 'profile-export') {

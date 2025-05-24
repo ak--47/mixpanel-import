@@ -7,6 +7,7 @@ const fs = require('fs');
 const { promisify } = require('util');
 const u = require('ak-tools');
 const showProgress = require('./cli').showProgress;
+const { Transform, Readable } = require('stream');
 
 let mainFunc;
 function getMain() {
@@ -393,4 +394,140 @@ async function countFileLines(filePath) {
 	});
 }
 
-module.exports = { exportEvents, exportProfiles, deleteProfiles };
+
+
+
+/**
+ * Lazily streams Mixpanel events as JS objects.
+ * @param {jobConfig} job 
+ * @returns {Readable} object-mode stream
+ */
+function streamEvents(job) {
+	/** @type {got.Options} */
+	const options = {
+		url: `https://data.mixpanel.com/api/2.0/export`,
+		method: 'GET',
+		searchParams: {
+			from_date: job.start,
+			to_date: job.end,
+			limit: job.limit,
+			where: job.whereClause,
+			project_id: job.project
+		},
+		retry: { limit: 50 },
+		headers: { Authorization: job.auth },
+		agent: { https: new https.Agent({ keepAlive: true }) }
+	};
+
+	const request = got.stream(options);
+
+	// ------- NDJSON → objects -------------------------------------------------
+	const ndjsonParser = new Transform({
+		readableObjectMode: true,
+		transform(chunk, _enc, cb) {
+			this._buf = (this._buf || '') + chunk.toString();
+			const lines = this._buf.split('\n');
+			this._buf = lines.pop() || '';
+			for (const line of lines) {
+				if (!line.trim()) continue;
+				try {
+					const parsed = JSON.parse(line);
+					const event = { ...parsed, ...parsed.properties };
+					delete event.properties;
+					this.push(event);
+				}
+				catch (e) {
+					/* swallow malformed lines */
+				}
+			}
+			cb();
+		},
+		flush(cb) {                               // last partial line
+			if (this._buf) {
+				try { this.push(JSON.parse(this._buf)); }
+				catch { /* ignore */ }
+			}
+			cb();
+		}
+	});
+
+	// expose pipeline errors on the resulting stream
+	request.on('error', err => ndjsonParser.destroy(err));
+
+	return request.pipe(ndjsonParser);
+}
+
+/**
+ * Streams Mixpanel user or group profiles page-by-page.
+ * Each object is emitted individually before the next request is made.
+ * Back-pressure automatically defers the next HTTP call.
+ * @param {jobConfig} job
+ * @returns {Readable} object-mode stream
+ */
+function streamProfiles(job) {
+	return new Readable({
+		objectMode: true,
+		async read() {
+			try {
+				// on first call initialise pagination state on the stream instance
+				if (!this._page) {
+					this._page = 0;
+					this._session_id = null;
+					this._buffer = []; // holds objects not yet pushed
+				}
+
+				// If we still have buffered rows, push and return immediately
+				if (this._buffer.length) {
+					return this.push(this._buffer.shift());
+				}
+
+				// Otherwise fetch the next page
+				const res = await got({
+					method: 'POST',
+					url: `https://mixpanel.com/api/2.0/engage`,
+					headers: {
+						Authorization: job.auth,
+						'content-type': 'application/x-www-form-urlencoded'
+					},
+					searchParams: {
+						project_id: job.project,
+						page: this._page,
+						session_id: this._session_id
+					},
+					body: new URLSearchParams(
+						job.cohortId ? { filter_by_cohort: `{"id":${job.cohortId}}`, include_all_users: 'true' } :
+							job.dataGroupId ? { data_group_id: job.dataGroupId } :
+								{}
+					).toString(),
+					agent: { https: new https.Agent({ keepAlive: true }) },
+					retry: { limit: 50 },
+					responseType: 'json'
+				}).json();
+
+				// capture pagination tokens for the *next* call
+				this._page = (res.page || 0) + 1;
+				this._session_id = res.session_id;
+
+				// No more results → end stream
+				if (!res.results?.length) {
+					return this.push(null);             // EOS
+				}
+
+				// Buffer results and push the first one now
+				this._buffer = res.results
+					.map(profile => {
+						profile = { ...profile, ...profile.$properties };
+						delete profile.$properties;
+						return profile;
+					});
+				this.push(this._buffer.shift());
+
+			} catch (err) {
+				this.destroy(err);
+			}
+		}
+	});
+}
+
+
+module.exports = { exportEvents, exportProfiles, deleteProfiles, streamEvents, streamProfiles };

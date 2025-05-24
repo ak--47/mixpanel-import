@@ -43,7 +43,10 @@ declare namespace main {
     | "scd"
     | "annotations"
     | "get-annotations"
-	| "delete-annotations";
+	| "delete-annotations"
+	| "export-import-events"
+	| "export-import-profiles";
+	
   /**
    * - a path to a file/folder, objects in memory, or a readable object/file stream that contains data you wish to import
    */
