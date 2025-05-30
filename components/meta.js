@@ -15,8 +15,6 @@ const u = require('ak-tools');
 /** @typedef {import('./job.js')} Job */
 
 
-//todo: needs to hit worskpace api 
-// 1630220/
 
 const common = {
 	"Accept": "application/json",

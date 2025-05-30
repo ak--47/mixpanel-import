@@ -211,8 +211,7 @@ function heapEventsToMp(options) {
  */
 function heapUserToMp(options) {
 	const { user_id = "" } = options;
-	return function (heapUser) {
-		//todo... users might have multiple anon identities... for now we can't support that
+	return function (heapUser) {		
 		let customId = null;
 		// use the custom user id if it exists on the event
 		if (user_id && heapUser[user_id]) {

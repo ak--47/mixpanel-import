@@ -77,7 +77,7 @@ async function validateToken(token) {
 
 /**
  * enriches the jobConfig with SCD specific details
- * todo: https://developer.mixpanel.com/reference/create-service-account
+ * 
  * 
  * @param  {JobConfig} job
  */

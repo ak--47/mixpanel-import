@@ -39,6 +39,7 @@ class Job {
 		this.secret = creds.secret || ``; //api secret (deprecated auth)
 		this.bearer = creds.bearer || ``;
 		this.token = creds.token || ``; //project token 
+		this.secondToken = creds.secondToken || ``; //second token for export / import
 		this.lookupTableId = creds.lookupTableId || ``; //lookup table id
 		this.groupKey = creds.groupKey || opts.groupKey || ``; //group key id
 		this.auth = this.resolveProjInfo();
@@ -48,6 +49,7 @@ class Job {
 		this.memorySamples = []; //used to calculate memory usage
 		this.wasStream = null; //was the data loaded into memory or streamed?
 		this.dryRunResults = []; //results of dry run	
+		this.badRecords = {};
 		this.insertIdTuple = opts.insertIdTuple || []; //tuple of keys for insert_id	
 		this.scdLabel = opts.scdLabel || ''; //scd label
 		this.scdKey = opts.scdKey || ''; //scd key
@@ -116,6 +118,7 @@ class Job {
 		this.recordType = opts.recordType || `event`; // event, user, group or table		
 		this.streamFormat = opts.streamFormat || ''; // json or jsonl ... only relevant for streams
 		this.region = opts.region || `US`; // US or EU or IN
+		this.secondRegion = opts.secondRegion || ''; // US or EU or IN; used for exports => import
 		this.vendor = opts.vendor || ''; // heap or amplitude
 
 		// ? number options
@@ -145,6 +148,7 @@ class Job {
 		this.verbose = u.isNil(opts.verbose) ? false : opts.verbose;  // print to stdout?
 		this.showProgress = u.isNil(opts.showProgress) ? false : opts.showProgress; // show progress bar
 		this.fixData = u.isNil(opts.fixData) ? false : opts.fixData; //apply transforms on the data
+		this.fixTime = u.isNil(opts.fixTime) ? false : opts.fixTime; //fix time to utc
 		this.fixJson = u.isNil(opts.fixJson) ? false : opts.fixJson; //fix json
 		this.removeNulls = u.isNil(opts.removeNulls) ? false : opts.removeNulls; //remove null fields
 		this.flattenData = u.isNil(opts.flattenData) ? false : opts.flattenData; //flatten nested properties
@@ -163,6 +167,7 @@ class Job {
 		this.writeToFile = u.isNil(opts.writeToFile) ? false : opts.writeToFile; //write to file instead of sending
 		this.outputFilePath = opts.outputFilePath || './mixpanel-transform.json'; //where to write the file
 		this.skipWriteToDisk = u.isNil(opts.skipWriteToDisk) ? false : opts.skipWriteToDisk; //don't write to disk
+		this.keepBadRecords = u.isNil(opts.keepBadRecords) ? true : opts.keepBadRecords; //keep bad records
 
 		// ? tagging options
 		this.tags = parse(opts.tags) || {}; //tags for the import		
@@ -202,9 +207,10 @@ class Job {
 		this.parseErrorHandler = opts.parseErrorHandler || returnEmpty(this);
 		this.tokenAdder = noop;
 		this.scdTransform = noop;
+		this.timeTransform = noop;
 
 		// ? transform conditions
-		if (this.fixData) this.ezTransform = transforms.ezTransforms(this);
+		if (this.fixData || this.recordType?.includes('export-import'))this.ezTransform = transforms.ezTransforms(this);
 		if (this.fixJson) this.jsonFixer = transforms.fixJson();
 		if (this.removeNulls) this.nullRemover = transforms.removeNulls();
 		if (this.timeOffset) this.UTCoffset = transforms.UTCoffset(this.timeOffset);
@@ -212,6 +218,7 @@ class Job {
 		if (this.flattenData) this.flattener = transforms.flattenProperties(".");
 		if (this.addToken) this.tokenAdder = transforms.addToken(this);
 		if (this.recordType === 'scd') this.scdTransform = transforms.scdTransform(this);
+		if (this.recordType === 'event' && this.fixTime) this.timeTransform = transforms.fixTime(this);
 
 		if (this.insertIdTuple.length > 0 && this.recordType === 'event') {
 			this.shouldCreateInsertId = true;
@@ -334,7 +341,9 @@ class Job {
 			group: `https://api.mixpanel.com/groups`,
 			table: `https://api.mixpanel.com/lookup-tables/`,
 			export: `https://data.mixpanel.com/api/2.0/export`,
-			"profile-export": `https://mixpanel.com/api/2.0/engage`
+			"profile-export": `https://mixpanel.com/api/2.0/engage`,
+			"export-import-events": `https://data.mixpanel.com/api/2.0/export`,
+			"export-import-profiles": `https://mixpanel.com/api/2.0/engage`
 		},
 		eu: {
 			event: `https://api-eu.mixpanel.com/import`,
@@ -343,7 +352,9 @@ class Job {
 			group: `https://api-eu.mixpanel.com/groups`,
 			table: `https://api-eu.mixpanel.com/lookup-tables/`,
 			export: `https://data-eu.mixpanel.com/api/2.0/export`,
-			"profile-export": `https://eu.mixpanel.com/api/2.0/engage`
+			"profile-export": `https://eu.mixpanel.com/api/2.0/engage`,
+			"export-import-events": `https://data-eu.mixpanel.com/api/2.0/export`,
+			"export-import-profiles": `https://eu.mixpanel.com/api/2.0/engage`
 		},
 		in: {
 			event: `https://api-in.mixpanel.com/import`,
@@ -352,6 +363,9 @@ class Job {
 			group: `https://api-in.mixpanel.com/groups`,
 			table: `https://api-in.mixpanel.com/lookup-tables/`,
 			export: `https://data-in.mixpanel.com/api/2.0/export`,
+			"profile-export": `https://in.mixpanel.com/api/2.0/engage`,
+			"export-import-events": `https://data-in.mixpanel.com/api/2.0/export`,
+			"export-import-profiles": `https://in.mixpanel.com/api/2.0/engage`
 		}
 
 	};
@@ -562,7 +576,7 @@ class Job {
 		}
 
 		else {
-			console.error('no secret or service account provided!', { config: this.report() });
+			console.error('no secret or service account + project provided!', { config: this.report() });
 			throw new Error('no secret or service account provided!');
 			// process.exit(0);
 		}
@@ -678,6 +692,7 @@ class Job {
 			percentQuota: 0,
 			errors: [],
 			responses: [],
+			badRecords: this.badRecords,
 			dryRun: this.dryRunResults,
 			vendor: this.vendor || "",
 			vendorOpts: this.vendorOpts

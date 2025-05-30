@@ -43,7 +43,10 @@ declare namespace main {
     | "scd"
     | "annotations"
     | "get-annotations"
-	| "delete-annotations";
+	| "delete-annotations"
+	| "export-import-events"
+	| "export-import-profiles";
+	
   /**
    * - a path to a file/folder, objects in memory, or a readable object/file stream that contains data you wish to import
    */
@@ -96,6 +99,10 @@ declare namespace main {
      * - an organization id (data views)
      */
     org?: string | number;
+	/**
+	 * - for export/import (the destination project)
+	 */
+	secondToken?: string;	
   };
 
   /**
@@ -190,6 +197,10 @@ declare namespace main {
      * - default `true`
      */
     fixData?: boolean;
+	/**
+	 * - apply various transformations to ensure timestamp is properly formatted as a UNIX epoch
+	 */
+	fixTime?: boolean;
     /**
      * - remove the following (keys and values) from each record with values = `null`, `''`, `undefined`, `{}`, or `[]`
      * - default `false`
@@ -433,11 +444,20 @@ declare namespace main {
 
 	/**
 	 * allowing arbitrary lookups which get turned into maps() in heavyObject
-	 * this should be provided to the transformer function and lets you do on-the-fly lookups
+	 * this will be provided to the transformer function and lets you do on-the-fly lookups
 	 * 
 	 */
 	dimensionMaps?: dependentTables[]; 
 
+	/**
+	 * - for export/import (the destination project)
+	 */
+	secondRegion?: "US" | "EU" | "IN";
+
+	/**
+	 * - keep bad records in the results
+	 */
+	keepBadRecords?: boolean;
   };
 
   /**
@@ -615,6 +635,7 @@ declare namespace main {
      */
     vendor?: string;
     vendorOpts?: object;
+	badRecords?: ArrayOfObjects; // records that failed to import
   };
 
   type genericObj = {

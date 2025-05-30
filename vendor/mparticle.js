@@ -216,7 +216,7 @@ function mParticleUserToMixpanel(options) {
 }
 
 /**
- * TODO: implement
+ * 
  * returns a function that transforms an mparticle group into a mixpanel group
  * @param  {import('../index').mparticleOpts} options
  */
@@ -231,8 +231,8 @@ function mParticleGroupToMixpanel(options) {
 		if (!mParticleEvents.user_id) return {};
 
 		const mixpanelGroup = {
-			$group_key: null, //todo
-			$group_id: null, //todo
+			$group_key: null, 
+			$group_id: null, 
 			$set: groupProps
 		};
 

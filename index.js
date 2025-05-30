@@ -76,9 +76,20 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 		cliData = cli._[0];
 	}
 
-	
-	const job = new importJob({ ...envVar, ...cli, ...creds }, { ...envVar, ...cli, ...opts });
-	
+	let hasPassedInCreds = Boolean(creds && Object.keys(creds).length);
+	let finalCreds;
+	if (hasPassedInCreds) finalCreds = creds;
+	else if (isCLI) finalCreds = {...envVar, ...cli};
+	else finalCreds = envVar;
+
+	let hasPassedInOpts = Boolean(opts && Object.keys(opts).length);
+	let finalOpts;
+	if (hasPassedInOpts) finalOpts = opts;
+	else if (isCLI) finalOpts = { ...envVar, ...cli };
+	else finalOpts = envVar;
+
+	const job = new importJob(finalCreds, finalOpts);
+	// const job = new importJob({ ...envVar, ...cli, ...creds }, { ...envVar, ...cli, ...opts });
 
 	if (isCLI) job.verbose = true;
 	const l = logger(job);
@@ -207,10 +218,6 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 	return pipeToMe.toNodeStream();
 }
 
-
-// async function createProfilesFromSCD() {
-
-// }
 
 /*
 -------

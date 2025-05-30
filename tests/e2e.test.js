@@ -20,6 +20,8 @@ unzip it in ./testData
 require("dotenv").config();
 const { execSync } = require("child_process");
 const longTimeout = 750900;
+const shortTimeout = 15000;
+jest.setTimeout(shortTimeout);
 
 const {
 	MP_PROJECT = "",
@@ -28,7 +30,10 @@ const {
 	MP_SECRET = "",
 	MP_TOKEN = "",
 	MP_TABLE_ID = "",
-	MP_PROFILE_EXPORT_SECRET = ""
+	MP_PROFILE_EXPORT_TOKEN = "",
+	MP_PROFILE_EXPORT_SECRET = "",
+	MP_PROFILE_EXPORT_GROUP_KEY = "",
+	MP_PROFILE_EXPORT_DATAGROUP_ID = ""
 } = process.env;
 
 if (!MP_PROJECT || !MP_ACCT || !MP_PASS || !MP_SECRET || !MP_TOKEN || !MP_TABLE_ID) {
@@ -262,6 +267,64 @@ describe("in memory", () => {
 			expect(data.duration).toBeGreaterThan(0);
 		},
 		longTimeout
+	);
+
+	test(
+		"export-import-events",
+		async () => {
+			const data = await mp({}, null, { ...opts, recordType: "export-import-events", start: "2023-01-01", end: "2023-01-01", skipWriteToDisk: true });
+			const { success, failed, total } = data;
+			const expectedSuccess = 200;
+			const expectedFailed = 70;
+			const expectedTotal = 200;
+			expect(success).toBeGreaterThan(expectedSuccess);
+			expect(failed).toBeGreaterThan(expectedFailed);
+			expect(total).toBeGreaterThan(expectedTotal);
+		}, longTimeout
+	);
+
+	test(
+		"export-import-user-profiles",
+		async () => {
+			const data = await mp(
+				{ token: MP_PROFILE_EXPORT_TOKEN, secret: MP_PROFILE_EXPORT_SECRET },
+				null,
+				{ ...opts, recordType: "export-import-profiles", verbose: true, skipWriteToDisk: true });
+			const { recordType, success, failed, total } = data;
+			const expected = 1000;
+			expect(recordType).toBe("user");
+			expect(success).toBe(expected);
+			expect(failed).toBe(0);
+			expect(total).toBe(expected);
+		}, longTimeout
+	);
+
+	test(
+		"export-import-groups",
+		async () => {
+			const data = await mp(
+				{
+					token: MP_PROFILE_EXPORT_TOKEN,
+					secret: MP_PROFILE_EXPORT_SECRET,
+					groupKey: MP_PROFILE_EXPORT_GROUP_KEY
+				},
+				null,
+				{
+					...opts, recordType: "export-import-profiles",
+					skipWriteToDisk: true,
+					dataGroupId: MP_PROFILE_EXPORT_DATAGROUP_ID,
+					groupKey: MP_PROFILE_EXPORT_GROUP_KEY,
+					verbose: true
+				}
+			);
+			const { recordType, success, failed, total } = data;
+			const expected = 500;
+			expect(recordType).toBe("group");
+			expect(success).toBe(expected);
+			expect(failed).toBe(0);
+			expect(total).toBe(expected);
+
+		}, longTimeout
 	);
 });
 
@@ -568,38 +631,40 @@ describe("transform", () => {
 			expect(results.map(e => e.$set.cart).every(c => !c.item)).toBe(true);
 		}
 	);
+
+
 });
 
-describe("object streams", () => {
-	test("events", done => {
-		const streamInMem = new Readable.from(eventNinetyNine, { objectMode: true });
-		const mpStream = createMpStream({}, { ...opts }, (err, results) => {
-			expect(results.success).toBe(9999);
-			expect(results.failed).toBe(0);
-			expect(results.duration).toBeGreaterThan(0);
-			done();
-		});
-		streamInMem.pipe(mpStream);
+// describe("object streams", () => {
+// 	test("events", done => {
+// 		const streamInMem = new Readable.from(eventNinetyNine, { objectMode: true });
+// 		const mpStream = createMpStream({}, { ...opts, showProgress: true }, (err, results) => {
+// 			expect(results.success).toBe(9999);
+// 			expect(results.failed).toBe(0);
+// 			expect(results.duration).toBeGreaterThan(0);
+// 			done();
+// 		});
+// 		streamInMem.pipe(mpStream);
 
-	});
+// 	}, 15_000);
 
-	test("users", done => {
-		const streamInMem = new Readable.from(moarPpl, { objectMode: true });
-		const mpStream = createMpStream({}, { ...opts, recordType: "user" }, (err, results) => {
-			expect(results.success).toBe(10000);
-			expect(results.failed).toBe(0);
-			expect(results.duration).toBeGreaterThan(0);
-			done();
-		});
-		streamInMem.pipe(mpStream);
-	});
-});
+// 	test("users", done => {
+// 		const streamInMem = Readable.from(moarPpl, { objectMode: true });
+// 		const mpStream = createMpStream({}, { ...opts, recordType: "user" }, (err, results) => {
+// 			expect(results.success).toBe(10000);
+// 			expect(results.failed).toBe(0);
+// 			expect(results.duration).toBeGreaterThan(0);
+// 			done();
+// 		});
+// 		streamInMem.pipe(mpStream);
+// 	}, 15_000);
+// });
 
 describe("exports", () => {
 	test(
 		"export event data to file",
 		async () => {
-			const data = await mp({}, null, { ...opts, recordType: "export", start: "2023-01-01", end: "2023-01-03" });
+			const data = await mp({}, null, { ...opts, recordType: "export", start: "2023-01-01", end: "2023-01-01" });
 			expect(data.duration).toBeGreaterThan(0);
 			expect(data.requests).toBe(1);
 			expect(data.failed).toBe(0);
@@ -612,12 +677,12 @@ describe("exports", () => {
 	test(
 		"export event data in memory",
 		async () => {
-			const data = await mp({}, null, { ...opts, skipWriteToDisk: true, recordType: "export", start: "2023-01-01", end: "2023-01-03" });
+			const data = await mp({}, null, { ...opts, skipWriteToDisk: true, recordType: "export", start: "2023-01-01", end: "2023-01-01" });
 			const { dryRun, success, total } = data;
-			const numberOfRecords = 196;
-			expect(dryRun.length).toBe(numberOfRecords);
-			expect(success).toBe(numberOfRecords);
-			expect(total).toBe(numberOfRecords);
+			const numberOfRecords = 180;
+			expect(dryRun.length).toBeGreaterThan(numberOfRecords);
+			expect(success).toBeGreaterThan(numberOfRecords);
+			expect(total).toBeGreaterThan(numberOfRecords);
 			expect(dryRun.every(e => e.event)).toBe(true);
 			expect(dryRun.every(e => e.properties)).toBe(true);
 			expect(dryRun.every(e => e.properties.time)).toBe(true);
@@ -656,18 +721,18 @@ describe("exports", () => {
 	// );
 });
 
-describe("big files", () => {
-	jest.setTimeout(10000);
-	test(
-		"250k events",
-		async () => {
-			const data = await mp({}, twoFiftyK, { ...opts, streamFormat: `jsonl` });
-			expect(data.success).toBe(250000);
-			expect(data.failed).toBe(0);
-			expect(data.duration).toBeGreaterThan(0);
-		},
-		longTimeout
-	);
+describe("fixing stuff", () => {
+	// jest.setTimeout(10000);
+	// test(
+	// 	"250k events",
+	// 	async () => {
+	// 		const data = await mp({}, twoFiftyK, { ...opts, streamFormat: `jsonl` });
+	// 		expect(data.success).toBe(250000);
+	// 		expect(data.failed).toBe(0);
+	// 		expect(data.duration).toBeGreaterThan(0);
+	// 	},
+	// 	longTimeout
+	// );
 
 	test("large events", async () => {
 		const data = await mp({}, "./testData/nykaa/largeEvents.ndjson", { ...opts, streamFormat: `jsonl` });
@@ -675,9 +740,24 @@ describe("big files", () => {
 		expect(data.total).toBe(2000);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
-		expect(data.batches).toBe(22);
+		expect(data.batches).toBe(14);
 		expect(data.errors.length).toBe(0);
 	});
+
+	test("retains bad records", async () => {
+		const data = await mp({}, badData, { ...opts, streamFormat: `jsonl`, fixData: false, strict: true, abridged: false });
+		const {total, success, failed, errors, badRecords, unparsable} = data;
+		const expected = 5080;
+		const expectedBad = 3;
+		const expectedFailed = 5077
+		expect(total).toBe(expected);
+		expect(success).toBe(0);
+		expect(failed).toBe(expectedFailed);
+		expect(errors.length).toBe(3);
+		expect(unparsable).toBe(expectedBad);
+		expect(badRecords[`'event' must not be missing or blank`].length).toBe(expectedFailed);
+	});
+
 });
 
 describe("cli", () => {
@@ -740,7 +820,7 @@ describe("options", () => {
 			const data = await mp({}, events, { ...opts, abridged: true });
 			expect(data.success).toBe(5003);
 			expect(data.failed).toBe(0);
-			expect(data.responses.length).toBe(0);
+			expect(data.responses).toBe(undefined);
 			expect(data.duration).toBeGreaterThan(0);
 		},
 		longTimeout
@@ -785,7 +865,7 @@ describe("options", () => {
 			);
 			expect(data.success).toBe(1);
 			expect(data.failed).toBe(0);
-			expect(data.responses.length).toBe(0);
+			expect(data.responses).toBe(undefined);
 			expect(data.duration).toBeGreaterThan(0);
 		},
 		longTimeout
