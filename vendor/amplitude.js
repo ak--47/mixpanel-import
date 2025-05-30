@@ -139,8 +139,8 @@ function ampGroupToMp(options) {
 		if (!ampEvent.user_id) return {};
 
 		const mixpanelGroup = {
-			$group_key: null, //todo
-			$group_id: null, //todo
+			$group_key: null, 
+			$group_id: null, 
 			$set: groupProps
 		};
 

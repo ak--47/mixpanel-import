@@ -405,7 +405,7 @@ async function countFileLines(filePath) {
 function streamEvents(job) {
 	/** @type {got.Options} */
 	const options = {
-		url: `https://data.mixpanel.com/api/2.0/export`,
+		url: job.url,
 		method: 'GET',
 		searchParams: {
 			from_date: job.start,
@@ -465,6 +465,8 @@ function streamEvents(job) {
  * @returns {Readable} object-mode stream
  */
 function streamProfiles(job) {
+	const url = job.url || 'https://mixpanel.com/api/2.0/engage/query';
+	const auth = job.auth;
 	return new Readable({
 		objectMode: true,
 		async read() {
@@ -481,19 +483,19 @@ function streamProfiles(job) {
 					return this.push(this._buffer.shift());
 				}
 
-				// Otherwise fetch the next page
+				const searchParams = {
+					page: this._page,
+					session_id: this._session_id					
+				}
+				if (job.project) searchParams.project_id = job.project;
 				const res = await got({
 					method: 'POST',
-					url: `https://mixpanel.com/api/2.0/engage`,
+					url,
 					headers: {
-						Authorization: job.auth,
+						Authorization: auth,
 						'content-type': 'application/x-www-form-urlencoded'
 					},
-					searchParams: {
-						project_id: job.project,
-						page: this._page,
-						session_id: this._session_id
-					},
+					searchParams,
 					body: new URLSearchParams(
 						job.cohortId ? { filter_by_cohort: `{"id":${job.cohortId}}`, include_all_users: 'true' } :
 							job.dataGroupId ? { data_group_id: job.dataGroupId } :

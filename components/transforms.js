@@ -8,6 +8,7 @@ const validOperations = ["$set", "$set_once", "$add", "$union", "$append", "$rem
 // ? https://docs.mixpanel.com/docs/data-structure/user-profiles#reserved-profile-properties
 const specialProps = ["name", "first_name", "last_name", "email", "phone", "avatar", "created", "insert_id", "city", "region", "lib_version", "os", "os_version", "browser", "browser_version", "app_build_number", "app_version_string", "device", "screen_height", "screen_width", "screen_dpi", "current_url", "initial_referrer", "initial_referring_domain", "referrer", "referring_domain", "search_engine", "manufacturer", "brand", "model", "watch_model", "carrier", "radio", "wifi", "bluetooth_enabled", "bluetooth_version", "has_nfc", "has_telephone", "google_play_services", "duration", "country", "country_code"];
 const outsideProps = ["distinct_id", "group_id", "token", "group_key", "ip"]; //these are the props that are outside of the $set
+const MAX_STR_LEN = 255;
 
 /** @typedef {import('./job')} JobConfig */
 /** @typedef {import('../index').Data} Data */
@@ -20,140 +21,156 @@ const outsideProps = ["distinct_id", "group_id", "token", "group_key", "ip"]; //
 function noop(a) { return a; }
 
 /**
+ * Truncate a string to MAX_STR_LEN characters.
+ * @param {string} s
+ * @returns {string}
+ */
+function truncate(s) {
+	return s.length > MAX_STR_LEN ? s.slice(0, MAX_STR_LEN) : s;
+}
+
+/**
  * @param  {JobConfig} job
  */
 function ezTransforms(job) {
-	if (job.recordType === `event`) {
-		return function FixShapeAndAddInsertIfAbsentAndFixTime(record) {
-			//wrong shape
+	// EVENT RECORDS
+	if (job.recordType === "event" || job.recordType === "export-import-events") {
+		return function transformEvent(record) {
+			// 1. Fix “wrong shape”: ensure record.properties exists
 			if (!record.properties) {
 				record.properties = { ...record };
-				//delete properties outside properties
-				for (const key in record) {
-					if (key !== "properties" && key !== "event") delete record[key];
+				for (const key of Object.keys(record)) {
+					if (key !== "properties" && key !== "event") {
+						delete record[key];
+					}
 				}
-				delete record.properties.event;
 			}
 
-			//fixing time
-			if (record.properties.time && Number.isNaN(Number(record.properties.time))) {
+			// 2. Normalize time to UNIX epoch (ms)
+			if (
+				record.properties.time &&
+				Number.isNaN(Number(record.properties.time))
+			) {
 				record.properties.time = dayjs.utc(record.properties.time).valueOf();
 			}
-			//adding insert_id
-			if (!record?.properties?.$insert_id) {
+
+			// 3. Add $insert_id if missing
+			if (!record.properties.$insert_id) {
 				try {
-					const deDupeTuple = [record.event, record.properties.distinct_id || "", record.properties.time];
-					const hash = murmurhash.v3(deDupeTuple.join("-")).toString();
-					record.properties.$insert_id = hash;
-				} catch (e) {
-					record.properties.$insert_id = record.properties.distinct_id;
+					const tuple = [
+						record.event,
+						record.properties.distinct_id || "",
+						record.properties.time,
+					].join("-");
+					record.properties.$insert_id = murmurhash.v3(tuple).toString();
+				} catch {
+					record.properties.$insert_id = String(record.properties.distinct_id);
 				}
 			}
 
-			//renaming "user_id" to "$user_id"
-			if (record.properties.user_id) {
-				record.properties.$user_id = record.properties.user_id;
-				delete record.properties.user_id;
-			}
+			// 4. Rename well-known keys to Mixpanel’s $-prefixed versions
+			["user_id", "device_id", "source"].forEach((orig) => {
+				if (record.properties[orig]) {
+					record.properties[`$${orig}`] = record.properties[orig];
+					delete record.properties[orig];
+				}
+			});
 
-			//renaming "device_id" to "$device_id"
-			if (record.properties.device_id) {
-				record.properties.$device_id = record.properties.device_id;
-				delete record.properties.device_id;
-			}
-
-			//renaming "source" to "$source"
-			if (record.properties.source) {
-				record.properties.$source = record.properties.source;
-				delete record.properties.source;
-			}
-
-			for (const key in record.properties) {
+			// 5. Promote “special” props
+			for (const key of Object.keys(record.properties)) {
 				if (specialProps.includes(key)) {
 					if (key === "country") {
-						record.properties[`mp_country_code`] = record.properties[key];
-						delete record.properties[key];
-					}
-					else {
+						record.properties.mp_country_code = record.properties[key];
+					} else {
 						record.properties[`$${key}`] = record.properties[key];
-						delete record.properties[key];
 					}
+					delete record.properties[key];
 				}
-
-
-
 			}
 
-			//make sure id is a string
-			if (record.properties.distinct_id) {
-				record.properties.distinct_id = record.properties.distinct_id.toString();
-			}
-			if (record.properties.$user_id) {
-				record.properties.$user_id = record.properties.$user_id.toString();
-			}
-			if (record.properties.$device_id) {
-				record.properties.$device_id = record.properties.$device_id.toString();
+			// 6. Ensure distinct_id, $user_id, $device_id are strings
+			["distinct_id", "$user_id", "$device_id"].forEach((k) => {
+				if (record.properties[k] != null) {
+					record.properties[k] = String(record.properties[k]);
+				}
+			});
+
+			// 7. Truncate all string property values
+			for (const [k, v] of Object.entries(record.properties)) {
+				if (typeof v === "string") {
+					record.properties[k] = truncate(v);
+				}
 			}
 
 			return record;
 		};
 	}
 
-	//for user imports, make sure every record has a $token and the right shape
-	if (job.recordType === `user`) {
-		return function addUserTokenIfAbsent(user) {
+	// USER PROFILE RECORDS
+	if (job.recordType === "user" || (job.recordType === "export-import-profiles" && !job.groupKey)) {
+		return function transformUser(user) {
+			// 1. Fix “wrong shape” into {$set: {...}}
+			if (!validOperations.some((op) => op in user)) {
+				const uuidKey = user.$distinct_id
+					? "$distinct_id"
+					: user.distinct_id
+						? "distinct_id"
+						: null;
+				if (!uuidKey) return {}; // skip if no distinct_id
 
-			//wrong shape; fix it
-			if (!validOperations.some(op => Object.keys(user).includes(op))) {
-				let uuidKey;
-				if (user.$distinct_id) uuidKey = "$distinct_id";
-				else if (user.distinct_id) uuidKey = "distinct_id";
-				else {
-					if (job.verbose) console.log(`user record has no uuid:\n${JSON.stringify(user)}\n skipping record`);
-					return {};
-				}
-				user = { $set: { ...user } };
-				user.$distinct_id = user.$set[uuidKey];
+				const base = { ...user };
+				user = { $set: base };
+				user.$distinct_id = String(base[uuidKey]);
 				delete user.$set[uuidKey];
 				delete user.$set.$token;
 
-				//deal with mp export shape
-				//? https://developer.mixpanel.com/reference/engage-query
-				if (typeof user.$set?.$properties === "object") {
+				// Handle Mixpanel-export shape:
+				if (typeof user.$set.$properties === "object") {
 					user.$set = { ...user.$set.$properties };
 					delete user.$set.$properties;
 				}
 			}
 
-			//catch missing token
-			if (!user.$token && job.token) user.$token = job.token;
+			// 2. Ensure $token is present
+			if (!user.$token && job.token) {
+				user.$token = job.token;
+			}
 
-			//rename special props
-			for (const key in user) {
-				if (typeof user[key] === "object") {
-					for (const prop in user[key]) {
+			// 3. Rename specialProps inside each operation bucket
+			for (const op of validOperations) {
+				if (typeof user[op] === "object") {
+					for (const prop of Object.keys(user[op])) {
 						if (specialProps.includes(prop)) {
 							if (prop === "country" || prop === "country_code") {
-								user[key][`$country_code`] = user[key][prop].toUpperCase();
-								delete user[key][prop];
+								user[op].$country_code = user[op][prop].toUpperCase();
+							} else {
+								user[op][`$${prop}`] = user[op][prop];
 							}
-							else {
-								user[key][`$${prop}`] = user[key][prop];
-								delete user[key][prop];
-							}
-						}
-
-						if (outsideProps.includes(prop)) {
-							user[`$${prop}`] = user[key][prop];
-							delete user[key][prop];
+							delete user[op][prop];
 						}
 					}
 				}
-				else {
-					if (outsideProps.includes(key)) {
-						user[`$${key}`] = user[key];
-						delete user[key];
+			}
+
+			// 4. First extract outsideProps from every operation bucket up to the root
+			for (const op of validOperations) {
+				if (typeof user[op] === 'object') {
+					for (const prop of outsideProps) {
+						if (prop in user[op]) {
+							user[`$${prop}`] = user[op][prop];
+							delete user[op][prop];
+						}
 					}
+				}
+			}
+
+			// 5. Now pull any remaining outsideProps at the root, and truncate strings
+			for (const [key, val] of Object.entries(user)) {
+				if (outsideProps.includes(key)) {
+					user[`$${key}`] = val;
+					delete user[key];
+				} else if (typeof val === "string") {
+					user[key] = truncate(val);
 				}
 			}
 
@@ -161,53 +178,64 @@ function ezTransforms(job) {
 		};
 	}
 
-	//for group imports, make sure every record has a $token and the right shape
-	if (job.recordType === `group`) {
-		return function addGroupKeysIfAbsent(group) {
-			//wrong shape; fix it
-			if (!(group.$set || group.$set_once || group.$add || group.$union || group.$append || group.$remove || group.$unset)) {
-				let uuidKey;
-				if (group.$distinct_id) uuidKey = "$distinct_id";
-				else if (group.distinct_id) uuidKey = "distinct_id";
-				else if (group.$group_id) uuidKey = "$group_id";
-				else if (group.group_id) uuidKey = "group_id";
-				else {
-					if (job.verbose) console.log(`group record has no uuid:\n${JSON.stringify(group)}\n skipping record`);
-					return {};
-				}
-				group = { $set: { ...group } };
-				group.$group_id = group.$set[uuidKey];
+	// GROUP PROFILE RECORDS
+	// @ts-ignore
+	if (job.recordType === "group" || (job.recordType === "export-import-profiles" && job.groupKey)) {
+		return function transformGroup(group) {
+			// 1. Fix “wrong shape” into {$set: {...}}
+			if (!validOperations.some((op) => op in group)) {
+				// fallback chain for uuidKey
+				const uuidKey =
+					(group.$group_id && '$group_id') ||
+					(group.group_id && 'group_id') ||
+					(group.$distinct_id && '$distinct_id') ||
+					(group.distinct_id && 'distinct_id') ||
+					null;
+				if (!uuidKey) return {}; // skip if no group_id
+
+				const base = { ...group };
+				group = { $set: base };
+				group.$group_id = String(base[uuidKey]);
 				delete group.$set[uuidKey];
 				delete group.$set.$group_id;
 				delete group.$set.$token;
 			}
 
-			//catch missing token
+			// 2. Ensure $token and $group_key are present
 			if (!group.$token && job.token) group.$token = job.token;
-
-			//catch group key
 			if (!group.$group_key && job.groupKey) group.$group_key = job.groupKey;
 
-			//rename special props
-			for (const key in group) {
-				if (typeof group[key] === "object") {
-					for (const prop in group[key]) {
+			// 3. Rename specialProps inside each operation bucket
+			for (const op of validOperations) {
+				if (typeof group[op] === "object") {
+					for (const prop of Object.keys(group[op])) {
 						if (specialProps.includes(prop)) {
-							group[key][`$${prop}`] = group[key][prop];
-							delete group[key][prop];
-						}
-
-						if (outsideProps.includes(prop)) {
-							group[`$${prop}`] = group[key][prop];
-							delete group[key][prop];
+							group[op][`$${prop}`] = group[op][prop];
+							delete group[op][prop];
 						}
 					}
 				}
-				else {
-					if (outsideProps.includes(key)) {
-						group[`$${key}`] = group[key];
-						delete group[key];
+			}
+
+			// 4. First extract outsideProps from every operation bucket up to the root
+			for (const op of validOperations) {
+				if (typeof group[op] === 'object') {
+					for (const prop of outsideProps) {
+						if (prop in group[op]) {
+							group[`$${prop}`] = group[op][prop];
+							delete group[op][prop];
+						}
 					}
+				}
+			}
+
+			// 5. Now pull any remaining outsideProps up to the root, and truncate strings
+			for (const [key, val] of Object.entries(group)) {
+				if (outsideProps.includes(key)) {
+					group[`$${key}`] = val;
+					delete group[key];
+				} else if (typeof val === 'string') {
+					group[key] = truncate(val);
 				}
 			}
 
@@ -215,9 +243,9 @@ function ezTransforms(job) {
 		};
 	}
 
+	// NO-OP for all other record types
 	return noop;
 }
-
 
 
 //flattener
@@ -576,6 +604,29 @@ function isNotEmpty(data) {
 	return true;
 }
 
+function fixTime() {
+	return function (record) {
+		if (record?.properties) {
+
+			if (record?.properties?.time) {
+				if (record.properties.time && Number.isNaN(Number(record.properties.time))) {
+					record.properties.time = dayjs.utc(record.properties.time).valueOf();
+				}
+			}
+
+			else {
+				record.properties.time = dayjs.utc().valueOf();
+			}
+
+		}
+		else {
+			throw new Error("Record has no properties object, cannot fix time");
+		}
+
+		return record;
+	};
+}
+
 /**
  * this function is used to add an insert_id to every record based on a tuple of keys OR murmurhash the whole record
  * @param  {string[]} insert_tuple
@@ -727,9 +778,6 @@ function scrubber(obj, keysToScrub) {
 }
 
 
-
-
-
 /**
  * Quickly determine if a string might be JSON.
  * @param {string} input - The string to check.
@@ -774,13 +822,13 @@ function scdTransform(job) {
 			}
 		};
 
-		const value = record[scdKey] || record[scdLabel]
+		const value = record[scdKey] || record[scdLabel];
 		if (!value) return {};
 
 		mpSCDEvent.properties[scdKey] = value;
 
 		if (dataGroupId || groupKey) {
-			mpSCDEvent.properties[groupKey] = record?.[groupKey] || record?.["distinct_id"] || record?.["$distinct_id"] 
+			mpSCDEvent.properties[groupKey] = record?.[groupKey] || record?.["distinct_id"] || record?.["$distinct_id"];
 		}
 
 		if (!dataGroupId || !groupKey) {
@@ -792,7 +840,7 @@ function scdTransform(job) {
 		}
 
 		return mpSCDEvent;
-		
+
 	};
 }
 
@@ -813,5 +861,208 @@ module.exports = {
 	resolveFallback,
 	scrubProperties,
 	addToken,
-	scdTransform
+	scdTransform,
+	fixTime
 };
+
+
+/**
+ * @param  {JobConfig} job
+ */
+// eslint-disable-next-line no-unused-vars
+function ezTransformsOLD(job) {
+	if (job.recordType === `event` || job.recordType === 'export-import-events') {
+		return function FixShapeAndAddInsertIfAbsentAndFixTime(record) {
+			//wrong shape
+			if (!record.properties) {
+				record.properties = { ...record };
+				//delete properties outside properties
+				for (const key in record) {
+					if (key !== "properties" && key !== "event") delete record[key];
+				}
+				delete record.properties.event;
+			}
+
+			//fixing time
+			if (record.properties.time && Number.isNaN(Number(record.properties.time))) {
+				record.properties.time = dayjs.utc(record.properties.time).valueOf();
+			}
+			//adding insert_id
+			if (!record?.properties?.$insert_id) {
+				try {
+					const deDupeTuple = [record.event, record.properties.distinct_id || "", record.properties.time];
+					const hash = murmurhash.v3(deDupeTuple.join("-")).toString();
+					record.properties.$insert_id = hash;
+				} catch (e) {
+					record.properties.$insert_id = record.properties.distinct_id;
+				}
+			}
+
+			//renaming "user_id" to "$user_id"
+			if (record.properties.user_id) {
+				record.properties.$user_id = record.properties.user_id;
+				delete record.properties.user_id;
+			}
+
+			//renaming "device_id" to "$device_id"
+			if (record.properties.device_id) {
+				record.properties.$device_id = record.properties.device_id;
+				delete record.properties.device_id;
+			}
+
+			//renaming "source" to "$source"
+			if (record.properties.source) {
+				record.properties.$source = record.properties.source;
+				delete record.properties.source;
+			}
+
+			for (const key in record.properties) {
+				if (specialProps.includes(key)) {
+					if (key === "country") {
+						record.properties[`mp_country_code`] = record.properties[key];
+						delete record.properties[key];
+					}
+					else {
+						record.properties[`$${key}`] = record.properties[key];
+						delete record.properties[key];
+					}
+				}
+
+
+
+			}
+
+			//make sure id is a string
+			if (record.properties.distinct_id) {
+				record.properties.distinct_id = record.properties.distinct_id.toString();
+			}
+			if (record.properties.$user_id) {
+				record.properties.$user_id = record.properties.$user_id.toString();
+			}
+			if (record.properties.$device_id) {
+				record.properties.$device_id = record.properties.$device_id.toString();
+			}
+
+			return record;
+		};
+	}
+
+	//for user imports, make sure every record has a $token and the right shape
+	if (job.recordType === `user` || job.recordType === 'export-import-profiles') {
+		return function addUserTokenIfAbsent(user) {
+
+			//wrong shape; fix it
+			if (!validOperations.some(op => Object.keys(user).includes(op))) {
+				let uuidKey;
+				if (user.$distinct_id) uuidKey = "$distinct_id";
+				else if (user.distinct_id) uuidKey = "distinct_id";
+				else {
+					if (job.verbose) console.log(`user record has no uuid:\n${JSON.stringify(user)}\n skipping record`);
+					return {};
+				}
+				user = { $set: { ...user } };
+				user.$distinct_id = user.$set[uuidKey];
+				delete user.$set[uuidKey];
+				delete user.$set.$token;
+
+				//deal with mp export shape
+				//? https://developer.mixpanel.com/reference/engage-query
+				if (typeof user.$set?.$properties === "object") {
+					user.$set = { ...user.$set.$properties };
+					delete user.$set.$properties;
+				}
+			}
+
+			//catch missing token
+			if (!user.$token && job.token) user.$token = job.token;
+
+			//rename special props
+			for (const key in user) {
+				if (typeof user[key] === "object") {
+					for (const prop in user[key]) {
+						if (specialProps.includes(prop)) {
+							if (prop === "country" || prop === "country_code") {
+								user[key][`$country_code`] = user[key][prop].toUpperCase();
+								delete user[key][prop];
+							}
+							else {
+								user[key][`$${prop}`] = user[key][prop];
+								delete user[key][prop];
+							}
+						}
+
+						if (outsideProps.includes(prop)) {
+							user[`$${prop}`] = user[key][prop];
+							delete user[key][prop];
+						}
+					}
+				}
+				else {
+					if (outsideProps.includes(key)) {
+						user[`$${key}`] = user[key];
+						delete user[key];
+					}
+				}
+			}
+
+			return user;
+		};
+	}
+
+	//for group imports, make sure every record has a $token and the right shape
+	// @ts-ignore
+	if (job.recordType === `group` || job.recordType === 'export-import-profiles') {
+		return function addGroupKeysIfAbsent(group) {
+			//wrong shape; fix it
+			if (!(group.$set || group.$set_once || group.$add || group.$union || group.$append || group.$remove || group.$unset)) {
+				let uuidKey;
+				if (group.$distinct_id) uuidKey = "$distinct_id";
+				else if (group.distinct_id) uuidKey = "distinct_id";
+				else if (group.$group_id) uuidKey = "$group_id";
+				else if (group.group_id) uuidKey = "group_id";
+				else {
+					if (job.verbose) console.log(`group record has no uuid:\n${JSON.stringify(group)}\n skipping record`);
+					return {};
+				}
+				group = { $set: { ...group } };
+				group.$group_id = group.$set[uuidKey];
+				delete group.$set[uuidKey];
+				delete group.$set.$group_id;
+				delete group.$set.$token;
+			}
+
+			//catch missing token
+			if (!group.$token && job.token) group.$token = job.token;
+
+			//catch group key
+			if (!group.$group_key && job.groupKey) group.$group_key = job.groupKey;
+
+			//rename special props
+			for (const key in group) {
+				if (typeof group[key] === "object") {
+					for (const prop in group[key]) {
+						if (specialProps.includes(prop)) {
+							group[key][`$${prop}`] = group[key][prop];
+							delete group[key][prop];
+						}
+
+						if (outsideProps.includes(prop)) {
+							group[`$${prop}`] = group[key][prop];
+							delete group[key][prop];
+						}
+					}
+				}
+				else {
+					if (outsideProps.includes(key)) {
+						group[`$${key}`] = group[key];
+						delete group[key];
+					}
+				}
+			}
+
+			return group;
+		};
+	}
+
+	return noop;
+}

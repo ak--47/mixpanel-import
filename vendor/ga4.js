@@ -149,8 +149,8 @@ function gaGroupsToMp(options) {
 		if (!gaEvent.user_id) return {};
 
 		const mixpanelGroup = {
-			$group_key: null, //todo
-			$group_id: null, //todo
+			$group_key: null, 
+			$group_id: null, 
 			$set: groupProps
 		};
 

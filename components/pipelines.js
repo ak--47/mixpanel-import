@@ -150,6 +150,7 @@ function corePipeline(stream, job, toNodeStream = false) {
 			if (job.fixJson) job.jsonFixer(data);
 			if (job.shouldCreateInsertId) job.insertIdAdder(data);
 			if (job.addToken) job.tokenAdder(data);
+			if (job.fixTime) job.timeTransform(data);
 			return data;
 		}),
 

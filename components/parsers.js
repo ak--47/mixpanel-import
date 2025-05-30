@@ -18,7 +18,7 @@ const dateFormat = `YYYY-MM-DD`;
 const Papa = require('papaparse');
 const { prepareSCD } = require('./validators.js');
 const { console } = require('inspector');
-const {streamEvents, streamProfiles} = require('../components/exporters.js')
+const { streamEvents, streamProfiles } = require('../components/exporters.js');
 // const { logger } = require('../components/logs.js');
 
 const { Storage } = require('@google-cloud/storage');
@@ -49,16 +49,34 @@ async function determineDataType(data, job) {
 	}
 
 	if (job.recordType === 'export-import-events') {
+		const exportStream = streamEvents(job);
 		job.recordType = 'event';
-		job.fixData = true;
-		return streamEvents(job);
+	
+		if (job.secondToken) {
+			job.token = job.secondToken;
+			job.secret = "";
+			job.auth = job.resolveProjInfo();
+		} 
+
+		// @ts-ignore
+		if (job.secondRegion) job.region = job.secondRegion;
+
+		return exportStream;
 	}
 
 	if (job.recordType === 'export-import-profiles') {
+		const exportStream = streamProfiles(job);
 		if (job.dataGroupId || job.groupKey) job.recordType = 'group';
-		else job.recordType = 'profile';
-		job.fixData = true;
-		return streamProfiles(job);
+		else job.recordType = 'user';
+	
+		if (job.secondToken) {
+			job.token = job.secondToken;
+			job.secret = "";
+			job.auth = job.resolveProjInfo();
+		}
+		// @ts-ignore
+		if (job.secondRegion) job.region = job.secondRegion;
+		return exportStream;
 	}
 
 	if (job.recordType === 'profile-export') {
@@ -486,7 +504,7 @@ async function parquetStream(filename, job = {}) {
 				catch (err) {
 					out.push(rowErrorHandler(err, row));
 				}
-			
+
 			}
 
 			// If we've now emitted the last row, close & EOF

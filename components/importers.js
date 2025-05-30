@@ -6,6 +6,9 @@ const HTTP_AGENT = new https.Agent({ keepAlive: true, maxSockets: 100 });
 
 /** @typedef {import('./job')} JobConfig */
 
+
+
+
 /**
  * @param  {Object[]} batch
  * @param  {JobConfig} job
@@ -113,11 +116,22 @@ async function flushToMixpanel(batch, job) {
 			}
 			success = false;
 
+
+
 		}
 
 		if (job.recordType === 'event' || job.recordType === "scd") {
 			job.success += res.num_records_imported || 0;
 			job.failed += res?.failed_records?.length || 0;
+			if (!job.abridged && res?.failed_records?.length) {
+				for (const error of res.failed_records) {
+					const { index, message } = error;
+					if (!job.badRecords[message]) {
+						job.badRecords[message] = [];
+					}
+					job.badRecords[message].push(batch[index]);
+				}
+			}
 		}
 		else if (job.recordType === 'user' || job.recordType === 'group') {
 			if (!res.error || res.status) {
