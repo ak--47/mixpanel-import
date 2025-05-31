@@ -79,7 +79,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	let hasPassedInCreds = Boolean(creds && Object.keys(creds).length);
 	let finalCreds;
 	if (hasPassedInCreds) finalCreds = creds;
-	else if (isCLI) finalCreds = {...envVar, ...cli};
+	else if (isCLI) finalCreds = { ...envVar, ...cli };
 	else finalCreds = envVar;
 
 	let hasPassedInOpts = Boolean(opts && Object.keys(opts).length);
@@ -95,7 +95,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	const l = logger(job);
 	if (isCLI) l(cliParams.welcome);
 	if (isCLI) global.l = l; // hacky way to make logger available globally
-	l(`\nMIXPANEL IMPORTER\n`)
+	l(`\nMIXPANEL IMPORTER\n`);
 	l(`\nJOB CREATED!\n`);
 	await job.init();
 	l(`\nDEPS LOADED!\n`);
@@ -121,33 +121,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	}
 
 	l('\n');
-	if (job.createProfiles) {
-		job.transform = function (record) {
-			const { groupKey, token } = job;
-			const profile = {
-				$token: token,
-				$ip: 0,
-				$set: {}
-			};
-
-			if (groupKey) {
-				profile.$group_key = groupKey;
-				profile.$group_id = record[groupKey] || record.distinct_id || record.$distinct_id || record.user_id || record.$user_id;
-				profile.$set.id = record[groupKey] || record.distinct_id || record.$distinct_id || record.user_id || record.$user_id;
-			}
-			if (!groupKey) {
-				profile.$distinct_id = record.distinct_id || record.$distinct_id || record.user_id || record.$user_id;
-				profile.$set.id = record.distinct_id || record.$distinct_id || record.user_id || record.$user_id;
-			}
-
-			return profile;
-		};
-		job.recordType = 'user';
-		const copyStream = await determineDataType(data || cliData, job);
-		const copyPipeline = await corePipeline(copyStream, job);
-
-
-	}
+	if (job.createProfiles)  //job.transform = await createProfiles(job);
 
 	// clean up
 	job.timer.end(false);
@@ -218,6 +192,31 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 	return pipeToMe.toNodeStream();
 }
 
+
+// async function createProfiles(job, record) {
+// 	const { groupKey, token } = job;
+// 	const profile = {
+// 		$token: token,
+// 		$ip: 0,
+// 		$set: {}
+// 	};
+
+// 	if (groupKey) {
+// 		profile.$group_key = groupKey;
+// 		profile.$group_id = record[groupKey] || record.distinct_id || record.$distinct_id || record.user_id || record.$user_id;
+// 		profile.$set.id = record[groupKey] || record.distinct_id || record.$distinct_id || record.user_id || record.$user_id;
+// 	}
+// 	if (!groupKey) {
+// 		profile.$distinct_id = record.distinct_id || record.$distinct_id || record.user_id || record.$user_id;
+// 		profile.$set.id = record.distinct_id || record.$distinct_id || record.user_id || record.$user_id;
+// 	}
+
+// 	return profile;
+
+// 	job.recordType = 'user';
+// 	const copyStream = await determineDataType(data || cliData, job);
+// 	const copyPipeline = await corePipeline(copyStream, job);
+// };
 
 /*
 -------
