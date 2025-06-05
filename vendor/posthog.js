@@ -132,8 +132,8 @@ function postHogEventsToMp(options, heavyObjects) {
 				const identified_id = user_id;
 				const anon_id = device_id;
 				const identify_props = { $identified_id: identified_id, $anon_id: anon_id };
-
-				mixpanelEvent.properties = identify_props;
+				const allProps = { ...mixpanelEvent.properties, ...identify_props };
+				mixpanelEvent.properties = allProps;
 
 			}
 

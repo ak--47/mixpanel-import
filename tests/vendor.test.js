@@ -178,6 +178,8 @@ describe("vendor tests", () => {
 					streamFormat: 'parquet',
 					recordType: "user",
 					vendor: "posthog",
+					"epochStart": 1746392400,
+					"epochEnd": 1748120400,
 					dedupe: true,
 					dryRun: true
 				});
