@@ -9,8 +9,8 @@ const Types = require("../index.js");
 //! BENCHMARK: GOT vs UNDICI TRANSPORT PERFORMANCE
 
 export default async function main() {
-	const NDJSON = `./benchmarks/testData/one-two-million.ndjson`;
-	// const NDJSON = `./benchmarks/testData/dnd250.ndjson`;
+	// const NDJSON = `./benchmarks/testData/one-two-million.ndjson`;
+	const NDJSON = `./benchmarks/testData/dnd250.ndjson`;
 
 	/** @type {Types.Options} */
 	const baseOpts = {
@@ -19,6 +19,7 @@ export default async function main() {
 		streamFormat: 'jsonl',
 		workers: 25, // Optimal from workers benchmark
 		recordType: 'event',
+		abridged: true,
 		dryRun: false, // Use dry run for testing logic without actual HTTP requests
 		fixData: true // Enable data fixing
 	};
