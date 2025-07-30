@@ -24,3 +24,5 @@ tmp/*
 tests/coverage/*
 !tests/coverage/.gitkeep
 scratch.mjs
+CLAUDE.md
+CLAUDE-foo.md
