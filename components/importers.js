@@ -5,7 +5,7 @@ const u = require('ak-tools');
 const HTTP_AGENT = new https.Agent({ keepAlive: true, maxSockets: 100 });
 
 // Undici imports for high-performance HTTP
-const { request, Pool } = require('undici');
+const { Pool } = require('undici');
 
 // Add global error handlers to catch undici issues
 process.on('unhandledRejection', (reason, promise) => {
@@ -153,10 +153,10 @@ async function flushToMixpanel(batch, job) {
 		// @ts-ignore
 		if (job.project) options.searchParams.project_id = job.project;
 
-		let req, res, success;
+		let res, success;
 		try {
 			// @ts-ignore
-			req = await got(options);
+			const req = await got(options);
 			res = JSON.parse(req.body);
 			success = true;
 		}
@@ -180,10 +180,7 @@ async function flushToMixpanel(batch, job) {
 			if (!job.abridged && res?.failed_records?.length) {
 				for (const error of res.failed_records) {
 					const { index, message } = error;
-					if (!job.badRecords[message]) {
-						job.badRecords[message] = [];
-					}
-					job.badRecords[message].push(batch[index]);
+					job.addBadRecord(message, batch[index]); // Use bounded method
 				}
 			}
 		}
@@ -397,10 +394,7 @@ async function flushToMixpanelWithUndici(batch, job) {
 			if (!job.abridged && res?.failed_records?.length) {
 				for (const error of res.failed_records) {
 					const { index, message } = error;
-					if (!job.badRecords[message]) {
-						job.badRecords[message] = [];
-					}
-					job.badRecords[message].push(batch[index]);
+					job.addBadRecord(message, batch[index]); // Use bounded method
 				}
 			}
 		}

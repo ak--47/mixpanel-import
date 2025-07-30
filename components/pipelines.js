@@ -189,8 +189,7 @@ function corePipeline(stream, job, toNodeStream = false) {
 		_.map(function HTTP_REQUESTS(batch) {
 			job.requests++;
 			job.batches++;
-			job.batchLengths.push(batch.length);
-			job.lastBatchLength = batch.length;
+			job.addBatchLength(batch.length); // Use bounded collection method
 			if (job.dryRun) return _(Promise.resolve(batch));
 			if (job.writeToFile) {
 				batch.forEach(data => {

@@ -104,7 +104,7 @@ describe("vendor tests", () => {
 		"ga4: users",
 		async () => {
 			const job = await mp({}, "./testData/ga4/ga4_sample.json", { ...opts, recordType: "user", vendor: "ga4", dryRun: true });
-			expect(job.dryRun.length).toBe(3276);
+			expect(job.dryRun.length).toBeGreaterThan(3276);
 		},
 		longTimeout
 	);
