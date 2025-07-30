@@ -173,8 +173,11 @@ async function determineDataType(data, job) {
 							try {
 								job.wasStream = false;
 								const file = await u.load(path.resolve(data), true);
+								let fileContents;
+								if (Array.isArray(file)) fileContents = file;
+								else fileContents = [file];
 								// @ts-ignore
-								return stream.Readable.from(file, { objectMode: true, highWaterMark: highWater });
+								return stream.Readable.from(fileContents, { objectMode: true, highWaterMark: highWater });
 							}
 							catch (e) {
 								// probably a memory crash, so we'll try to stream it

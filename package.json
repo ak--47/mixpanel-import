@@ -1,6 +1,6 @@
 {
   "name": "mixpanel-import",
-  "version": "2.8.14",
+  "version": "2.8.15",
   "description": "stream and import data to mixpanel from node.js",
   "main": "index.js",
   "types": "index.d.ts",
@@ -40,8 +40,8 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.812.0",
     "@google-cloud/storage": "^7.16.0",
-    "ak-fetch": "^1.0.83",
-    "ak-tools": "^1.0.6969",
+    "ak-fetch": "^2.0.0",
+    "ak-tools": "^1.1.0",
     "chance": "^1.1.7",
     "dayjs": "^1.11.7",
     "dotenv": "^10.0.0",
@@ -56,6 +56,7 @@
     "papaparse": "^5.3.2",
     "stream-json": "^1.8.0",
     "underscore": "^1.13.2",
+    "undici": "^7.12.0",
     "yargs": "^17.6.2"
   },
   "devDependencies": {

@@ -56,6 +56,7 @@ class Job {
 		this.scdType = opts.scdType || 'string'; //scd type
 		this.scdId = opts.scdId || ''; //scd id
 		this.scdPropId = opts.scdPropId || ''; //scd prop id
+		this.transport = opts.transport || 'got'; // transport mechanism to use for sending data (default: got)
 
 		this.dimensionMaps = opts.dimensionMaps || []; //dimension map for scd
 		this.heavyObjects = {}; //used to store heavy objects
@@ -283,6 +284,12 @@ class Job {
 		this.lastBatchLength = 0;
 		this.unparsable = 0;
 		this.timer = u.time('etl');
+		
+		// Memory management for large jobs
+		this.maxBatchLengths = 1000; // Limit batch length tracking
+		this.maxMemorySamples = 100; // Limit memory samples
+		this.maxBadRecordsPerMessage = 100; // Limit bad records per error message
+		this.maxBadRecordMessages = 50; // Limit number of distinct error messages
 
 		// ? requests
 		/** @type {'POST' | 'GET' | 'PUT' | 'PATCH'} */
@@ -583,11 +590,51 @@ class Job {
 
 	}
 
-	// Capture a memory sample
+	// Capture a memory sample with bounded collection
 	memSamp() {
 		const memoryUsage = process.memoryUsage();
+		
+		// Implement circular buffer to prevent unbounded growth
+		if (this.memorySamples.length >= this.maxMemorySamples) {
+			this.memorySamples.shift(); // Remove oldest sample
+		}
 		this.memorySamples.push(memoryUsage);
 		return memoryUsage;
+	}
+	
+	// Add bounded batch length tracking
+	addBatchLength(length) {
+		// Implement circular buffer to prevent unbounded growth
+		if (this.batchLengths.length >= this.maxBatchLengths) {
+			this.batchLengths.shift(); // Remove oldest batch length
+		}
+		this.batchLengths.push(length);
+		this.lastBatchLength = length;
+	}
+
+	// Add bad record with memory bounds
+	addBadRecord(message, record) {
+		if (!this.keepBadRecords) return; // Skip if disabled
+		
+		// Limit number of distinct error messages
+		const messageKeys = Object.keys(this.badRecords);
+		if (!this.badRecords[message] && messageKeys.length >= this.maxBadRecordMessages) {
+			// Remove oldest error message if at limit
+			const oldestMessage = messageKeys[0];
+			delete this.badRecords[oldestMessage];
+		}
+		
+		// Initialize array for new message
+		if (!this.badRecords[message]) {
+			this.badRecords[message] = [];
+		}
+		
+		// Limit records per message
+		if (this.badRecords[message].length >= this.maxBadRecordsPerMessage) {
+			this.badRecords[message].shift(); // Remove oldest record
+		}
+		
+		this.badRecords[message].push(record);
 	}
 
 	// Compute the average of the collected memorySamples
@@ -648,6 +695,7 @@ class Job {
 	 * @returns {import('../index.js').ImportResults} `{success, failed, total, requests, duration}`
 	 */
 	summary(includeResponses = true) {
+		this.timer.stop(false)
 		const { delta, human } = this.timer.report(false);
 		const memoryHuman = this.memPretty();
 		const memory = this.memAvg();
@@ -692,6 +740,8 @@ class Job {
 			percentQuota: 0,
 			errors: [],
 			responses: [],
+			transport: this.transport,
+			// @ts-ignore
 			badRecords: this.badRecords,
 			dryRun: this.dryRunResults,
 			vendor: this.vendor || "",
