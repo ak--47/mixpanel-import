@@ -167,8 +167,93 @@ RANDOM
 ----
 */
 
-
+/**
+ * map mixpanel defaults to GA4 export schema
+ * ? https://docs.mixpanel.com/docs/data-structure/property-reference/default-properties
+ * ? https://support.google.com/analytics/answer/7029846?hl=en
+ * @param  {Object} gaEvent
+ */
 function GAtoMixpanelDefaults(gaEvent) {
+	const result = {};
+
+	// Geographic properties (Mixpanel default properties)
+	if (gaEvent?.geo?.city) result.$city = gaEvent.geo.city;
+	if (gaEvent?.geo?.country) result.mp_country_code = gaEvent.geo.country;
+	if (gaEvent?.geo?.region) result.$region = gaEvent.geo.region;
+
+	// Operating System properties (Mixpanel default properties)
+	if (gaEvent?.device?.operating_system) result.$os = gaEvent.device.operating_system;
+	if (gaEvent?.device?.operating_system_version) result.$os_version = gaEvent.device.operating_system_version;
+
+	// Browser properties (Mixpanel default properties - web only)
+	if (gaEvent?.device?.web_info?.browser) result.$browser = gaEvent.device.web_info.browser;
+	if (gaEvent?.device?.web_info?.browser_version) result.$browser_version = gaEvent.device.web_info.browser_version;
+
+	// Mobile device properties (Mixpanel default properties)
+	if (gaEvent?.device?.mobile_brand_name) result.$manufacturer = gaEvent.device.mobile_brand_name;
+	if (gaEvent?.device?.mobile_marketing_name) result.$brand = gaEvent.device.mobile_marketing_name;
+	if (gaEvent?.device?.mobile_model_name) result.$model = gaEvent.device.mobile_model_name;
+
+	// App properties (Mixpanel default properties)
+	if (gaEvent?.app_info?.version) result.$app_version_string = gaEvent.app_info.version;
+
+	// Device category (Mixpanel default property - web and unity)
+	if (gaEvent?.device?.category) result.$device = gaEvent.device.category;
+
+	// Current URL (Mixpanel default property - web only)
+	// Extract page_location from event_params
+	const pageLocationParam = gaEvent?.event_params?.find(param => param.key === 'page_location');
+	if (pageLocationParam?.value?.string_value) {
+		result.$current_url = pageLocationParam.value.string_value;
+	} else if (gaEvent?.device?.web_info?.hostname) {
+		result.$current_url = gaEvent.device.web_info.hostname;
+	}
+
+	// Platform detection for mp_lib (Mixpanel default property)
+	if (gaEvent?.platform) {
+		switch (gaEvent.platform.toLowerCase()) {
+			case 'web':
+				result.mp_lib = 'web';
+				break;
+			case 'android':
+				result.mp_lib = 'android';
+				break;
+			case 'ios':
+				result.mp_lib = 'iphone';
+				break;
+			case 'unity':
+				result.mp_lib = 'unity';
+				break;
+		}
+	}
+
+	// Library version (Mixpanel default property)
+	result.$lib_version = 'ga4-export';
+
+	// UTM Parameters (Mixpanel default properties - web only)
+	if (gaEvent?.collected_traffic_source?.manual_source) {
+		result.utm_source = gaEvent.collected_traffic_source.manual_source;
+	}
+	if (gaEvent?.collected_traffic_source?.manual_medium) {
+		result.utm_medium = gaEvent.collected_traffic_source.manual_medium;
+	}
+	if (gaEvent?.collected_traffic_source?.manual_campaign_name) {
+		result.utm_campaign = gaEvent.collected_traffic_source.manual_campaign_name;
+	}
+	if (gaEvent?.collected_traffic_source?.manual_term) {
+		result.utm_term = gaEvent.collected_traffic_source.manual_term;
+	}
+	if (gaEvent?.collected_traffic_source?.manual_content) {
+		result.utm_content = gaEvent.collected_traffic_source.manual_content;
+	}
+
+	return result;
+}
+
+
+
+
+function GAtoMixpanelDefaultsOld(gaEvent) {
 	const result = {};
 
 	if (gaEvent?.geo?.city) result.$city = gaEvent.geo.city;
@@ -182,6 +267,7 @@ function GAtoMixpanelDefaults(gaEvent) {
 	if (gaEvent?.web_info?.browser) result.$browser = gaEvent.web_info.browser;
 	if (gaEvent?.web_info?.browser_version) result.$browser_version = gaEvent.web_info.browser_version;
 	if (gaEvent?.app_info?.version) result.$app_version_string = gaEvent.app_info.version;
+	if (gaEvent?.page_location) result.$current_url = gaEvent.page_location;
 
 	return result;
 

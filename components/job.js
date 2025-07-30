@@ -56,6 +56,7 @@ class Job {
 		this.scdType = opts.scdType || 'string'; //scd type
 		this.scdId = opts.scdId || ''; //scd id
 		this.scdPropId = opts.scdPropId || ''; //scd prop id
+		this.transport = opts.transport || 'got'; // transport mechanism to use for sending data (default: got)
 
 		this.dimensionMaps = opts.dimensionMaps || []; //dimension map for scd
 		this.heavyObjects = {}; //used to store heavy objects
@@ -648,6 +649,7 @@ class Job {
 	 * @returns {import('../index.js').ImportResults} `{success, failed, total, requests, duration}`
 	 */
 	summary(includeResponses = true) {
+		this.timer.stop(false)
 		const { delta, human } = this.timer.report(false);
 		const memoryHuman = this.memPretty();
 		const memory = this.memAvg();
@@ -692,6 +694,8 @@ class Job {
 			percentQuota: 0,
 			errors: [],
 			responses: [],
+			transport: this.transport,
+			// @ts-ignore
 			badRecords: this.badRecords,
 			dryRun: this.dryRunResults,
 			vendor: this.vendor || "",

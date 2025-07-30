@@ -7,7 +7,7 @@ const _ = require('highland');
 
 // $ networking + filesystem
 const { exportEvents, exportProfiles, deleteProfiles } = require('./exporters');
-const { flushLookupTable, flushToMixpanel } = require('./importers.js');
+const { flushLookupTable, flushToMixpanel, flushToMixpanelWithUndici } = require('./importers.js');
 const { replaceAnnotations, getAnnotations, deleteAnnotations } = require('./meta.js');
 const fs = require('fs');
 
@@ -63,7 +63,15 @@ function corePipeline(stream, job, toNodeStream = false) {
 	const LOG_INTERVAL = 100; // ms
 	let lastLogUpdate = Date.now();
 
-	const flush = _.wrapCallback(callbackify(flushToMixpanel));
+	let flush;
+	// Select transport based on job.transport setting
+	if (job.transport === 'undici') {
+		flush = _.wrapCallback(callbackify(flushToMixpanelWithUndici));
+	} else {
+		// Default to 'got' transport for backwards compatibility
+		flush = _.wrapCallback(callbackify(flushToMixpanel));
+	}
+	
 	let fileStream;
 	if (job.writeToFile) {
 		fileStream = fs.createWriteStream(job.outputFilePath, { flags: 'a', highWaterMark: job.highWater });

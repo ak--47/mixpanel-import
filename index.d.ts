@@ -133,6 +133,7 @@ declare namespace main {
 
   type Regions = "US" | "EU" | "IN";
   type SupportedFormats = "json" | "jsonl" | "csv" | "parquet";
+  type transports = 'got' | 'undici';
 
   type dependentTables = {
 	filePath: string;
@@ -458,6 +459,10 @@ declare namespace main {
 	 * - keep bad records in the results
 	 */
 	keepBadRecords?: boolean;
+	/**
+	 * the transport mechanism to use for sending data (`got` or `undici`)
+	 */
+	transport?: transports;
   };
 
   /**
