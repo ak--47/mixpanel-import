@@ -34,7 +34,7 @@ function truncate(s) {
  */
 function ezTransforms(job) {
 	// EVENT RECORDS
-	if (job.recordType === "event" || job.recordType === "export-import-events") {
+	if (job.recordType?.startsWith("event") || job.recordType === "export-import-events") {
 		return function transformEvent(record) {
 			// 1. Fix “wrong shape”: ensure record.properties exists
 			if (!record.properties) {
@@ -107,7 +107,7 @@ function ezTransforms(job) {
 	}
 
 	// USER PROFILE RECORDS
-	if (job.recordType === "user" || (job.recordType === "export-import-profiles" && !job.groupKey)) {
+	if (job.recordType?.startsWith("user") || (job.recordType === "export-import-profiles" && !job.groupKey)) {
 		return function transformUser(user) {
 			// 1. Fix “wrong shape” into {$set: {...}}
 			if (!validOperations.some((op) => op in user)) {
@@ -180,16 +180,17 @@ function ezTransforms(job) {
 
 	// GROUP PROFILE RECORDS
 	// @ts-ignore
-	if (job.recordType === "group" || (job.recordType === "export-import-profiles" && job.groupKey)) {
+	if (job.recordType?.startsWith("group") || (job.recordType === "export-import-profiles" && job.groupKey)) {
 		return function transformGroup(group) {
 			// 1. Fix “wrong shape” into {$set: {...}}
 			if (!validOperations.some((op) => op in group)) {
 				// fallback chain for uuidKey
 				const uuidKey =
-					(group.$group_id && '$group_id') ||
-					(group.group_id && 'group_id') ||
-					(group.$distinct_id && '$distinct_id') ||
-					(group.distinct_id && 'distinct_id') ||
+					(group?.[job?.groupKey] && job.groupKey) ||
+					(group?.$group_id && '$group_id') ||
+					(group?.group_id && 'group_id') ||
+					(group?.$distinct_id && '$distinct_id') ||
+					(group?.distinct_id && 'distinct_id') ||
 					null;
 				if (!uuidKey) return {}; // skip if no group_id
 
