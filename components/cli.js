@@ -94,6 +94,11 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'where to put logs + files',
 			type: 'string'
 		})
+		.option("whereClause", {
+			demandOption: false,
+			describe: 'where clause for /export',
+			type: 'string'
+		})
 		.option("verbose", {
 			demandOption: false,
 			default: true,
