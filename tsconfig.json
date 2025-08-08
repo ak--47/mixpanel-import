@@ -1,0 +1,52 @@
+{
+  "compilerOptions": {
+    // JSDoc type checking configuration
+    "allowJs": true,                    // Allow JavaScript files
+    "checkJs": true,                    // Type check JavaScript files
+    "noEmit": true,                     // Don't emit JavaScript files (just type check)
+    "strict": false,                    // Don't use strict mode for JS files
+    "target": "es2020",                 // ECMAScript version
+    "module": "commonjs",               // Module system
+    "moduleResolution": "node",         // Use Node.js module resolution
+    "lib": ["es2020", "dom"],          // Include these type libraries
+    
+    // Type checking options
+    "skipLibCheck": true,               // Skip type checking of .d.ts files
+    "esModuleInterop": true,           // Better CommonJS/ESM interop
+    "allowSyntheticDefaultImports": true, // Allow default imports from modules without defaults
+    "forceConsistentCasingInFileNames": true, // Force consistent file naming
+    
+    // JSDoc specific options
+    "resolveJsonModule": true,          // Allow importing JSON files
+    "declaration": false,               // Don't generate .d.ts files
+    "sourceMap": false,                 // Don't generate source maps
+    
+    // Path mapping (if needed for internal modules)
+    "baseUrl": ".",
+    "paths": {
+      "*": ["node_modules/*", "types/*"]
+    }
+  },
+  "include": [
+    "**/*.js",                          // Include all JavaScript files
+    "**/*.d.ts",                        // Include type definition files
+    "index.d.ts"                        // Include main type definitions
+  ],
+  "exclude": [
+    "node_modules",                     // Exclude node_modules
+    "dist",                            // Exclude build output
+    "build",                           // Exclude build output
+    "logs",                            // Exclude log files
+    "testData",                        // Exclude test data
+    "mixpanel-exports",                // Exclude export files
+    "tmp",                             // Exclude temp files
+    "**/coverage",                     // Exclude coverage reports
+    "**/*.test.js",                    // Exclude test files (optional)
+    "benchmarks"                       // Exclude benchmarks (they might have different rules)
+  ],
+  "compileOnSave": false,
+  "typeAcquisition": {
+    "enable": true,                     // Enable automatic type acquisition
+    "include": ["node"]                 // Include Node.js types
+  }
+}

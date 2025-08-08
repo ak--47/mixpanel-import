@@ -71,7 +71,7 @@ function corePipeline(stream, job, toNodeStream = false) {
 		// Default to 'got' transport for backwards compatibility
 		flush = _.wrapCallback(callbackify(flushToMixpanel));
 	}
-	
+
 	let fileStream;
 	if (job.writeToFile) {
 		fileStream = fs.createWriteStream(job.outputFilePath, { flags: 'a', highWaterMark: job.highWater });
@@ -218,6 +218,10 @@ function corePipeline(stream, job, toNodeStream = false) {
 				if ((job.verbose || job.showProgress) && (now - lastLogUpdate >= LOG_INTERVAL)) {
 					counter(job.recordType, job.recordsProcessed, job.requests, job.getEps(), job.bytesProcessed);
 					lastLogUpdate = now;
+				}
+				if (job.responseHandler && typeof job.responseHandler === 'function') {
+					job.responseHandler(batch);
+
 				}
 			}
 

@@ -102,7 +102,11 @@ declare namespace main {
 	/**
 	 * - for export/import (the destination project)
 	 */
-	secondToken?: string;	
+	secondToken?: string;
+	/**
+	 * - Google Cloud project ID for GCS operations (defaults to 'mixpanel-gtm-training')
+	 */
+	gcpProjectId?: string;
   };
 
   /**
@@ -463,6 +467,14 @@ declare namespace main {
 	 * the transport mechanism to use for sending data (`got` or `undici`)
 	 */
 	transport?: transports;
+	/**
+	 * Google Cloud project ID for GCS operations (defaults to 'mixpanel-gtm-training')
+	 */
+	gcpProjectId?: string;
+	/**
+	 * a function to handle responses from the API; mostly used for debugging
+	 */
+	responseHandler?: (response: any, record: any) => void;
   };
 
   /**

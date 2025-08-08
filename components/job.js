@@ -8,7 +8,9 @@ const { heapEventsToMp, heapUserToMp, heapGroupToMp, heapParseErrorHandler } = r
 const { gaEventsToMp, gaUserToMp, gaGroupsToMp } = require('../vendor/ga4.js');
 const { mParticleEventsToMixpanel, mParticleUserToMixpanel, mParticleGroupToMixpanel } = require('../vendor/mparticle.js');
 const { postHogEventsToMp, postHogPersonToMpProfile } = require('../vendor/posthog.js');
+const { mixpanelEventsToMixpanel } = require('../vendor/mixpanel.js');
 const { buildMapFromPath } = require('./parsers.js');
+
 
 
 /** @typedef {import('../index.js').Creds} Creds */
@@ -57,6 +59,7 @@ class Job {
 		this.scdId = opts.scdId || ''; //scd id
 		this.scdPropId = opts.scdPropId || ''; //scd prop id
 		this.transport = opts.transport || 'got'; // transport mechanism to use for sending data (default: got)
+		this.gcpProjectId = opts.gcpProjectId || creds.gcpProjectId || 'mixpanel-gtm-training'; // Google Cloud project ID for GCS operations
 
 		this.dimensionMaps = opts.dimensionMaps || []; //dimension map for scd
 		this.heavyObjects = {}; //used to store heavy objects
@@ -67,6 +70,8 @@ class Job {
 				this.heavyObjects[label] = result;
 			}
 		};
+
+		this.responseHandler = opts.responseHandler || noop; //function to handle responses
 
 		// ? export stuff
 		if (opts.limit) {
@@ -211,7 +216,7 @@ class Job {
 		this.timeTransform = noop;
 
 		// ? transform conditions
-		if (this.fixData || this.recordType?.includes('export-import'))this.ezTransform = transforms.ezTransforms(this);
+		if (this.fixData || this.recordType?.includes('export-import')) this.ezTransform = transforms.ezTransforms(this);
 		if (this.fixJson) this.jsonFixer = transforms.fixJson();
 		if (this.removeNulls) this.nullRemover = transforms.removeNulls();
 		if (this.timeOffset) this.UTCoffset = transforms.UTCoffset(this.timeOffset);
@@ -284,7 +289,7 @@ class Job {
 		this.lastBatchLength = 0;
 		this.unparsable = 0;
 		this.timer = u.time('etl');
-		
+
 		// Memory management for large jobs
 		this.maxBatchLengths = 1000; // Limit batch length tracking
 		this.maxMemorySamples = 100; // Limit memory samples
@@ -415,6 +420,16 @@ class Job {
 			const chosenVendor = this.vendor.toLowerCase();
 			const recordType = this.recordType?.toLowerCase();
 			switch (chosenVendor) {
+				case 'mixpanel':
+					switch (recordType) {
+						case 'event':
+							vendorTransformFunc = mixpanelEventsToMixpanel(this.vendorOpts);
+							break;						
+						default:
+							vendorTransformFunc = mixpanelEventsToMixpanel(this.vendorOpts);
+							break;
+					}
+					break;
 				case 'amplitude':
 					switch (recordType) {
 						case 'event':
@@ -593,7 +608,7 @@ class Job {
 	// Capture a memory sample with bounded collection
 	memSamp() {
 		const memoryUsage = process.memoryUsage();
-		
+
 		// Implement circular buffer to prevent unbounded growth
 		if (this.memorySamples.length >= this.maxMemorySamples) {
 			this.memorySamples.shift(); // Remove oldest sample
@@ -601,7 +616,7 @@ class Job {
 		this.memorySamples.push(memoryUsage);
 		return memoryUsage;
 	}
-	
+
 	// Add bounded batch length tracking
 	addBatchLength(length) {
 		// Implement circular buffer to prevent unbounded growth
@@ -615,7 +630,7 @@ class Job {
 	// Add bad record with memory bounds
 	addBadRecord(message, record) {
 		if (!this.keepBadRecords) return; // Skip if disabled
-		
+
 		// Limit number of distinct error messages
 		const messageKeys = Object.keys(this.badRecords);
 		if (!this.badRecords[message] && messageKeys.length >= this.maxBadRecordMessages) {
@@ -623,17 +638,17 @@ class Job {
 			const oldestMessage = messageKeys[0];
 			delete this.badRecords[oldestMessage];
 		}
-		
+
 		// Initialize array for new message
 		if (!this.badRecords[message]) {
 			this.badRecords[message] = [];
 		}
-		
+
 		// Limit records per message
 		if (this.badRecords[message].length >= this.maxBadRecordsPerMessage) {
 			this.badRecords[message].shift(); // Remove oldest record
 		}
-		
+
 		this.badRecords[message].push(record);
 	}
 
@@ -695,7 +710,7 @@ class Job {
 	 * @returns {import('../index.js').ImportResults} `{success, failed, total, requests, duration}`
 	 */
 	summary(includeResponses = true) {
-		this.timer.stop(false)
+		this.timer.stop(false);
 		const { delta, human } = this.timer.report(false);
 		const memoryHuman = this.memPretty();
 		const memory = this.memAvg();
