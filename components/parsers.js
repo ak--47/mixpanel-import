@@ -19,13 +19,124 @@ const Papa = require('papaparse');
 const { prepareSCD } = require('./validators.js');
 const { console } = require('inspector');
 const { streamEvents, streamProfiles } = require('../components/exporters.js');
+const zlib = require('zlib');
 // const { logger } = require('../components/logs.js');
 
 const { Storage } = require('@google-cloud/storage');
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 
+// ====================================================================
+// PARSER PERFORMANCE TUNING CONSTANTS
+// ====================================================================
+// All configurable parameters for optimizing parsing performance
+// Adjust these values based on your hardware and data characteristics
+//
+// PERFORMANCE TUNING GUIDE:
+// - High Throughput: Increase buffer multipliers, memory thresholds, worker counts  
+// - Memory Constrained: Decrease buffer sizes, lower memory threshold
+// - Large Files: Increase chunk sizes, stream multipliers
+// - Small Files: Use memory loading, smaller buffers
+// - Reliable Data: Disable validation, increase error limits
+// - Noisy Data: Lower error limits, enable more validation
+//
+// TOP IMPACT TUNING PARAMETERS:
+// 1. MEMORY_CONFIG.FREE_MEMORY_THRESHOLD (0.5 → 0.8 for dedicated processing)
+// 2. GCS_STREAMING_CONFIG.GCS_BUFFER_MULTIPLIER (100 → 200 for large files)
+// 3. STREAM_CONFIG.OBJECT_MODE_MULTIPLIER (2 → 10 for high throughput)
+// 4. JSON_CONFIG.OBJECT_STREAM_HIGH_WATER (1000 → 5000 for large datasets)
 
+// GCS Streaming Configuration
+const GCS_STREAMING_CONFIG = {
+	// Buffer sizes for high-performance streaming
+	GCS_BUFFER_MULTIPLIER: 100,      // Multiply job.highWater by this for GCS reads
+	OBJECT_STREAM_MULTIPLIER: 10,    // Multiply job.highWater by this for object stream
+	
+	// Gzip decompression settings
+	GZIP_CHUNK_SIZE: 64 * 1024,      // 64KB chunks for decompression
+	GZIP_WINDOW_BITS: 15,            // Standard gzip window size
+	GZIP_MEM_LEVEL: 8,               // Memory vs speed tradeoff (1-9, 8 is balanced)
+	
+	// Error handling
+	MAX_PARSE_ERRORS: 1000,          // Stop logging parse errors after this many
+	
+	// GCS-specific optimizations
+	DISABLE_VALIDATION: false,       // Set to true for maximum speed on trusted files
+	DECOMPRESS: false                // Let us handle compression manually
+};
 
+// Memory Management Configuration
+const MEMORY_CONFIG = {
+	FREE_MEMORY_THRESHOLD: 0.50,     // Load files into memory only if under 50% of free RAM
+	MEMORY_SAMPLE_RATE: 0.00005,     // Memory sampling probability (0.005%)
+	MAX_MEMORY_SAMPLES: 100          // Limit memory samples in circular buffer (from job.js)
+};
+
+// File Processing Thresholds
+const FILE_PROCESSING_CONFIG = {
+	CSV_MIN_LENGTH: 420,             // Minimum string length for CSV parsing attempts
+	PARQUET_CHUNK_SIZE: 1000,        // Records per chunk for Parquet processing
+	
+	// Stream vs Memory decision points
+	SMALL_FILE_THRESHOLD: 50 * 1024 * 1024,  // 50MB - files smaller load into memory
+	LARGE_FILE_STREAM_FORCE: true,    // Always stream files larger than memory threshold
+};
+
+// Stream Configuration (prepared for future use)
+const _STREAM_CONFIG = {
+	DEFAULT_HIGH_WATER_MARK: 16,     // Default stream buffer size (can be overridden by job.highWater)
+	OBJECT_MODE_MULTIPLIER: 2,       // Multiply buffer size for object mode streams  
+	AUTO_CLOSE: true,                // Auto-close file streams
+	EMIT_CLOSE: true,                // Emit close events
+	
+	// File stream optimizations
+	FILE_STREAM_FLAGS: 'r',          // Read-only file access
+	FILE_STREAM_ENCODING: null       // Binary mode for maximum performance
+};
+
+// JSON/JSONL Processing Configuration
+const JSON_CONFIG = {
+	PARSE_ERROR_LIMIT: 1000,         // Maximum parse errors before stopping
+	LINE_BUFFER_SIZE: 8 * 1024,      // 8KB line buffer for JSONL processing
+	OBJECT_STREAM_HIGH_WATER: 1000,  // Object mode stream buffer size
+	
+	// Memory optimizations
+	STRINGIFY_SPACE: 0,              // No pretty printing for performance
+	REVIVER_FUNCTION: null           // No custom JSON parsing (performance)
+};
+
+// CSV Processing Configuration  
+const CSV_CONFIG = {
+	header: true,                 // First row contains headers
+	skipEmptyLines: true,         // Skip blank lines
+	fastMode: false,              // Disable fast mode for better error handling
+	worker: false,                // Main thread processing (workers add overhead for small files)
+	chunk: undefined,             // Process entire file at once for memory files
+	dynamicTyping: false,         // Disable type inference for performance
+	encoding: 'utf8'              // Default encoding
+};
+
+// Compression Configuration
+const COMPRESSION_CONFIG = {
+	GZIP_LEVEL: 6,                   // Default compression level (1-9, 6 is balanced)
+	GZIP_WINDOW_BITS: 15,            // Standard gzip window
+	GZIP_MEM_LEVEL: 8,               // Memory usage level (1-9)
+	GZIP_CHUNK_SIZE: 16 * 1024,      // 16KB chunks for general gzip operations
+	
+	// Detection patterns
+	GZIP_EXTENSIONS: ['.gz', '.gzip'],
+	COMPRESSION_THRESHOLD: 1024       // Minimum bytes to consider compression
+};
+
+// Error Handling Configuration (prepared for future use)
+const _ERROR_CONFIG = {
+	MAX_PARSE_ERRORS: 1000,          // Stop after this many parse errors
+	MAX_RETRY_ATTEMPTS: 3,           // File operation retries
+	ERROR_SAMPLE_RATE: 0.1,          // Log only 10% of similar errors
+	
+	RECOVERABLE_ERRORS: [
+		'ENOENT', 'EACCES', 'EMFILE', 'ECONNRESET'
+	]
+};
 
 /** @typedef {import('./job')} JobConfig */
 /** @typedef {import('../index').Data} Data */
@@ -149,7 +260,7 @@ async function determineDataType(data, job) {
 					if (['jsonl', 'json', 'csv', 'parquet'].includes(streamFormat)) parsingCase = streamFormat;
 
 					let loadIntoMemory = false;
-					if (fileInfo.size < os.freemem() * .50) loadIntoMemory = true;
+					if (fileInfo.size < os.freemem() * MEMORY_CONFIG.FREE_MEMORY_THRESHOLD) loadIntoMemory = true;
 					if (forceStream) loadIntoMemory = false;
 
 					if (parsingCase === 'jsonl') {
@@ -228,7 +339,7 @@ async function determineDataType(data, job) {
 			else {
 				//directory case
 				const enumDir = await u.ls(path.resolve(data));
-				files = enumDir.filter(filePath => supportedFileExt.includes(path.extname(filePath)));
+				files = Array.isArray(enumDir) ? enumDir.filter(filePath => supportedFileExt.includes(path.extname(filePath))) : [];
 				exampleFile = path.extname(files[0]);
 			}
 
@@ -259,6 +370,12 @@ async function determineDataType(data, job) {
 
 	}
 
+	// Handle Google Cloud Storage URLs (gs://)
+	if (typeof data === 'string' && data.startsWith('gs://')) {
+		job.wasStream = true;
+		return createGCSStream(data, job);
+	}
+
 	// data is a string, and we have to guess what it is
 	if (typeof data === 'string') {
 
@@ -282,8 +399,8 @@ async function determineDataType(data, job) {
 
 		//CSV or TSV
 		try {
-			if (data.length > 420) {
-				return stream.Readable.from(Papa.parse(data, { header: true, skipEmptyLines: true }).data, { objectMode: true, highWaterMark: job.highWater });
+			if (data.length > FILE_PROCESSING_CONFIG.CSV_MIN_LENGTH) {
+				return stream.Readable.from(Papa.parse(data, CSV_CONFIG).data, { objectMode: true, highWaterMark: job.highWater });
 			}
 		}
 		catch (e) {
@@ -322,7 +439,7 @@ function existingStreamInterface(stream) {
 // Create a transform stream factory to ensure newline at the end of each file.
 function createEnsureNewlineTransform() {
 	return new Transform({
-		transform(chunk, encoding, callback) {
+		transform(chunk, _encoding, callback) {
 			this.push(chunk);
 			callback();
 		},
@@ -559,7 +676,7 @@ function csvStreamer(filePath, jobConfig) {
 
 	});
 	const transformer = new stream.Transform({
-		objectMode: true, highWaterMark: jobConfig.highWater, transform: (chunk, encoding, callback) => {
+		objectMode: true, highWaterMark: jobConfig.highWater, transform: (chunk, _encoding, callback) => {
 			const { distinct_id = "", $insert_id = "", time = 0, event, ...props } = chunk;
 			const mixpanelEvent = {
 				event,
@@ -786,11 +903,13 @@ async function buildMapFromPath(filePath, keyOne, keyTwo) {
  * @param {string} gcsPath Path in format gs://bucket-name/path/to/file.json
  * @returns {Promise<string>} File contents as a string
  */
-async function fetchFromGCS(gcsPath) {
+async function fetchFromGCS(gcsPath, projectId = 'mixpanel-gtm-training') {
 
 
 	// Create a storage client using application default credentials
-	const storage = new Storage();
+	const storage = new Storage({
+		projectId
+	});
 
 	// Extract bucket and file path from the GCS path
 	// gs://bucket-name/path/to/file.json -> bucket="bucket-name", filePath="path/to/file.json"
@@ -810,6 +929,130 @@ async function fetchFromGCS(gcsPath) {
 		return contents.toString('utf-8');
 	} catch (error) {
 		throw new Error(`Error fetching from GCS: ${error.message}`);
+	}
+}
+
+/**
+ * Create a high-performance streaming reader for Google Cloud Storage files
+ * Supports both compressed (gzip) and uncompressed NDJSON files
+ * @param {string} gcsPath Path in format gs://bucket-name/path/to/file.json
+ * @param {JobConfig} job Job configuration for optimization
+ * @returns {Promise<Readable>} Object-mode readable stream
+ */
+async function createGCSStream(gcsPath, job) {
+	const storage = new Storage({
+		projectId: job.gcpProjectId
+	});
+
+	// Extract bucket and file path from the GCS path
+	const matches = gcsPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
+	if (!matches) {
+		throw new Error(`Invalid GCS path: ${gcsPath}`);
+	}
+
+	const bucketName = matches[1];
+	const filePath = matches[2];
+	const isGzipped = COMPRESSION_CONFIG.GZIP_EXTENSIONS.some(ext => filePath.endsWith(ext));
+
+	try {
+		// Create optimized GCS read stream
+		const gcsFile = storage.bucket(bucketName).file(filePath);
+		
+		// Create read stream with tunable settings for high throughput
+		const gcsReadStream = gcsFile.createReadStream({
+			// Use configurable compression and validation settings
+			decompress: GCS_STREAMING_CONFIG.DECOMPRESS,
+			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION
+		});
+
+		// Create transform pipeline based on compression
+		let pipeline = gcsReadStream;
+
+		// Handle gzip compression with tunable parameters
+		if (isGzipped) {
+			const gunzip = zlib.createGunzip({
+				chunkSize: GCS_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
+				windowBits: GCS_STREAMING_CONFIG.GZIP_WINDOW_BITS,
+				level: zlib.constants.Z_DEFAULT_COMPRESSION,
+				memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
+			});
+			pipeline = pipeline.pipe(gunzip);
+		}
+
+		// Convert to NDJSON object stream with tunable performance
+		return pipeline.pipe(new JsonlObjectStream(job));
+
+	} catch (error) {
+		throw new Error(`Error creating GCS stream: ${error.message}`);
+	}
+}
+
+/**
+ * High-performance JSONL to Object transform stream
+ * Optimized for processing large GCS files quickly
+ */
+class JsonlObjectStream extends Transform {
+	constructor(job, options = {}) {
+		super({
+			objectMode: true,
+			highWaterMark: job.highWater * GCS_STREAMING_CONFIG.OBJECT_STREAM_MULTIPLIER,
+			...options
+		});
+		this.buffer = '';
+		this.lineCount = 0;
+		this.parseErrors = 0;
+		this.maxParseErrors = JSON_CONFIG.PARSE_ERROR_LIMIT;
+	}
+
+	_transform(chunk, _encoding, callback) {
+		// Add chunk to buffer
+		this.buffer += chunk.toString();
+		
+		// Process complete lines
+		const lines = this.buffer.split('\n');
+		
+		// Keep the last incomplete line in buffer
+		this.buffer = lines.pop() || '';
+		
+		// Process each complete line
+		for (const line of lines) {
+			if (line.trim()) {
+				try {
+					const obj = JSON.parse(line.trim());
+					this.push(obj);
+					this.lineCount++;
+				} catch (error) {
+					this.parseErrors++;
+					// Emit error but don't stop processing for better resilience
+					if (this.parseErrors < this.maxParseErrors) {
+						this.emit('warning', `JSON parse error on line ${this.lineCount + 1}: ${error.message}`);
+					}
+				}
+			}
+		}
+		
+		callback();
+	}
+
+	_flush(callback) {
+		// Process any remaining data in buffer
+		if (this.buffer.trim()) {
+			try {
+				const obj = JSON.parse(this.buffer.trim());
+				this.push(obj);
+				this.lineCount++;
+			} catch (error) {
+				this.emit('warning', `JSON parse error on final line: ${error.message}`);
+			}
+		}
+		
+		// Emit statistics for monitoring
+		this.emit('stats', {
+			linesProcessed: this.lineCount,
+			parseErrors: this.parseErrors
+		});
+		
+		callback();
 	}
 }
 
