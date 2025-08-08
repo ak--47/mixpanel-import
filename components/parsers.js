@@ -19,13 +19,30 @@ const Papa = require('papaparse');
 const { prepareSCD } = require('./validators.js');
 const { console } = require('inspector');
 const { streamEvents, streamProfiles } = require('../components/exporters.js');
+const zlib = require('zlib');
 // const { logger } = require('../components/logs.js');
 
 const { Storage } = require('@google-cloud/storage');
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 
-
-
+// GCS Streaming Performance Constants - Tune these for optimal throughput
+const GCS_STREAMING_CONFIG = {
+	// Buffer sizes for high-performance streaming
+	GCS_BUFFER_MULTIPLIER: 100,      // Multiply job.highWater by this for GCS reads
+	OBJECT_STREAM_MULTIPLIER: 10,    // Multiply job.highWater by this for object stream
+	
+	// Gzip decompression settings
+	GZIP_CHUNK_SIZE: 64 * 1024,      // 64KB chunks for decompression
+	GZIP_WINDOW_BITS: 15,            // Standard gzip window size
+	GZIP_MEM_LEVEL: 8,               // Memory vs speed tradeoff (1-9, 8 is balanced)
+	
+	// Error handling
+	MAX_PARSE_ERRORS: 1000,          // Stop logging parse errors after this many
+	
+	// GCS-specific optimizations
+	DISABLE_VALIDATION: false,       // Set to true for maximum speed on trusted files
+	DECOMPRESS: false                // Let us handle compression manually
+};
 
 /** @typedef {import('./job')} JobConfig */
 /** @typedef {import('../index').Data} Data */
@@ -257,6 +274,12 @@ async function determineDataType(data, job) {
 	catch (e) {
 		debugger;
 
+	}
+
+	// Handle Google Cloud Storage URLs (gs://)
+	if (typeof data === 'string' && data.startsWith('gs://')) {
+		job.wasStream = true;
+		return createGCSStream(data, job);
 	}
 
 	// data is a string, and we have to guess what it is
@@ -810,6 +833,128 @@ async function fetchFromGCS(gcsPath) {
 		return contents.toString('utf-8');
 	} catch (error) {
 		throw new Error(`Error fetching from GCS: ${error.message}`);
+	}
+}
+
+/**
+ * Create a high-performance streaming reader for Google Cloud Storage files
+ * Supports both compressed (gzip) and uncompressed NDJSON files
+ * @param {string} gcsPath Path in format gs://bucket-name/path/to/file.json
+ * @param {JobConfig} job Job configuration for optimization
+ * @returns {Promise<Readable>} Object-mode readable stream
+ */
+async function createGCSStream(gcsPath, job) {
+	const storage = new Storage();
+
+	// Extract bucket and file path from the GCS path
+	const matches = gcsPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
+	if (!matches) {
+		throw new Error(`Invalid GCS path: ${gcsPath}`);
+	}
+
+	const bucketName = matches[1];
+	const filePath = matches[2];
+	const isGzipped = filePath.endsWith('.gz') || filePath.endsWith('.gzip');
+
+	try {
+		// Create optimized GCS read stream
+		const gcsFile = storage.bucket(bucketName).file(filePath);
+		
+		// Create read stream with tunable settings for high throughput
+		const gcsReadStream = gcsFile.createReadStream({
+			// Use configurable compression and validation settings
+			decompress: GCS_STREAMING_CONFIG.DECOMPRESS,
+			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION
+		});
+
+		// Create transform pipeline based on compression
+		let pipeline = gcsReadStream;
+
+		// Handle gzip compression with tunable parameters
+		if (isGzipped) {
+			const gunzip = zlib.createGunzip({
+				chunkSize: GCS_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
+				windowBits: GCS_STREAMING_CONFIG.GZIP_WINDOW_BITS,
+				level: zlib.constants.Z_DEFAULT_COMPRESSION,
+				memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
+			});
+			pipeline = pipeline.pipe(gunzip);
+		}
+
+		// Convert to NDJSON object stream with tunable performance
+		return pipeline.pipe(new JsonlObjectStream(job));
+
+	} catch (error) {
+		throw new Error(`Error creating GCS stream: ${error.message}`);
+	}
+}
+
+/**
+ * High-performance JSONL to Object transform stream
+ * Optimized for processing large GCS files quickly
+ */
+class JsonlObjectStream extends Transform {
+	constructor(job, options = {}) {
+		super({
+			objectMode: true,
+			highWaterMark: job.highWater * GCS_STREAMING_CONFIG.OBJECT_STREAM_MULTIPLIER,
+			...options
+		});
+		this.buffer = '';
+		this.lineCount = 0;
+		this.parseErrors = 0;
+		this.maxParseErrors = GCS_STREAMING_CONFIG.MAX_PARSE_ERRORS;
+	}
+
+	_transform(chunk, _encoding, callback) {
+		// Add chunk to buffer
+		this.buffer += chunk.toString();
+		
+		// Process complete lines
+		const lines = this.buffer.split('\n');
+		
+		// Keep the last incomplete line in buffer
+		this.buffer = lines.pop() || '';
+		
+		// Process each complete line
+		for (const line of lines) {
+			if (line.trim()) {
+				try {
+					const obj = JSON.parse(line.trim());
+					this.push(obj);
+					this.lineCount++;
+				} catch (error) {
+					this.parseErrors++;
+					// Emit error but don't stop processing for better resilience
+					if (this.parseErrors < this.maxParseErrors) {
+						this.emit('warning', `JSON parse error on line ${this.lineCount + 1}: ${error.message}`);
+					}
+				}
+			}
+		}
+		
+		callback();
+	}
+
+	_flush(callback) {
+		// Process any remaining data in buffer
+		if (this.buffer.trim()) {
+			try {
+				const obj = JSON.parse(this.buffer.trim());
+				this.push(obj);
+				this.lineCount++;
+			} catch (error) {
+				this.emit('warning', `JSON parse error on final line: ${error.message}`);
+			}
+		}
+		
+		// Emit statistics for monitoring
+		this.emit('stats', {
+			linesProcessed: this.lineCount,
+			parseErrors: this.parseErrors
+		});
+		
+		callback();
 	}
 }
 
