@@ -1,4 +1,17 @@
-{	
+{
+	"testEnvironment": "node",
+	"testMatch": [
+		"**/tests/**/*.test.js"
+	],
 	"coverageDirectory": "./tests/coverage",
-	"setupFilesAfterEnv": ["jest-extended/all"]
+	"setupFilesAfterEnv": ["jest-extended/all"],
+	"verbose": true,
+	"collectCoverageFrom": [
+		"components/**/*.js",
+		"vendor/**/*.js",
+		"index.js",
+		"!**/node_modules/**",
+		"!**/tests/**"
+	],
+	"testTimeout": 15000
 }

@@ -5,9 +5,37 @@
 /* cSpell:disable */
 require("dotenv").config();
 const { execSync } = require("child_process");
-const longTimeout = 75000;
+
+
+function isDebugMode() {
+	// Check for Node.js debug flags
+	if (process.execArgv.some(arg => arg.includes('--inspect') || arg.includes('--debug'))) {
+		return true;
+	}
+
+	// Check NODE_OPTIONS
+	if (process.env.NODE_OPTIONS?.match(/--inspect|--debug/)) {
+		return true;
+	}
+
+	// Check if debugger port is set
+	if (process.debugPort) {
+		return true;
+	}
+
+	// VS Code specific
+	if (process.env.VSCODE_DEBUG === 'true') {
+		return true;
+	}
+
+	return false;
+}
+
+const IS_DEBUG_MODE = isDebugMode();
+const longTimeout = IS_DEBUG_MODE ? 60000 : 10000;
 
 const mp = require("../index.js");
+const { showProgress } = require("../components/cli.js");
 
 const opts = {
 	recordType: `event`,
@@ -19,7 +47,8 @@ const opts = {
 	strict: true,
 	logs: false,
 	fixData: true,
-	verbose: false,
+	verbose: IS_DEBUG_MODE,
+	showProgress: IS_DEBUG_MODE,
 	streamFormat: "jsonl",
 	transformFunc: function noop(a) {
 		return a;
@@ -28,7 +57,16 @@ const opts = {
 
 
 describe("vendor tests", () => {
-
+	test(
+		"mixpanel: events",
+		async () => {
+			const job = await mp({}, "testData/mixpanel/mixpanel-export-format.json", { ...opts, recordType: "event", vendor: "mixpanel", dryRun: true });
+			const numRecords = job.dryRun.length;
+			const numDistinctIds = job.dryRun.filter(a => a.properties.distinct_id).length;
+			expect(numRecords).toBe(3000);
+			expect(numDistinctIds).toBe(3000);
+		}, longTimeout
+	);
 	test(
 		"amplitude: events",
 		async () => {

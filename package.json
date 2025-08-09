@@ -16,7 +16,7 @@
     "dev": "npm run prune && nodemon --inspect scratch.js --ignore ./testData --ignore ./mixpanel-exports --ignore ./logs",
     "post": "npm publish",
     "benchmark": "nodemon --inspect ./benchmarks/main.mjs",
-    "generate": "NUMEVENTS=9999 SINCEDAYS=30 node ./components/fakeData.js",
+    "generate": "NUMEVENTS=3000 SINCEDAYS=7 node ./components/fakeData.js",
     "prune": "rm -rf ./logs/* && rm -rf ./mixpanel-exports/* && rm -rf ./tmp/*",
     "test": "jest --watch",
     "coverage": "node --no-warnings --experimental-vm-modules node_modules/jest/bin/jest.js --coverage && open ./tests/coverage/lcov-report/index.html",

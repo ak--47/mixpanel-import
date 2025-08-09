@@ -1,6 +1,6 @@
 
 // $ parsers
-const { chunkForSize, chunkForSizeOptimized } = require("./parsers.js");
+const { chunkForSize } = require("./parsers.js");
 
 // $ streamers
 const _ = require('highland');
@@ -76,6 +76,10 @@ function corePipeline(stream, job, toNodeStream = false) {
 	if (job.writeToFile) {
 		fileStream = fs.createWriteStream(job.outputFilePath, { flags: 'a', highWaterMark: job.highWater });
 	}
+
+	// Cache for JSON strings to avoid re-stringifying
+	const jsonCache = new WeakMap();
+	const bytesCache = new WeakMap();
 
 
 
@@ -162,39 +166,38 @@ function corePipeline(stream, job, toNodeStream = false) {
 			return data;
 		}),
 
-		// * post-transform filter to ignore nulls
+		// * post-transform filter to ignore nulls + cache JSON
 		// @ts-ignore
-		_.filter(function THIRD_EXISTENCE(data) {
+		_.map(function THIRD_EXISTENCE_AND_STRINGIFY(data) {
 			const exists = isNotEmpty(data);
-			if (exists) {
-				return true;
-			}
-			else {
+			if (!exists) {
 				job.empty++;
-				return false;
+				return null; // Will be filtered out
 			}
-		}),
-
-		// * stringify once and count bytes
-		// @ts-ignore
-		_.map(function STRINGIFY_ONCE(data) {
+			
+			// Cache JSON stringification and byte count using WeakMaps
 			const jsonString = JSON.stringify(data);
 			const byteLength = Buffer.byteLength(jsonString, 'utf-8');
 			job.bytesProcessed += byteLength;
-			return {
-				originalData: data,
-				jsonString,
-				byteLength
-			};
+			
+			// Store in WeakMaps (doesn't modify original object)
+			jsonCache.set(data, jsonString);
+			bytesCache.set(data, byteLength);
+			
+			return data;
 		}),
+
+		// * filter out nulls from existence check
+		// @ts-ignore
+		_.filter(data => data !== null),
 
 		// * batch for # of items
 		// @ts-ignore
 		_.batch(job.recordsPerBatch),
 
-		// * batch for req size (optimized - uses cached byte lengths)
+		// * batch for req size (with cached optimization)
 		// @ts-ignore
-		_.consume(chunkForSizeOptimized(job)),
+		_.consume(chunkForSize({ ...job, bytesCache })),
 
 		// * send to mixpanel
 		// @ts-ignore
@@ -203,18 +206,18 @@ function corePipeline(stream, job, toNodeStream = false) {
 			job.batches++;
 			job.addBatchLength(batch.length); // Use bounded collection method
 			
-			// Extract originalData for API calls
-			const dataOnly = batch.map(item => item.originalData);
+			if (job.dryRun) return _(Promise.resolve(batch));
 			
-			if (job.dryRun) return _(Promise.resolve(dataOnly));
 			if (job.writeToFile) {
 				batch.forEach(item => {
-					// Use cached jsonString instead of re-stringify
-					fileStream.write(item.jsonString + '\n');
+					// Use cached JSON from WeakMap
+					const cachedJson = jsonCache.get(item);
+					fileStream.write((cachedJson || JSON.stringify(item)) + '\n');
 				});
-				return _(Promise.resolve(dataOnly));
+				return _(Promise.resolve(batch));
 			}
-			return flush(dataOnly, job);
+			
+			return flush(batch, job);
 		}),
 
 		// * concurrency
@@ -264,10 +267,11 @@ function corePipeline(stream, job, toNodeStream = false) {
 	// @ts-ignore
 	stream.pipe(mpPipeline);
 	return mpPipeline.collect().toPromise(Promise)
-		.then(() => {
+		.then((results) => {
 			if (fileStream) {
 				fileStream.end();
 			}
+			return results;
 		});
 
 }

@@ -376,6 +376,12 @@ async function determineDataType(data, job) {
 		return createGCSStream(data, job);
 	}
 
+	// Handle array of Google Cloud Storage URLs
+	if (Array.isArray(data) && data.every(item => typeof item === 'string' && item.startsWith('gs://'))) {
+		job.wasStream = true;
+		return createMultiGCSStream(data, job);
+	}
+
 	// data is a string, and we have to guess what it is
 	if (typeof data === 'string') {
 
@@ -744,10 +750,11 @@ async function csvMemory(filePath, jobConfig) {
  * @param  {JobConfig} jobConfig
  */
 /**
- * Optimized version of chunkForSize that uses pre-calculated byte lengths
+ * Optimized version of chunkForSize that uses cached byte lengths from WeakMaps
+ * Note: This function expects bytesCache to be passed in via jobConfig
  * @param  {JobConfig} jobConfig
  */
-function chunkForSizeOptimized(jobConfig) {
+function chunkForSizeCached(jobConfig) {
 	let pending = [];
 	let totalSize = 0; // maintain a running total of size
 
@@ -767,8 +774,9 @@ function chunkForSizeOptimized(jobConfig) {
 			push(null, x);
 		} else {
 			for (const item of x) {
-				// Use pre-calculated byte length instead of re-stringifying
-				const itemSize = item.byteLength;
+				// Use cached byte length or fallback to calculation
+				const cachedSize = jobConfig.bytesCache && jobConfig.bytesCache.get(item);
+				const itemSize = cachedSize || Buffer.byteLength(JSON.stringify(item), 'utf-8');
 
 				// Check for individual items exceeding size
 				if (itemSize > maxBatchSize) {
@@ -786,8 +794,9 @@ function chunkForSizeOptimized(jobConfig) {
 
 					while (pending.length > 0) {
 						const item = pending[0];
-						// Use pre-calculated byte length
-						const itemSize = item.byteLength;
+						// Use cached byte length or fallback
+						const cachedSize = jobConfig.bytesCache && jobConfig.bytesCache.get(item);
+						const itemSize = cachedSize || Buffer.byteLength(JSON.stringify(item), 'utf-8');
 
 						if (size + itemSize > maxBatchSize || chunk.length >= maxBatchCount) {
 							break;
@@ -829,7 +838,9 @@ function chunkForSize(jobConfig) {
 			push(null, x);
 		} else {
 			for (const item of x) {
-				const itemSize = Buffer.byteLength(JSON.stringify(item), 'utf-8');
+				// Use cached size if available from pipeline optimization
+				const cachedSize = jobConfig.bytesCache && jobConfig.bytesCache.get(item);
+				const itemSize = cachedSize || Buffer.byteLength(JSON.stringify(item), 'utf-8');
 
 				// Check for individual items exceeding size
 				if (itemSize > maxBatchSize) {
@@ -847,7 +858,9 @@ function chunkForSize(jobConfig) {
 
 					while (pending.length > 0) {
 						const item = pending[0];
-						const itemSize = Buffer.byteLength(JSON.stringify(item), 'utf-8');
+						// Use cached size if available from pipeline optimization
+						const cachedSize = jobConfig.bytesCache && jobConfig.bytesCache.get(item);
+						const itemSize = cachedSize || Buffer.byteLength(JSON.stringify(item), 'utf-8');
 
 						if (size + itemSize > maxBatchSize || chunk.length >= maxBatchCount) {
 							break;
@@ -1123,6 +1136,91 @@ class JsonlObjectStream extends Transform {
 }
 
 /**
+ * Create a stream that handles multiple GCS files
+ * Gracefully skips files that don't exist
+ * @param {string[]} gcsPaths Array of GCS paths (gs://bucket/file)
+ * @param {JobConfig} job Job configuration
+ * @returns {Promise<PassThrough>} Combined object stream from all files
+ */
+async function createMultiGCSStream(gcsPaths, job) {
+	const { PassThrough } = require('stream');
+	
+	// Create a passthrough stream that will be our final output
+	const output = new PassThrough({ objectMode: true });
+	
+	// Process files sequentially to avoid overwhelming GCS
+	let processedCount = 0;
+	let skippedCount = 0;
+	
+	const processNextFile = async () => {
+		if (processedCount + skippedCount >= gcsPaths.length) {
+			// All files processed, end the stream
+			output.end();
+			return;
+		}
+		
+		const gcsPath = gcsPaths[processedCount + skippedCount];
+		
+		try {
+			// Check if file exists first
+			const storage = new Storage({
+				projectId: job.gcpProjectId
+			});
+			
+			const matches = gcsPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
+			if (!matches) {
+				console.warn(`Skipping invalid GCS path: ${gcsPath}`);
+				skippedCount++;
+				setImmediate(processNextFile);
+				return;
+			}
+			
+			const bucketName = matches[1];
+			const filePath = matches[2];
+			const file = storage.bucket(bucketName).file(filePath);
+			
+			// Check if file exists
+			const [exists] = await file.exists();
+			if (!exists) {
+				console.warn(`Skipping non-existent file: ${gcsPath}`);
+				skippedCount++;
+				setImmediate(processNextFile);
+				return;
+			}
+			
+			// Create stream for this file
+			const fileStream = await createGCSStream(gcsPath, job);
+			
+			// Pipe this file's data to our output stream
+			fileStream.on('data', (data) => {
+				output.write(data);
+			});
+			
+			fileStream.on('end', () => {
+				processedCount++;
+				setImmediate(processNextFile);
+			});
+			
+			fileStream.on('error', (error) => {
+				console.warn(`Error reading file ${gcsPath}: ${error.message}`);
+				skippedCount++;
+				setImmediate(processNextFile);
+			});
+			
+		} catch (error) {
+			console.warn(`Error processing file ${gcsPath}: ${error.message}`);
+			skippedCount++;
+			setImmediate(processNextFile);
+		}
+	};
+	
+	// Start processing the first file
+	setImmediate(processNextFile);
+	
+	return output;
+}
+
+/**
  * Fetch a file from Amazon S3
  * @param {string} s3Path Path in format s3://bucket-name/path/to/file.json
  * @returns {Promise<string>} File contents as a string
@@ -1175,5 +1273,5 @@ module.exports = {
 	itemStream,
 	getEnvVars,
 	chunkForSize,
-	chunkForSizeOptimized
+	chunkForSizeCached
 };
