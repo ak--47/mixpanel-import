@@ -957,7 +957,49 @@ async function fetchFromGCS(gcsPath, projectId = 'mixpanel-gtm-training') {
  * @param {JobConfig} job Job configuration for optimization
  * @returns {Promise<Readable>} Object-mode readable stream
  */
+/**
+ * Detect file format from GCS path
+ * @param {string} gcsPath 
+ * @returns {string} Format: 'json', 'csv', 'parquet'
+ */
+function detectGCSFormat(gcsPath) {
+	const fileName = gcsPath.split('/').pop() || '';
+	
+	if (fileName.endsWith('.parquet')) return 'parquet';
+	if (fileName.endsWith('.csv.gz') || fileName.endsWith('.csv')) return 'csv';
+	if (fileName.endsWith('.json.gz') || fileName.endsWith('.json') || fileName.endsWith('.jsonl') || fileName.endsWith('.jsonl.gz')) return 'json';
+	
+	// Default to JSON for unknown formats
+	return 'json';
+}
+
+/**
+ * Main GCS stream factory - detects format and routes to appropriate parser
+ * @param {string} gcsPath 
+ * @param {JobConfig} job 
+ * @returns {Promise<Stream>}
+ */
 async function createGCSStream(gcsPath, job) {
+	const format = detectGCSFormat(gcsPath);
+	
+	switch (format) {
+		case 'csv':
+			return createGCSCSVStream(gcsPath, job);
+		case 'parquet':
+			return createGCSParquetStream(gcsPath, job);
+		case 'json':
+		default:
+			return createGCSJSONStream(gcsPath, job);
+	}
+}
+
+/**
+ * Create JSON/JSONL stream from GCS (original implementation)
+ * @param {string} gcsPath 
+ * @param {JobConfig} job 
+ * @returns {Promise<Stream>}
+ */
+async function createGCSJSONStream(gcsPath, job) {
 	const storage = new Storage({
 		projectId: job.gcpProjectId
 	});
@@ -973,8 +1015,12 @@ async function createGCSStream(gcsPath, job) {
 	const isGzipped = COMPRESSION_CONFIG.GZIP_EXTENSIONS.some(ext => filePath.endsWith(ext));
 
 	try {
-		// Create optimized GCS read stream
+		// Check if file exists
 		const gcsFile = storage.bucket(bucketName).file(filePath);
+		const [exists] = await gcsFile.exists();
+		if (!exists) {
+			throw new Error(`File not found: ${gcsPath}`);
+		}
 		
 		// Create read stream with tunable settings for high throughput
 		const gcsReadStream = gcsFile.createReadStream({
@@ -1001,7 +1047,146 @@ async function createGCSStream(gcsPath, job) {
 		return pipeline.pipe(new JsonlObjectStream(job));
 
 	} catch (error) {
-		throw new Error(`Error creating GCS stream: ${error.message}`);
+		throw new Error(`Error creating GCS JSON stream: ${error.message}`);
+	}
+}
+
+/**
+ * Create CSV stream from GCS
+ * @param {string} gcsPath 
+ * @param {JobConfig} job 
+ * @returns {Promise<Stream>}
+ */
+async function createGCSCSVStream(gcsPath, job) {
+	const storage = new Storage({
+		projectId: job.gcpProjectId
+	});
+
+	// Extract bucket and file path from the GCS path
+	const matches = gcsPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
+	if (!matches) {
+		throw new Error(`Invalid GCS path: ${gcsPath}`);
+	}
+
+	const bucketName = matches[1];
+	const filePath = matches[2];
+	const isGzipped = filePath.endsWith('.csv.gz');
+
+	try {
+		// Check if file exists
+		const gcsFile = storage.bucket(bucketName).file(filePath);
+		const [exists] = await gcsFile.exists();
+		if (!exists) {
+			throw new Error(`File not found: ${gcsPath}`);
+		}
+
+		// Create read stream
+		let gcsReadStream = gcsFile.createReadStream({
+			decompress: GCS_STREAMING_CONFIG.DECOMPRESS,
+			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION
+		});
+
+		// Handle gzip compression
+		if (isGzipped) {
+			const gunzip = zlib.createGunzip({
+				chunkSize: GCS_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
+				windowBits: GCS_STREAMING_CONFIG.GZIP_WINDOW_BITS,
+				level: zlib.constants.Z_DEFAULT_COMPRESSION,
+				memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
+			});
+			gcsReadStream = gcsReadStream.pipe(gunzip);
+		}
+
+		// Parse CSV using Papa Parse
+		const mappings = Object.entries(job.aliases);
+		const csvParser = Papa.parse(Papa.NODE_STREAM_INPUT, {
+			header: true,
+			skipEmptyLines: true,
+
+			//rename's header keys to match aliases
+			transformHeader: (header) => {
+				const mapping = mappings.filter(pair => pair[0] === header).pop();
+				if (mapping) header = mapping[1];
+				return header;
+			}
+		});
+
+		// Transform to Mixpanel event format (same as local csvStreamer)
+		const transformer = new stream.Transform({
+			objectMode: true,
+			highWaterMark: job.highWater,
+			transform: (chunk, _encoding, callback) => {
+				const { distinct_id = "", $insert_id = "", time = 0, event, ...props } = chunk;
+				const mixpanelEvent = {
+					event,
+					properties: {
+						distinct_id,
+						$insert_id,
+						time: dayjs.utc(time).valueOf(),
+						...props
+					}
+				};
+				if (!distinct_id) delete mixpanelEvent.properties.distinct_id;
+				if (!$insert_id) delete mixpanelEvent.properties.$insert_id;
+				if (!time) delete mixpanelEvent.properties.time;
+
+				callback(null, mixpanelEvent);
+			}
+		});
+
+		// Pipe: GCS Stream -> CSV Parser -> Transform -> Output
+		return gcsReadStream.pipe(csvParser).pipe(transformer);
+
+	} catch (error) {
+		throw new Error(`Error creating GCS CSV stream: ${error.message}`);
+	}
+}
+
+/**
+ * Create Parquet stream from GCS using hyparquet
+ * @param {string} gcsPath 
+ * @param {JobConfig} job 
+ * @returns {Promise<Stream>}
+ */
+async function createGCSParquetStream(gcsPath, job) {
+	const storage = new Storage({
+		projectId: job.gcpProjectId
+	});
+
+	// Extract bucket and file path from the GCS path
+	const matches = gcsPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
+	if (!matches) {
+		throw new Error(`Invalid GCS path: ${gcsPath}`);
+	}
+
+	const bucketName = matches[1];
+	const filePath = matches[2];
+
+	try {
+		// Check if file exists
+		const gcsFile = storage.bucket(bucketName).file(filePath);
+		const [exists] = await gcsFile.exists();
+		if (!exists) {
+			throw new Error(`File not found: ${gcsPath}`);
+		}
+
+		// Create a signed URL for hyparquet to access
+		const [signedUrl] = await gcsFile.getSignedUrl({
+			version: 'v4',
+			action: 'read',
+			expires: Date.now() + 15 * 60 * 1000, // 15 minutes
+		});
+
+		// Use hyparquet to read the parquet file
+		const { asyncBufferFromUrl, parquetReadObjects } = await import('hyparquet');
+		const file = await asyncBufferFromUrl({ url: signedUrl });
+		const data = await parquetReadObjects({ file });
+
+		// Convert to readable stream
+		return stream.Readable.from(data, { objectMode: true, highWaterMark: job.highWater });
+
+	} catch (error) {
+		throw new Error(`Error creating GCS Parquet stream: ${error.message}`);
 	}
 }
 
@@ -1077,12 +1262,24 @@ class JsonlObjectStream extends Transform {
 /**
  * Create a stream that handles multiple GCS files
  * Gracefully skips files that don't exist
+ * Validates that all files have the same format
  * @param {string[]} gcsPaths Array of GCS paths (gs://bucket/file)
  * @param {JobConfig} job Job configuration
  * @returns {Promise<PassThrough>} Combined object stream from all files
  */
 async function createMultiGCSStream(gcsPaths, job) {
 	const { PassThrough } = require('stream');
+	
+	// Validate that all files have the same format
+	const formats = gcsPaths.map(detectGCSFormat);
+	const uniqueFormats = [...new Set(formats)];
+	
+	if (uniqueFormats.length > 1) {
+		throw new Error(`Mixed file formats not supported. Found formats: ${uniqueFormats.join(', ')}. All files must be the same format.`);
+	}
+	
+	const format = uniqueFormats[0];
+	console.log(`Processing ${gcsPaths.length} ${format} files from GCS...`);
 	
 	// Create a passthrough stream that will be our final output
 	const output = new PassThrough({ objectMode: true });

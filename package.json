@@ -48,6 +48,7 @@
     "duckdb": "^1.2.1",
     "got": "^11.8.6",
     "highland": "^2.13.5",
+    "hyparquet": "^1.17.1",
     "json-stable-stringify": "^1.0.2",
     "md5": "^2.3.0",
     "multistream": "^4.1.0",
