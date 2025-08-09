@@ -480,10 +480,34 @@ return {
     }
 }
 
+// Global function for collapsible sections
+function toggleSection(sectionId) {
+    const content = document.getElementById(sectionId);
+    const header = content.previousElementSibling;
+    const isVisible = content.style.display !== 'none';
+    
+    if (isVisible) {
+        content.style.display = 'none';
+        header.classList.remove('expanded');
+    } else {
+        content.style.display = 'block';
+        header.classList.add('expanded');
+    }
+}
+
 // Initialize the application
 let app;
 document.addEventListener('DOMContentLoaded', () => {
     app = new MixpanelImportUI();
     // Make app globally available after initialization
     window.app = app;
+    
+    // Initialize default section states
+    // Keep performance section open by default
+    const performanceSection = document.getElementById('performance-section');
+    const performanceHeader = performanceSection?.previousElementSibling;
+    if (performanceSection) {
+        performanceSection.style.display = 'block';
+        performanceHeader?.classList.add('expanded');
+    }
 });

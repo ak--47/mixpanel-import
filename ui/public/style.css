@@ -206,7 +206,85 @@ body {
   accent-color: var(--accent-purple);
 }
 
-/* Advanced Options */
+/* Configuration Sections */
+.config-section {
+  margin-bottom: 32px;
+}
+
+.subsection-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border-secondary);
+  padding-bottom: 8px;
+}
+
+.collapsible-section {
+  margin-bottom: 16px;
+  border: 1px solid var(--border-secondary);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  padding: 16px 20px;
+  background: var(--bg-tertiary);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  user-select: none;
+}
+
+.section-header:hover {
+  background: var(--bg-secondary);
+}
+
+.section-header h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+  flex: 1;
+  margin-left: 8px;
+}
+
+.section-icon {
+  font-size: 16px;
+  width: 20px;
+  text-align: center;
+}
+
+.toggle-icon {
+  font-size: 12px;
+  color: var(--text-secondary);
+  transition: transform 0.2s ease;
+}
+
+.section-header.expanded .toggle-icon {
+  transform: rotate(180deg);
+}
+
+.collapsible-content {
+  padding: 20px;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border-secondary);
+}
+
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 20px;
+  margin-bottom: 20px;
+}
+
+.checkbox-group {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Advanced Options (legacy) */
 .advanced-toggle {
   margin: 20px 0;
   padding-top: 20px;
@@ -555,6 +633,11 @@ body {
     gap: 16px;
   }
   
+  .checkbox-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  
   .actions {
     flex-direction: column;
   }
@@ -566,6 +649,18 @@ body {
   
   .card {
     padding: 20px;
+  }
+  
+  .section-header {
+    padding: 12px 16px;
+  }
+  
+  .section-header h3 {
+    font-size: 14px;
+  }
+  
+  .collapsible-content {
+    padding: 16px;
   }
 }
 
