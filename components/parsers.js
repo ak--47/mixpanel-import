@@ -25,6 +25,20 @@ const zlib = require('zlib');
 const { Storage } = require('@google-cloud/storage');
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 
+// Lazy load hyparquet since it's an ES module
+let parquetRead = null;
+const getParquetRead = async () => {
+	if (!parquetRead) {
+		try {
+			const hyparquet = await import('hyparquet');
+			parquetRead = hyparquet.parquetRead;
+		} catch (error) {
+			throw new Error(`Failed to load hyparquet: ${error.message}. Make sure hyparquet is installed: npm install hyparquet`);
+		}
+	}
+	return parquetRead;
+};
+
 // ====================================================================
 // PARSER PERFORMANCE TUNING CONSTANTS
 // ====================================================================
@@ -977,7 +991,7 @@ function detectGCSFormat(gcsPath) {
  * Main GCS stream factory - detects format and routes to appropriate parser
  * @param {string} gcsPath 
  * @param {JobConfig} job 
- * @returns {Promise<Stream>}
+ * @returns {Promise<stream.Readable>}
  */
 async function createGCSStream(gcsPath, job) {
 	const format = detectGCSFormat(gcsPath);
@@ -997,7 +1011,7 @@ async function createGCSStream(gcsPath, job) {
  * Create JSON/JSONL stream from GCS (original implementation)
  * @param {string} gcsPath 
  * @param {JobConfig} job 
- * @returns {Promise<Stream>}
+ * @returns {Promise<stream.Readable>}
  */
 async function createGCSJSONStream(gcsPath, job) {
 	const storage = new Storage({
@@ -1055,7 +1069,7 @@ async function createGCSJSONStream(gcsPath, job) {
  * Create CSV stream from GCS
  * @param {string} gcsPath 
  * @param {JobConfig} job 
- * @returns {Promise<Stream>}
+ * @returns {Promise<stream.Readable>}
  */
 async function createGCSCSVStream(gcsPath, job) {
 	const storage = new Storage({
@@ -1143,10 +1157,10 @@ async function createGCSCSVStream(gcsPath, job) {
 }
 
 /**
- * Create Parquet stream from GCS using hyparquet
+ * Create Parquet stream from GCS using hyparquet with native GCS streaming
  * @param {string} gcsPath 
  * @param {JobConfig} job 
- * @returns {Promise<Stream>}
+ * @returns {Promise<stream.Readable>}
  */
 async function createGCSParquetStream(gcsPath, job) {
 	const storage = new Storage({
@@ -1170,20 +1184,68 @@ async function createGCSParquetStream(gcsPath, job) {
 			throw new Error(`File not found: ${gcsPath}`);
 		}
 
-		// Create a signed URL for hyparquet to access
-		const [signedUrl] = await gcsFile.getSignedUrl({
-			version: 'v4',
-			action: 'read',
-			expires: Date.now() + 15 * 60 * 1000, // 15 minutes
+		// Create GCS read stream
+		const gcsReadStream = gcsFile.createReadStream({
+			decompress: GCS_STREAMING_CONFIG.DECOMPRESS,
+			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION
 		});
 
-		// Use hyparquet to read the parquet file
-		const { asyncBufferFromUrl, parquetReadObjects } = await import('hyparquet');
-		const file = await asyncBufferFromUrl({ url: signedUrl });
-		const data = await parquetReadObjects({ file });
+		// Collect stream data into buffer for hyparquet
+		const chunks = [];
+		for await (const chunk of gcsReadStream) {
+			chunks.push(chunk);
+		}
+		const buffer = Buffer.concat(chunks);
 
-		// Convert to readable stream
-		return stream.Readable.from(data, { objectMode: true, highWaterMark: job.highWater });
+		// Create async buffer interface for hyparquet (convert Buffer to ArrayBuffer)
+		const asyncBuffer = {
+			byteLength: buffer.length,
+			slice: (start, end) => {
+				const subBuffer = buffer.subarray(start, end);
+				// Convert Buffer to ArrayBuffer
+				const arrayBuffer = subBuffer.buffer.slice(
+					subBuffer.byteOffset, 
+					subBuffer.byteOffset + subBuffer.byteLength
+				);
+				return Promise.resolve(arrayBuffer);
+			}
+		};
+
+		// Use hyparquet's streaming interface (dynamically loaded)
+		const parquetReadFn = await getParquetRead();
+		
+		// Read parquet data first, then create stream
+		const parquetData = await new Promise((resolve, reject) => {
+			parquetReadFn({
+				file: asyncBuffer,
+				rowFormat: 'object',
+				onComplete: (data) => {
+					// Sanitize each row in-place before resolving
+					if (data && data.length > 0) {
+						for (const row of data) {
+							// sanitize in-place
+							for (const k of Object.keys(row)) {
+								const v = row[k];
+								if (v?.toISOString) row[k] = dayjs.utc(v).toISOString();
+								else if (typeof v === 'bigint') row[k] =
+									(v <= Number.MAX_SAFE_INTEGER && v >= Number.MIN_SAFE_INTEGER)
+										? Number(v)
+										: v.toString();
+								else if (Buffer.isBuffer(v)) row[k] = v.toString('utf-8');
+								else if (v === undefined) row[k] = null;
+							}
+						}
+					}
+					resolve(data || []);
+				}
+			}).catch(reject);
+		});
+
+		// Create readable stream from the parsed data
+		return stream.Readable.from(parquetData, { 
+			objectMode: true, 
+			highWaterMark: job.highWater 
+		});
 
 	} catch (error) {
 		throw new Error(`Error creating GCS Parquet stream: ${error.message}`);

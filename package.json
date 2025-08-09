@@ -18,7 +18,7 @@
     "benchmark": "nodemon --inspect ./benchmarks/main.mjs",
     "generate": "NUMEVENTS=3000 SINCEDAYS=7 node ./components/fakeData.js",
     "prune": "rm -rf ./logs/* && rm -rf ./mixpanel-exports/* && rm -rf ./tmp/*",
-    "test": "jest --watch",
+    "test": "node --no-warnings --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
     "coverage": "node --no-warnings --experimental-vm-modules node_modules/jest/bin/jest.js --coverage && open ./tests/coverage/lcov-report/index.html",
     "cli:test": "node index.js ./testData/moarEvents.json --fixData",
     "cli:help": "node index.js --help",

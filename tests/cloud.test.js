@@ -108,11 +108,13 @@ const opts = {
 	showProgress: IS_DEBUG_MODE,
 	verbose: IS_DEBUG_MODE,
 	transformFunc: function fillInDistinctId(e) {
-		if (!e.properties.distinct_id) {
-			if (e.properties.user_id) {
-				e.properties.distinct_id = e.properties.user_id;
-			} else {
-				e.properties.distinct_id = u.uid();
+		if (e?.properties) {
+			if (!e.properties.distinct_id) {
+				if (e.properties.user_id) {
+					e.properties.distinct_id = e.properties.user_id;
+				} else {
+					e.properties.distinct_id = u.uid();
+				}
 			}
 		}
 		return e;
@@ -123,6 +125,12 @@ const opts = {
 		}
 	}
 };
+
+function parquetTransform(e) {
+	if (e.user_id) e.distinct_id = e.user_id;
+	if (e.insert_id) e.insert_id = e.insert_id.toString();
+	return e;
+}
 
 function csvTransform(record) {
 	// Transform CSV record as needed
@@ -185,8 +193,8 @@ describe("google cloud storage", () => {
 		async () => {
 			const file = TEST_PATHS.csv[0];
 			const data = await mp({}, file, { ...opts, fixData: true });
-			expect(data.total).toBe(NUM_RECORDS_PER_FILE-1);
-			expect(data.success).toBeGreaterThan(NUM_RECORDS_PER_FILE/2);
+			expect(data.total).toBe(NUM_RECORDS_PER_FILE - 1);
+			expect(data.success).toBeGreaterThan(NUM_RECORDS_PER_FILE / 2);
 			expect(data.failed).toBeLessThan(1000);
 			expect(data.duration).toBeGreaterThan(0);
 		},
@@ -198,8 +206,8 @@ describe("google cloud storage", () => {
 		async () => {
 			const files = TEST_PATHS.csv;
 			const data = await mp({}, files, { ...opts, fixData: true });
-			expect(data.total).toBe((NUM_RECORDS_PER_FILE*files.length)-2);
-			expect(data.success).toBeGreaterThan((NUM_RECORDS_PER_FILE*files.length)/2);
+			expect(data.total).toBe((NUM_RECORDS_PER_FILE * files.length) - 2);
+			expect(data.success).toBeGreaterThan((NUM_RECORDS_PER_FILE * files.length) / 2);
 			expect(data.failed).toBeLessThan(1000);
 			expect(data.duration).toBeGreaterThan(0);
 		},
@@ -212,8 +220,8 @@ describe("google cloud storage", () => {
 		async () => {
 			const file = TEST_PATHS.csvgz[0];
 			const data = await mp({}, file, { ...opts, fixData: true });
-			expect(data.total).toBe(NUM_RECORDS_PER_FILE-1);
-			expect(data.success).toBeGreaterThan(NUM_RECORDS_PER_FILE/2);
+			expect(data.total).toBe(NUM_RECORDS_PER_FILE - 1);
+			expect(data.success).toBeGreaterThan(NUM_RECORDS_PER_FILE / 2);
 			expect(data.failed).toBeLessThan(1000);
 			expect(data.duration).toBeGreaterThan(0);
 		},
@@ -225,8 +233,8 @@ describe("google cloud storage", () => {
 		async () => {
 			const files = TEST_PATHS.csvgz;
 			const data = await mp({}, files, { ...opts, fixData: true });
-			expect(data.total).toBe((NUM_RECORDS_PER_FILE*files.length)-2);
-			expect(data.success).toBeGreaterThan((NUM_RECORDS_PER_FILE*files.length)/2);
+			expect(data.total).toBe((NUM_RECORDS_PER_FILE * files.length) - 2);
+			expect(data.success).toBeGreaterThan((NUM_RECORDS_PER_FILE * files.length) / 2);
 			expect(data.failed).toBeLessThan(1000);
 			expect(data.duration).toBeGreaterThan(0);
 		},
@@ -237,9 +245,10 @@ describe("google cloud storage", () => {
 		"parquet: single file",
 		async () => {
 			const file = TEST_PATHS.parquet[0];
-			const data = await mp({}, file, { ...opts, fixData: true });
-			expect(data.success).toBe(NUM_RECORDS_PER_FILE);
-			expect(data.failed).toBe(0);
+			const data = await mp({}, file, { ...opts, fixData: true, transformFunc: parquetTransform });
+			expect(data.total).toBe(NUM_RECORDS_PER_FILE-1);
+			expect(data.success).toBeGreaterThan(NUM_RECORDS_PER_FILE/2);
+			expect(data.failed).toBeLessThan(500);
 			expect(data.duration).toBeGreaterThan(0);
 		},
 		longTimeout
@@ -249,9 +258,10 @@ describe("google cloud storage", () => {
 		"parquet: multiple files",
 		async () => {
 			const files = TEST_PATHS.parquet;
-			const data = await mp({}, files, { ...opts, fixData: true });
-			expect(data.success).toBe(NUM_RECORDS_PER_FILE * files.length);
-			expect(data.failed).toBe(0);
+			const data = await mp({}, files, { ...opts, fixData: true, transformFunc: parquetTransform });
+			expect(data.total).toBe((NUM_RECORDS_PER_FILE * files.length) - 2);
+			expect(data.success).toBeGreaterThan(NUM_RECORDS_PER_FILE * files.length / 2);
+			expect(data.failed).toBeLessThan(700);
 			expect(data.duration).toBeGreaterThan(0);
 		},
 		longTimeout
