@@ -119,12 +119,16 @@ class MixpanelImportUI {
             radio.addEventListener('change', this.toggleAuthMethod);
         });
 
-        // Advanced options toggle
+        // Advanced options toggle (only if element exists)
         const advancedToggle = document.getElementById('showAdvanced');
-        advancedToggle.addEventListener('change', (e) => {
-            const advancedSection = document.getElementById('advanced-options');
-            advancedSection.style.display = e.target.checked ? 'block' : 'none';
-        });
+        if (advancedToggle) {
+            advancedToggle.addEventListener('change', (e) => {
+                const advancedSection = document.getElementById('advanced-options');
+                if (advancedSection) {
+                    advancedSection.style.display = e.target.checked ? 'block' : 'none';
+                }
+            });
+        }
 
         // Form submission
         const form = document.getElementById('importForm');
@@ -155,7 +159,7 @@ class MixpanelImportUI {
 
         // Record type change - show/hide relevant fields
         const recordTypeSelect = document.getElementById('recordType');
-        recordTypeSelect.addEventListener('change', this.updateFieldVisibility);
+        recordTypeSelect.addEventListener('change', this.updateFieldVisibility.bind(this));
         this.updateFieldVisibility(); // Initial call
     }
 
@@ -175,12 +179,211 @@ class MixpanelImportUI {
 
     updateFieldVisibility() {
         const recordType = document.getElementById('recordType').value;
-        const tokenGroup = document.getElementById('token').closest('.form-group');
-        const groupKeyGroup = document.getElementById('groupKey').closest('.form-group');
+        const credentialsSection = document.getElementById('credentials-section');
+        const credentialsDescription = document.getElementById('credentials-description');
+        
+        // Hide all groups initially
+        const allGroups = [
+            'project-group', 'lookupTableId-group', 'token-group', 'groupKey-group', 
+            'dataGroupId-group', 'secondToken-group', 'auth-toggle', 'service-auth', 'secret-auth'
+        ];
+        allGroups.forEach(groupId => {
+            const element = document.getElementById(groupId);
+            if (element) element.style.display = 'none';
+        });
 
-        // Show token for profiles, group key for groups only
-        tokenGroup.style.display = ['user', 'group'].includes(recordType) ? 'block' : 'none';
-        groupKeyGroup.style.display = recordType === 'group' ? 'block' : 'none';
+        // Show credentials section if a record type is selected
+        if (!recordType) {
+            credentialsSection.style.display = 'none';
+            return;
+        }
+
+        credentialsSection.style.display = 'block';
+
+        // Define authentication requirements based on RecordType
+        switch (recordType) {
+            case 'event':
+            case 'user':
+                // Only project token is required
+                credentialsDescription.textContent = 'Events and User profiles only require a project token.';
+                document.getElementById('token-group').style.display = 'block';
+                break;
+
+            case 'group':
+                // Project token + groupKey is required
+                credentialsDescription.textContent = 'Group profiles require a project token and group key.';
+                document.getElementById('token-group').style.display = 'block';
+                document.getElementById('groupKey-group').style.display = 'block';
+                break;
+
+            case 'table':
+                // lookupTableId, project id, service account user + pass required
+                credentialsDescription.textContent = 'Lookup tables require table ID, project ID, and service account credentials.';
+                document.getElementById('lookupTableId-group').style.display = 'block';
+                document.getElementById('project-group').style.display = 'block';
+                document.getElementById('service-auth').style.display = 'block';
+                // Force service auth for tables
+                document.querySelector('input[name=\"authMethod\"][value=\"service\"]').checked = true;
+                break;
+
+            case 'export':
+            case 'profile-export':
+            case 'profile-delete':
+                // API secret OR service user/pass and project_id required, dataGroupId optional
+                credentialsDescription.textContent = 'Exports require either API secret or service account credentials with project ID. Data Group ID is optional.';
+                document.getElementById('project-group').style.display = 'block';
+                document.getElementById('auth-toggle').style.display = 'block';
+                document.getElementById('service-auth').style.display = 'block';
+                document.getElementById('dataGroupId-group').style.display = 'block';
+                break;
+
+            case 'scd':
+            case 'annotations':
+            case 'get-annotations':
+            case 'delete-annotations':
+                // Service user/pass and project_id required
+                credentialsDescription.textContent = 'This operation requires service account credentials and project ID.';
+                document.getElementById('project-group').style.display = 'block';
+                document.getElementById('service-auth').style.display = 'block';
+                // Force service auth
+                document.querySelector('input[name=\"authMethod\"][value=\"service\"]').checked = true;
+                break;
+
+            case 'export-import-events':
+            case 'export-import-profiles':
+                // API secret OR service user/pass and project_id required, secondToken optional
+                credentialsDescription.textContent = 'Export-import operations require either API secret or service account credentials. Second token, group key, and data group ID are optional.';
+                document.getElementById('project-group').style.display = 'block';
+                document.getElementById('auth-toggle').style.display = 'block';
+                document.getElementById('service-auth').style.display = 'block';
+                document.getElementById('secondToken-group').style.display = 'block';
+                if (recordType === 'export-import-profiles') {
+                    document.getElementById('groupKey-group').style.display = 'block';
+                    document.getElementById('dataGroupId-group').style.display = 'block';
+                }
+                break;
+
+            default:
+                credentialsDescription.textContent = 'Select an import type to see required authentication settings.';
+        }
+
+        // Update auth method visibility and trigger toggle
+        const authToggle = document.getElementById('auth-toggle');
+        if (authToggle.style.display === 'block') {
+            this.toggleAuthMethod();
+        }
+    }
+
+    validateRequiredFields(recordType) {
+        switch (recordType) {
+            case 'event':
+            case 'user':
+                // Only project token is required
+                const token = document.getElementById('token').value;
+                if (!token) {
+                    return { isValid: false, message: 'Project token is required for events and user profiles.' };
+                }
+                break;
+
+            case 'group':
+                // Project token + groupKey is required
+                const groupToken = document.getElementById('token').value;
+                const groupKey = document.getElementById('groupKey').value;
+                if (!groupToken) {
+                    return { isValid: false, message: 'Project token is required for group profiles.' };
+                }
+                if (!groupKey) {
+                    return { isValid: false, message: 'Group key is required for group profiles.' };
+                }
+                break;
+
+            case 'table':
+                // lookupTableId, project id, service account user + pass required
+                const lookupTableId = document.getElementById('lookupTableId').value;
+                const project = document.getElementById('project').value;
+                const acct = document.getElementById('acct').value;
+                const pass = document.getElementById('pass').value;
+                
+                if (!lookupTableId) {
+                    return { isValid: false, message: 'Lookup Table ID is required for table imports.' };
+                }
+                if (!project) {
+                    return { isValid: false, message: 'Project ID is required for table imports.' };
+                }
+                if (!acct || !pass) {
+                    return { isValid: false, message: 'Service account username and password are required for table imports.' };
+                }
+                break;
+
+            case 'export':
+            case 'profile-export':
+            case 'profile-delete':
+                // API secret OR service user/pass and project_id required
+                const exportProject = document.getElementById('project').value;
+                if (!exportProject) {
+                    return { isValid: false, message: 'Project ID is required for exports.' };
+                }
+                
+                const authMethod = document.querySelector('input[name="authMethod"]:checked')?.value;
+                if (authMethod === 'service') {
+                    const exportAcct = document.getElementById('acct').value;
+                    const exportPass = document.getElementById('pass').value;
+                    if (!exportAcct || !exportPass) {
+                        return { isValid: false, message: 'Service account credentials are required for exports.' };
+                    }
+                } else {
+                    const exportSecret = document.getElementById('secret').value;
+                    if (!exportSecret) {
+                        return { isValid: false, message: 'API secret is required for exports.' };
+                    }
+                }
+                break;
+
+            case 'scd':
+            case 'annotations':
+            case 'get-annotations':
+            case 'delete-annotations':
+                // Service user/pass and project_id required
+                const scdProject = document.getElementById('project').value;
+                const scdAcct = document.getElementById('acct').value;
+                const scdPass = document.getElementById('pass').value;
+                
+                if (!scdProject) {
+                    return { isValid: false, message: 'Project ID is required for this operation.' };
+                }
+                if (!scdAcct || !scdPass) {
+                    return { isValid: false, message: 'Service account credentials are required for this operation.' };
+                }
+                break;
+
+            case 'export-import-events':
+            case 'export-import-profiles':
+                // API secret OR service user/pass and project_id required
+                const eiProject = document.getElementById('project').value;
+                if (!eiProject) {
+                    return { isValid: false, message: 'Project ID is required for export-import operations.' };
+                }
+                
+                const eiAuthMethod = document.querySelector('input[name="authMethod"]:checked')?.value;
+                if (eiAuthMethod === 'service') {
+                    const eiAcct = document.getElementById('acct').value;
+                    const eiPass = document.getElementById('pass').value;
+                    if (!eiAcct || !eiPass) {
+                        return { isValid: false, message: 'Service account credentials are required for export-import operations.' };
+                    }
+                } else {
+                    const eiSecret = document.getElementById('secret').value;
+                    if (!eiSecret) {
+                        return { isValid: false, message: 'API secret is required for export-import operations.' };
+                    }
+                }
+                break;
+
+            default:
+                return { isValid: false, message: 'Please select a valid import type.' };
+        }
+
+        return { isValid: true };
     }
 
     async initializeMonacoEditor() {
@@ -292,23 +495,52 @@ return {
         });
 
         // Collect credentials
-        const authMethod = document.querySelector('input[name="authMethod"]:checked').value;
-        const credentials = {
-            project: document.getElementById('project').value
-        };
+        const authMethod = document.querySelector('input[name="authMethod"]:checked')?.value || 'service';
+        const credentials = {};
 
-        if (authMethod === 'service') {
-            credentials.acct = document.getElementById('acct').value;
-            credentials.pass = document.getElementById('pass').value;
-        } else {
-            credentials.secret = document.getElementById('secret').value;
+        // Add project ID if visible
+        const projectElement = document.getElementById('project');
+        if (projectElement.closest('.form-group').style.display !== 'none' && projectElement.value) {
+            credentials.project = projectElement.value;
         }
 
-        const token = document.getElementById('token').value;
-        const groupKey = document.getElementById('groupKey').value;
+        // Add lookup table ID if visible
+        const lookupTableIdElement = document.getElementById('lookupTableId');
+        if (lookupTableIdElement.closest('.form-group').style.display !== 'none' && lookupTableIdElement.value) {
+            credentials.lookupTableId = lookupTableIdElement.value;
+        }
 
-        if (token) credentials.token = token;
-        if (groupKey) credentials.groupKey = groupKey;
+        // Add authentication based on method
+        if (authMethod === 'service') {
+            const acctElement = document.getElementById('acct');
+            const passElement = document.getElementById('pass');
+            if (acctElement.value) credentials.acct = acctElement.value;
+            if (passElement.value) credentials.pass = passElement.value;
+        } else {
+            const secretElement = document.getElementById('secret');
+            if (secretElement.value) credentials.secret = secretElement.value;
+        }
+
+        // Add optional fields if visible and have values
+        const tokenElement = document.getElementById('token');
+        if (tokenElement.closest('.form-group').style.display !== 'none' && tokenElement.value) {
+            credentials.token = tokenElement.value;
+        }
+
+        const groupKeyElement = document.getElementById('groupKey');
+        if (groupKeyElement.closest('.form-group').style.display !== 'none' && groupKeyElement.value) {
+            credentials.groupKey = groupKeyElement.value;
+        }
+
+        const dataGroupIdElement = document.getElementById('dataGroupId');
+        if (dataGroupIdElement.closest('.form-group').style.display !== 'none' && dataGroupIdElement.value) {
+            credentials.dataGroupId = dataGroupIdElement.value;
+        }
+
+        const secondTokenElement = document.getElementById('secondToken');
+        if (secondTokenElement.closest('.form-group').style.display !== 'none' && secondTokenElement.value) {
+            credentials.secondToken = secondTokenElement.value;
+        }
 
         formData.append('credentials', JSON.stringify(credentials));
 
@@ -346,9 +578,16 @@ return {
                 return;
             }
 
-            const project = document.getElementById('project').value;
-            if (!project) {
-                this.showError('Project ID is required.');
+            const recordType = document.getElementById('recordType').value;
+            if (!recordType) {
+                this.showError('Please select an import type.');
+                return;
+            }
+
+            // Validate required fields based on record type
+            const validationResult = this.validateRequiredFields(recordType);
+            if (!validationResult.isValid) {
+                this.showError(validationResult.message);
                 return;
             }
 

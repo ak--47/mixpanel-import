@@ -38,31 +38,53 @@
                 <div id="file-list" class="file-list"></div>
             </section>
 
-            <!-- Credentials Section -->
+            <!-- Record Type Selection -->
             <section class="card">
+                <h2 class="section-title">📋 Type of Import</h2>
+                <p class="section-description">Select what type of data you're importing to show the correct authentication options.</p>
+                
+                <div class="form-group">
+                    <label for="recordType">Import Type*</label>
+                    <select id="recordType" name="recordType" required>
+                        <option value="">Select import type...</option>
+                        <option value="event">Events</option>
+                        <option value="user">User Profiles</option>
+                        <option value="group">Group Profiles</option>
+                        <option value="table">Lookup Tables</option>
+                        <option value="export">Export Data</option>
+                        <option value="profile-export">Profile Export</option>
+                        <option value="profile-delete">Profile Delete</option>
+                        <option value="scd">SCD (Slowly Changing Dimensions)</option>
+                        <option value="annotations">Annotations</option>
+                        <option value="get-annotations">Get Annotations</option>
+                        <option value="delete-annotations">Delete Annotations</option>
+                        <option value="export-import-events">Export-Import Events</option>
+                        <option value="export-import-profiles">Export-Import Profiles</option>
+                    </select>
+                    <small>Different import types require different authentication settings</small>
+                </div>
+            </section>
+
+            <!-- Credentials Section -->
+            <section class="card" id="credentials-section" style="display: none;">
                 <h2 class="section-title">🔑 Mixpanel Credentials</h2>
-                <p class="section-description">Your Mixpanel project credentials. Service account authentication is preferred.</p>
+                <p class="section-description" id="credentials-description">Select an import type above to see the required authentication settings.</p>
                 
                 <div class="form-row">
-                    <div class="form-group">
+                    <div class="form-group" id="project-group" style="display: none;">
                         <label for="project">Project ID*</label>
-                        <input type="text" id="project" name="project" placeholder="Your project ID" required>
+                        <input type="text" id="project" name="project" placeholder="Your project ID">
                         <small>Found in your Mixpanel project settings</small>
                     </div>
-                    <div class="form-group">
-                        <label for="recordType">Record Type*</label>
-                        <select id="recordType" name="recordType" required>
-                            <option value="event">Events</option>
-                            <option value="user">User Profiles</option>
-                            <option value="group">Group Profiles</option>
-                            <option value="table">Lookup Tables</option>
-                        </select>
-                        <small>Type of data you're importing</small>
+                    <div class="form-group" id="lookupTableId-group" style="display: none;">
+                        <label for="lookupTableId">Lookup Table ID*</label>
+                        <input type="text" id="lookupTableId" name="lookupTableId" placeholder="Your lookup table ID">
+                        <small>ID of the lookup table to import into</small>
                     </div>
                 </div>
 
                 <!-- Auth Method Toggle -->
-                <div class="auth-toggle">
+                <div class="auth-toggle" id="auth-toggle" style="display: none;">
                     <label class="toggle-label">
                         <input type="radio" name="authMethod" value="service" checked>
                         Service Account (Recommended)
@@ -74,14 +96,14 @@
                 </div>
 
                 <!-- Service Account Fields -->
-                <div id="service-auth" class="auth-section">
+                <div id="service-auth" class="auth-section" style="display: none;">
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="acct">Account Username</label>
+                            <label for="acct">Account Username*</label>
                             <input type="text" id="acct" name="acct" placeholder="service-account@yourorg.com">
                         </div>
                         <div class="form-group">
-                            <label for="pass">Account Password</label>
+                            <label for="pass">Account Password*</label>
                             <input type="password" id="pass" name="pass" placeholder="Your service account password">
                         </div>
                     </div>
@@ -90,7 +112,7 @@
                 <!-- API Secret Fields -->
                 <div id="secret-auth" class="auth-section" style="display: none;">
                     <div class="form-group">
-                        <label for="secret">API Secret</label>
+                        <label for="secret">API Secret*</label>
                         <input type="password" id="secret" name="secret" placeholder="Your project's API secret">
                         <small>Legacy authentication method</small>
                     </div>
@@ -98,15 +120,29 @@
 
                 <!-- Additional Tokens -->
                 <div class="form-row">
-                    <div class="form-group">
-                        <label for="token">Project Token</label>
+                    <div class="form-group" id="token-group" style="display: none;">
+                        <label for="token">Project Token*</label>
                         <input type="text" id="token" name="token" placeholder="Required for profiles/groups">
                         <small>Required for user/group profiles</small>
                     </div>
-                    <div class="form-group">
-                        <label for="groupKey">Group Key</label>
+                    <div class="form-group" id="groupKey-group" style="display: none;">
+                        <label for="groupKey">Group Key*</label>
                         <input type="text" id="groupKey" name="groupKey" placeholder="For group profiles">
                         <small>Required for group profile imports</small>
+                    </div>
+                </div>
+                
+                <!-- Optional Fields -->
+                <div class="form-row">
+                    <div class="form-group" id="dataGroupId-group" style="display: none;">
+                        <label for="dataGroupId">Data Group ID</label>
+                        <input type="text" id="dataGroupId" name="dataGroupId" placeholder="Optional data group ID">
+                        <small>Optional for profile exports and deletes</small>
+                    </div>
+                    <div class="form-group" id="secondToken-group" style="display: none;">
+                        <label for="secondToken">Second Token</label>
+                        <input type="text" id="secondToken" name="secondToken" placeholder="Destination project token">
+                        <small>Optional for export-import operations</small>
                     </div>
                 </div>
             </section>
