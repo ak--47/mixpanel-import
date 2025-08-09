@@ -236,6 +236,24 @@ async function determineDataType(data, job) {
 		return stream.Readable.from(data, { objectMode: true, highWaterMark: job.highWater });
 	}
 
+	// CLOUD STORAGE
+
+
+	// Handle Google Cloud Storage URLs (gs://)
+	if (typeof data === 'string' && data.startsWith('gs://')) {
+		job.wasStream = true;
+		return createGCSStream(data, job);
+	}
+
+	// Handle array of Google Cloud Storage URLs
+	if (Array.isArray(data) && data.every(item => typeof item === 'string' && item.startsWith('gs://'))) {
+		job.wasStream = true;
+		return createMultiGCSStream(data, job);
+	}
+
+
+	// ALL OTHER PARSING
+
 	try {
 		const { lineByLineFileExt, objectModeFileExt, tableFileExt, supportedFileExt, streamFormat, forceStream, highWater } = job;
 		let isArrayOfFileNames = false; // !ugh ... so disorganized 
@@ -370,17 +388,7 @@ async function determineDataType(data, job) {
 
 	}
 
-	// Handle Google Cloud Storage URLs (gs://)
-	if (typeof data === 'string' && data.startsWith('gs://')) {
-		job.wasStream = true;
-		return createGCSStream(data, job);
-	}
-
-	// Handle array of Google Cloud Storage URLs
-	if (Array.isArray(data) && data.every(item => typeof item === 'string' && item.startsWith('gs://'))) {
-		job.wasStream = true;
-		return createMultiGCSStream(data, job);
-	}
+	
 
 	// data is a string, and we have to guess what it is
 	if (typeof data === 'string') {

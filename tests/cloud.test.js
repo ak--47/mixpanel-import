@@ -104,12 +104,14 @@ const opts = {
 	strict: true,
 	logs: false,
 	fixData: true,
-	showProgress: true,
-	verbose: false,
+	showProgress: IS_DEBUG_MODE,
+	verbose: IS_DEBUG_MODE,
+	transformFunc: function noop(a) {
+		return a;
+	},
 	responseHandler: (data) => {
 		if (IS_DEBUG_MODE) {
 			console.log(`\nRESPONSE!\n`);
-			debugger;
 		}
 	}
 };
@@ -127,7 +129,112 @@ describe("google cloud storage", () => {
 		longTimeout
 	);
 
+	test(
+		"json: multiple files",
+		async () => {
+			const files = TEST_PATHS.json;
+			const data = await mp({}, files, { ...opts });
+			expect(data.success).toBe(NUM_RECORDS_PER_FILE * files.length);
+			expect(data.failed).toBe(0);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
+
+	test(
+		"json.gz: single file",
+		async () => {
+			const file = TEST_PATHS.jsongz[0];
+			const data = await mp({}, file, { ...opts });
+			expect(data.success).toBe(NUM_RECORDS_PER_FILE);
+			expect(data.failed).toBe(0);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
+
+	test(
+		"json.gz: multiple files",
+		async () => {
+			const files = TEST_PATHS.jsongz;
+			const data = await mp({}, files, { ...opts });
+			expect(data.success).toBe(NUM_RECORDS_PER_FILE * files.length);
+			expect(data.failed).toBe(0);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
+
+	test(
+		"csv: single file",
+		async () => {
+			const file = TEST_PATHS.csv[0];
+			const data = await mp({}, file, { ...opts });
+			expect(data.success).toBe(NUM_RECORDS_PER_FILE);
+			expect(data.failed).toBe(0);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
+
+	test(
+		"csv: multiple files",
+		async () => {
+			const files = TEST_PATHS.csv;
+			const data = await mp({}, files, { ...opts });
+			expect(data.success).toBe(NUM_RECORDS_PER_FILE * files.length);
+			expect(data.failed).toBe(0);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
 
 
+	test(
+		"csv.gz: single file",
+		async () => {
+			const file = TEST_PATHS.csvgz[0];
+			const data = await mp({}, file, { ...opts });
+			expect(data.success).toBe(NUM_RECORDS_PER_FILE);
+			expect(data.failed).toBe(0);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
 
+	test(
+		"csv.gz: multiple files",
+		async () => {
+			const files = TEST_PATHS.csvgz;
+			const data = await mp({}, files, { ...opts });
+			expect(data.success).toBe(NUM_RECORDS_PER_FILE * files.length);
+			expect(data.failed).toBe(0);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
+
+	test(
+		"parquet: single file",
+		async () => {
+			const file = TEST_PATHS.parquet[0];
+			const data = await mp({}, file, { ...opts });
+			expect(data.success).toBe(NUM_RECORDS_PER_FILE);
+			expect(data.failed).toBe(0);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
+
+	test(
+		"parquet: multiple files",
+		async () => {
+			const files = TEST_PATHS.parquet;
+			const data = await mp({}, files, { ...opts });
+			expect(data.success).toBe(NUM_RECORDS_PER_FILE * files.length);
+			expect(data.failed).toBe(0);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
 });
