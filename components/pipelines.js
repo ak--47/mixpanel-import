@@ -1,6 +1,6 @@
 
 // $ parsers
-const { chunkForSize } = require("./parsers.js");
+const { chunkForSize, chunkForSizeOptimized } = require("./parsers.js");
 
 // $ streamers
 const _ = require('highland');
@@ -162,12 +162,11 @@ function corePipeline(stream, job, toNodeStream = false) {
 			return data;
 		}),
 
-		// * post-transform filter to ignore nulls + count byte size
+		// * post-transform filter to ignore nulls
 		// @ts-ignore
 		_.filter(function THIRD_EXISTENCE(data) {
 			const exists = isNotEmpty(data);
 			if (exists) {
-				job.bytesProcessed += Buffer.byteLength(JSON.stringify(data), 'utf-8');
 				return true;
 			}
 			else {
@@ -176,13 +175,26 @@ function corePipeline(stream, job, toNodeStream = false) {
 			}
 		}),
 
+		// * stringify once and count bytes
+		// @ts-ignore
+		_.map(function STRINGIFY_ONCE(data) {
+			const jsonString = JSON.stringify(data);
+			const byteLength = Buffer.byteLength(jsonString, 'utf-8');
+			job.bytesProcessed += byteLength;
+			return {
+				originalData: data,
+				jsonString,
+				byteLength
+			};
+		}),
+
 		// * batch for # of items
 		// @ts-ignore
 		_.batch(job.recordsPerBatch),
 
-		// * batch for req size
+		// * batch for req size (optimized - uses cached byte lengths)
 		// @ts-ignore
-		_.consume(chunkForSize(job)),
+		_.consume(chunkForSizeOptimized(job)),
 
 		// * send to mixpanel
 		// @ts-ignore
@@ -190,14 +202,19 @@ function corePipeline(stream, job, toNodeStream = false) {
 			job.requests++;
 			job.batches++;
 			job.addBatchLength(batch.length); // Use bounded collection method
-			if (job.dryRun) return _(Promise.resolve(batch));
+			
+			// Extract originalData for API calls
+			const dataOnly = batch.map(item => item.originalData);
+			
+			if (job.dryRun) return _(Promise.resolve(dataOnly));
 			if (job.writeToFile) {
-				batch.forEach(data => {
-					fileStream.write(JSON.stringify(data) + '\n');
+				batch.forEach(item => {
+					// Use cached jsonString instead of re-stringify
+					fileStream.write(item.jsonString + '\n');
 				});
-				return _(Promise.resolve(batch));
+				return _(Promise.resolve(dataOnly));
 			}
-			return flush(batch, job);
+			return flush(dataOnly, job);
 		}),
 
 		// * concurrency
