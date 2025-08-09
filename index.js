@@ -230,14 +230,27 @@ mpImport.createMpStream = pipeInterface;
 
 // this is for CLI
 if (require.main === module) {
-	// @ts-ignore
-	main(undefined, undefined, undefined, true).then(() => {
-		//noop
-	}).catch((e) => {
-		console.log('\nUH OH! something went wrong; the error is:\n');
-		console.error(e);
-		process.exit(1);
-	}).finally(() => {
-		process.exit(0);
-	});
+	// Check if --ui flag is present
+	const args = cliParams();
+	
+	if (args.ui) {
+		// Start the web UI
+		const { startUI } = require('./ui/server.js');
+		startUI().catch((error) => {
+			console.error('Failed to start UI:', error.message);
+			process.exit(1);
+		});
+	} else {
+		// Regular CLI import
+		// @ts-ignore
+		main(undefined, undefined, undefined, true).then(() => {
+			//noop
+		}).catch((e) => {
+			console.log('\nUH OH! something went wrong; the error is:\n');
+			console.error(e);
+			process.exit(1);
+		}).finally(() => {
+			process.exit(0);
+		});
+	}
 }

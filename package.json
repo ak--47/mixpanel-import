@@ -22,7 +22,9 @@
     "coverage": "node --no-warnings --experimental-vm-modules node_modules/jest/bin/jest.js --coverage && open ./tests/coverage/lcov-report/index.html",
     "cli:test": "node index.js ./testData/moarEvents.json --fixData",
     "cli:help": "node index.js --help",
-    "typecheck": "npx tsc"
+    "typecheck": "npx tsc",
+    "ui": "node index.js --ui",
+    "ui:dev": "nodemon --inspect ui/server.js"
   },
   "bin": {
     "mixpanel-import": "./index.js"
@@ -46,11 +48,13 @@
     "dayjs": "^1.11.7",
     "dotenv": "^10.0.0",
     "duckdb": "^1.2.1",
+    "express": "^5.1.0",
     "got": "^11.8.6",
     "highland": "^2.13.5",
     "hyparquet": "^1.17.1",
     "json-stable-stringify": "^1.0.2",
     "md5": "^2.3.0",
+    "multer": "^2.0.2",
     "multistream": "^4.1.0",
     "murmurhash": "^2.0.1",
     "node-gzip": "^1.1.2",

@@ -357,11 +357,17 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			type: 'number',
 			describe: 'data group id for group profile exports'
 		})
+		.option('ui', {
+			demandOption: false,
+			default: false,
+			describe: 'start the web UI for interactive imports',
+			type: 'boolean'
+		})
 		.help()
 		.wrap(null)
 		.argv;
 	// @ts-ignore
-	if (args._.length === 0 && !args.type?.toLowerCase()?.includes('export')) {
+	if (args._.length === 0 && !args.type?.toLowerCase()?.includes('export') && !args.ui) {
 		// @ts-ignore
 		yargs.showHelp();
 		process.exit();

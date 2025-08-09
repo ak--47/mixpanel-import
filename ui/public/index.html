@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mixpanel Import - Data Import Tool</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Dropzone -->
+    <link rel="stylesheet" href="https://unpkg.com/dropzone@5/dist/min/dropzone.min.css" />
+    <script src="https://unpkg.com/dropzone@5/dist/min/dropzone.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1 class="logo">
+                <span class="logo-icon">📊</span>
+                Mixpanel Import
+            </h1>
+            <p class="subtitle">Stream data to Mixpanel with powerful transformation tools</p>
+        </header>
+
+        <!-- Main Form -->
+        <form id="importForm" class="import-form">
+            <!-- File Upload Section -->
+            <section class="card">
+                <h2 class="section-title">📁 Data Files</h2>
+                <p class="section-description">Drop your JSON, JSONL, CSV, or Parquet files here. Supports local files or cloud storage URLs.</p>
+                
+                <div id="file-dropzone" class="dropzone-custom">
+                    <div class="dropzone-message">
+                        <span class="dropzone-icon">⬆️</span>
+                        <p>Drop files here or click to browse</p>
+                        <small>JSON, JSONL, CSV, Parquet supported</small>
+                    </div>
+                </div>
+                
+                <div id="file-list" class="file-list"></div>
+            </section>
+
+            <!-- Credentials Section -->
+            <section class="card">
+                <h2 class="section-title">🔑 Mixpanel Credentials</h2>
+                <p class="section-description">Your Mixpanel project credentials. Service account authentication is preferred.</p>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="project">Project ID*</label>
+                        <input type="text" id="project" name="project" placeholder="Your project ID" required>
+                        <small>Found in your Mixpanel project settings</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="recordType">Record Type*</label>
+                        <select id="recordType" name="recordType" required>
+                            <option value="event">Events</option>
+                            <option value="user">User Profiles</option>
+                            <option value="group">Group Profiles</option>
+                            <option value="table">Lookup Tables</option>
+                        </select>
+                        <small>Type of data you're importing</small>
+                    </div>
+                </div>
+
+                <!-- Auth Method Toggle -->
+                <div class="auth-toggle">
+                    <label class="toggle-label">
+                        <input type="radio" name="authMethod" value="service" checked>
+                        Service Account (Recommended)
+                    </label>
+                    <label class="toggle-label">
+                        <input type="radio" name="authMethod" value="secret">
+                        API Secret (Legacy)
+                    </label>
+                </div>
+
+                <!-- Service Account Fields -->
+                <div id="service-auth" class="auth-section">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="acct">Account Username</label>
+                            <input type="text" id="acct" name="acct" placeholder="service-account@yourorg.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="pass">Account Password</label>
+                            <input type="password" id="pass" name="pass" placeholder="Your service account password">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- API Secret Fields -->
+                <div id="secret-auth" class="auth-section" style="display: none;">
+                    <div class="form-group">
+                        <label for="secret">API Secret</label>
+                        <input type="password" id="secret" name="secret" placeholder="Your project's API secret">
+                        <small>Legacy authentication method</small>
+                    </div>
+                </div>
+
+                <!-- Additional Tokens -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="token">Project Token</label>
+                        <input type="text" id="token" name="token" placeholder="Required for profiles/groups">
+                        <small>Required for user/group profiles</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="groupKey">Group Key</label>
+                        <input type="text" id="groupKey" name="groupKey" placeholder="For group profiles">
+                        <small>Required for group profile imports</small>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Configuration Section -->
+            <section class="card">
+                <h2 class="section-title">⚙️ Import Configuration</h2>
+                <p class="section-description">Fine-tune your import settings for optimal performance and data quality.</p>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="workers">Concurrency Workers</label>
+                        <input type="number" id="workers" name="workers" value="10" min="1" max="50">
+                        <small>Number of concurrent HTTP requests (default: 10)</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="recordsPerBatch">Records per Batch</label>
+                        <input type="number" id="recordsPerBatch" name="recordsPerBatch" value="2000" min="1" max="5000">
+                        <small>Records per API request (default: 2000)</small>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="region">Data Residency</label>
+                        <select id="region" name="region">
+                            <option value="US">United States</option>
+                            <option value="EU">European Union</option>
+                        </select>
+                        <small>Your Mixpanel data residency region</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="vendor">Data Source</label>
+                        <select id="vendor" name="vendor">
+                            <option value="">None (Native format)</option>
+                            <option value="amplitude">Amplitude</option>
+                            <option value="heap">Heap Analytics</option>
+                            <option value="ga4">Google Analytics 4</option>
+                            <option value="segment">Segment</option>
+                            <option value="rudderstack">RudderStack</option>
+                        </select>
+                        <small>Transform data from other analytics platforms</small>
+                    </div>
+                </div>
+
+                <!-- Advanced Options -->
+                <div class="advanced-toggle">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="showAdvanced">
+                        <span class="checkmark"></span>
+                        Show Advanced Options
+                    </label>
+                </div>
+
+                <div id="advanced-options" class="advanced-section" style="display: none;">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="compress" name="compress">
+                                <span class="checkmark"></span>
+                                Enable Compression
+                            </label>
+                            <small>Compress requests for better performance</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="fixData" name="fixData">
+                                <span class="checkmark"></span>
+                                Auto-fix Data Issues
+                            </label>
+                            <small>Automatically fix common data problems</small>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="strict" name="strict">
+                                <span class="checkmark"></span>
+                                Strict Mode
+                            </label>
+                            <small>Fail fast on validation errors</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="verbose" name="verbose">
+                                <span class="checkmark"></span>
+                                Verbose Logging
+                            </label>
+                            <small>Detailed progress information</small>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Transform Section -->
+            <section class="card">
+                <h2 class="section-title">🔧 Data Transform (Optional)</h2>
+                <p class="section-description">Write custom JavaScript to transform your data before importing. Use the preview to test your changes.</p>
+                
+                <div class="transform-editor">
+                    <div id="monaco-editor" class="code-editor"></div>
+                    <div class="editor-help">
+                        <p><strong>Available parameters:</strong></p>
+                        <ul>
+                            <li><code>data</code> - The current record object</li>
+                            <li><code>heavy</code> - Heavy objects (Job instance with utilities)</li>
+                        </ul>
+                        <p><strong>Example:</strong> <code>return { ...data, custom_property: 'value' };</code></p>
+                    </div>
+                </div>
+
+                <div class="transform-actions">
+                    <button type="button" id="preview-btn" class="btn btn-secondary">
+                        <span class="btn-icon">👀</span>
+                        Preview Transform
+                    </button>
+                    <button type="button" id="clear-transform" class="btn btn-ghost">Clear</button>
+                </div>
+
+                <div id="preview-results" class="preview-section" style="display: none;">
+                    <h3>Transform Preview</h3>
+                    <div id="preview-content" class="preview-content"></div>
+                </div>
+            </section>
+
+            <!-- Actions -->
+            <section class="actions">
+                <button type="button" id="dry-run-btn" class="btn btn-secondary">
+                    <span class="btn-icon">🧪</span>
+                    Test Run (Dry Run)
+                </button>
+                <button type="submit" id="import-btn" class="btn btn-primary">
+                    <span class="btn-icon">🚀</span>
+                    Start Import
+                </button>
+            </section>
+
+            <!-- Loading State -->
+            <div id="loading" class="loading-overlay" style="display: none;">
+                <div class="loading-content">
+                    <div class="loading-spinner"></div>
+                    <h3 id="loading-title">Processing...</h3>
+                    <p id="loading-message">Importing your data to Mixpanel</p>
+                </div>
+            </div>
+
+            <!-- Results -->
+            <div id="results" class="results-section" style="display: none;">
+                <div class="results-content">
+                    <h3 id="results-title">Import Complete!</h3>
+                    <div id="results-data" class="results-data"></div>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
