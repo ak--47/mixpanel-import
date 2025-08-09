@@ -749,75 +749,6 @@ async function csvMemory(filePath, jobConfig) {
 /**
  * @param  {JobConfig} jobConfig
  */
-/**
- * Optimized version of chunkForSize that uses cached byte lengths from WeakMaps
- * Note: This function expects bytesCache to be passed in via jobConfig
- * @param  {JobConfig} jobConfig
- */
-function chunkForSizeCached(jobConfig) {
-	let pending = [];
-	let totalSize = 0; // maintain a running total of size
-
-	return (err, x, push, next) => {
-		const maxBatchSize = jobConfig.bytesPerBatch;
-		const maxBatchCount = jobConfig.recordsPerBatch;
-
-		if (err) {
-			push(err);
-			next();
-		} else if (x === _.nil) {
-			if (pending.length > 0) {
-				push(null, pending);
-				pending = [];
-				totalSize = 0; // reset total size
-			}
-			push(null, x);
-		} else {
-			for (const item of x) {
-				// Use cached byte length or fallback to calculation
-				const cachedSize = jobConfig.bytesCache && jobConfig.bytesCache.get(item);
-				const itemSize = cachedSize || Buffer.byteLength(JSON.stringify(item), 'utf-8');
-
-				// Check for individual items exceeding size
-				if (itemSize > maxBatchSize) {
-					console.warn('Dropping an oversized record.');
-					continue;
-				}
-
-				pending.push(item);
-				totalSize += itemSize;
-
-				// Check size and count constraints
-				while (totalSize > maxBatchSize || pending.length > maxBatchCount) {
-					const chunk = [];
-					let size = 0;
-
-					while (pending.length > 0) {
-						const item = pending[0];
-						// Use cached byte length or fallback
-						const cachedSize = jobConfig.bytesCache && jobConfig.bytesCache.get(item);
-						const itemSize = cachedSize || Buffer.byteLength(JSON.stringify(item), 'utf-8');
-
-						if (size + itemSize > maxBatchSize || chunk.length >= maxBatchCount) {
-							break;
-						}
-
-						size += itemSize;
-						totalSize -= itemSize; // reduce from total size
-						chunk.push(item);
-						pending.shift();
-					}
-
-					if (chunk.length > 0) {
-						push(null, chunk);
-					}
-				}
-			}
-		}
-		next();
-	};
-}
-
 function chunkForSize(jobConfig) {
 	let pending = [];
 	let totalSize = 0; // maintain a running total of size
@@ -1272,6 +1203,5 @@ module.exports = {
 	StreamArray,
 	itemStream,
 	getEnvVars,
-	chunkForSize,
-	chunkForSizeCached
+	chunkForSize
 };
