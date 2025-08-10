@@ -849,3 +849,53 @@ input[type="range"]::-moz-range-thumb {
   background: var(--mp-purple-bg);
   color: var(--mp-purple-light);
 }
+
+/* JSON Syntax Highlighting */
+.json-key {
+  color: var(--mp-purple-light);
+  font-weight: 600;
+}
+
+.json-string {
+  color: var(--success);
+}
+
+.json-number {
+  color: var(--mp-orange);
+}
+
+.json-boolean {
+  color: var(--mp-pink);
+  font-weight: 600;
+}
+
+.json-null {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.json-punctuation {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+/* Error and Success Messages */
+.error {
+  background: var(--error-bg);
+  color: var(--error);
+  border: 1px solid var(--error);
+  border-radius: var(--radius-md);
+  padding: 16px 20px;
+  margin: 16px 0;
+  font-weight: 500;
+}
+
+.success {
+  background: var(--success-bg);
+  color: var(--success);
+  border: 1px solid var(--success);
+  border-radius: var(--radius-md);
+  padding: 16px 20px;
+  margin: 16px 0;
+  font-weight: 500;
+}

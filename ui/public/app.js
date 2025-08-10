@@ -177,11 +177,7 @@ class MixpanelImportUI {
 			this.submitJob(true);
 		});
 
-		// Preview button
-		const previewBtn = document.getElementById('preview-btn');
-		previewBtn.addEventListener('click', () => {
-			this.previewTransform();
-		});
+		// Preview button (removed - now handled by dry run only)
 
 		// Clear transform button - reset to default with helpful template
 		const clearBtn = document.getElementById('clear-transform');
@@ -920,31 +916,6 @@ function transform(row) {
 		}
 	}
 
-	async previewTransform() {
-		const fileSource = document.querySelector('input[name="fileSource"]:checked').value;
-
-		if (fileSource === 'local' && this.files.length === 0) {
-			this.showError('Please select a file first to preview the transform.');
-			return;
-		}
-
-		if (fileSource === 'cloud') {
-			const cloudPaths = document.getElementById('cloudPaths').value;
-			if (!cloudPaths.trim()) {
-				this.showError('Please enter cloud storage paths first to preview the transform.');
-				return;
-			}
-		}
-
-		const transformCode = this.editor ? this.editor.getValue().trim() : '';
-		if (!transformCode || transformCode.startsWith('// Transform function')) {
-			this.showError('Please write a transform function to preview.');
-			return;
-		}
-
-		// Run a dry run to get preview data
-		await this.submitJob(true);
-	}
 
 	showLoading(title, message) {
 		document.getElementById('loading-title').textContent = title;
@@ -965,19 +936,12 @@ function transform(row) {
 
 		let displayData = result.result;
 
-		// For dry runs, also show preview data
+		// For dry runs, always show the first 100 records of preview data
 		if (isDryRun && result.previewData && result.previewData.length > 0) {
-			displayData = [...result.previewData.slice(0, 5)];
-
-			// Also show in preview section
-			const previewSection = document.getElementById('preview-results');
-			const previewContent = document.getElementById('preview-content');
-
-			previewContent.innerHTML = `<pre>${JSON.stringify(result.previewData.slice(0, 3), null, 2)}</pre>`;
-			previewSection.style.display = 'block';
+			displayData = [...result.previewData.slice(0, 100)];
 		}
 
-		resultsData.innerHTML = `<pre>${JSON.stringify(displayData, null, 2)}</pre>`;
+		resultsData.innerHTML = `<pre><code class="json">${this.highlightJSON(JSON.stringify(displayData, null, 2))}</code></pre>`;
 		resultsSection.style.display = 'block';
 
 		// Scroll to results
@@ -1022,6 +986,16 @@ function transform(row) {
 				successDiv.remove();
 			}
 		}, 3000);
+	}
+
+	highlightJSON(jsonString) {
+		return jsonString
+			.replace(/("([^"\\]|\\.)*")\s*:/g, '<span class="json-key">$1</span>:')
+			.replace(/:\s*("([^"\\]|\\.)*")/g, ': <span class="json-string">$1</span>')
+			.replace(/:\s*(true|false)/g, ': <span class="json-boolean">$1</span>')
+			.replace(/:\s*(null)/g, ': <span class="json-null">$1</span>')
+			.replace(/:\s*(-?\d+\.?\d*)/g, ': <span class="json-number">$1</span>')
+			.replace(/([{}[\]])/g, '<span class="json-punctuation">$1</span>');
 	}
 }
 
