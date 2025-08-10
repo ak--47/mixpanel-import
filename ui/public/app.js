@@ -763,6 +763,13 @@ function transform(row) {
 			formData.append('files', file);
 		});
 
+		//check for cloud mode files
+		const cloudPathsInput = document.getElementById('cloudPaths').value;
+		if (cloudPathsInput) {
+			const cloudPaths = cloudPathsInput.split(/[,\n]/).map(p => p.trim()).filter(p => p);
+			formData.append('cloudPaths', JSON.stringify(cloudPaths));
+		}
+
 		// Collect credentials
 		const authMethod = document.querySelector('input[name="authMethod"]:checked')?.value || 'service';
 		const credentials = {};
