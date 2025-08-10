@@ -25,6 +25,7 @@ app.get('/', (req, res) => {
 });
 
 // Handle job submission
+// @ts-ignore
 app.post('/job', upload.array('files'), async (req, res) => {
   try {
     const { credentials, options, transformCode } = req.body;
@@ -37,7 +38,8 @@ app.post('/job', upload.array('files'), async (req, res) => {
     if (transformCode && transformCode.trim()) {
       try {
         // Create function from code string
-        opts.transformFunc = new Function('data', 'heavy', transformCode);
+        // opts.transformFunc = new Function('data', 'heavy', transformCode);
+		opts.transformFunc = eval(`(${transformCode})`);
       } catch (err) {
         return res.status(400).json({
           success: false,
@@ -46,9 +48,24 @@ app.post('/job', upload.array('files'), async (req, res) => {
       }
     }
     
-    // Process files
+    // Process files or cloud paths
     let data;
-    if (req.files && req.files.length > 0) {
+    
+    // Check if cloud paths were provided
+    if (req.body.cloudPaths) {
+      try {
+        const cloudPaths = JSON.parse(req.body.cloudPaths);
+        console.log(`Using cloud storage paths:`, cloudPaths);
+        data = cloudPaths; // Pass cloud paths directly to mixpanel-import
+      } catch (err) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid cloud paths format'
+        });
+      }
+    // @ts-ignore
+    } else if (req.files && req.files.length > 0) {
+      // Handle local files
       if (req.files.length === 1) {
         // Single file - convert buffer to JSON
         const fileContent = req.files[0].buffer.toString('utf8');
@@ -61,6 +78,7 @@ app.post('/job', upload.array('files'), async (req, res) => {
       } else {
         // Multiple files - combine into array
         data = [];
+        // @ts-ignore
         for (const file of req.files) {
           const fileContent = file.buffer.toString('utf8');
           try {
@@ -73,6 +91,11 @@ app.post('/job', upload.array('files'), async (req, res) => {
           }
         }
       }
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: 'No files or cloud paths provided'
+      });
     }
     
     console.log(`Starting import job with ${Array.isArray(data) ? data.length : 'unknown'} records`);
@@ -95,6 +118,7 @@ app.post('/job', upload.array('files'), async (req, res) => {
 });
 
 // Handle dry run
+// @ts-ignore
 app.post('/dry-run', upload.array('files'), async (req, res) => {
   try {
     const { credentials, options, transformCode } = req.body;
@@ -110,7 +134,8 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
     // Add transform function if provided
     if (transformCode && transformCode.trim()) {
       try {
-        opts.transformFunc = new Function('data', 'heavy', transformCode);
+        // opts.transformFunc = new Function('data', 'heavy', transformCode);
+		opts.transformFunc = eval(`(${transformCode})`);
       } catch (err) {
         return res.status(400).json({
           success: false,
@@ -119,9 +144,23 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
       }
     }
     
-    // Process files (same as above)
+    // Process files or cloud paths (same as main endpoint)
     let data;
-    if (req.files && req.files.length > 0) {
+    
+    // Check if cloud paths were provided
+    if (req.body.cloudPaths) {
+      try {
+        const cloudPaths = JSON.parse(req.body.cloudPaths);
+        console.log(`Dry run with cloud storage paths:`, cloudPaths);
+        data = cloudPaths; // Pass cloud paths directly to mixpanel-import
+      } catch (err) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid cloud paths format'
+        });
+      }
+    // @ts-ignore
+    } else if (req.files && req.files.length > 0) {
       if (req.files.length === 1) {
         const fileContent = req.files[0].buffer.toString('utf8');
         try {
@@ -137,6 +176,7 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
       } else {
         data = [];
         let recordCount = 0;
+        // @ts-ignore
         for (const file of req.files) {
           if (recordCount >= 10) break;
           const fileContent = file.buffer.toString('utf8');
@@ -152,6 +192,11 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
           }
         }
       }
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: 'No files or cloud paths provided'
+      });
     }
     
     console.log(`Starting dry run with ${Array.isArray(data) ? data.length : 'unknown'} records`);
@@ -162,7 +207,7 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
     res.json({
       success: true,
       result,
-      previewData: result.dryRunResults || []
+      previewData: result.dryRun || []
     });
     
   } catch (error) {

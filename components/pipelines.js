@@ -174,16 +174,16 @@ function corePipeline(stream, job, toNodeStream = false) {
 				job.empty++;
 				return null; // Will be filtered out
 			}
-			
+
 			// Cache JSON stringification and byte count using WeakMaps
 			const jsonString = JSON.stringify(data);
 			const byteLength = Buffer.byteLength(jsonString, 'utf-8');
 			job.bytesProcessed += byteLength;
-			
+
 			// Store in WeakMaps (doesn't modify original object)
 			jsonCache.set(data, jsonString);
 			bytesCache.set(data, byteLength);
-			
+
 			return data;
 		}),
 
@@ -205,9 +205,9 @@ function corePipeline(stream, job, toNodeStream = false) {
 			job.requests++;
 			job.batches++;
 			job.addBatchLength(batch.length); // Use bounded collection method
-			
+
 			if (job.dryRun) return _(Promise.resolve(batch));
-			
+
 			if (job.writeToFile) {
 				batch.forEach(item => {
 					// Use cached JSON from WeakMap
@@ -216,7 +216,7 @@ function corePipeline(stream, job, toNodeStream = false) {
 				});
 				return _(Promise.resolve(batch));
 			}
-			
+
 			return flush(batch, job);
 		}),
 
@@ -227,6 +227,11 @@ function corePipeline(stream, job, toNodeStream = false) {
 		// * verbose
 		// @ts-ignore
 		_.doto(function VERBOSE(batch) {
+			if (job.responseHandler && typeof job.responseHandler === 'function') {
+				job.responseHandler(batch);
+
+			}
+
 			if (job.dryRun) {
 				batch.forEach(data => {
 					job.dryRunResults.push(data);
@@ -239,10 +244,7 @@ function corePipeline(stream, job, toNodeStream = false) {
 					counter(job.recordType, job.recordsProcessed, job.requests, job.getEps(), job.bytesProcessed);
 					lastLogUpdate = now;
 				}
-				if (job.responseHandler && typeof job.responseHandler === 'function') {
-					job.responseHandler(batch);
 
-				}
 			}
 
 		}),
