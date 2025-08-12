@@ -79,6 +79,16 @@ describe("job config", () => {
 		expect(summary).toHaveProperty("success");
 		// ... (more properties to check)
 	});
+
+	test("maxRecords parameter", () => {
+		const job = new Job(fakeCreds, { maxRecords: 100 });
+		expect(job.maxRecords).toBe(100);
+	});
+
+	test("maxRecords null by default", () => {
+		const job = new Job(fakeCreds);
+		expect(job.maxRecords).toBeNull();
+	});
 });
 
 describe("transforms", () => {

@@ -90,7 +90,13 @@ function corePipeline(stream, job, toNodeStream = false) {
 		// * only JSON from stream
 		// @ts-ignore
 		_.filter(function FIRST_EXISTENCE(data) {
+			// Check maxRecords limit BEFORE processing
+			if (job.maxRecords !== null && job.recordsProcessed >= job.maxRecords) {
+				return false;
+			}
+
 			job.recordsProcessed++;
+
 			// very small chance of mem sampling
 			Math.random() <= 0.00005 ? job.memSamp() : null;
 

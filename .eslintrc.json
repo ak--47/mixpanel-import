@@ -6,7 +6,29 @@
 		"es2021": true
 	},
 	"extends": "eslint:recommended",
-	"overrides": [],
+	"overrides": [
+		{
+			"files": ["ui/**/*.js"],
+			"env": {
+				"browser": true,
+				"node": false,
+				"es2021": true
+			},
+			"parserOptions": {
+				"ecmaVersion": "latest",
+				"sourceType": "script"
+			}
+		},
+		{
+			"files": ["ui/server.js"],
+			"env": {
+				"browser": false,
+				"node": true,
+				"commonjs": true,
+				"es2021": true
+			}
+		}
+	],
 	"parserOptions": {
 		"ecmaVersion": "latest"
 	},
@@ -14,18 +36,16 @@
 		"no-prototype-builtins": "off",
 		"no-debugger": "off",
 		"no-useless-escape" : "off",
-		"no-unused-vars": [
-			"warn",
-			{
-				"argsIgnorePattern": "^_",
-				"varsIgnorePattern": "^_"
-			}
-		]
+		"no-unused-vars": "off"
 	},
 	"globals": {
 		"l": true
 	},
 	"ignorePatterns": [
-		"benchmarks/*"
+		"benchmarks/*",
+		"testData/*",
+		"logs/*",
+		"mixpanel-exports/*",
+		"tmp/*"
 	]
 }

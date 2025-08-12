@@ -23,6 +23,8 @@
     "cli:test": "node index.js ./testData/moarEvents.json --fixData",
     "cli:help": "node index.js --help",
     "typecheck": "npx tsc",
+    "lint": "eslint . --ext .js",
+    "lint:fix": "eslint . --ext .js --fix",
     "ui": "node index.js --ui",
     "ui:dev": "nodemon --inspect ui/server.js"
   },

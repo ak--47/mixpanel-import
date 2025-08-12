@@ -8,9 +8,11 @@ class MixpanelImportUI {
 	constructor() {
 		this.files = [];
 		this.editor = null;
+		this.sampleData = []; // Store up to 500 sample records for preview
 		this.initializeUI();
 		this.setupEventListeners();
 		this.initializeMonacoEditor();
+		this.initializeETLCycling();
 	}
 
 	// Helper method for safe element access
@@ -50,6 +52,53 @@ class MixpanelImportUI {
 			console.warn('Dropzone not loaded, falling back to basic file input');
 			this.setupBasicFileInput();
 		}
+	}
+
+	initializeETLCycling() {
+		// E.T.L word bank - data and tech industry terms
+		const etlCombos = [
+			'Extract Transform Load',
+			'Enrich Transform Launch', 
+			'Evaluate Transform Leverage',
+			'Export Transfer Load',
+			'Extract Transpose Load',
+			'Elasticsearch Transform Logstash',
+			'Event Transform Lake',
+			'Endpoint Transform Layer',
+			'Entity Transform Logic',
+			'Engine Transform Library',
+			'Extract Transact Lift',
+			'Execute Transform Launch',
+			'Expand Transform Load',
+			'Elevate Transform Launch',
+			'Extract Traverse Load',
+			'Enrichment Transformation Logistics',
+			'Event Tracking Library',
+			'Extract Translate Load',
+			'Edge Transform Load',
+			'Enterprise Transform Layer'
+		];
+
+		let currentIndex = 0;
+		const descriptionElement = document.getElementById('cute-description');
+		
+		if (!descriptionElement) return;
+
+		// Function to cycle descriptions
+		const cycleDescription = () => {
+			// Add fading class
+			descriptionElement.classList.add('fading');
+			
+			// After fade out, change text and fade back in
+			setTimeout(() => {
+				currentIndex = (currentIndex + 1) % etlCombos.length;
+				descriptionElement.textContent = etlCombos[currentIndex];
+				descriptionElement.classList.remove('fading');
+			}, 250); // Half of the transition time
+		};
+
+		// Start cycling every 10 seconds
+		setInterval(cycleDescription, 10000);
 	}
 
 	setupBasicFileInput() {
@@ -177,7 +226,21 @@ class MixpanelImportUI {
 			this.submitJob(true);
 		});
 
-		// Preview button (removed - now handled by dry run only)
+		// Preview Data button - shows raw data before transforms
+		const previewDataBtn = document.getElementById('preview-data-btn');
+		if (previewDataBtn) {
+			previewDataBtn.addEventListener('click', () => {
+				this.previewRawData();
+			});
+		}
+
+		// See More button - shows different random 5 records from sample
+		const seeMoreBtn = document.getElementById('see-more-btn');
+		if (seeMoreBtn) {
+			seeMoreBtn.addEventListener('click', () => {
+				this.showMorePreviewRecords();
+			});
+		}
 
 		// Clear transform button - reset to default with helpful template
 		const clearBtn = document.getElementById('clear-transform');
@@ -306,42 +369,8 @@ class MixpanelImportUI {
 				document.querySelector('input[name=\"authMethod\"][value=\"service\"]').checked = true;
 				break;
 
-			case 'export':
-			case 'profile-export':
-			case 'profile-delete':
-				// API secret OR service user/pass and project_id required, dataGroupId optional
-				credentialsDescription.textContent = 'Exports require either API secret or service account credentials with project ID. Data Group ID is optional.';
-				document.getElementById('project-group').style.display = 'block';
-				document.getElementById('auth-toggle').style.display = 'block';
-				document.getElementById('service-auth').style.display = 'block';
-				document.getElementById('dataGroupId-group').style.display = 'block';
-				break;
 
-			case 'scd':
-			case 'annotations':
-			case 'get-annotations':
-			case 'delete-annotations':
-				// Service user/pass and project_id required
-				credentialsDescription.textContent = 'This operation requires service account credentials and project ID.';
-				document.getElementById('project-group').style.display = 'block';
-				document.getElementById('service-auth').style.display = 'block';
-				// Force service auth
-				document.querySelector('input[name=\"authMethod\"][value=\"service\"]').checked = true;
-				break;
 
-			case 'export-import-events':
-			case 'export-import-profiles':
-				// API secret OR service user/pass and project_id required, secondToken optional
-				credentialsDescription.textContent = 'Export-import operations require either API secret or service account credentials. Second token, group key, and data group ID are optional.';
-				document.getElementById('project-group').style.display = 'block';
-				document.getElementById('auth-toggle').style.display = 'block';
-				document.getElementById('service-auth').style.display = 'block';
-				document.getElementById('secondToken-group').style.display = 'block';
-				if (recordType === 'export-import-profiles') {
-					document.getElementById('groupKey-group').style.display = 'block';
-					document.getElementById('dataGroupId-group').style.display = 'block';
-				}
-				break;
 
 			default:
 				credentialsDescription.textContent = 'Select an import type to see required authentication settings.';
@@ -401,72 +430,8 @@ class MixpanelImportUI {
 				break;
 			}
 
-			case 'export':
-			case 'profile-export':
-			case 'profile-delete': {
-				// API secret OR service user/pass and project_id required
-				const exportProject = document.getElementById('project').value;
-				if (!exportProject) {
-					return { isValid: false, message: 'Project ID is required for exports.' };
-				}
 
-				const authMethod = document.querySelector('input[name="authMethod"]:checked')?.value;
-				if (authMethod === 'service') {
-					const exportAcct = document.getElementById('acct').value;
-					const exportPass = document.getElementById('pass').value;
-					if (!exportAcct || !exportPass) {
-						return { isValid: false, message: 'Service account credentials are required for exports.' };
-					}
-				} else {
-					const exportSecret = document.getElementById('secret').value;
-					if (!exportSecret) {
-						return { isValid: false, message: 'API secret is required for exports.' };
-					}
-				}
-				break;
-			}
 
-			case 'scd':
-			case 'annotations':
-			case 'get-annotations':
-			case 'delete-annotations': {
-				// Service user/pass and project_id required
-				const scdProject = document.getElementById('project').value;
-				const scdAcct = document.getElementById('acct').value;
-				const scdPass = document.getElementById('pass').value;
-
-				if (!scdProject) {
-					return { isValid: false, message: 'Project ID is required for this operation.' };
-				}
-				if (!scdAcct || !scdPass) {
-					return { isValid: false, message: 'Service account credentials are required for this operation.' };
-				}
-				break;
-			}
-
-			case 'export-import-events':
-			case 'export-import-profiles': {
-				// API secret OR service user/pass and project_id required
-				const eiProject = document.getElementById('project').value;
-				if (!eiProject) {
-					return { isValid: false, message: 'Project ID is required for export-import operations.' };
-				}
-
-				const eiAuthMethod = document.querySelector('input[name="authMethod"]:checked')?.value;
-				if (eiAuthMethod === 'service') {
-					const eiAcct = document.getElementById('acct').value;
-					const eiPass = document.getElementById('pass').value;
-					if (!eiAcct || !eiPass) {
-						return { isValid: false, message: 'Service account credentials are required for export-import operations.' };
-					}
-				} else {
-					const eiSecret = document.getElementById('secret').value;
-					if (!eiSecret) {
-						return { isValid: false, message: 'API secret is required for export-import operations.' };
-					}
-				}
-				break;
-			}
 
 			default:
 				return { isValid: false, message: 'Please select a valid import type.' };
@@ -855,6 +820,128 @@ function transform(row) {
 		return formData;
 	}
 
+	// Preview raw data functionality
+	async previewRawData() {
+		try {
+			// Validation - same as submitJob but more lenient
+			const fileSource = document.querySelector('input[name="fileSource"]:checked').value;
+
+			if (fileSource === 'local' && this.files.length === 0) {
+				this.showError('Please select at least one file to preview.');
+				return;
+			}
+
+			if (fileSource === 'cloud') {
+				const cloudPaths = document.getElementById('cloudPaths').value;
+				if (!cloudPaths.trim()) {
+					this.showError('Please enter at least one cloud storage path to preview.');
+					return;
+				}
+			}
+
+			// Show loading state
+			const previewBtn = document.getElementById('preview-data-btn');
+			const originalText = previewBtn.innerHTML;
+			previewBtn.innerHTML = '<span class="btn-icon">⏳</span> Loading...';
+			previewBtn.disabled = true;
+
+			// Collect minimal form data for preview
+			const formData = this.collectFormData();
+			
+			// Add minimal options for raw preview (no transforms)
+			const options = {
+				recordType: document.getElementById('recordType').value || 'event',
+				region: document.getElementById('region')?.value || 'US'
+			};
+			
+			formData.append('options', JSON.stringify(options));
+			formData.append('credentials', JSON.stringify({})); // Empty creds for preview
+
+			// Call sample endpoint
+			const response = await fetch('/sample', {
+				method: 'POST',
+				body: formData
+			});
+
+			const result = await response.json();
+
+			if (!result.success) {
+				throw new Error(result.error || 'Preview failed');
+			}
+
+			// Store sample data and show preview
+			this.sampleData = result.sampleData || [];
+			this.displayPreviewRecords();
+
+			// Reset button
+			previewBtn.innerHTML = originalText;
+			previewBtn.disabled = false;
+
+		} catch (error) {
+			console.error('Preview error:', error);
+			this.showError('Preview failed: ' + error.message);
+			
+			// Reset button
+			const previewBtn = document.getElementById('preview-data-btn');
+			previewBtn.innerHTML = '<span class="btn-icon">👁️</span> Preview Data (Raw)';
+			previewBtn.disabled = false;
+		}
+	}
+
+	displayPreviewRecords() {
+		const previewSection = document.getElementById('data-preview');
+		const previewContent = document.getElementById('preview-content');
+		
+		if (this.sampleData.length === 0) {
+			previewSection.style.display = 'block';
+			previewContent.innerHTML = '<p class="muted-text">No data found in the source.</p>';
+			return;
+		}
+
+		// Show random 5 records
+		const randomRecords = this.getRandomRecords(5);
+		
+		previewSection.style.display = 'block';
+		previewContent.innerHTML = `<pre><code class="json">${this.highlightJSON(JSON.stringify(randomRecords, null, 2))}</code></pre>`;
+		
+		// Show record count info
+		const recordInfo = document.createElement('p');
+		recordInfo.className = 'section-description';
+		recordInfo.textContent = `Showing 5 of ${this.sampleData.length} sample records (max 500)`;
+		previewContent.prepend(recordInfo);
+	}
+
+	showMorePreviewRecords() {
+		if (this.sampleData.length === 0) return;
+		
+		// Get different random 5 records and update display
+		const randomRecords = this.getRandomRecords(5);
+		const previewContent = document.getElementById('preview-content');
+		
+		// Keep the info text, replace the JSON
+		const pre = previewContent.querySelector('pre');
+		if (pre) {
+			pre.innerHTML = `<code class="json">${this.highlightJSON(JSON.stringify(randomRecords, null, 2))}</code>`;
+		}
+	}
+
+	getRandomRecords(count) {
+		if (this.sampleData.length <= count) {
+			return this.sampleData;
+		}
+		
+		// Get random indices without replacement
+		const indices = [];
+		while (indices.length < count) {
+			const randomIndex = Math.floor(Math.random() * this.sampleData.length);
+			if (!indices.includes(randomIndex)) {
+				indices.push(randomIndex);
+			}
+		}
+		
+		return indices.map(i => this.sampleData[i]);
+	}
+
 	async submitJob(isDryRun = false) {
 		try {
 			// Validation
@@ -1020,6 +1107,41 @@ function toggleSection(sectionId) {
 	} else {
 		content.style.display = 'block';
 		header.classList.add('expanded');
+	}
+}
+
+// Global function to toggle all collapsible sections
+// eslint-disable-next-line no-unused-vars
+function toggleAllSections() {
+	const sections = document.querySelectorAll('.collapsible-content');
+	const toggleBtn = document.getElementById('toggle-all-btn');
+	const toggleText = document.getElementById('toggle-all-text');
+	const btnIcon = toggleBtn.querySelector('.btn-icon');
+	
+	// Check if any sections are currently expanded
+	const anyExpanded = Array.from(sections).some(section => section.style.display === 'block');
+	
+	sections.forEach(section => {
+		const header = section.previousElementSibling;
+		
+		if (anyExpanded) {
+			// Collapse all
+			section.style.display = 'none';
+			header.classList.remove('expanded');
+		} else {
+			// Expand all
+			section.style.display = 'block';
+			header.classList.add('expanded');
+		}
+	});
+	
+	// Update button text and icon
+	if (anyExpanded) {
+		toggleText.textContent = 'Expand All';
+		btnIcon.textContent = '📂';
+	} else {
+		toggleText.textContent = 'Collapse All';
+		btnIcon.textContent = '📁';
 	}
 }
 

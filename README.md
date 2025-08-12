@@ -304,6 +304,7 @@ export type Options = {
 	propValBlacklist?: string[];
 	start?: string;
 	end?: string;
+	maxRecords?: number;
 };
 ```
 
@@ -327,12 +328,15 @@ option, alias			description		default
   --streamSize              2^n value of highWaterMark  27
   --recordsPerBatch         # records in each request   2000
   --bytesPerBatch           max size of each request    2MB
+  --maxRecords              max records to process      null
   --where                   directory to put logs
 ```
 
 **note**: the `recordType` param is very important; by default this module assumes you wish to import `event` records.
 
 **added in 2.5.20**: you can now specify certain `vendor`'s in the options like `amplitude` or `ga4` and `mixpanel-import` will provide the correct transform on the source data to bring it into mixpanel.
+
+**`maxRecords` parameter**: when set to a number, the import will stop processing after reaching that many records. This is particularly useful for testing transforms and configurations on large datasets without processing the entire file. For example, `maxRecords: 1000` will stop after processing 1000 records. When null (default), all records will be processed.
 
 change this value to `user`, `group`, or `table` if you are importing other entities.
 

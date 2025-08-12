@@ -62,6 +62,7 @@ class Job {
 		this.gcpProjectId = opts.gcpProjectId || creds.gcpProjectId || 'mixpanel-gtm-training'; // Google Cloud project ID for GCS operations
 
 		this.dimensionMaps = opts.dimensionMaps || []; //dimension map for scd
+		this.maxRecords = opts.maxRecords !== undefined ? opts.maxRecords : null; //maximum records to process before stopping stream
 		this.heavyObjects = {}; //used to store heavy objects
 		this.insertHeavyObjects = async function (arrayOfKeysAndFilesPaths = this.dimensionMaps) {
 			for (const keyFilePath of arrayOfKeysAndFilesPaths) {

@@ -475,6 +475,10 @@ declare namespace main {
 	 * a function to handle responses from the API; mostly used for debugging
 	 */
 	responseHandler?: (response: any, record: any) => void;
+	/**
+	 * maximum number of records to process before stopping the stream early; useful for testing and dry runs
+	 */
+	maxRecords?: number;
   };
 
   /**

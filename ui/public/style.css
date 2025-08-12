@@ -66,7 +66,7 @@ body {
   background: var(--bg-primary);
   color: var(--text-primary);
   line-height: 1.6;
-  font-size: 14px;
+  font-size: 19px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -104,7 +104,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 16px;
-  font-size: 28px;
+  font-size: 33px;
   font-weight: 700;
   color: white;
   margin-bottom: 12px;
@@ -113,7 +113,7 @@ body {
 }
 
 .logo-icon {
-  font-size: 32px;
+  font-size: 37px;
   background: linear-gradient(45deg, #FFD700, #FF8C00);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -127,15 +127,20 @@ body {
 }
 
 #cute-description {
-  font-size: 18px;
+  font-size: 23px;
   font-weight: 400;
   text-transform: lowercase;
   opacity: 0.9;
+  transition: opacity 0.5s ease-in-out;
+}
+
+#cute-description.fading {
+  opacity: 0.3;
 }
 
 .subtitle {
   color: rgba(255, 255, 255, 0.8);
-  font-size: 16px;
+  font-size: 21px;
   font-weight: 400;
   position: relative;
   z-index: 1;
@@ -158,7 +163,7 @@ body {
 }
 
 .section-title {
-  font-size: 20px;
+  font-size: 25px;
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 8px;
@@ -191,7 +196,7 @@ label {
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 6px;
-  font-size: 13px;
+  font-size: 23px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -211,7 +216,7 @@ select {
   border-radius: var(--radius-md);
   color: var(--text-primary);
   font-family: var(--font-family);
-  font-size: 14px;
+  font-size: 19px;
   transition: all 0.2s ease;
 }
 
@@ -232,7 +237,7 @@ textarea::placeholder {
 small {
   display: block;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 17px;
   margin-top: 4px;
   line-height: 1.4;
 }
@@ -273,6 +278,18 @@ input[type="radio"] {
   margin: 16px 0;
 }
 
+/* Section Controls */
+.section-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+  padding: 0 8px;
+}
+
+.section-controls .btn {
+  font-size: 16px;
+}
+
 /* Collapsible Sections */
 .collapsible-section {
   border: 1px solid var(--border-secondary);
@@ -299,13 +316,13 @@ input[type="radio"] {
 .section-header h3 {
   flex: 1;
   margin: 0 0 0 12px;
-  font-size: 16px;
+  font-size: 21px;
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .section-icon {
-  font-size: 18px;
+  font-size: 23px;
 }
 
 .toggle-icon {
@@ -349,7 +366,7 @@ input[type="radio"] {
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-primary);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 17px;
 }
 
 .example code {
@@ -434,7 +451,7 @@ input[type="radio"] {
 
 .file-size {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 17px;
 }
 
 .file-remove {
@@ -445,7 +462,7 @@ input[type="radio"] {
   width: 24px;
   height: 24px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 17px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -469,7 +486,7 @@ input[type="radio"] {
   color: var(--success);
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 17px;
   border: 1px solid var(--success);
 }
 
@@ -508,7 +525,7 @@ input[type="radio"] {
   padding: 16px;
   background: var(--bg-elevated);
   border-top: 1px solid var(--border-secondary);
-  font-size: 12px;
+  font-size: 17px;
   color: var(--text-secondary);
 }
 
@@ -545,7 +562,7 @@ input[type="radio"] {
 }
 
 .cli-label {
-  font-size: 12px;
+  font-size: 17px;
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -557,7 +574,7 @@ input[type="radio"] {
   background: var(--bg-primary);
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 23px;
   line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-word;
@@ -624,7 +641,7 @@ input[type="radio"] {
 
 .btn-sm {
   padding: 6px 12px;
-  font-size: 12px;
+  font-size: 17px;
   font-weight: 600;
 }
 
@@ -635,7 +652,7 @@ input[type="radio"] {
 }
 
 .btn-icon {
-  font-size: 16px;
+  font-size: 21px;
 }
 
 /* Actions */
@@ -700,7 +717,7 @@ input[type="radio"] {
 
 #results-title {
   color: var(--success);
-  font-size: 24px;
+  font-size: 29px;
   margin-bottom: 20px;
   text-align: center;
   font-weight: 600;
@@ -710,17 +727,53 @@ input[type="radio"] {
   background: var(--bg-primary);
   border-radius: var(--radius-md);
   padding: 20px;
-  overflow-x: auto;
+  overflow: auto;
   border: 1px solid var(--border-secondary);
+  max-height: 400px;
+  min-height: 200px;
 }
 
 .results-data pre {
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 23px;
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;
+}
+
+/* Preview section specific styling */
+.preview-section .results-data {
+  max-height: 300px;
+  min-height: 150px;
+}
+
+/* JSON Syntax Highlighting */
+.json-key {
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.json-string {
+  color: #10b981;
+}
+
+.json-number {
+  color: #f59e0b;
+}
+
+.json-boolean {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.json-null {
+  color: #6b7280;
+  font-style: italic;
+}
+
+.json-punctuation {
+  color: #64748b;
 }
 
 /* Responsive Design */
@@ -748,7 +801,7 @@ input[type="radio"] {
   }
   
   .cli-command {
-    font-size: 11px;
+    font-size: 16px;
     padding: 16px;
   }
   
@@ -758,11 +811,11 @@ input[type="radio"] {
   
   .btn-sm {
     padding: 4px 8px;
-    font-size: 11px;
+    font-size: 16px;
   }
   
   .example {
-    font-size: 11px;
+    font-size: 16px;
     padding: 8px;
   }
   
@@ -785,7 +838,7 @@ input[type="radio"] {
   }
   
   .logo {
-    font-size: 24px;
+    font-size: 29px;
     flex-direction: column;
     gap: 8px;
   }

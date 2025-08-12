@@ -24,9 +24,19 @@ app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Serve the main UI
+// Serve the main landing page (will be created next)
 app.get('/', (req, res) => {
 	res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Serve the import UI (E.T.L tool)
+app.get('/import', (req, res) => {
+	res.sendFile(path.join(__dirname, 'public', 'import.html'));
+});
+
+// Serve the export UI (L.T.E tool) 
+app.get('/export', (req, res) => {
+	res.sendFile(path.join(__dirname, 'public', 'export.html'));
 });
 
 // Handle job submission
@@ -128,6 +138,92 @@ app.post('/job', upload.array('files'), async (req, res) => {
 	}
 });
 
+// Handle data preview/sample
+// @ts-ignore  
+app.post('/sample', upload.array('files'), async (req, res) => {
+	try {
+		const { credentials, options } = req.body;
+
+		// Parse JSON strings
+		const creds = JSON.parse(credentials[0] || '{}');
+		const opts = JSON.parse(options[0] || '{}');
+
+		// Force sample settings - no transforms, maxRecords=500, dryRun=true
+		opts.dryRun = true;
+		opts.maxRecords = 500;
+		opts.transformFunc = null; // No transforms for raw data preview
+		opts.fixData = false; // No data shaping
+		opts.removeNulls = false; // Keep raw data as-is
+		opts.flattenData = false; // No flattening
+		opts.vendor = ''; // No vendor transforms
+
+		// Process files or cloud paths (same as main endpoint)
+		let data;
+
+		// Check if cloud paths were provided
+		if (req.body.cloudPaths) {
+			try {
+				const cloudPaths = JSON.parse(req.body.cloudPaths);
+				console.log(`Sample data from cloud storage paths:`, cloudPaths);
+				data = cloudPaths;
+			} catch (err) {
+				return res.status(400).json({
+					success: false,
+					error: 'Invalid cloud paths format'
+				});
+			}
+			// @ts-ignore
+		} else if (req.files && req.files.length > 0) {
+			if (req.files.length === 1) {
+				const fileContent = req.files[0].buffer.toString('utf8');
+				try {
+					data = JSON.parse(fileContent);
+				} catch (err) {
+					// Try parsing as JSONL
+					data = fileContent.trim().split('\n').map(line => JSON.parse(line));
+				}
+			} else {
+				// Multiple files - combine into array
+				data = [];
+				// @ts-ignore
+				for (const file of req.files) {
+					const fileContent = file.buffer.toString('utf8');
+					try {
+						const fileData = JSON.parse(fileContent);
+						data = data.concat(Array.isArray(fileData) ? fileData : [fileData]);
+					} catch (err) {
+						// Try parsing as JSONL
+						const jsonlData = fileContent.trim().split('\n').map(line => JSON.parse(line));
+						data = data.concat(jsonlData);
+					}
+				}
+			}
+		} else {
+			return res.status(400).json({
+				success: false,
+				error: 'No files or cloud paths provided'
+			});
+		}
+
+		console.log(`Sampling raw data: up to ${opts.maxRecords} records`);
+
+		// Run the sample
+		const result = await mixpanelImport(creds, data, opts);
+
+		res.json({
+			success: true,
+			sampleData: result.dryRun || []
+		});
+
+	} catch (error) {
+		console.error('Sample error:', error);
+		res.status(500).json({
+			success: false,
+			error: error.message
+		});
+	}
+});
+
 // Handle dry run
 // @ts-ignore
 app.post('/dry-run', upload.array('files'), async (req, res) => {
@@ -139,9 +235,9 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
 
 		const opts = JSON.parse(options || '{}');
 
-		// Force dry run
+		// Force dry run with maxRecords limit
 		opts.dryRun = true;
-		opts.recordsPerBatch = Math.min(opts.recordsPerBatch || 2000, 10); // Limit preview to 10 records
+		opts.maxRecords = 100; // Limit dry run to 100 records for testing
 
 		// Add transform function if provided
 		if (transformCode && transformCode.trim()) {
@@ -177,30 +273,23 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
 				const fileContent = req.files[0].buffer.toString('utf8');
 				try {
 					data = JSON.parse(fileContent);
-					// If array, take only first 10 for preview
-					if (Array.isArray(data)) {
-						data = data.slice(0, 10);
-					}
 				} catch (err) {
-					const jsonlData = fileContent.trim().split('\n').map(line => JSON.parse(line));
-					data = jsonlData.slice(0, 10);
+					// Try parsing as JSONL
+					data = fileContent.trim().split('\n').map(line => JSON.parse(line));
 				}
 			} else {
+				// Multiple files - combine into array
 				data = [];
-				let recordCount = 0;
 				// @ts-ignore
 				for (const file of req.files) {
-					if (recordCount >= 10) break;
 					const fileContent = file.buffer.toString('utf8');
 					try {
 						const fileData = JSON.parse(fileContent);
-						const fileArray = Array.isArray(fileData) ? fileData : [fileData];
-						data = data.concat(fileArray.slice(0, 10 - recordCount));
-						recordCount = data.length;
+						data = data.concat(Array.isArray(fileData) ? fileData : [fileData]);
 					} catch (err) {
+						// Try parsing as JSONL
 						const jsonlData = fileContent.trim().split('\n').map(line => JSON.parse(line));
-						data = data.concat(jsonlData.slice(0, 10 - recordCount));
-						recordCount = data.length;
+						data = data.concat(jsonlData);
 					}
 				}
 			}
@@ -231,6 +320,162 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
 	}
 });
 
+// Handle export operations
+// @ts-ignore
+app.post('/export', async (req, res) => {
+	try {
+		const exportData = req.body;
+		
+		// Parse credentials and options for export
+		/** @type {Creds} */
+		const creds = {
+			acct: exportData.acct,
+			pass: exportData.pass,
+			secret: exportData.secret,
+			project: exportData.project,
+			token: exportData.token,
+			groupKey: exportData.groupKey,
+			dataGroupId: exportData.dataGroupId,
+			secondToken: exportData.secondToken
+		};
+		
+		/** @type {Options} */
+		const opts = {
+			recordType: exportData.recordType,
+			region: exportData.region || 'US',
+			workers: exportData.workers || 10,
+			start: exportData.start,
+			end: exportData.end,
+			epochStart: exportData.epochStart,
+			epochEnd: exportData.epochEnd,
+			whereClause: exportData.whereClause,
+			limit: exportData.limit,
+			logs: exportData.logs || false,
+			verbose: exportData.verbose || false,
+			showProgress: exportData.showProgress || true,
+			writeToFile: exportData.writeToFile || false,
+			where: exportData.where,
+			outputFilePath: exportData.outputFilePath
+		};
+
+		console.log(`Starting export operation: ${opts.recordType}`);
+
+		// Run the export - note that for exports, data parameter can be null/empty
+		const result = await mixpanelImport(creds, null, opts);
+		
+		console.log(`Export completed: ${result.total} records processed`);
+
+		// Check if we should stream the file back or just return results
+		if (opts.writeToFile && opts.outputFilePath) {
+			// Try to read and stream the file back to client
+			try {
+				const fs = require('fs');
+				const path = require('path');
+				
+				if (fs.existsSync(opts.outputFilePath)) {
+					// Set appropriate headers for file download
+					const filename = path.basename(opts.outputFilePath);
+					res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+					res.setHeader('Content-Type', 'application/json');
+					
+					// Stream the file
+					const fileStream = fs.createReadStream(opts.outputFilePath);
+					fileStream.pipe(res);
+					
+					// Clean up file after streaming (optional - comment out if you want to keep files)
+					fileStream.on('end', () => {
+						setTimeout(() => {
+							try {
+								fs.unlinkSync(opts.outputFilePath);
+								console.log(`Cleaned up temporary file: ${opts.outputFilePath}`);
+							} catch (cleanupError) {
+								console.warn(`Failed to clean up file ${opts.outputFilePath}:`, cleanupError.message);
+							}
+						}, 1000);
+					});
+					
+					return; // Don't send JSON response
+				}
+			} catch (fileError) {
+				console.warn('File handling error:', fileError.message);
+				// Fall through to JSON response
+			}
+		}
+
+		// Return JSON result if no file streaming
+		res.json({
+			success: true,
+			result
+		});
+
+	} catch (error) {
+		console.error('Export error:', error);
+		res.status(500).json({
+			success: false,
+			error: error.message
+		});
+	}
+});
+
+// Handle export dry run
+// @ts-ignore
+app.post('/export-dry-run', async (req, res) => {
+	try {
+		const exportData = req.body;
+		
+		// Parse credentials and options for dry run export
+		/** @type {Creds} */
+		const creds = {
+			acct: exportData.acct,
+			pass: exportData.pass,
+			secret: exportData.secret,
+			project: exportData.project,
+			token: exportData.token,
+			groupKey: exportData.groupKey,
+			dataGroupId: exportData.dataGroupId,
+			secondToken: exportData.secondToken
+		};
+		
+		/** @type {Options} */
+		const opts = {
+			recordType: exportData.recordType,
+			region: exportData.region || 'US',
+			workers: exportData.workers || 10,
+			start: exportData.start,
+			end: exportData.end,
+			epochStart: exportData.epochStart,
+			epochEnd: exportData.epochEnd,
+			whereClause: exportData.whereClause,
+			limit: Math.min(exportData.limit || 100, 100), // Limit dry runs to 100 records max
+			dryRun: true, // Force dry run mode
+			verbose: true,
+			showProgress: exportData.showProgress || true,
+			writeToFile: false, // Never write files in dry run
+			logs: false // No logs for dry run
+		};
+
+		console.log(`Starting export dry run: ${opts.recordType}`);
+
+		// Run the dry run export
+		const result = await mixpanelImport(creds, null, opts);
+		
+		console.log(`Export dry run completed: ${result.total} records would be exported`);
+
+		res.json({
+			success: true,
+			result,
+			previewData: result.dryRun || []
+		});
+
+	} catch (error) {
+		console.error('Export dry run error:', error);
+		res.status(500).json({
+			success: false,
+			error: error.message
+		});
+	}
+});
+
 // Health check
 app.get('/health', (req, res) => {
 	res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -239,14 +484,27 @@ app.get('/health', (req, res) => {
 // Start server
 function startUI(options = {}) {
 	const serverPort = options.port || port;
+	const { version } = require('../package.json');
+
+	// ASCII Art Logo (same as CLI)
+	const hero = String.raw`
+_  _ _ _  _ ___  ____ _  _ ____ _       _ _  _ ___  ____ ____ ___ 
+|\/| |  \/  |__] |__| |\ | |___ |       | |\/| |__] |  | |__/  |  
+|  | | _/\_ |    |  | | \| |___ |___    | |  | |    |__| |  \  |                                                                    
+`;
+
+	const banner = `... streamer of data... to mixpanel! (v${version || 2})
+\tby AK (ak@mixpanel.com)`;
 
 	return new Promise((resolve, reject) => {
 		const server = app.listen(serverPort, (err) => {
 			if (err) {
 				reject(err);
 			} else {
-				console.log(`🚀 Mixpanel Import UI running at http://localhost:${serverPort}`);
-				console.log('📁 Drop files, configure options, and import data!');
+				// Show CLI logo first
+				console.log(hero);
+				console.log(banner);
+				console.log(`\n🚀 UI running at http://localhost:${serverPort}`);
 				resolve(server);
 			}
 		});

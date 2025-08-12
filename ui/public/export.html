@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>L.T.E - Load Transform Export</title>
+	<link rel="stylesheet" href="style.css">
+	<!-- Dropzone -->
+	<link rel="stylesheet" href="https://unpkg.com/dropzone@5/dist/min/dropzone.min.css" />
+	<script src="https://unpkg.com/dropzone@5/dist/min/dropzone.min.js"></script>
+</head>
+
+<body>
+	<div class="container">
+		<!-- Header -->
+		<header class="header">
+			<h1 class="logo">
+				<span class="logo-icon" id="lte-icon">📦</span>
+				<span id="lte-acro">L.T.E</span>
+				<span id="lte-description">Load Transform Export</span>
+			</h1>
+			<p class="subtitle">export data from mixpanel with powerful filtering</p>
+		</header>
+
+		<!-- Main Form -->
+		<form id="exportForm" class="import-form">
+			<!-- Export Type Section -->
+			<section class="card">
+				<h2 class="section-title">📋 Type of Export</h2>
+				<p class="section-description">Select what type of data you want to export from Mixpanel.</p>
+
+				<div class="form-group">
+					<label for="recordType">Export Type*</label>
+					<select id="recordType" name="recordType" required>
+						<option value="">Select export type...</option>
+						<option value="export">🛃 Export Events</option>
+						<option value="profile-export">👤📤 Export User Profiles</option>
+						<option value="profile-delete">👤🗑️ Delete User Profiles</option>
+						<option value="scd">🪁 SCD (Slowly Changing Dimensions)</option>
+						<option value="annotations">📝 Create Annotations</option>
+						<option value="get-annotations">📝📥 Get Annotations</option>
+						<option value="delete-annotations">📝🗑️ Delete Annotations</option>
+						<option value="export-import-events">🔄 Export → Import (events)</option>
+						<option value="export-import-profiles">🔃 Export → Import (profiles)</option>
+					</select>
+					<small>Different export types require different authentication settings</small>
+				</div>
+			</section>
+
+			<!-- Credentials Section -->
+			<section class="card" id="credentials-section" style="display: none;">
+				<h2 class="section-title">🔑 Mixpanel Credentials</h2>
+				<p class="section-description" id="credentials-description">Select an export type above to see the required authentication settings.</p>
+
+				<div class="form-group" id="project-group" style="display: none;">
+					<label for="project">Project ID*</label>
+					<input type="text" id="project" name="project" placeholder="Your project ID" autocomplete="off">
+					<small>Found in your Mixpanel project settings</small>
+				</div>
+
+				<div class="form-group" id="lookupTableId-group" style="display: none;">
+					<label for="lookupTableId">Lookup Table ID*</label>
+					<input type="text" id="lookupTableId" name="lookupTableId" placeholder="Your lookup table ID" autocomplete="off">
+					<small>ID of the lookup table to work with</small>
+				</div>
+
+				<!-- Auth Method Toggle -->
+				<div class="auth-toggle" id="auth-toggle" style="display: none;">
+					<label class="toggle-label">
+						<input type="radio" name="authMethod" value="service" checked>
+						Service Account (Recommended)
+					</label>
+					<label class="toggle-label">
+						<input type="radio" name="authMethod" value="secret">
+						API Secret (Legacy)
+					</label>
+				</div>
+
+				<!-- Service Account Fields -->
+				<div id="service-auth" class="auth-section" style="display: none;">
+					<div class="form-row">
+						<div class="form-group">
+							<label for="acct">Account Username*</label>
+							<input type="text" id="acct" name="acct" placeholder="service-account@yourorg.com">
+						</div>
+						<div class="form-group">
+							<label for="pass">Account Password*</label>
+							<input type="password" id="pass" name="pass" placeholder="Your service account password">
+						</div>
+					</div>
+				</div>
+
+				<!-- API Secret Fields -->
+				<div id="secret-auth" class="auth-section" style="display: none;">
+					<div class="form-group">
+						<label for="secret">API Secret*</label>
+						<input type="password" id="secret" name="secret" placeholder="Your project's API secret">
+						<small>Legacy authentication method</small>
+					</div>
+				</div>
+
+				<!-- Additional Tokens -->
+				<div class="form-group" id="token-group" style="display: none;">
+					<label for="token">Project Token*</label>
+					<input type="text" id="token" name="token" placeholder="Your project token" autocomplete="off">
+					<small>Required for user/group profiles</small>
+				</div>
+
+				<div class="form-group" id="groupKey-group" style="display: none;">
+					<label for="groupKey">Group Key*</label>
+					<input type="text" id="groupKey" name="groupKey" placeholder="Your group analytics key" autocomplete="off">
+					<small>Required for group profile operations</small>
+				</div>
+
+				<!-- Export-specific fields -->
+				<div class="form-group" id="dataGroupId-group" style="display: none;">
+					<label for="dataGroupId">Data Group ID</label>
+					<input type="text" id="dataGroupId" name="dataGroupId" placeholder="Optional data group ID" autocomplete="off">
+					<small>Optional for profile exports and deletes</small>
+				</div>
+
+				<div class="form-group" id="secondToken-group" style="display: none;">
+					<label for="secondToken">Second Token</label>
+					<input type="text" id="secondToken" name="secondToken" placeholder="Destination project token" autocomplete="off">
+					<small>Optional for export-import operations</small>
+				</div>
+			</section>
+
+			<!-- Configuration Section -->
+			<section class="card">
+				<h2 class="section-title">⚙️ Export Configuration</h2>
+				<p class="section-description">Configure your export settings for optimal performance and data quality.</p>
+
+				<!-- Core Settings -->
+				<div class="config-section">
+					<h3 class="subsection-title">Core Settings</h3>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="workers" title="Higher values export faster but may hit rate limits. Start with 10 and increase if your network can handle more concurrent requests">Concurrency Workers</label>
+							<input type="number" id="workers" name="workers" value="10" min="1" max="50" autocomplete="off">
+							<small>Number of concurrent HTTP requests (default: 10)</small>
+						</div>
+						<div class="form-group">
+							<label for="region">Data Residency</label>
+							<select id="region" name="region">
+								<option value="US">🇺🇸 United States</option>
+								<option value="EU">🇪🇺 European Union</option>
+								<option value="IN">🇮🇳 India</option>
+							</select>
+							<small>Your Mixpanel data residency region</small>
+						</div>
+					</div>
+				</div>
+
+				<!-- Expand/Collapse All Button -->
+				<div class="section-controls">
+					<button type="button" id="toggle-all-btn" class="btn btn-ghost btn-sm" onclick="toggleAllSections()">
+						<span class="btn-icon">📂</span>
+						<span id="toggle-all-text">Expand All</span>
+					</button>
+				</div>
+
+				<!-- Time & Date Filters -->
+				<div class="collapsible-section">
+					<div class="section-header" onclick="toggleSection('time-section')" title="Filter data by timestamp ranges for exports">
+						<span class="section-icon">📅</span>
+						<h3>Time & Date Filters</h3>
+						<span class="toggle-icon">▼</span>
+					</div>
+					<div id="time-section" class="collapsible-content" style="display: none;">
+						<div class="form-row">
+							<div class="form-group">
+								<label for="start">Start Date (Export)</label>
+								<input type="date" id="start" name="start">
+								<small>Start date for data exports</small>
+							</div>
+							<div class="form-group">
+								<label for="end">End Date (Export)</label>
+								<input type="date" id="end" name="end">
+								<small>End date for data exports</small>
+							</div>
+						</div>
+
+						<div class="form-row">
+							<div class="form-group">
+								<label for="epochStart">Start Timestamp (Unix)</label>
+								<input type="number" id="epochStart" name="epochStart" placeholder="1609459200" autocomplete="off">
+								<small>Skip data before this Unix timestamp</small>
+							</div>
+							<div class="form-group">
+								<label for="epochEnd">End Timestamp (Unix)</label>
+								<input type="number" id="epochEnd" name="epochEnd" placeholder="1609459200" autocomplete="off">
+								<small>Skip data after this Unix timestamp</small>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Advanced Filtering -->
+				<div class="collapsible-section">
+					<div class="section-header" onclick="toggleSection('filtering-section')" title="Advanced filtering options for data exports">
+						<span class="section-icon">🔬</span>
+						<h3>Advanced Filtering</h3>
+						<span class="toggle-icon">▼</span>
+					</div>
+					<div id="filtering-section" class="collapsible-content" style="display: none;">
+						<div class="form-row">
+							<div class="form-group">
+								<label for="whereClause">Where Clause (Export)</label>
+								<input type="text" id="whereClause" name="whereClause" placeholder='properties["plan"] == "premium"'>
+								<small>Filter clause for data exports</small>
+							</div>
+							<div class="form-group">
+								<label for="limit">Export Limit</label>
+								<input type="number" id="limit" name="limit" placeholder="1000000">
+								<small>Maximum records to export</small>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Output Options -->
+				<div class="collapsible-section">
+					<div class="section-header" onclick="toggleSection('output-section')" title="Control file output and result storage options">
+						<span class="section-icon">💾</span>
+						<h3>Output Options</h3>
+						<span class="toggle-icon">▼</span>
+					</div>
+					<div id="output-section" class="collapsible-content" style="display: none;">
+						<div class="checkbox-grid">
+							<label class="checkbox-label">
+								<input type="checkbox" id="logs" name="logs">
+								Save Export Logs
+							</label>
+							<label class="checkbox-label">
+								<input type="checkbox" id="verbose" name="verbose">
+								Verbose Console Output
+							</label>
+							<label class="checkbox-label">
+								<input type="checkbox" id="showProgress" name="showProgress" checked>
+								Show Progress Bar
+							</label>
+							<label class="checkbox-label">
+								<input type="checkbox" id="writeToFile" name="writeToFile" checked>
+								Write to Local File
+							</label>
+						</div>
+
+						<div class="form-row">
+							<div class="form-group">
+								<label for="where">Output Directory</label>
+								<input type="text" id="where" name="where" placeholder="./exports">
+								<small>Directory for exported files and logs</small>
+							</div>
+							<div class="form-group">
+								<label for="outputFilePath">Output File Path</label>
+								<input type="text" id="outputFilePath" name="outputFilePath" placeholder="./export-data.json">
+								<small>Path for exported data file</small>
+							</div>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<!-- CLI Command Preview -->
+			<section class="card">
+				<h2 class="section-title">💻 Equivalent CLI Command</h2>
+				<p class="section-description">Copy this command to run the same export from your terminal.</p>
+
+				<div class="cli-preview">
+					<div class="cli-header">
+						<span class="cli-label">Terminal Command:</span>
+						<button type="button" id="copy-cli" class="btn btn-ghost btn-sm">
+							<span class="btn-icon">📋</span>
+							Copy
+						</button>
+					</div>
+					<pre id="cli-command" class="cli-command">Select options above to generate CLI command...</pre>
+				</div>
+			</section>
+
+			<!-- Actions -->
+			<section class="actions">
+				<button type="button" id="dry-run-btn" class="btn btn-secondary">
+					<span class="btn-icon">🧪</span>
+					Test Export (Dry Run)
+				</button>
+				<button type="submit" id="export-btn" class="btn btn-primary">
+					<span class="btn-icon">📦</span>
+					Start Export
+				</button>
+			</section>
+
+			<!-- Loading State -->
+			<div id="loading" class="loading-overlay" style="display: none;">
+				<div class="loading-content">
+					<div class="loading-spinner"></div>
+					<h3 id="loading-title">Processing...</h3>
+					<p id="loading-message">Exporting your data from Mixpanel</p>
+				</div>
+			</div>
+
+			<!-- Results -->
+			<div id="results" class="results-section" style="display: none;">
+				<div class="results-content">
+					<h3 id="results-title">Export Complete!</h3>
+					<div id="results-data" class="results-data"></div>
+				</div>
+			</div>
+		</form>
+	</div>
+
+	<script src="export.js"></script>
+</body>
+
+</html>
