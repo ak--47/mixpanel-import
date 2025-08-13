@@ -106,6 +106,11 @@
 			margin-bottom: 24px;
 			text-transform: lowercase;
 			opacity: 0.8;
+			transition: opacity 0.5s ease-in-out;
+		}
+		
+		.tool-description.fading {
+			opacity: 0.3;
 		}
 		
 		.tool-tagline {
@@ -206,7 +211,7 @@
 			<a href="/import" class="tool-card etl-card">
 				<div class="tool-icon">⚡</div>
 				<h2 class="tool-name">E.T.L</h2>
-				<p class="tool-description">Extract Transform Load</p>
+				<p class="tool-description" id="etl-description">Extract Transform Load</p>
 				<p class="tool-tagline">Import data from files and cloud storage with powerful transforms and real-time preview</p>
 				<span class="tool-button">Start Import →</span>
 			</a>
@@ -215,7 +220,7 @@
 			<a href="/export" class="tool-card lte-card">
 				<div class="tool-icon">📦</div>
 				<h2 class="tool-name">L.T.E</h2>
-				<p class="tool-description">Load Transform Export</p>
+				<p class="tool-description" id="lte-description">Load Transform Export</p>
 				<p class="tool-tagline">Export data from Mixpanel with flexible filtering, transformations, and multiple output formats</p>
 				<span class="tool-button">Start Export →</span>
 			</a>
@@ -224,6 +229,92 @@
 		<!-- Divider -->
 		<div class="divider"></div>
 	</div>
+
+	<script>
+		// E.T.L cycling descriptions
+		const etlCombos = [
+			'Extract Transform Load',
+			'Enrich Transform Launch', 
+			'Evaluate Transform Leverage',
+			'Export Transfer Load',
+			'Extract Transpose Load',
+			'Elasticsearch Transform Logstash',
+			'Event Transform Lake',
+			'Endpoint Transform Layer',
+			'Entity Transform Logic',
+			'Engine Transform Library',
+			'Elastic Transform Logic',
+			'Execute Transform Launch',
+			'Enable Transform Logic',
+			'Establish Transform Link',
+			'Evolve Transform Learn',
+			'Explore Transform Launch',
+			'Extend Transform Load',
+			'Engage Transform Leverage',
+			'Enhance Transform Logic',
+			'Empower Transform Launch'
+		];
+
+		// L.T.E cycling descriptions
+		const lteCombos = [
+			'Load Transform Export',
+			'Launch Transform Execute',
+			'Locate Transform Extract', 
+			'Library Transform Export',
+			'Leverage Transform Export',
+			'Logic Transform Execute',
+			'Learn Transform Export',
+			'Link Transform Export',
+			'List Transform Export',
+			'Live Transform Export',
+			'Loop Transform Export',
+			'Launch Transform Engage',
+			'Lookup Transform Export',
+			'Layout Transform Export',
+			'Layer Transform Export',
+			'Limit Transform Export',
+			'Label Transform Export',
+			'Large Transform Export',
+			'Lean Transform Export',
+			'Local Transform Export'
+		];
+
+		let etlIndex = 0;
+		let lteIndex = 0;
+
+		function cycleETL() {
+			const element = document.getElementById('etl-description');
+			if (element) {
+				element.classList.add('fading');
+				setTimeout(() => {
+					etlIndex = (etlIndex + 1) % etlCombos.length;
+					element.textContent = etlCombos[etlIndex];
+					element.classList.remove('fading');
+				}, 250);
+			}
+		}
+
+		function cycleLTE() {
+			const element = document.getElementById('lte-description');
+			if (element) {
+				element.classList.add('fading');
+				setTimeout(() => {
+					lteIndex = (lteIndex + 1) % lteCombos.length;
+					element.textContent = lteCombos[lteIndex];
+					element.classList.remove('fading');
+				}, 250);
+			}
+		}
+
+		// Start cycling when page loads
+		document.addEventListener('DOMContentLoaded', function() {
+			// E.T.L cycles every 2 seconds
+			setInterval(cycleETL, 2000);
+			
+			// L.T.E cycles every 3 seconds  
+			setInterval(cycleLTE, 3000);
+		});
+	</script>
 </body>
 
 </html>

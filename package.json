@@ -25,6 +25,7 @@
     "typecheck": "npx tsc",
     "lint": "eslint . --ext .js",
     "lint:fix": "eslint . --ext .js --fix",
+    "validate": "npm run typecheck && npm run lint",
     "ui": "node index.js --ui",
     "ui:dev": "nodemon --inspect ui/server.js"
   },
