@@ -107,6 +107,10 @@ declare namespace main {
 	 * - Google Cloud project ID for GCS operations (defaults to 'mixpanel-gtm-training')
 	 */
 	gcpProjectId?: string;
+	/**
+	 * - a data_group_id to use for exporting group profiles
+	 */
+	dataGroupId?: string;
   };
 
   /**
@@ -144,6 +148,13 @@ declare namespace main {
 	keyOne: string;
 	keyTwo: string;
 	label?: string;
+  }
+
+  /**
+   * Job class interface - extends Options with runtime properties
+   */
+  interface Job extends Options {
+    bytesCache?: WeakMap<any, number>;
   }
 
   /**
@@ -479,6 +490,10 @@ declare namespace main {
 	 * maximum number of records to process before stopping the stream early; useful for testing and dry runs
 	 */
 	maxRecords?: number;
+	/**
+	 * - cache for byte calculations to improve performance
+	 */
+	bytesCache?: WeakMap<any, number>;
   };
 
   /**
@@ -874,4 +889,68 @@ declare function main(
   opts?: main.Options,
   isCLI?: boolean
 ): Promise<main.ImportResults>;
+
+// Additional type definitions for external libraries and custom extensions
+
+declare module 'got' {
+  interface GotResponse {
+    body: any;
+    statusCode: number;
+    ip?: string;
+    requestUrl?: string;
+    headers: any;
+    json(): any;
+  }
+  
+  interface GotPromise extends Promise<GotResponse> {
+    json(): Promise<any>;
+  }
+  
+  interface Got {
+    (options: any): GotPromise;
+    (url: string, options?: any): GotPromise;
+    stream(options: any): import('stream').Readable;
+    stream(url: string, options?: any): import('stream').Readable;
+  }
+  const got: Got;
+  export = got;
+}
+
+// Extend Node.js stream types with custom properties
+declare module 'stream' {
+  interface Transform {
+    _buf?: string;
+  }
+  
+  interface Readable {
+    _page?: number;
+    _session_id?: string | null;
+    _buffer?: any[];
+  }
+}
+
+// Extend Express Request type for multer file uploads
+declare global {
+  namespace Express {
+    interface Request {
+      files?: Array<{
+        buffer: Buffer;
+        fieldname: string;
+        originalname: string;
+        encoding: string;
+        mimetype: string;
+        size: number;
+      }>;
+    }
+  }
+  
+  // Extend Error type with got-specific properties
+  interface Error {
+    statusCode?: number;
+    ip?: string;
+    requestUrl?: string;
+    headers?: any;
+  }
+}
+
 export = main;

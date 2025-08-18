@@ -26,50 +26,141 @@ class MixpanelExportUI {
 	}
 
 	initializeLTECycling() {
-		// L.T.E word bank - export and data processing terms
-		const lteCombos = [
-			'Load Transform Export',
-			'Launch Transform Execute',
-			'Locate Transform Extract', 
-			'Library Transform Export',
-			'Leverage Transform Export',
-			'Logic Transform Execute',
-			'Layer Transform Export',
-			'Load Transfer Export',
-			'Lift Transform Export',
-			'Link Transform Export',
-			'List Transform Export',
-			'Loop Transform Export',
-			'Load Transpose Export',
-			'Launch Transfer Export',
-			'Locate Transfer Export',
-			'Library Transfer Export',
-			'Leverage Transfer Export',
-			'Logic Transfer Export',
-			'Layer Transfer Export',
-			'Lift Transfer Export'
+		// Separate word banks for L, T, and E
+		const lWords = [
+			'Load', 'Launch', 'Leverage', 'Lift', 'Logic',
+			'Library', 'Layer', 'Lake', 'Link', 'List',
+			'Listen', 'Locate', 'Lock', 'Log', 'Loop',
+			'Latch', 'Learn', 'Lease', 'Leave', 'Lecture',
+			'Ledger', 'Legitimize', 'Lend', 'Lengthen', 'Lesson',
+			'Let', 'Level', 'Levy', 'Liberate', 'License',
+			'Lick', 'Lie', 'Lighten', 'Like', 'Limit',
+			'Line', 'Linger', 'Liquidate', 'Liquefy', 'Literalize',
+			'Litigate', 'Litter', 'Live', 'Livestream', 'Lobby',
+			'Localize', 'Lodge', 'Loft', 'Loiter', 'Look',
+			'Loom', 'Loosen', 'Loot', 'Lose', 'Lounge',
+			'Love', 'Lower', 'Lubricate', 'Lucid', 'Lug',
+			'Lull', 'Lumber', 'Lump', 'Lunge', 'Lure',
+			'Lurk', 'Lust', 'Luxuriate', 'Label', 'Labor',
+			'Lace', 'Lack', 'Ladder', 'Ladle', 'Lag',
+			'Lament', 'Laminate', 'Land', 'Landscape', 'Language',
+			'Languish', 'Lap', 'Lapse', 'Lard', 'Large',
+			'Lash', 'Last', 'Lather', 'Laud', 'Laugh',
+			'Launder', 'Lavish', 'Law', 'Lay', 'Lazy',
+			'Lead', 'Leaf', 'Leak', 'Lean', 'Leap',
+			'Lease', 'Leash', 'Leather', 'Lecture', 'Ledge',
+			'Leech', 'Leer', 'Left', 'Legal', 'Legend'
 		];
 
-		let currentIndex = 0;
+		const tWords = [
+			'Transform', 'Transfer', 'Transpose', 'Transact', 'Translate',
+			'Traverse', 'Track', 'Trace', 'Train', 'Transmit',
+			'Transport', 'Transpile', 'Transcribe', 'Transcend', 'Transition',
+			'Transmute', 'Transplant', 'Trap', 'Treat', 'Trend',
+			'Triage', 'Trigger', 'Trim', 'Triple', 'Troubleshoot',
+			'Truncate', 'Trust', 'Tune', 'Tunnel', 'Turn',
+			'Twist', 'Type', 'Typeset', 'Tackle', 'Tag',
+			'Tail', 'Tailor', 'Take', 'Talk', 'Tally',
+			'Tame', 'Tap', 'Target', 'Task', 'Taste',
+			'Teach', 'Team', 'Tear', 'Tease', 'Teleport',
+			'Tell', 'Temper', 'Template', 'Tempt', 'Tend',
+			'Terminate', 'Terraform', 'Test', 'Tether', 'Text',
+			'Thank', 'Thaw', 'Theme', 'Theorize', 'Thin',
+			'Think', 'Thread', 'Threaten', 'Thrive', 'Throttle',
+			'Throw', 'Thrust', 'Thwart', 'Tick', 'Tickle',
+			'Tide', 'Tidy', 'Tie', 'Tighten', 'Tilt',
+			'Time', 'Tint', 'Tip', 'Title', 'Toast',
+			'Toggle', 'Tokenize', 'Tolerate', 'Tool', 'Top',
+			'Topple', 'Torch', 'Torque', 'Toss', 'Total',
+			'Touch', 'Tour', 'Tow', 'Toy', 'Traceability',
+			'Trade', 'Trail', 'Trample', 'Transfix', 'Transgress',
+			'Transit', 'Trap', 'Trash', 'Travel', 'Trawl',
+			'Tread', 'Treasure', 'Trek', 'Tremble', 'Trick'
+		];
+
+		const eWords = [
+			'Export', 'Execute', 'Extract', 'Expand', 'Elevate',
+			'Edge', 'Enterprise', 'Endpoint', 'Entity', 'Engine',
+			'Event', 'Elasticsearch', 'Encode', 'Encrypt', 'Enhance',
+			'Establish', 'Evolve', 'Examine', 'Explore', 'Express',
+			'Extend', 'Embed', 'Enable', 'Enforce', 'Engage',
+			'Ensure', 'Enumerate', 'Equalize', 'Estimate', 'Evoke',
+			'Exceed', 'Exchange', 'Exclude', 'Exemplify', 'Exhaust',
+			'Exhibit', 'Expedite', 'Experiment', 'Exploit', 'Expose',
+			'Externalize', 'Extrapolate', 'Extrude', 'Elaborate', 'Elect',
+			'Eliminate', 'Elucidate', 'Emanate', 'Embrace', 'Emerge',
+			'Emit', 'Emphasize', 'Employ', 'Empower', 'Emulate',
+			'Encapsulate', 'Encompass', 'Encounter', 'Energize', 'Engineer',
+			'Engrave', 'Enjoy', 'Enlarge', 'Enlighten', 'Enlist',
+			'Enqueue', 'Enrich', 'Enroll', 'Ensemble', 'Entangle',
+			'Enter', 'Entertain', 'Entice', 'Entrench', 'Entrust',
+			'Envelop', 'Envision', 'Epitomize', 'Equip', 'Eradicate',
+			'Erect', 'Escalate', 'Escape', 'Escort', 'Etch',
+			'Evaporate', 'Evict', 'Evidence', 'Exacerbate', 'Exalt',
+			'Excavate', 'Excel', 'Excise', 'Excite', 'Exclaim',
+			'Exclude', 'Excuse', 'Exemplar', 'Exert', 'Exfoliate',
+			'Exhale', 'Exhilarate', 'Exhort', 'Exile', 'Exist',
+			'Exit', 'Exonerate', 'Expand', 'Expatriate', 'Expect',
+			'Expel', 'Experience', 'Expire', 'Explain', 'Explode'
+		];
+
+		// Store previously used combinations to avoid immediate repeats
+		const recentCombos = [];
+		const maxRecent = 20; // Remember last 20 combinations
+
 		const descriptionElement = document.getElementById('lte-description');
-		
+
 		if (!descriptionElement) return;
+
+		// Function to generate a random combination
+		const generateRandomLTE = () => {
+			let combo;
+			let attempts = 0;
+			const maxAttempts = 50;
+
+			do {
+				const l = lWords[Math.floor(Math.random() * lWords.length)];
+				const t = tWords[Math.floor(Math.random() * tWords.length)];
+				const e = eWords[Math.floor(Math.random() * eWords.length)];
+				combo = `${l} ${t} ${e}`;
+				attempts++;
+			} while (recentCombos.includes(combo) && attempts < maxAttempts);
+
+			// Add to recent combos and maintain size limit
+			recentCombos.push(combo);
+			if (recentCombos.length > maxRecent) {
+				recentCombos.shift();
+			}
+
+			return combo;
+		};
 
 		// Function to cycle descriptions
 		const cycleDescription = () => {
 			// Add fading class
 			descriptionElement.classList.add('fading');
-			
+
 			// After fade out, change text and fade back in
 			setTimeout(() => {
-				currentIndex = (currentIndex + 1) % lteCombos.length;
-				descriptionElement.textContent = lteCombos[currentIndex];
+				const newCombo = generateRandomLTE();
+				descriptionElement.textContent = newCombo;
 				descriptionElement.classList.remove('fading');
+
+				// Optional: Log the combination for debugging/fun
+				console.log(`New LTE combo: ${newCombo}`);
 			}, 250); // Half of the transition time
 		};
 
+		// Set initial random combination
+		descriptionElement.textContent = generateRandomLTE();
+
 		// Start cycling every 10 seconds
 		setInterval(cycleDescription, 10000);
+
+		// Optional: Add click handler for manual cycling
+		descriptionElement.style.cursor = 'pointer';
+		descriptionElement.title = 'Click for new combination';
+		descriptionElement.addEventListener('click', cycleDescription);
 	}
 
 	setupEventListeners() {
@@ -393,8 +484,8 @@ class MixpanelExportUI {
 			return;
 		}
 
-		this.showLoading(isDryRun ? 'Testing Export...' : 'Exporting Data...', 
-						isDryRun ? 'Running export test' : 'Exporting your data from Mixpanel');
+		this.showLoading(isDryRun ? 'Testing Export...' : 'Exporting Data...',
+			isDryRun ? 'Running export test' : 'Exporting your data from Mixpanel');
 
 		try {
 			// Collect form data
@@ -430,7 +521,7 @@ class MixpanelExportUI {
 		// Collect all form fields into structured data
 		const data = {
 			recordType: this.getElementValue('recordType'),
-			
+
 			// Credentials
 			project: this.getElementValue('project'),
 			token: this.getElementValue('token'),
@@ -440,21 +531,21 @@ class MixpanelExportUI {
 			groupKey: this.getElementValue('groupKey'),
 			dataGroupId: this.getElementValue('dataGroupId'),
 			secondToken: this.getElementValue('secondToken'),
-			
+
 			// Configuration
 			region: this.getElementValue('region', 'US'),
 			workers: parseInt(this.getElementValue('workers', '10')),
-			
+
 			// Time filters
 			start: this.getElementValue('start'),
 			end: this.getElementValue('end'),
 			epochStart: this.getElementValue('epochStart'),
 			epochEnd: this.getElementValue('epochEnd'),
-			
+
 			// Advanced filters
 			whereClause: this.getElementValue('whereClause'),
 			limit: this.getElementValue('limit'),
-			
+
 			// Output options
 			logs: this.getElementChecked('logs'),
 			verbose: this.getElementChecked('verbose'),
@@ -487,7 +578,7 @@ class MixpanelExportUI {
 
 	showResults(result, isDryRun) {
 		this.hideLoading();
-		
+
 		const resultsSection = document.getElementById('results');
 		const resultsTitle = document.getElementById('results-title');
 		const resultsData = document.getElementById('results-data');
@@ -506,7 +597,7 @@ function toggleSection(sectionId) {
 	const section = document.getElementById(sectionId);
 	const header = section.previousElementSibling;
 	const icon = header.querySelector('.toggle-icon');
-	
+
 	if (section.style.display === 'none') {
 		section.style.display = 'block';
 		icon.style.transform = 'rotate(180deg)';
@@ -523,14 +614,14 @@ function toggleAllSections() {
 	const toggleBtn = document.getElementById('toggle-all-btn');
 	const toggleText = document.getElementById('toggle-all-text');
 	const btnIcon = toggleBtn.querySelector('.btn-icon');
-	
+
 	// Check if any sections are currently expanded
 	const anyExpanded = Array.from(sections).some(section => section.style.display === 'block');
-	
+
 	sections.forEach(section => {
 		const header = section.previousElementSibling;
 		const icon = header.querySelector('.toggle-icon');
-		
+
 		if (anyExpanded) {
 			// Collapse all
 			section.style.display = 'none';
@@ -543,7 +634,7 @@ function toggleAllSections() {
 			header.setAttribute('aria-expanded', 'true');
 		}
 	});
-	
+
 	// Update button text and icon
 	if (anyExpanded) {
 		toggleText.textContent = 'Expand All';

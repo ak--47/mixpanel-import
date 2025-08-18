@@ -87,12 +87,25 @@ function corePipeline(stream, job, toNodeStream = false) {
 	const mpPipeline = _.pipeline(
 
 
-		// * only JSON from stream
+		// * only JSON from stream with maxRecords termination
 		// @ts-ignore
-		_.filter(function FIRST_EXISTENCE(data) {
+		_.consume(function FIRST_EXISTENCE(err, x, push, next) {
+			if (err) {
+				push(err);
+				next();
+				return;
+			}
+			
+			if (x === _.nil) {
+				push(null, x);
+				return;
+			}
+
 			// Check maxRecords limit BEFORE processing
 			if (job.maxRecords !== null && job.recordsProcessed >= job.maxRecords) {
-				return false;
+				// Terminate the stream completely
+				push(null, _.nil);
+				return;
 			}
 
 			job.recordsProcessed++;
@@ -100,14 +113,14 @@ function corePipeline(stream, job, toNodeStream = false) {
 			// very small chance of mem sampling
 			Math.random() <= 0.00005 ? job.memSamp() : null;
 
-			const exists = isNotEmpty(data);
-			if (exists) return true;
-			else {
+			const exists = isNotEmpty(x);
+			if (exists) {
+				push(null, x);
+				next();
+			} else {
 				job.empty++;
-				return false;
+				next(); // Skip this item but continue
 			}
-
-
 		}),
 
 		// * apply vendor transforms

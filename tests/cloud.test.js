@@ -74,7 +74,7 @@ const u = require('ak-tools');
 const GCS_BUCKET_PREFIX = `gs://ak-bucky/mixpanel-import`;
 const FILES = ['someTestData-1', 'someTestData-2'];
 const NUM_RECORDS_PER_FILE = 3000;
-const FORMATS = ['.json', '.json.gz', '.csv', '.csv.gz', '.parquet'];
+const FORMATS = ['.json', '.json.gz', '.csv', '.csv.gz', '.parquet', '.parquet.gz'];
 
 // Generate all test file paths
 const TEST_PATHS = {};
@@ -266,4 +266,29 @@ describe("google cloud storage", () => {
 		},
 		longTimeout
 	);
+
+	test(
+		"parquet.gz: single file",
+		async () => {
+			const file = TEST_PATHS.parquetgz[0];
+			const data = await mp({}, file, { ...opts, fixData: true, transformFunc: parquetTransform });
+			expect(data.total).toBe(NUM_RECORDS_PER_FILE-1);
+			expect(data.success).toBeGreaterThan(NUM_RECORDS_PER_FILE/2);
+			expect(data.failed).toBeLessThan(500);
+			expect(data.duration).toBeGreaterThan(0);
+		}
+	);
+
+	test(
+		"parquet.gz: multiple files",
+		async () => {
+			const files = TEST_PATHS.parquetgz;
+			const data = await mp({}, files, { ...opts, fixData: true, transformFunc: parquetTransform });
+			expect(data.total).toBe((NUM_RECORDS_PER_FILE * files.length) - 2);
+			expect(data.success).toBeGreaterThan(NUM_RECORDS_PER_FILE * files.length / 2);
+			expect(data.failed).toBeLessThan(700);
+			expect(data.duration).toBeGreaterThan(0);
+		}
+	);
+
 });

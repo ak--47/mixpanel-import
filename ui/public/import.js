@@ -55,50 +55,132 @@ class MixpanelImportUI {
 	}
 
 	initializeETLCycling() {
-		// E.T.L word bank - data and tech industry terms
-		const etlCombos = [
-			'Extract Transform Load',
-			'Enrich Transform Launch', 
-			'Evaluate Transform Leverage',
-			'Export Transfer Load',
-			'Extract Transpose Load',
-			'Elasticsearch Transform Logstash',
-			'Event Transform Lake',
-			'Endpoint Transform Layer',
-			'Entity Transform Logic',
-			'Engine Transform Library',
-			'Extract Transact Lift',
-			'Execute Transform Launch',
-			'Expand Transform Load',
-			'Elevate Transform Launch',
-			'Extract Traverse Load',
-			'Enrichment Transformation Logistics',
-			'Event Tracking Library',
-			'Extract Translate Load',
-			'Edge Transform Load',
-			'Enterprise Transform Layer'
+		// Separate word banks for E, T, and L
+		const eWords = [
+			'Extract', 'Enrich', 'Evaluate', 'Export', 'Execute',
+			'Expand', 'Elevate', 'Edge', 'Enterprise', 'Endpoint',
+			'Entity', 'Engine', 'Event', 'Elasticsearch', 'Encode',
+			'Encrypt', 'Enhance', 'Establish', 'Evolve', 'Examine',
+			'Explore', 'Express', 'Extend', 'Embed', 'Enable',
+			'Enforce', 'Engage', 'Ensure', 'Enumerate', 'Equalize',
+			'Estimate', 'Evoke', 'Exceed', 'Exchange', 'Exclude',
+			'Exemplify', 'Exhaust', 'Exhibit', 'Expedite', 'Experiment',
+			'Exploit', 'Expose', 'Externalize', 'Extrapolate', 'Extrude',
+			'Elaborate', 'Elect', 'Eliminate', 'Elucidate', 'Emanate',
+			'Embrace', 'Emerge', 'Emit', 'Emphasize', 'Employ',
+			'Empower', 'Emulate', 'Encapsulate', 'Encompass', 'Encounter',
+			'Energize', 'Engineer', 'Engrave', 'Enjoy', 'Enlarge',
+			'Enlighten', 'Enlist', 'Enqueue', 'Entangle', 'Enter',
+			'Entertain', 'Entice', 'Entrench', 'Entrust', 'Envelop',
+			'Envision', 'Epitomize', 'Equip', 'Eradicate', 'Erect',
+			'Escalate', 'Escape', 'Escort', 'Etch', 'Evaporate',
+			'Evict', 'Evidence', 'Exacerbate', 'Exalt', 'Excavate'
 		];
 
-		let currentIndex = 0;
+		const tWords = [
+			'Transform', 'Transfer', 'Transpose', 'Transact', 'Translate',
+			'Traverse', 'Track', 'Trace', 'Train', 'Transmit',
+			'Transport', 'Transpile', 'Transcribe', 'Transcend', 'Transition',
+			'Transmute', 'Transplant', 'Trap', 'Treat', 'Trend',
+			'Triage', 'Trigger', 'Trim', 'Triple', 'Troubleshoot',
+			'Truncate', 'Trust', 'Tune', 'Tunnel', 'Turn',
+			'Twist', 'Type', 'Typeset', 'Tackle', 'Tag',
+			'Tail', 'Tailor', 'Take', 'Talk', 'Tally',
+			'Tame', 'Tap', 'Target', 'Task', 'Taste',
+			'Teach', 'Team', 'Tear', 'Tease', 'Teleport',
+			'Tell', 'Temper', 'Template', 'Tempt', 'Tend',
+			'Terminate', 'Terraform', 'Test', 'Tether', 'Text',
+			'Thank', 'Thaw', 'Theme', 'Theorize', 'Thin',
+			'Think', 'Thread', 'Threaten', 'Thrive', 'Throttle',
+			'Throw', 'Thrust', 'Thwart', 'Tick', 'Tickle',
+			'Tide', 'Tidy', 'Tie', 'Tighten', 'Tilt',
+			'Time', 'Tint', 'Tip', 'Title', 'Toast',
+			'Toggle', 'Tokenize', 'Tolerate', 'Tool', 'Top',
+			'Topple', 'Torch', 'Torque', 'Toss', 'Total',
+			'Touch', 'Tour', 'Tow', 'Toy', 'Traceability'
+		];
+
+		const lWords = [
+			'Load', 'Launch', 'Leverage', 'Lift', 'Logic',
+			'Library', 'Layer', 'Lake', 'Logstash', 'Link',
+			'List', 'Listen', 'Locate', 'Lock', 'Log',
+			'Loop', 'Latch', 'Learn', 'Lease', 'Leave',
+			'Lecture', 'Ledger', 'Legitimize', 'Lend', 'Lengthen',
+			'Lesson', 'Let', 'Level', 'Levy', 'Liberate',
+			'License', 'Lick', 'Lie', 'Lighten', 'Like',
+			'Limit', 'Line', 'Linger', 'Liquidate', 'Liquefy',
+			'List', 'Literalize', 'Litigate', 'Litter', 'Live',
+			'Livestream', 'Lobby', 'Localize', 'Lodge', 'Loft',
+			'Loiter', 'Look', 'Loom', 'Loosen', 'Loot',
+			'Lose', 'Lounge', 'Love', 'Lower', 'Lubricate',
+			'Lucid', 'Lug', 'Lull', 'Lumber', 'Lump',
+			'Lunge', 'Lure', 'Lurk', 'Lust', 'Luxuriate',
+			'Label', 'Labor', 'Lace', 'Lack', 'Ladder',
+			'Ladle', 'Lag', 'Lament', 'Laminate', 'Land',
+			'Landscape', 'Language', 'Languish', 'Lap', 'Lapse',
+			'Lard', 'Large', 'Lash', 'Last', 'Lather',
+			'Laud', 'Laugh', 'Launder', 'Lavish', 'Law',
+			'Lay', 'Lazy', 'Lead', 'Leaf', 'Leak',
+			'Lean', 'Leap', 'Lease', 'Leash', 'Leather'
+		];
+
+		// Store previously used combinations to avoid immediate repeats
+		const recentCombos = [];
+		const maxRecent = 20; // Remember last 20 combinations
+
 		const descriptionElement = document.getElementById('cute-description');
-		
+
 		if (!descriptionElement) return;
+
+		// Function to generate a random combination
+		const generateRandomETL = () => {
+			let combo;
+			let attempts = 0;
+			const maxAttempts = 50;
+
+			do {
+				const e = eWords[Math.floor(Math.random() * eWords.length)];
+				const t = tWords[Math.floor(Math.random() * tWords.length)];
+				const l = lWords[Math.floor(Math.random() * lWords.length)];
+				combo = `${e} ${t} ${l}`;
+				attempts++;
+			} while (recentCombos.includes(combo) && attempts < maxAttempts);
+
+			// Add to recent combos and maintain size limit
+			recentCombos.push(combo);
+			if (recentCombos.length > maxRecent) {
+				recentCombos.shift();
+			}
+
+			return combo;
+		};
 
 		// Function to cycle descriptions
 		const cycleDescription = () => {
 			// Add fading class
 			descriptionElement.classList.add('fading');
-			
+
 			// After fade out, change text and fade back in
 			setTimeout(() => {
-				currentIndex = (currentIndex + 1) % etlCombos.length;
-				descriptionElement.textContent = etlCombos[currentIndex];
+				const newCombo = generateRandomETL();
+				descriptionElement.textContent = newCombo;
 				descriptionElement.classList.remove('fading');
+
+				// Optional: Log the combination for debugging/fun
+				console.log(`New ETL combo: ${newCombo}`);
 			}, 250); // Half of the transition time
 		};
 
+		// Set initial random combination
+		descriptionElement.textContent = generateRandomETL();
+
 		// Start cycling every 10 seconds
 		setInterval(cycleDescription, 10000);
+
+		// Optional: Add click handler for manual cycling
+		descriptionElement.style.cursor = 'pointer';
+		descriptionElement.title = 'Click for new combination';
+		descriptionElement.addEventListener('click', cycleDescription);
 	}
 
 	setupBasicFileInput() {
@@ -847,13 +929,13 @@ function transform(row) {
 
 			// Collect minimal form data for preview
 			const formData = this.collectFormData();
-			
+
 			// Add minimal options for raw preview (no transforms)
 			const options = {
 				recordType: document.getElementById('recordType').value || 'event',
 				region: document.getElementById('region')?.value || 'US'
 			};
-			
+
 			formData.append('options', JSON.stringify(options));
 			formData.append('credentials', JSON.stringify({})); // Empty creds for preview
 
@@ -880,7 +962,7 @@ function transform(row) {
 		} catch (error) {
 			console.error('Preview error:', error);
 			this.showError('Preview failed: ' + error.message);
-			
+
 			// Reset button
 			const previewBtn = document.getElementById('preview-data-btn');
 			previewBtn.innerHTML = '<span class="btn-icon">👁️</span> Preview Data (Raw)';
@@ -891,7 +973,7 @@ function transform(row) {
 	displayPreviewRecords() {
 		const previewSection = document.getElementById('data-preview');
 		const previewContent = document.getElementById('preview-content');
-		
+
 		if (this.sampleData.length === 0) {
 			previewSection.style.display = 'block';
 			previewContent.innerHTML = '<p class="muted-text">No data found in the source.</p>';
@@ -900,10 +982,10 @@ function transform(row) {
 
 		// Show random 5 records
 		const randomRecords = this.getRandomRecords(5);
-		
+
 		previewSection.style.display = 'block';
 		previewContent.innerHTML = `<pre><code class="json">${this.highlightJSON(JSON.stringify(randomRecords, null, 2))}</code></pre>`;
-		
+
 		// Show record count info
 		const recordInfo = document.createElement('p');
 		recordInfo.className = 'section-description';
@@ -913,11 +995,11 @@ function transform(row) {
 
 	showMorePreviewRecords() {
 		if (this.sampleData.length === 0) return;
-		
+
 		// Get different random 5 records and update display
 		const randomRecords = this.getRandomRecords(5);
 		const previewContent = document.getElementById('preview-content');
-		
+
 		// Keep the info text, replace the JSON
 		const pre = previewContent.querySelector('pre');
 		if (pre) {
@@ -929,7 +1011,7 @@ function transform(row) {
 		if (this.sampleData.length <= count) {
 			return this.sampleData;
 		}
-		
+
 		// Get random indices without replacement
 		const indices = [];
 		while (indices.length < count) {
@@ -938,7 +1020,7 @@ function transform(row) {
 				indices.push(randomIndex);
 			}
 		}
-		
+
 		return indices.map(i => this.sampleData[i]);
 	}
 
@@ -1028,18 +1110,149 @@ function transform(row) {
 
 		resultsTitle.textContent = isDryRun ? 'Preview Results' : 'Import Complete!';
 
-		let displayData = result.result;
+		// For dry runs with both raw and transformed data, show side-by-side comparison
+		if (isDryRun && result.rawData && result.previewData) {
+			this.showSideBySideComparison(result.rawData, result.previewData);
+		} else {
+			// Regular single display for non-dry runs or legacy dry runs
+			let displayData = result.result;
+			
+			if (isDryRun && result.previewData && result.previewData.length > 0) {
+				displayData = [...result.previewData.slice(0, 100)];
+			}
 
-		// For dry runs, always show the first 100 records of preview data
-		if (isDryRun && result.previewData && result.previewData.length > 0) {
-			displayData = [...result.previewData.slice(0, 100)];
+			resultsData.innerHTML = `<pre><code class="json">${this.highlightJSON(JSON.stringify(displayData, null, 2))}</code></pre>`;
 		}
-
-		resultsData.innerHTML = `<pre><code class="json">${this.highlightJSON(JSON.stringify(displayData, null, 2))}</code></pre>`;
+		
 		resultsSection.style.display = 'block';
-
-		// Scroll to results
 		resultsSection.scrollIntoView({ behavior: 'smooth' });
+	}
+
+	showSideBySideComparison(rawData, transformedData) {
+		const resultsData = document.getElementById('results-data');
+		
+		// Store data for pagination
+		this.comparisonData = {
+			raw: rawData,
+			transformed: transformedData,
+			currentPage: 0,
+			recordsPerPage: 10
+		};
+
+		// Create side-by-side container
+		resultsData.innerHTML = `
+			<div class="side-by-side-container">
+				<div class="comparison-header">
+					<div class="comparison-title">
+						<h3>Raw Data</h3>
+						<span class="record-count">${rawData.length} records</span>
+					</div>
+					<div class="comparison-title">
+						<h3>Transformed Data</h3>
+						<span class="record-count">${transformedData.length} records</span>
+					</div>
+				</div>
+				<div class="comparison-controls">
+					<button type="button" id="prev-records-btn" class="btn btn-secondary" disabled>
+						← Previous 10
+					</button>
+					<span id="record-range">Records 1-10</span>
+					<button type="button" id="next-records-btn" class="btn btn-secondary">
+						Next 10 →
+					</button>
+				</div>
+				<div class="comparison-panels">
+					<div class="comparison-panel" id="raw-panel">
+						<div class="panel-content" id="raw-content"></div>
+					</div>
+					<div class="comparison-panel" id="transformed-panel">
+						<div class="panel-content" id="transformed-content"></div>
+					</div>
+				</div>
+			</div>
+		`;
+
+		this.renderComparisonPage();
+		this.setupComparisonControls();
+	}
+
+	renderComparisonPage() {
+		const { raw, transformed, currentPage, recordsPerPage } = this.comparisonData;
+		const startIdx = currentPage * recordsPerPage;
+		const endIdx = Math.min(startIdx + recordsPerPage, Math.max(raw.length, transformed.length));
+		
+		const rawSlice = raw.slice(startIdx, endIdx);
+		const transformedSlice = transformed.slice(startIdx, endIdx);
+		
+		// Render raw data
+		const rawContent = document.getElementById('raw-content');
+		rawContent.innerHTML = this.renderRecordList(rawSlice, 'raw');
+		
+		// Render transformed data
+		const transformedContent = document.getElementById('transformed-content');
+		transformedContent.innerHTML = this.renderRecordList(transformedSlice, 'transformed');
+		
+		// Update controls
+		this.updateComparisonControls(startIdx + 1, endIdx, Math.max(raw.length, transformed.length));
+		this.setupSynchronizedScrolling();
+	}
+
+	renderRecordList(records, type) {
+		return records.map((record, index) => `
+			<div class="record-item" data-index="${index}">
+				<div class="record-header">Record ${this.comparisonData.currentPage * this.comparisonData.recordsPerPage + index + 1}</div>
+				<pre><code class="json">${this.highlightJSON(JSON.stringify(record, null, 2))}</code></pre>
+			</div>
+		`).join('');
+	}
+
+	updateComparisonControls(start, end, total) {
+		const prevBtn = document.getElementById('prev-records-btn');
+		const nextBtn = document.getElementById('next-records-btn');
+		const rangeSpan = document.getElementById('record-range');
+		
+		prevBtn.disabled = this.comparisonData.currentPage === 0;
+		nextBtn.disabled = end >= total;
+		rangeSpan.textContent = `Records ${start}-${end} of ${total}`;
+	}
+
+	setupComparisonControls() {
+		const prevBtn = document.getElementById('prev-records-btn');
+		const nextBtn = document.getElementById('next-records-btn');
+		
+		prevBtn.addEventListener('click', () => {
+			if (this.comparisonData.currentPage > 0) {
+				this.comparisonData.currentPage--;
+				this.renderComparisonPage();
+			}
+		});
+		
+		nextBtn.addEventListener('click', () => {
+			const { raw, transformed, currentPage, recordsPerPage } = this.comparisonData;
+			const maxRecords = Math.max(raw.length, transformed.length);
+			if ((currentPage + 1) * recordsPerPage < maxRecords) {
+				this.comparisonData.currentPage++;
+				this.renderComparisonPage();
+			}
+		});
+	}
+
+	setupSynchronizedScrolling() {
+		const rawPanel = document.getElementById('raw-panel');
+		const transformedPanel = document.getElementById('transformed-panel');
+		
+		let isScrolling = false;
+		
+		const syncScroll = (source, target) => {
+			if (!isScrolling) {
+				isScrolling = true;
+				target.scrollTop = source.scrollTop;
+				setTimeout(() => { isScrolling = false; }, 10);
+			}
+		};
+		
+		rawPanel.addEventListener('scroll', () => syncScroll(rawPanel, transformedPanel));
+		transformedPanel.addEventListener('scroll', () => syncScroll(transformedPanel, rawPanel));
 	}
 
 	showError(message) {
@@ -1117,13 +1330,13 @@ function toggleAllSections() {
 	const toggleBtn = document.getElementById('toggle-all-btn');
 	const toggleText = document.getElementById('toggle-all-text');
 	const btnIcon = toggleBtn.querySelector('.btn-icon');
-	
+
 	// Check if any sections are currently expanded
 	const anyExpanded = Array.from(sections).some(section => section.style.display === 'block');
-	
+
 	sections.forEach(section => {
 		const header = section.previousElementSibling;
-		
+
 		if (anyExpanded) {
 			// Collapse all
 			section.style.display = 'none';
@@ -1134,14 +1347,14 @@ function toggleAllSections() {
 			header.classList.add('expanded');
 		}
 	});
-	
+
 	// Update button text and icon
 	if (anyExpanded) {
-		toggleText.textContent = 'Expand All';
-		btnIcon.textContent = '📂';
-	} else {
 		toggleText.textContent = 'Collapse All';
 		btnIcon.textContent = '📁';
+	} else {
+		toggleText.textContent = 'Expand All';
+		btnIcon.textContent = '📂';
 	}
 }
 

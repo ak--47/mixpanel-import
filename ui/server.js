@@ -121,7 +121,7 @@ app.post('/job', upload.array('files'), async (req, res) => {
 
 		// Run the import
 		const result = await mixpanelImport(creds, data, opts);
-		const {total, success, failed, empty} = result;
+		const { total, success, failed, empty } = result;
 		console.log(`Import job completed: ${total} records | ${success} success | ${failed} failed | ${empty} skipped`);
 
 		res.json({
@@ -151,11 +151,16 @@ app.post('/sample', upload.array('files'), async (req, res) => {
 		// Force sample settings - no transforms, maxRecords=500, dryRun=true
 		opts.dryRun = true;
 		opts.maxRecords = 500;
-		opts.transformFunc = null; // No transforms for raw data preview
+		opts.transformFunc = function id(a) { return a; }; // Identity function
 		opts.fixData = false; // No data shaping
 		opts.removeNulls = false; // Keep raw data as-is
 		opts.flattenData = false; // No flattening
 		opts.vendor = ''; // No vendor transforms
+		opts.fixTime = false; // No time fixing
+		opts.addToken = false; // No token addition
+		opts.compress = false; // No compression
+		opts.strict = false; // No validation
+		opts.dedupe = false; // No deduplication
 
 		// Process files or cloud paths (same as main endpoint)
 		let data;
@@ -302,13 +307,25 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
 
 		console.log(`Starting dry run with ${Array.isArray(data) ? data.length : 'unknown'} records`);
 
-		// Run the dry run
-		const result = await mixpanelImport(creds, data, opts);
+		// Run raw data fetch first (no transforms) for comparison
+		const rawOpts = { ...opts };
+		rawOpts.transformFunc = null;
+		rawOpts.fixData = false;
+		rawOpts.removeNulls = false;
+		rawOpts.flattenData = false;
+		rawOpts.vendor = '';
+		rawOpts.maxRecords = 100; // Match dry run limit
+
+		const rawResult = await mixpanelImport(creds, data, rawOpts);
+
+		// Run the transformed dry run
+		const transformedResult = await mixpanelImport(creds, data, opts);
 
 		res.json({
 			success: true,
-			result,
-			previewData: result.dryRun || []
+			result: transformedResult,
+			previewData: transformedResult.dryRun || [],
+			rawData: rawResult.dryRun || []
 		});
 
 	} catch (error) {
@@ -325,7 +342,7 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
 app.post('/export', async (req, res) => {
 	try {
 		const exportData = req.body;
-		
+
 		// Parse credentials and options for export
 		/** @type {Creds} */
 		const creds = {
@@ -338,7 +355,7 @@ app.post('/export', async (req, res) => {
 			dataGroupId: exportData.dataGroupId,
 			secondToken: exportData.secondToken
 		};
-		
+
 		/** @type {Options} */
 		const opts = {
 			recordType: exportData.recordType,
@@ -362,7 +379,7 @@ app.post('/export', async (req, res) => {
 
 		// Run the export - note that for exports, data parameter can be null/empty
 		const result = await mixpanelImport(creds, null, opts);
-		
+
 		console.log(`Export completed: ${result.total} records processed`);
 
 		// Check if we should stream the file back or just return results
@@ -371,17 +388,17 @@ app.post('/export', async (req, res) => {
 			try {
 				const fs = require('fs');
 				const path = require('path');
-				
+
 				if (fs.existsSync(opts.outputFilePath)) {
 					// Set appropriate headers for file download
 					const filename = path.basename(opts.outputFilePath);
 					res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 					res.setHeader('Content-Type', 'application/json');
-					
+
 					// Stream the file
 					const fileStream = fs.createReadStream(opts.outputFilePath);
 					fileStream.pipe(res);
-					
+
 					// Clean up file after streaming (optional - comment out if you want to keep files)
 					fileStream.on('end', () => {
 						setTimeout(() => {
@@ -393,7 +410,7 @@ app.post('/export', async (req, res) => {
 							}
 						}, 1000);
 					});
-					
+
 					return; // Don't send JSON response
 				}
 			} catch (fileError) {
@@ -422,7 +439,7 @@ app.post('/export', async (req, res) => {
 app.post('/export-dry-run', async (req, res) => {
 	try {
 		const exportData = req.body;
-		
+
 		// Parse credentials and options for dry run export
 		/** @type {Creds} */
 		const creds = {
@@ -435,7 +452,7 @@ app.post('/export-dry-run', async (req, res) => {
 			dataGroupId: exportData.dataGroupId,
 			secondToken: exportData.secondToken
 		};
-		
+
 		/** @type {Options} */
 		const opts = {
 			recordType: exportData.recordType,
@@ -458,7 +475,7 @@ app.post('/export-dry-run', async (req, res) => {
 
 		// Run the dry run export
 		const result = await mixpanelImport(creds, null, opts);
-		
+
 		console.log(`Export dry run completed: ${result.total} records would be exported`);
 
 		res.json({

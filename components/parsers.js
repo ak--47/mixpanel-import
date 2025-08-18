@@ -769,7 +769,7 @@ async function csvMemory(filePath, jobConfig) {
 }
 
 /**
- * @param  {JobConfig} jobConfig
+ * @param  {import('../index').Job} jobConfig
  */
 function chunkForSize(jobConfig) {
 	let pending = [];
@@ -979,7 +979,7 @@ async function fetchFromGCS(gcsPath, projectId = 'mixpanel-gtm-training') {
 function detectGCSFormat(gcsPath) {
 	const fileName = gcsPath.split('/').pop() || '';
 	
-	if (fileName.endsWith('.parquet')) return 'parquet';
+	if (fileName.endsWith('.parquet.gz') || fileName.endsWith('.parquet')) return 'parquet';
 	if (fileName.endsWith('.csv.gz') || fileName.endsWith('.csv')) return 'csv';
 	if (fileName.endsWith('.json.gz') || fileName.endsWith('.json') || fileName.endsWith('.jsonl') || fileName.endsWith('.jsonl.gz')) return 'json';
 	
@@ -1175,6 +1175,7 @@ async function createGCSParquetStream(gcsPath, job) {
 
 	const bucketName = matches[1];
 	const filePath = matches[2];
+	const isGzipped = filePath.endsWith('.parquet.gz');
 
 	try {
 		// Check if file exists
@@ -1185,10 +1186,21 @@ async function createGCSParquetStream(gcsPath, job) {
 		}
 
 		// Create GCS read stream
-		const gcsReadStream = gcsFile.createReadStream({
+		let gcsReadStream = gcsFile.createReadStream({
 			decompress: GCS_STREAMING_CONFIG.DECOMPRESS,
 			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION
 		});
+
+		// Handle gzip decompression for .parquet.gz files
+		if (isGzipped) {
+			const gunzip = zlib.createGunzip({
+				chunkSize: GCS_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
+				windowBits: GCS_STREAMING_CONFIG.GZIP_WINDOW_BITS,
+				level: zlib.constants.Z_DEFAULT_COMPRESSION,
+				memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
+			});
+			gcsReadStream = gcsReadStream.pipe(gunzip);
+		}
 
 		// Collect stream data into buffer for hyparquet
 		const chunks = [];

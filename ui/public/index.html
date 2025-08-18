@@ -3,9 +3,11 @@
 
 <head>
 	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="viewport"
+		content="width=device-width, initial-scale=1.0">
 	<title>Mixpanel Import - Choose Your Tool</title>
-	<link rel="stylesheet" href="style.css">
+	<link rel="stylesheet"
+		href="style.css">
 	<style>
 		/* Landing page specific styles */
 		.landing-container {
@@ -13,7 +15,7 @@
 			display: flex;
 			flex-direction: column;
 		}
-		
+
 		.landing-header {
 			text-align: center;
 			padding: 60px 24px 40px;
@@ -21,7 +23,7 @@
 			position: relative;
 			overflow: hidden;
 		}
-		
+
 		.landing-header::before {
 			content: '';
 			position: absolute;
@@ -32,7 +34,7 @@
 			background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.1) 0%, transparent 50%);
 			pointer-events: none;
 		}
-		
+
 		.landing-title {
 			font-size: 48px;
 			font-weight: 700;
@@ -41,7 +43,7 @@
 			position: relative;
 			z-index: 1;
 		}
-		
+
 		.landing-subtitle {
 			color: rgba(255, 255, 255, 0.9);
 			font-size: 24px;
@@ -49,14 +51,14 @@
 			position: relative;
 			z-index: 1;
 		}
-		
+
 		.tools-container {
 			flex: 1;
 			display: grid;
 			grid-template-columns: 1fr 1fr;
 			min-height: calc(100vh - 200px);
 		}
-		
+
 		.tool-card {
 			display: flex;
 			flex-direction: column;
@@ -69,37 +71,104 @@
 			position: relative;
 			overflow: hidden;
 		}
-		
+
 		.tool-card:hover {
 			transform: translateY(-8px);
 			box-shadow: var(--shadow-lg);
 		}
-		
+
 		.etl-card {
 			background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-secondary) 100%);
 			border-right: 2px solid var(--border-primary);
 		}
-		
+
 		.lte-card {
 			background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-card) 100%);
 		}
-		
+
 		.tool-icon {
 			font-size: 120px;
 			margin-bottom: 32px;
-			background: linear-gradient(45deg, var(--mp-purple), var(--mp-purple-light));
-			-webkit-background-clip: text;
-			-webkit-text-fill-color: transparent;
-			background-clip: text;
+			transition: all 0.3s ease;
 		}
-		
+
+		.etl-card .tool-icon {
+			color: var(--mp-teal);
+			text-shadow:
+				0 0 20px var(--mp-teal),
+				0 0 40px var(--mp-teal),
+				0 0 60px var(--mp-teal);
+			animation: etlGlow 2s ease-in-out infinite alternate, etlFloat 3s ease-in-out infinite alternate;
+		}
+
+		.lte-card .tool-icon {
+			color: var(--mp-orange);
+			text-shadow:
+				0 0 20px var(--mp-orange),
+				0 0 40px var(--mp-orange),
+				0 0 60px var(--mp-orange);
+			animation: lteGlow 1s ease-in-out infinite alternate, lteSwing 3s ease-in-out infinite alternate;
+		}
+
+		@keyframes etlGlow {
+			0% {
+				text-shadow:
+					0 0 20px var(--mp-teal),
+					0 0 40px var(--mp-teal),
+					0 0 60px var(--mp-teal);
+			}
+
+			100% {
+				text-shadow:
+					0 0 30px var(--mp-teal),
+					0 0 60px var(--mp-teal),
+					0 0 90px var(--mp-teal);
+			}
+		}
+
+		@keyframes lteGlow {
+			0% {
+				text-shadow:
+					0 0 20px var(--mp-orange),
+					0 0 40px var(--mp-orange),
+					0 0 60px var(--mp-orange);
+			}
+
+			100% {
+				text-shadow:
+					0 0 30px var(--mp-orange),
+					0 0 60px var(--mp-orange),
+					0 0 90px var(--mp-orange);
+			}
+		}
+
+		@keyframes etlFloat {
+			0% {
+				transform: translateY(-8px) translateX(-3px);
+			}
+
+			100% {
+				transform: translateY(8px) translateX(3px);
+			}
+		}
+
+		@keyframes lteSwing {
+			0% {
+				transform: rotate(-15deg) translateX(-5px);
+			}
+
+			100% {
+				transform: rotate(15deg) translateX(5px);
+			}
+		}
+
 		.tool-name {
 			font-size: 64px;
 			font-weight: 700;
 			margin-bottom: 16px;
 			letter-spacing: 4px;
 		}
-		
+
 		.tool-description {
 			font-size: 28px;
 			font-weight: 400;
@@ -108,11 +177,11 @@
 			opacity: 0.8;
 			transition: opacity 0.5s ease-in-out;
 		}
-		
+
 		.tool-description.fading {
 			opacity: 0.3;
 		}
-		
+
 		.tool-tagline {
 			font-size: 18px;
 			color: var(--text-secondary);
@@ -120,7 +189,7 @@
 			max-width: 320px;
 			line-height: 1.6;
 		}
-		
+
 		.tool-button {
 			margin-top: 40px;
 			padding: 16px 32px;
@@ -135,12 +204,12 @@
 			text-decoration: none;
 			display: inline-block;
 		}
-		
+
 		.tool-button:hover {
 			box-shadow: var(--shadow-purple);
 			transform: translateY(-2px);
 		}
-		
+
 		.divider {
 			position: absolute;
 			top: 50%;
@@ -151,45 +220,45 @@
 			background: linear-gradient(to bottom, transparent, var(--mp-purple), transparent);
 			z-index: 10;
 		}
-		
+
 		/* Responsive design */
 		@media (max-width: 768px) {
 			.tools-container {
 				grid-template-columns: 1fr;
 				min-height: auto;
 			}
-			
+
 			.etl-card {
 				border-right: none;
 				border-bottom: 2px solid var(--border-primary);
 			}
-			
+
 			.tool-name {
 				font-size: 48px;
 				letter-spacing: 2px;
 			}
-			
+
 			.tool-description {
 				font-size: 24px;
 			}
-			
+
 			.tool-icon {
 				font-size: 80px;
 				margin-bottom: 24px;
 			}
-			
+
 			.tool-card {
 				padding: 40px 24px;
 			}
-			
+
 			.landing-title {
 				font-size: 36px;
 			}
-			
+
 			.landing-subtitle {
 				font-size: 20px;
 			}
-			
+
 			.divider {
 				display: none;
 			}
@@ -201,28 +270,32 @@
 	<div class="landing-container">
 		<!-- Header -->
 		<header class="landing-header">
-			<h1 class="landing-title">Mixpanel Import</h1>
-			<p class="landing-subtitle">Choose your data processing tool</p>
+			<h1 class="landing-title">Mixpanel Import UI</h1>
+			<p class="landing-subtitle">a fun data processing tool</p>
 		</header>
 
 		<!-- Tools Container -->
 		<div class="tools-container">
 			<!-- E.T.L Tool (Import) -->
-			<a href="/import" class="tool-card etl-card">
+			<a href="/import"
+				class="tool-card etl-card">
 				<div class="tool-icon">⚡</div>
 				<h2 class="tool-name">E.T.L</h2>
-				<p class="tool-description" id="etl-description">Extract Transform Load</p>
-				<p class="tool-tagline">Import data from files and cloud storage with powerful transforms and real-time preview</p>
-				<span class="tool-button">Start Import →</span>
+				<p class="tool-description"
+					id="etl-description">Extract Transform Load</p>
+				<p class="tool-tagline">import data to mixpanel from files (or cloud storage) with powerful transforms</p>
+				<span class="tool-button">Import Tool →</span>
 			</a>
 
 			<!-- L.T.E Tool (Export) -->
-			<a href="/export" class="tool-card lte-card">
-				<div class="tool-icon">📦</div>
+			<a href="/export"
+				class="tool-card lte-card">
+				<div class="tool-icon">🔄</div>
 				<h2 class="tool-name">L.T.E</h2>
-				<p class="tool-description" id="lte-description">Load Transform Export</p>
-				<p class="tool-tagline">Export data from Mixpanel with flexible filtering, transformations, and multiple output formats</p>
-				<span class="tool-button">Start Export →</span>
+				<p class="tool-description"
+					id="lte-description">Load Transform Export</p>
+				<p class="tool-tagline">export data from Mixpanel with flexible filtering, and re-import data into a new or existing project</p>
+				<span class="tool-button">Export Tool →</span>
 			</a>
 		</div>
 
@@ -231,10 +304,9 @@
 	</div>
 
 	<script>
-		// E.T.L cycling descriptions
 		const etlCombos = [
 			'Extract Transform Load',
-			'Enrich Transform Launch', 
+			'Enrich Transform Launch',
 			'Evaluate Transform Leverage',
 			'Export Transfer Load',
 			'Extract Transpose Load',
@@ -243,42 +315,153 @@
 			'Endpoint Transform Layer',
 			'Entity Transform Logic',
 			'Engine Transform Library',
-			'Elastic Transform Logic',
 			'Execute Transform Launch',
-			'Enable Transform Logic',
-			'Establish Transform Link',
-			'Evolve Transform Learn',
-			'Explore Transform Launch',
-			'Extend Transform Load',
-			'Engage Transform Leverage',
-			'Enhance Transform Logic',
-			'Empower Transform Launch'
+			'Expand Transform Load',
+			'Elevate Transform Link',
+			'Encrypt Tokenize Logic',
+			'Enhance Transpile Lambda',
+			'Enterprise Terraform Layer',
+			'Evolve Track Library',
+			'Examine Translate Load',
+			'Explore Transmit Launch',
+			'Express Transfer Ledger',
+			'Extend Traverse Lake',
+			'Embed Transport Logic',
+			'Enable Trigger Load',
+			'Enforce Trace Library',
+			'Engage Tunnel Launch',
+			'Ensure Thread Layer',
+			'Enumerate Template Logic',
+			'Establish Throttle Load',
+			'Estimate Train Library',
+			'Exchange Transpose Launch',
+			'Exemplify Tag Lake',
+			'Exhaust Target Layer',
+			'Exhibit Task Logic',
+			'Expedite Test Load',
+			'Experiment Tether Library',
+			'Exploit Toggle Launch',
+			'Expose Triage Lake',
+			'Externalize Trim Layer',
+			'Extrapolate Trust Logic',
+			'Elaborate Tune Load',
+			'Elect Type Library',
+			'Eliminate Tackle Launch',
+			'Emanate Tailor Lake',
+			'Embrace Take Layer',
+			'Emerge Talk Logic',
+			'Emit Tally Load',
+			'Emphasize Tap Library',
+			'Employ Team Launch',
+			'Empower Teach Lake',
+			'Emulate Teleport Layer',
+			'Encapsulate Tell Logic',
+			'Encounter Temper Load',
+			'Energize Terminate Library',
+			'Engineer Text Launch',
+			'Engrave Theme Lake',
+			'Enjoy Theorize Layer',
+			'Enlarge Think Logic',
+			'Enlighten Thread Load',
+			'Enlist Thrive Library',
+			'Enqueue Throw Launch',
+			'Entangle Thrust Lake',
+			'Enter Tick Layer',
+			'Entertain Tidy Logic',
+			'Entice Tie Load',
+			'Entrench Tighten Library',
+			'Entrust Time Launch',
+			'Envelop Tint Lake',
+			'Envision Title Layer',
+			'Epitomize Toast Logic',
+			'Equip Tool Load',
+			'Eradicate Top Library',
+			'Escalate Torch Launch',
+			'Escape Total Lake',
+			'Escort Touch Layer',
+			'Etch Tour Logic',
+			'Evaporate Tow Load'
 		];
 
-		// L.T.E cycling descriptions
+		// L.T.E cycling descriptions - 75 unique combinations
 		const lteCombos = [
 			'Load Transform Export',
 			'Launch Transform Execute',
-			'Locate Transform Extract', 
+			'Locate Transform Extract',
 			'Library Transform Export',
 			'Leverage Transform Export',
 			'Logic Transform Execute',
-			'Learn Transform Export',
+			'Layer Transform Export',
 			'Link Transform Export',
 			'List Transform Export',
-			'Live Transform Export',
 			'Loop Transform Export',
-			'Launch Transform Engage',
-			'Lookup Transform Export',
-			'Layout Transform Export',
-			'Layer Transform Export',
-			'Limit Transform Export',
-			'Label Transform Export',
-			'Large Transform Export',
-			'Lean Transform Export',
-			'Local Transform Export'
+			'Lift Transfer Execute',
+			'Lake Transpose Extract',
+			'Learn Track Encrypt',
+			'Lease Trace Enhance',
+			'Leave Train Establish',
+			'Lecture Transmit Evolve',
+			'Ledger Transport Examine',
+			'Legitimize Transpile Explore',
+			'Lend Transcribe Express',
+			'Lengthen Transcend Extend',
+			'Level Transition Embed',
+			'Levy Transmute Enable',
+			'Liberate Transplant Enforce',
+			'License Trap Engage',
+			'Lighten Treat Ensure',
+			'Limit Trend Enumerate',
+			'Line Triage Equalize',
+			'Linger Trigger Estimate',
+			'Liquidate Trim Exchange',
+			'Live Triple Exclude',
+			'Livestream Troubleshoot Exemplify',
+			'Lobby Truncate Exhaust',
+			'Localize Trust Exhibit',
+			'Lodge Tune Expedite',
+			'Loft Tunnel Experiment',
+			'Look Turn Exploit',
+			'Loom Twist Expose',
+			'Loosen Type Externalize',
+			'Love Typeset Extrapolate',
+			'Lower Tackle Elaborate',
+			'Lubricate Tag Elect',
+			'Lull Tail Eliminate',
+			'Lumber Tailor Emanate',
+			'Lunge Take Embrace',
+			'Lure Talk Emerge',
+			'Lurk Tally Emit',
+			'Label Tame Emphasize',
+			'Labor Tap Employ',
+			'Lace Target Empower',
+			'Ladder Task Emulate',
+			'Lag Taste Encapsulate',
+			'Lament Teach Encounter',
+			'Laminate Team Energize',
+			'Land Tear Engineer',
+			'Landscape Tease Engrave',
+			'Language Teleport Enjoy',
+			'Languish Tell Enlarge',
+			'Lap Temper Enlighten',
+			'Lapse Template Enlist',
+			'Large Tempt Enqueue',
+			'Lash Tend Entangle',
+			'Last Terminate Enter',
+			'Lather Terraform Entertain',
+			'Laud Test Entice',
+			'Laugh Tether Entrench',
+			'Launder Text Entrust',
+			'Lavish Thank Envelop',
+			'Lay Thaw Envision',
+			'Lead Theme Epitomize',
+			'Leaf Theorize Equip',
+			'Leak Thin Eradicate',
+			'Lean Think Escalate',
+			'Leap Thread Escape',
+			'Leash Threaten Escort',
+			'Leather Thrive Etch',
+			'Ledge Throttle Evaporate'
 		];
-
 		let etlIndex = 0;
 		let lteIndex = 0;
 
@@ -307,12 +490,12 @@
 		}
 
 		// Start cycling when page loads
-		document.addEventListener('DOMContentLoaded', function() {
+		document.addEventListener('DOMContentLoaded', function () {
 			// E.T.L cycles every 2 seconds
-			setInterval(cycleETL, 2000);
-			
+			setInterval(cycleETL, 1234);
+
 			// L.T.E cycles every 3 seconds  
-			setInterval(cycleLTE, 3000);
+			setInterval(cycleLTE, 2543);
 		});
 	</script>
 </body>

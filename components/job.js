@@ -225,7 +225,7 @@ class Job {
 		if (this.flattenData) this.flattener = transforms.flattenProperties(".");
 		if (this.addToken) this.tokenAdder = transforms.addToken(this);
 		if (this.recordType === 'scd') this.scdTransform = transforms.scdTransform(this);
-		if (this.recordType === 'event' && this.fixTime) this.timeTransform = transforms.fixTime(this);
+		if (this.recordType === 'event' && this.fixTime) this.timeTransform = transforms.fixTime();
 
 		if (this.insertIdTuple.length > 0 && this.recordType === 'event') {
 			this.shouldCreateInsertId = true;
