@@ -278,10 +278,16 @@ class MixpanelImportUI {
 			radio.addEventListener('change', this.toggleFileSource.bind(this));
 		});
 
-		// Cloud paths input
-		const cloudPathsInput = document.getElementById('cloudPaths');
-		if (cloudPathsInput) {
-			cloudPathsInput.addEventListener('input', this.updateCloudFilePreview.bind(this));
+		// Cloud paths input for GCS
+		const gcsPathsInput = document.getElementById('gcsPaths');
+		if (gcsPathsInput) {
+			gcsPathsInput.addEventListener('input', this.updateCloudFilePreview.bind(this));
+		}
+
+		// Cloud paths input for S3
+		const s3PathsInput = document.getElementById('s3Paths');
+		if (s3PathsInput) {
+			s3PathsInput.addEventListener('input', this.updateCloudFilePreview.bind(this));
 		}
 
 		// Advanced options toggle (only if element exists)
@@ -363,14 +369,24 @@ class MixpanelImportUI {
 	toggleFileSource() {
 		const fileSource = document.querySelector('input[name="fileSource"]:checked').value;
 		const localUpload = document.getElementById('local-upload');
-		const cloudUpload = document.getElementById('cloud-upload');
+		const gcsUpload = document.getElementById('gcs-upload');
+		const s3Upload = document.getElementById('s3-upload');
+		const s3Credentials = document.getElementById('s3-credentials');
 
+		// Hide all upload sections first
+		localUpload.style.display = 'none';
+		gcsUpload.style.display = 'none';
+		s3Upload.style.display = 'none';
+		s3Credentials.style.display = 'none';
+
+		// Show the selected upload section
 		if (fileSource === 'local') {
 			localUpload.style.display = 'block';
-			cloudUpload.style.display = 'none';
-		} else {
-			localUpload.style.display = 'none';
-			cloudUpload.style.display = 'block';
+		} else if (fileSource === 'gcs') {
+			gcsUpload.style.display = 'block';
+		} else if (fileSource === 's3') {
+			s3Upload.style.display = 'block';
+			s3Credentials.style.display = 'block';
 		}
 
 		// Update CLI command when file source changes
@@ -378,8 +394,20 @@ class MixpanelImportUI {
 	}
 
 	updateCloudFilePreview() {
-		const cloudPathsEl = document.getElementById('cloudPaths');
-		const preview = document.getElementById('cloud-file-list');
+		const fileSource = document.querySelector('input[name="fileSource"]:checked')?.value;
+		let cloudPathsEl, preview, expectedPrefix;
+
+		if (fileSource === 'gcs') {
+			cloudPathsEl = document.getElementById('gcsPaths');
+			preview = document.getElementById('gcs-file-list');
+			expectedPrefix = 'gs://';
+		} else if (fileSource === 's3') {
+			cloudPathsEl = document.getElementById('s3Paths');
+			preview = document.getElementById('s3-file-list');
+			expectedPrefix = 's3://';
+		} else {
+			return; // Not a cloud file source
+		}
 
 		if (!cloudPathsEl || !preview) return;
 
@@ -391,7 +419,7 @@ class MixpanelImportUI {
 
 		const paths = cloudPaths.split(/[,\n]/).map(p => p.trim()).filter(p => p);
 		const previewHTML = paths.map(path => {
-			const isValid = path.startsWith('gs://');
+			const isValid = path.startsWith(expectedPrefix);
 			return `<span class="cloud-path${isValid ? '' : ' invalid'}">${path}</span>`;
 		}).join('');
 
@@ -539,14 +567,23 @@ class MixpanelImportUI {
 			const fileSource = document.querySelector('input[name="fileSource"]:checked').value;
 			if (fileSource === 'local') {
 				command += ' ./your-data-file.json';
-			} else {
-				const cloudPathsEl = document.getElementById('cloudPaths');
-				const cloudPaths = cloudPathsEl ? cloudPathsEl.value : '';
-				if (cloudPaths.trim()) {
-					const firstPath = cloudPaths.split(/[,\n]/)[0].trim();
+			} else if (fileSource === 'gcs') {
+				const gcsPathsEl = document.getElementById('gcsPaths');
+				const gcsPaths = gcsPathsEl ? gcsPathsEl.value : '';
+				if (gcsPaths.trim()) {
+					const firstPath = gcsPaths.split(/[,\n]/)[0].trim();
 					if (firstPath) command += ` "${firstPath}"`;
 				} else {
 					command += ' gs://your-bucket/your-file.json';
+				}
+			} else if (fileSource === 's3') {
+				const s3PathsEl = document.getElementById('s3Paths');
+				const s3Paths = s3PathsEl ? s3PathsEl.value : '';
+				if (s3Paths.trim()) {
+					const firstPath = s3Paths.split(/[,\n]/)[0].trim();
+					if (firstPath) command += ` "${firstPath}"`;
+				} else {
+					command += ' s3://your-bucket/your-file.json';
 				}
 			}
 
@@ -583,6 +620,17 @@ class MixpanelImportUI {
 			} else {
 				const secretElement = document.getElementById('secret');
 				if (secretElement && secretElement.value) command += ` --secret [api-secret]`;
+			}
+
+			// S3 credentials if S3 is selected
+			if (fileSource === 's3') {
+				const s3KeyElement = document.getElementById('s3Key');
+				const s3SecretElement = document.getElementById('s3Secret');
+				const s3RegionElement = document.getElementById('s3Region');
+				
+				if (s3KeyElement && s3KeyElement.value) command += ` --s3Key ${s3KeyElement.value}`;
+				if (s3SecretElement && s3SecretElement.value) command += ` --s3Secret [s3-secret]`;
+				if (s3RegionElement && s3RegionElement.value) command += ` --s3Region ${s3RegionElement.value}`;
 			}
 
 			// Common options
@@ -810,11 +858,20 @@ function transform(row) {
 			formData.append('files', file);
 		});
 
-		//check for cloud mode files
-		const cloudPathsInput = document.getElementById('cloudPaths').value;
-		if (cloudPathsInput) {
-			const cloudPaths = cloudPathsInput.split(/[,\n]/).map(p => p.trim()).filter(p => p);
-			formData.append('cloudPaths', JSON.stringify(cloudPaths));
+		// Check for cloud mode files
+		const fileSource = document.querySelector('input[name="fileSource"]:checked')?.value;
+		if (fileSource === 'gcs') {
+			const gcsPathsInput = document.getElementById('gcsPaths').value;
+			if (gcsPathsInput) {
+				const cloudPaths = gcsPathsInput.split(/[,\n]/).map(p => p.trim()).filter(p => p);
+				formData.append('cloudPaths', JSON.stringify(cloudPaths));
+			}
+		} else if (fileSource === 's3') {
+			const s3PathsInput = document.getElementById('s3Paths').value;
+			if (s3PathsInput) {
+				const cloudPaths = s3PathsInput.split(/[,\n]/).map(p => p.trim()).filter(p => p);
+				formData.append('cloudPaths', JSON.stringify(cloudPaths));
+			}
 		}
 
 		// Collect credentials
@@ -853,6 +910,17 @@ function transform(row) {
 		const groupKeyElement = document.getElementById('groupKey');
 		if (groupKeyElement && groupKeyElement.closest('.form-group').style.display !== 'none' && groupKeyElement.value) {
 			credentials.groupKey = groupKeyElement.value;
+		}
+
+		// Add S3 credentials if S3 is selected
+		if (fileSource === 's3') {
+			const s3KeyElement = document.getElementById('s3Key');
+			const s3SecretElement = document.getElementById('s3Secret');
+			const s3RegionElement = document.getElementById('s3Region');
+			
+			if (s3KeyElement && s3KeyElement.value) credentials.s3Key = s3KeyElement.value;
+			if (s3SecretElement && s3SecretElement.value) credentials.s3Secret = s3SecretElement.value;
+			if (s3RegionElement && s3RegionElement.value) credentials.s3Region = s3RegionElement.value;
 		}
 
 		const dataGroupIdElement = document.getElementById('dataGroupId');

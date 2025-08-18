@@ -60,6 +60,9 @@ class Job {
 		this.scdPropId = opts.scdPropId || ''; //scd prop id
 		this.transport = opts.transport || 'got'; // transport mechanism to use for sending data (default: got)
 		this.gcpProjectId = opts.gcpProjectId || creds.gcpProjectId || 'mixpanel-gtm-training'; // Google Cloud project ID for GCS operations
+		this.s3Key = opts.s3Key || creds.s3Key || ''; // AWS S3 access key ID for S3 operations
+		this.s3Secret = opts.s3Secret || creds.s3Secret || ''; // AWS S3 secret access key for S3 operations
+		this.s3Region = opts.s3Region || creds.s3Region || ''; // AWS S3 region for S3 operations
 
 		this.dimensionMaps = opts.dimensionMaps || []; //dimension map for scd
 		this.maxRecords = opts.maxRecords !== undefined ? opts.maxRecords : null; //maximum records to process before stopping stream

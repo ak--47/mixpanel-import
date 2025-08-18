@@ -41,7 +41,11 @@ const myImportedData = await mpSteam(creds, data, options)
 npx --yes mixpanel-import@latest ./pathToData
 ```
 
-when running as a CLI, `pathToData` can be a `.json`, `.jsonl`, `.ndjson`, `.csv` or `.txt` file OR a **directory** which contains said files.
+when running as a CLI, `pathToData` can be:
+- a `.json`, `.jsonl`, `.ndjson`, `.csv`, `.parquet`, or `.txt` file
+- a **directory** which contains said files
+- a **Google Cloud Storage path** like `gs://my-bucket/file.json` 
+- an **Amazon S3 path** like `s3://my-bucket/file.json` (requires S3 credentials)
 
 when using the CLI, you will supply params to specify options of the form `--option value`, for example your project credentials:
 
@@ -144,6 +148,11 @@ const creds = {
 		token: `my-project-token`, //for user/group profiles
 		groupKey: `my-group-key`, //for group profiles
 		lookupTableId: `my-lookup-table-id`, //for lookup tables
+		
+		// for Amazon S3 cloud storage access
+		s3Key: `my-s3-access-key`,
+		s3Secret: `my-s3-secret-key`, 
+		s3Region: `us-east-1`
 	}
 ```
 
@@ -173,6 +182,11 @@ MP_GROUP_KEY={{your-group-key}}
 
 # required for lookup tables
 MP_TABLE_ID={{your-lookup-id}}
+
+# required for Amazon S3 cloud storage access
+S3_KEY={{your-s3-access-key}}
+S3_SECRET={{your-s3-secret-key}}
+S3_REGION={{your-s3-region}}
 ```
 
 note: pass `null` (or `{}`) as the `creds` to the module to use `.env` variables for authentication:
@@ -189,24 +203,60 @@ the `data` param represents the data you wish to import; this might be [events](
 
 the value of data can be:
 
--   **a path to a _file_**, which contains records as `.json`, `.jsonl`, `.ndjson`, or `.txt`
+-   **a path to a _file_**, which contains records as `.json`, `.jsonl`, `.ndjson`, `.csv`, `.parquet`, or `.txt`
 
 ```javascript
 const data = `./myEventsToImport.json`;
 const importedData = await mpStream(creds, data, options);
 ```
 
--   **a path to a _directory_**, which contains files that have records as `.json`, `.jsonl`, `.ndjson`, or `.txt`
+-   **a path to a _directory_**, which contains files that have records as `.json`, `.jsonl`, `.ndjson`, `.csv`, `.parquet`, or `.txt`
 
 ```javascript
 const data = `./myEventsToImport/`; //has json files
 const importedData = await mpStream(creds, data, options);
 ```
 
--   **a list of paths**, which contains files that have records as `.json`, `.jsonl`, `.ndjson`, or `.txt`
+-   **a list of paths**, which contains files that have records as `.json`, `.jsonl`, `.ndjson`, `.csv`, `.parquet`, or `.txt`
 
 ```javascript
 const data = [`./file1.jsonl`, `./file2.jsonl`] ; //has json files
+const importedData = await mpStream(creds, data, options);
+```
+
+-   **a Google Cloud Storage file path** (streaming support for all formats + gzip compression)
+
+```javascript
+const data = `gs://my-bucket/events.json`;
+// Also supports: .json.gz, .jsonl, .jsonl.gz, .csv, .csv.gz, .parquet, .parquet.gz
+const importedData = await mpStream(creds, data, options);
+```
+
+-   **an Amazon S3 file path** (streaming support for all formats + gzip compression)
+
+```javascript
+const data = `s3://my-bucket/events.json`;
+// Also supports: .json.gz, .jsonl, .jsonl.gz, .csv, .csv.gz, .parquet, .parquet.gz
+const importedData = await mpStream(creds, data, {
+  ...options,
+  s3Key: 'YOUR_ACCESS_KEY',
+  s3Secret: 'YOUR_SECRET_KEY',
+  s3Region: 'us-east-1'
+});
+```
+
+-   **multiple cloud storage files** (mix and match is not supported - all files must be from same provider)
+
+```javascript
+const data = [
+  `gs://my-bucket/events1.json`, 
+  `gs://my-bucket/events2.json`
+];
+// or for S3:
+const data = [
+  `s3://my-bucket/events1.json`, 
+  `s3://my-bucket/events2.json`
+];
 const importedData = await mpStream(creds, data, options);
 ```
 

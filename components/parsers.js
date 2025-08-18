@@ -78,6 +78,29 @@ const GCS_STREAMING_CONFIG = {
 	DECOMPRESS: false                // Let us handle compression manually
 };
 
+// S3 Streaming Configuration
+const S3_STREAMING_CONFIG = {
+	// Buffer sizes for high-performance streaming
+	S3_BUFFER_MULTIPLIER: 100,       // Multiply job.highWater by this for S3 reads
+	OBJECT_STREAM_MULTIPLIER: 10,    // Multiply job.highWater by this for object stream
+	
+	// Gzip decompression settings
+	GZIP_CHUNK_SIZE: 64 * 1024,      // 64KB chunks for decompression
+	GZIP_WINDOW_BITS: 15,            // Standard gzip window size
+	GZIP_MEM_LEVEL: 8,               // Memory vs speed tradeoff (1-9, 8 is balanced)
+	
+	// Error handling
+	MAX_PARSE_ERRORS: 1000,          // Stop logging parse errors after this many
+	
+	// S3-specific optimizations
+	REQUEST_TIMEOUT: 30000,          // 30 second timeout for S3 requests
+	MAX_RETRY_ATTEMPTS: 3,           // Number of retry attempts for failed requests
+	PART_SIZE: 5 * 1024 * 1024,      // 5MB part size for streaming
+	
+	// Default region (can be overridden)
+	DEFAULT_REGION: 'us-east-1'      // Default AWS region if none specified
+};
+
 // Memory Management Configuration
 const MEMORY_CONFIG = {
 	FREE_MEMORY_THRESHOLD: 0.50,     // Load files into memory only if under 50% of free RAM
@@ -263,6 +286,18 @@ async function determineDataType(data, job) {
 	if (Array.isArray(data) && data.every(item => typeof item === 'string' && item.startsWith('gs://'))) {
 		job.wasStream = true;
 		return createMultiGCSStream(data, job);
+	}
+
+	// Handle Amazon S3 URLs (s3://)
+	if (typeof data === 'string' && data.startsWith('s3://')) {
+		job.wasStream = true;
+		return createS3Stream(data, job);
+	}
+
+	// Handle array of Amazon S3 URLs
+	if (Array.isArray(data) && data.every(item => typeof item === 'string' && item.startsWith('s3://'))) {
+		job.wasStream = true;
+		return createMultiS3Stream(data, job);
 	}
 
 
@@ -1419,6 +1454,474 @@ async function createMultiGCSStream(gcsPaths, job) {
 			
 		} catch (error) {
 			console.warn(`Error processing file ${gcsPath}: ${error.message}`);
+			skippedCount++;
+			setImmediate(processNextFile);
+		}
+	};
+	
+	// Start processing the first file
+	setImmediate(processNextFile);
+	
+	return output;
+}
+
+/**
+ * Detect file format from S3 path
+ * @param {string} s3Path 
+ * @returns {string} Format: 'json', 'csv', 'parquet'
+ */
+function detectS3Format(s3Path) {
+	const fileName = s3Path.split('/').pop() || '';
+	
+	if (fileName.endsWith('.parquet.gz') || fileName.endsWith('.parquet')) return 'parquet';
+	if (fileName.endsWith('.csv.gz') || fileName.endsWith('.csv')) return 'csv';
+	if (fileName.endsWith('.json.gz') || fileName.endsWith('.json') || fileName.endsWith('.jsonl') || fileName.endsWith('.jsonl.gz')) return 'json';
+	
+	// Default to JSON for unknown formats
+	return 'json';
+}
+
+/**
+ * Main S3 stream factory - detects format and routes to appropriate parser
+ * @param {string} s3Path 
+ * @param {JobConfig} job 
+ * @returns {Promise<stream.Readable>}
+ */
+async function createS3Stream(s3Path, job) {
+	const format = detectS3Format(s3Path);
+	
+	switch (format) {
+		case 'csv':
+			return createS3CSVStream(s3Path, job);
+		case 'parquet':
+			return createS3ParquetStream(s3Path, job);
+		case 'json':
+		default:
+			return createS3JSONStream(s3Path, job);
+	}
+}
+
+/**
+ * Create JSON/JSONL stream from S3
+ * @param {string} s3Path 
+ * @param {JobConfig} job 
+ * @returns {Promise<stream.Readable>}
+ */
+async function createS3JSONStream(s3Path, job) {
+	// Extract bucket and key from the S3 path
+	const matches = s3Path.match(/^s3:\/\/([^\/]+)\/(.+)$/);
+	if (!matches) {
+		throw new Error(`Invalid S3 path: ${s3Path}`);
+	}
+
+	const bucketName = matches[1];
+	const key = matches[2];
+	const isGzipped = COMPRESSION_CONFIG.GZIP_EXTENSIONS.some(ext => key.endsWith(ext));
+
+	// Configure S3 client with credentials from job config
+	const s3ClientConfig = {
+		region: job.s3Region || S3_STREAMING_CONFIG.DEFAULT_REGION,
+		requestTimeout: S3_STREAMING_CONFIG.REQUEST_TIMEOUT,
+		maxAttempts: S3_STREAMING_CONFIG.MAX_RETRY_ATTEMPTS
+	};
+
+	// Add credentials if provided
+	if (job.s3Key && job.s3Secret) {
+		s3ClientConfig.credentials = {
+			accessKeyId: job.s3Key,
+			secretAccessKey: job.s3Secret
+		};
+	}
+
+	// Throw error if no region specified
+	if (!job.s3Region) {
+		throw new Error('S3 region is required. Please specify s3Region in job config or use environment variable S3_REGION');
+	}
+
+	const s3Client = new S3Client(s3ClientConfig);
+
+	try {
+		// Create read stream
+		const command = new GetObjectCommand({
+			Bucket: bucketName,
+			Key: key
+		});
+
+		const response = await s3Client.send(command);
+		
+		// Convert AWS SDK stream to Node.js stream
+		// @ts-ignore - AWS SDK stream conversion
+		const s3Stream = stream.Readable.from(response.Body);
+
+		// Handle gzip compression with tunable parameters
+		if (isGzipped) {
+			const gunzip = zlib.createGunzip({
+				chunkSize: S3_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
+				windowBits: S3_STREAMING_CONFIG.GZIP_WINDOW_BITS,
+				level: zlib.constants.Z_DEFAULT_COMPRESSION,
+				memLevel: S3_STREAMING_CONFIG.GZIP_MEM_LEVEL
+			});
+			return s3Stream.pipe(gunzip).pipe(new JsonlObjectStream(job));
+		}
+
+		// Convert to NDJSON object stream with tunable performance
+		return s3Stream.pipe(new JsonlObjectStream(job));
+
+	} catch (error) {
+		throw new Error(`Error creating S3 JSON stream: ${error.message}`);
+	}
+}
+
+/**
+ * Create CSV stream from S3
+ * @param {string} s3Path 
+ * @param {JobConfig} job 
+ * @returns {Promise<stream.Readable>}
+ */
+async function createS3CSVStream(s3Path, job) {
+	// Extract bucket and key from the S3 path
+	const matches = s3Path.match(/^s3:\/\/([^\/]+)\/(.+)$/);
+	if (!matches) {
+		throw new Error(`Invalid S3 path: ${s3Path}`);
+	}
+
+	const bucketName = matches[1];
+	const key = matches[2];
+	const isGzipped = key.endsWith('.csv.gz');
+
+	// Configure S3 client with credentials from job config
+	const s3ClientConfig = {
+		region: job.s3Region || S3_STREAMING_CONFIG.DEFAULT_REGION,
+		requestTimeout: S3_STREAMING_CONFIG.REQUEST_TIMEOUT,
+		maxAttempts: S3_STREAMING_CONFIG.MAX_RETRY_ATTEMPTS
+	};
+
+	// Add credentials if provided
+	if (job.s3Key && job.s3Secret) {
+		s3ClientConfig.credentials = {
+			accessKeyId: job.s3Key,
+			secretAccessKey: job.s3Secret
+		};
+	}
+
+	// Throw error if no region specified
+	if (!job.s3Region) {
+		throw new Error('S3 region is required. Please specify s3Region in job config or use environment variable S3_REGION');
+	}
+
+	const s3Client = new S3Client(s3ClientConfig);
+
+	try {
+		// Create read stream
+		const command = new GetObjectCommand({
+			Bucket: bucketName,
+			Key: key
+		});
+
+		const response = await s3Client.send(command);
+		
+		// Convert AWS SDK stream to Node.js stream
+		// @ts-ignore - AWS SDK stream conversion
+		const s3Stream = stream.Readable.from(response.Body);
+
+		// Handle gzip compression
+		let processedStream = s3Stream;
+		if (isGzipped) {
+			const gunzip = zlib.createGunzip({
+				chunkSize: S3_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
+				windowBits: S3_STREAMING_CONFIG.GZIP_WINDOW_BITS,
+				level: zlib.constants.Z_DEFAULT_COMPRESSION,
+				memLevel: S3_STREAMING_CONFIG.GZIP_MEM_LEVEL
+			});
+			processedStream = s3Stream.pipe(gunzip);
+		}
+
+		// Parse CSV using Papa Parse
+		const mappings = Object.entries(job.aliases);
+		const csvParser = Papa.parse(Papa.NODE_STREAM_INPUT, {
+			header: true,
+			skipEmptyLines: true,
+
+			//rename's header keys to match aliases
+			transformHeader: (header) => {
+				const mapping = mappings.filter(pair => pair[0] === header).pop();
+				if (mapping) header = mapping[1];
+				return header;
+			}
+		});
+
+		// Transform to Mixpanel event format (same as local csvStreamer)
+		const transformer = new stream.Transform({
+			objectMode: true,
+			highWaterMark: job.highWater,
+			transform: (chunk, _encoding, callback) => {
+				const { distinct_id = "", $insert_id = "", time = 0, event, ...props } = chunk;
+				const mixpanelEvent = {
+					event,
+					properties: {
+						distinct_id,
+						$insert_id,
+						time: dayjs.utc(time).valueOf(),
+						...props
+					}
+				};
+				if (!distinct_id) delete mixpanelEvent.properties.distinct_id;
+				if (!$insert_id) delete mixpanelEvent.properties.$insert_id;
+				if (!time) delete mixpanelEvent.properties.time;
+
+				callback(null, mixpanelEvent);
+			}
+		});
+
+		// Pipe: S3 Stream -> CSV Parser -> Transform -> Output
+		return processedStream.pipe(csvParser).pipe(transformer);
+
+	} catch (error) {
+		throw new Error(`Error creating S3 CSV stream: ${error.message}`);
+	}
+}
+
+/**
+ * Create Parquet stream from S3 using hyparquet with native S3 streaming
+ * @param {string} s3Path 
+ * @param {JobConfig} job 
+ * @returns {Promise<stream.Readable>}
+ */
+async function createS3ParquetStream(s3Path, job) {
+	// Extract bucket and key from the S3 path
+	const matches = s3Path.match(/^s3:\/\/([^\/]+)\/(.+)$/);
+	if (!matches) {
+		throw new Error(`Invalid S3 path: ${s3Path}`);
+	}
+
+	const bucketName = matches[1];
+	const key = matches[2];
+	const isGzipped = key.endsWith('.parquet.gz');
+
+	// Configure S3 client with credentials from job config
+	const s3ClientConfig = {
+		region: job.s3Region || S3_STREAMING_CONFIG.DEFAULT_REGION,
+		requestTimeout: S3_STREAMING_CONFIG.REQUEST_TIMEOUT,
+		maxAttempts: S3_STREAMING_CONFIG.MAX_RETRY_ATTEMPTS
+	};
+
+	// Add credentials if provided
+	if (job.s3Key && job.s3Secret) {
+		s3ClientConfig.credentials = {
+			accessKeyId: job.s3Key,
+			secretAccessKey: job.s3Secret
+		};
+	}
+
+	// Throw error if no region specified
+	if (!job.s3Region) {
+		throw new Error('S3 region is required. Please specify s3Region in job config or use environment variable S3_REGION');
+	}
+
+	const s3Client = new S3Client(s3ClientConfig);
+
+	try {
+		// Create S3 read stream
+		const command = new GetObjectCommand({
+			Bucket: bucketName,
+			Key: key
+		});
+
+		const response = await s3Client.send(command);
+		
+		// Convert AWS SDK stream to Node.js stream and collect chunks
+		const chunks = [];
+		
+		// Handle gzip decompression for .parquet.gz files
+		if (isGzipped) {
+			const gunzip = zlib.createGunzip({
+				chunkSize: S3_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
+				windowBits: S3_STREAMING_CONFIG.GZIP_WINDOW_BITS,
+				level: zlib.constants.Z_DEFAULT_COMPRESSION,
+				memLevel: S3_STREAMING_CONFIG.GZIP_MEM_LEVEL
+			});
+			
+			// Convert AWS SDK stream to Node.js stream and pipe through gunzip
+			// @ts-ignore - AWS SDK stream conversion
+			const s3Stream = stream.Readable.from(response.Body);
+			const decompressedStream = s3Stream.pipe(gunzip);
+			
+			for await (const chunk of decompressedStream) {
+				chunks.push(chunk);
+			}
+		} else {
+			// Direct processing without compression
+			// @ts-ignore - AWS SDK stream iteration
+			for await (const chunk of response.Body) {
+				chunks.push(chunk);
+			}
+		}
+		const buffer = Buffer.concat(chunks);
+
+		// Create async buffer interface for hyparquet (convert Buffer to ArrayBuffer)
+		const asyncBuffer = {
+			byteLength: buffer.length,
+			slice: (start, end) => {
+				const subBuffer = buffer.subarray(start, end);
+				// Convert Buffer to ArrayBuffer
+				const arrayBuffer = subBuffer.buffer.slice(
+					subBuffer.byteOffset, 
+					subBuffer.byteOffset + subBuffer.byteLength
+				);
+				return Promise.resolve(arrayBuffer);
+			}
+		};
+
+		// Use hyparquet's streaming interface (dynamically loaded)
+		const parquetReadFn = await getParquetRead();
+		
+		// Read parquet data first, then create stream
+		const parquetData = await new Promise((resolve, reject) => {
+			parquetReadFn({
+				file: asyncBuffer,
+				rowFormat: 'object',
+				onComplete: (data) => {
+					// Sanitize each row in-place before resolving
+					if (data && data.length > 0) {
+						for (const row of data) {
+							// sanitize in-place
+							for (const k of Object.keys(row)) {
+								const v = row[k];
+								if (v?.toISOString) row[k] = dayjs.utc(v).toISOString();
+								else if (typeof v === 'bigint') row[k] =
+									(v <= Number.MAX_SAFE_INTEGER && v >= Number.MIN_SAFE_INTEGER)
+										? Number(v)
+										: v.toString();
+								else if (Buffer.isBuffer(v)) row[k] = v.toString('utf-8');
+								else if (v === undefined) row[k] = null;
+							}
+						}
+					}
+					resolve(data || []);
+				}
+			}).catch(reject);
+		});
+
+		// Create readable stream from the parsed data
+		return stream.Readable.from(parquetData, { 
+			objectMode: true, 
+			highWaterMark: job.highWater 
+		});
+
+	} catch (error) {
+		throw new Error(`Error creating S3 Parquet stream: ${error.message}`);
+	}
+}
+
+/**
+ * Create a stream that handles multiple S3 files
+ * Gracefully skips files that don't exist
+ * Validates that all files have the same format
+ * @param {string[]} s3Paths Array of S3 paths (s3://bucket/file)
+ * @param {JobConfig} job Job configuration
+ * @returns {Promise<PassThrough>} Combined object stream from all files
+ */
+async function createMultiS3Stream(s3Paths, job) {
+	const { PassThrough } = require('stream');
+	
+	// Validate that all files have the same format
+	const formats = s3Paths.map(detectS3Format);
+	const uniqueFormats = [...new Set(formats)];
+	
+	if (uniqueFormats.length > 1) {
+		throw new Error(`Mixed file formats not supported. Found formats: ${uniqueFormats.join(', ')}. All files must be the same format.`);
+	}
+	
+	const format = uniqueFormats[0];
+	console.log(`Processing ${s3Paths.length} ${format} files from S3...`);
+	
+	// Create a passthrough stream that will be our final output
+	const output = new PassThrough({ objectMode: true });
+	
+	// Configure S3 client with credentials from job config
+	const s3ClientConfig = {
+		region: job.s3Region || S3_STREAMING_CONFIG.DEFAULT_REGION,
+		requestTimeout: S3_STREAMING_CONFIG.REQUEST_TIMEOUT,
+		maxAttempts: S3_STREAMING_CONFIG.MAX_RETRY_ATTEMPTS
+	};
+
+	// Add credentials if provided
+	if (job.s3Key && job.s3Secret) {
+		s3ClientConfig.credentials = {
+			accessKeyId: job.s3Key,
+			secretAccessKey: job.s3Secret
+		};
+	}
+
+	// Throw error if no region specified
+	if (!job.s3Region) {
+		throw new Error('S3 region is required. Please specify s3Region in job config or use environment variable S3_REGION');
+	}
+
+	const s3Client = new S3Client(s3ClientConfig);
+	
+	// Process files sequentially to avoid overwhelming S3
+	let processedCount = 0;
+	let skippedCount = 0;
+	
+	const processNextFile = async () => {
+		if (processedCount + skippedCount >= s3Paths.length) {
+			// All files processed, end the stream
+			output.end();
+			return;
+		}
+		
+		const s3Path = s3Paths[processedCount + skippedCount];
+		
+		try {
+			// Check if file exists first
+			const matches = s3Path.match(/^s3:\/\/([^\/]+)\/(.+)$/);
+			if (!matches) {
+				console.warn(`Skipping invalid S3 path: ${s3Path}`);
+				skippedCount++;
+				setImmediate(processNextFile);
+				return;
+			}
+			
+			const bucketName = matches[1];
+			const key = matches[2];
+			
+			// Check if file exists with a head request
+			const headCommand = new GetObjectCommand({
+				Bucket: bucketName,
+				Key: key
+			});
+			
+			try {
+				await s3Client.send(headCommand);
+			} catch (error) {
+				console.warn(`Skipping non-existent file: ${s3Path}`);
+				skippedCount++;
+				setImmediate(processNextFile);
+				return;
+			}
+			
+			// Create stream for this file
+			const fileStream = await createS3Stream(s3Path, job);
+			
+			// Pipe this file's data to our output stream
+			fileStream.on('data', (data) => {
+				output.write(data);
+			});
+			
+			fileStream.on('end', () => {
+				processedCount++;
+				setImmediate(processNextFile);
+			});
+			
+			fileStream.on('error', (error) => {
+				console.warn(`Error reading file ${s3Path}: ${error.message}`);
+				skippedCount++;
+				setImmediate(processNextFile);
+			});
+			
+		} catch (error) {
+			console.warn(`Error processing file ${s3Path}: ${error.message}`);
 			skippedCount++;
 			setImmediate(processNextFile);
 		}

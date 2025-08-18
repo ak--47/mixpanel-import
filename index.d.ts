@@ -108,6 +108,18 @@ declare namespace main {
 	 */
 	gcpProjectId?: string;
 	/**
+	 * - AWS S3 access key ID for S3 operations
+	 */
+	s3Key?: string;
+	/**
+	 * - AWS S3 secret access key for S3 operations
+	 */
+	s3Secret?: string;
+	/**
+	 * - AWS S3 region for S3 operations (required for S3 access)
+	 */
+	s3Region?: string;
+	/**
 	 * - a data_group_id to use for exporting group profiles
 	 */
 	dataGroupId?: string;
@@ -482,6 +494,18 @@ declare namespace main {
 	 * Google Cloud project ID for GCS operations (defaults to 'mixpanel-gtm-training')
 	 */
 	gcpProjectId?: string;
+	/**
+	 * AWS S3 access key ID for S3 operations
+	 */
+	s3Key?: string;
+	/**
+	 * AWS S3 secret access key for S3 operations
+	 */
+	s3Secret?: string;
+	/**
+	 * AWS S3 region for S3 operations (required for S3 access)
+	 */
+	s3Region?: string;
 	/**
 	 * a function to handle responses from the API; mostly used for debugging
 	 */

@@ -49,8 +49,14 @@
 					<label class="toggle-label">
 						<input type="radio"
 							name="fileSource"
-							value="cloud">
-						☁️ Cloud Storage (gs://)
+							value="gcs">
+						☁️ Google Cloud (gs://)
+					</label>
+					<label class="toggle-label">
+						<input type="radio"
+							name="fileSource"
+							value="s3">
+						☁️ Amazon S3 (s3://)
 					</label>
 				</div>
 
@@ -69,21 +75,37 @@
 						class="file-list"></div>
 				</div>
 
-				<!-- Cloud File Input -->
-				<div id="cloud-upload"
+				<!-- GCS File Input -->
+				<div id="gcs-upload"
 					class="upload-section"
 					style="display: none;">
 					<div class="form-group">
-						<label for="cloudPaths">Cloud Storage Paths</label>
-						<textarea id="cloudPaths"
-							name="cloudPaths"
+						<label for="gcsPaths">Google Cloud Storage Paths</label>
+						<textarea id="gcsPaths"
+							name="gcsPaths"
 							rows="4"
-							placeholder="gs://your-bucket/path/to/file.json&#10;gs://your-bucket/path/to/another-file.jsonl&#10;gs://your-bucket/data/*.parquet"
+							placeholder="gs://your-bucket/path/to/file.json&#10;gs://your-bucket/path/to/another-file.jsonl&#10;gs://your-bucket/data/events.parquet.gz"
 							autocomplete="off"></textarea>
-						<small>Enter Google Cloud Storage paths (one per line or comma-separated). Must start with
-							gs://</small>
+						<small>Enter Google Cloud Storage paths (one per line or comma-separated). Must start with gs://</small>
 					</div>
-					<div id="cloud-file-list"
+					<div id="gcs-file-list"
+						class="cloud-file-preview"></div>
+				</div>
+
+				<!-- S3 File Input -->
+				<div id="s3-upload"
+					class="upload-section"
+					style="display: none;">
+					<div class="form-group">
+						<label for="s3Paths">Amazon S3 Storage Paths</label>
+						<textarea id="s3Paths"
+							name="s3Paths"
+							rows="4"
+							placeholder="s3://your-bucket/path/to/file.json&#10;s3://your-bucket/path/to/another-file.jsonl&#10;s3://your-bucket/data/events.parquet.gz"
+							autocomplete="off"></textarea>
+						<small>Enter Amazon S3 paths (one per line or comma-separated). Must start with s3://</small>
+					</div>
+					<div id="s3-file-list"
 						class="cloud-file-preview"></div>
 				</div>
 
@@ -241,6 +263,39 @@
 						placeholder="Your group analytics key"
 						autocomplete="off">
 					<small>Required for group profile imports</small>
+				</div>
+
+				<!-- S3 Credentials -->
+				<div class="s3-credentials"
+					id="s3-credentials"
+					style="display: none;">
+					<h3 class="subsection-title">Amazon S3 Credentials</h3>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="s3Key">S3 Access Key*</label>
+							<input type="text"
+								id="s3Key"
+								name="s3Key"
+								placeholder="Your AWS access key ID"
+								autocomplete="off">
+						</div>
+						<div class="form-group">
+							<label for="s3Secret">S3 Secret Key*</label>
+							<input type="password"
+								id="s3Secret"
+								name="s3Secret"
+								placeholder="Your AWS secret access key">
+						</div>
+					</div>
+					<div class="form-group">
+						<label for="s3Region">S3 Region*</label>
+						<input type="text"
+							id="s3Region"
+							name="s3Region"
+							placeholder="us-east-1"
+							autocomplete="off">
+						<small>AWS region where your S3 bucket is located (e.g., us-east-1, eu-west-1)</small>
+					</div>
 				</div>
 
 				<!-- Optional Fields -->

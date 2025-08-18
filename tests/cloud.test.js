@@ -60,7 +60,10 @@ const {
 	MP_PROFILE_EXPORT_TOKEN = "",
 	MP_PROFILE_EXPORT_SECRET = "",
 	MP_PROFILE_EXPORT_GROUP_KEY = "",
-	MP_PROFILE_EXPORT_DATAGROUP_ID = ""
+	MP_PROFILE_EXPORT_DATAGROUP_ID = "",
+	S3_KEY = "",
+	S3_SECRET = "",
+	S3_REGION = ""
 } = process.env;
 
 if (!MP_PROJECT || !MP_ACCT || !MP_PASS || !MP_SECRET || !MP_TOKEN || !MP_TABLE_ID) {
@@ -72,11 +75,12 @@ const mp = require("../index.js");
 const u = require('ak-tools');
 
 const GCS_BUCKET_PREFIX = `gs://ak-bucky/mixpanel-import`;
+const S3_BUCKET_PREFIX = `s3://ak-bucky/mixpanel-import`;
 const FILES = ['someTestData-1', 'someTestData-2'];
 const NUM_RECORDS_PER_FILE = 3000;
 const FORMATS = ['.json', '.json.gz', '.csv', '.csv.gz', '.parquet', '.parquet.gz'];
 
-// Generate all test file paths
+// Generate all test file paths for GCS
 const TEST_PATHS = {};
 for (const format of FORMATS) {
 	const cleanFormat = format.replace(/\./g, ''); // Remove all dots for object key
@@ -85,6 +89,18 @@ for (const format of FORMATS) {
 	for (const file of FILES) {
 		const fullPath = `${GCS_BUCKET_PREFIX}/${cleanFormat}/${file}${format}`;
 		TEST_PATHS[cleanFormat].push(fullPath);
+	}
+}
+
+// Generate all test file paths for S3
+const S3_TEST_PATHS = {};
+for (const format of FORMATS) {
+	const cleanFormat = format.replace(/\./g, ''); // Remove all dots for object key
+	S3_TEST_PATHS[cleanFormat] = [];
+
+	for (const file of FILES) {
+		const fullPath = `${S3_BUCKET_PREFIX}/${cleanFormat}/${file}${format}`;
+		S3_TEST_PATHS[cleanFormat].push(fullPath);
 	}
 }
 
@@ -289,6 +305,197 @@ describe("google cloud storage", () => {
 			expect(data.failed).toBeLessThan(700);
 			expect(data.duration).toBeGreaterThan(0);
 		}
+	);
+
+});
+
+/** @type {import('../index.d.ts').Options} */
+const s3Opts = {
+	recordType: `event`,
+	compress: false,
+	workers: 20,
+	region: `US`,
+	recordsPerBatch: 2000,
+	bytesPerBatch: 2 * 1024 * 1024,
+	strict: true,
+	logs: false,
+	fixData: true,
+	showProgress: IS_DEBUG_MODE,
+	verbose: IS_DEBUG_MODE,
+	s3Key: S3_KEY,
+	s3Secret: S3_SECRET,
+	s3Region: S3_REGION,
+	transformFunc: function fillInDistinctId(e) {
+		if (e?.properties) {
+			if (!e.properties.distinct_id) {
+				if (e.properties.user_id) {
+					e.properties.distinct_id = e.properties.user_id;
+				} else {
+					e.properties.distinct_id = u.uid();
+				}
+			}
+		}
+		return e;
+	},
+	responseHandler: (data) => {
+		if (IS_DEBUG_MODE) {
+			console.log(`\nRESPONSE!\n`);
+		}
+	}
+	
+};
+
+describe("amazon s3", () => {
+	test(
+		"json: single file",
+		async () => {
+			const file = S3_TEST_PATHS.json[0];
+			const data = await mp({}, file, { ...s3Opts });
+			expect(data.success).toBe(NUM_RECORDS_PER_FILE);
+			expect(data.failed).toBe(0);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
+
+	test(
+		"json: multiple files",
+		async () => {
+			const files = S3_TEST_PATHS.json;
+			const data = await mp({}, files, { ...s3Opts });
+			expect(data.success).toBe(NUM_RECORDS_PER_FILE * files.length);
+			expect(data.failed).toBe(0);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
+
+	test(
+		"json.gz: single file",
+		async () => {
+			const file = S3_TEST_PATHS.jsongz[0];
+			const data = await mp({}, file, { ...s3Opts });
+			expect(data.success).toBe(NUM_RECORDS_PER_FILE);
+			expect(data.failed).toBe(0);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
+
+	test(
+		"json.gz: multiple files",
+		async () => {
+			const files = S3_TEST_PATHS.jsongz;
+			const data = await mp({}, files, { ...s3Opts });
+			expect(data.success).toBe(NUM_RECORDS_PER_FILE * files.length);
+			expect(data.failed).toBe(0);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
+
+	test(
+		"csv: single file",
+		async () => {
+			const file = S3_TEST_PATHS.csv[0];
+			const data = await mp({}, file, { ...s3Opts, fixData: true });
+			expect(data.total).toBe(NUM_RECORDS_PER_FILE - 1);
+			expect(data.success).toBeGreaterThan(NUM_RECORDS_PER_FILE / 2);
+			expect(data.failed).toBeLessThan(1000);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
+
+	test(
+		"csv: multiple files",
+		async () => {
+			const files = S3_TEST_PATHS.csv;
+			const data = await mp({}, files, { ...s3Opts, fixData: true });
+			expect(data.total).toBe((NUM_RECORDS_PER_FILE * files.length) - 2);
+			expect(data.success).toBeGreaterThan((NUM_RECORDS_PER_FILE * files.length) / 2);
+			expect(data.failed).toBeLessThan(1000);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
+
+	test(
+		"csv.gz: single file",
+		async () => {
+			const file = S3_TEST_PATHS.csvgz[0];
+			const data = await mp({}, file, { ...s3Opts, fixData: true });
+			expect(data.total).toBe(NUM_RECORDS_PER_FILE - 1);
+			expect(data.success).toBeGreaterThan(NUM_RECORDS_PER_FILE / 2);
+			expect(data.failed).toBeLessThan(1000);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
+
+	test(
+		"csv.gz: multiple files",
+		async () => {
+			const files = S3_TEST_PATHS.csvgz;
+			const data = await mp({}, files, { ...s3Opts, fixData: true });
+			expect(data.total).toBe((NUM_RECORDS_PER_FILE * files.length) - 2);
+			expect(data.success).toBeGreaterThan((NUM_RECORDS_PER_FILE * files.length) / 2);
+			expect(data.failed).toBeLessThan(1000);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
+
+	test(
+		"parquet: single file",
+		async () => {
+			const file = S3_TEST_PATHS.parquet[0];
+			const data = await mp({}, file, { ...s3Opts, fixData: true, transformFunc: parquetTransform });
+			expect(data.total).toBe(NUM_RECORDS_PER_FILE-1);
+			expect(data.success).toBeGreaterThan(NUM_RECORDS_PER_FILE/2);
+			expect(data.failed).toBeLessThan(500);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
+
+	test(
+		"parquet: multiple files",
+		async () => {
+			const files = S3_TEST_PATHS.parquet;
+			const data = await mp({}, files, { ...s3Opts, fixData: true, transformFunc: parquetTransform });
+			expect(data.total).toBe((NUM_RECORDS_PER_FILE * files.length) - 2);
+			expect(data.success).toBeGreaterThan(NUM_RECORDS_PER_FILE * files.length / 2);
+			expect(data.failed).toBeLessThan(700);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
+
+	test(
+		"parquet.gz: single file",
+		async () => {
+			const file = S3_TEST_PATHS.parquetgz[0];
+			const data = await mp({}, file, { ...s3Opts, fixData: true, transformFunc: parquetTransform });
+			expect(data.total).toBe(NUM_RECORDS_PER_FILE-1);
+			expect(data.success).toBeGreaterThan(NUM_RECORDS_PER_FILE/2);
+			expect(data.failed).toBeLessThan(500);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
+
+	test(
+		"parquet.gz: multiple files",
+		async () => {
+			const files = S3_TEST_PATHS.parquetgz;
+			const data = await mp({}, files, { ...s3Opts, fixData: true, transformFunc: parquetTransform });
+			expect(data.total).toBe((NUM_RECORDS_PER_FILE * files.length) - 2);
+			expect(data.success).toBeGreaterThan(NUM_RECORDS_PER_FILE * files.length / 2);
+			expect(data.failed).toBeLessThan(700);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
 	);
 
 });
