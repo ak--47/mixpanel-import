@@ -32,18 +32,23 @@ class Job {
 	 */
 	constructor(creds, opts = {}) {
 		// ? credentials
-		if (!creds) throw new Error('no credentials provided!');
-		this.acct = creds.acct || ``; //service acct username
-		this.pass = creds.pass || ``; //service acct secret
-		this.project = creds.project || ``; //project id
-		this.workspace = creds.workspace || ``; //workspace id
-		this.org = creds.org || ``; //org id
-		this.secret = creds.secret || ``; //api secret (deprecated auth)
-		this.bearer = creds.bearer || ``;
-		this.token = creds.token || ``; //project token 
-		this.secondToken = creds.secondToken || ``; //second token for export / import
-		this.lookupTableId = creds.lookupTableId || ``; //lookup table id
-		this.groupKey = creds.groupKey || opts.groupKey || ``; //group key id
+		// Allow empty credentials for dry runs and data transformation operations
+		const allowEmptyCredentials = opts.dryRun || opts.writeToFile || opts.fixData;
+		if (!creds && !allowEmptyCredentials) throw new Error('no credentials provided!');
+		
+		// Use empty object if creds is null/undefined but operation is allowed without creds
+		const safeCreds = creds || {};
+		this.acct = safeCreds.acct || ``; //service acct username
+		this.pass = safeCreds.pass || ``; //service acct secret
+		this.project = safeCreds.project || ``; //project id
+		this.workspace = safeCreds.workspace || ``; //workspace id
+		this.org = safeCreds.org || ``; //org id
+		this.secret = safeCreds.secret || ``; //api secret (deprecated auth)
+		this.bearer = safeCreds.bearer || ``;
+		this.token = safeCreds.token || ``; //project token 
+		this.secondToken = safeCreds.secondToken || ``; //second token for export / import
+		this.lookupTableId = safeCreds.lookupTableId || ``; //lookup table id
+		this.groupKey = safeCreds.groupKey || opts.groupKey || ``; //group key id
 		this.auth = this.resolveProjInfo();
 		this.startTime = new Date().toISOString();
 		this.endTime = null;
@@ -59,10 +64,10 @@ class Job {
 		this.scdId = opts.scdId || ''; //scd id
 		this.scdPropId = opts.scdPropId || ''; //scd prop id
 		this.transport = opts.transport || 'got'; // transport mechanism to use for sending data (default: got)
-		this.gcpProjectId = opts.gcpProjectId || creds.gcpProjectId || 'mixpanel-gtm-training'; // Google Cloud project ID for GCS operations
-		this.s3Key = opts.s3Key || creds.s3Key || ''; // AWS S3 access key ID for S3 operations
-		this.s3Secret = opts.s3Secret || creds.s3Secret || ''; // AWS S3 secret access key for S3 operations
-		this.s3Region = opts.s3Region || creds.s3Region || ''; // AWS S3 region for S3 operations
+		this.gcpProjectId = opts.gcpProjectId || safeCreds.gcpProjectId || 'mixpanel-gtm-training'; // Google Cloud project ID for GCS operations
+		this.s3Key = opts.s3Key || safeCreds.s3Key || ''; // AWS S3 access key ID for S3 operations
+		this.s3Secret = opts.s3Secret || safeCreds.s3Secret || ''; // AWS S3 secret access key for S3 operations
+		this.s3Region = opts.s3Region || safeCreds.s3Region || ''; // AWS S3 region for S3 operations
 
 		this.dimensionMaps = opts.dimensionMaps || []; //dimension map for scd
 		this.maxRecords = opts.maxRecords !== undefined ? opts.maxRecords : null; //maximum records to process before stopping stream
@@ -602,6 +607,10 @@ class Job {
 		}
 
 		else {
+			// Allow empty auth for dry runs and data transformation operations
+			if (this.dryRun || this.writeToFile || this.fixData) {
+				return '';
+			}
 			console.error('no secret or service account + project provided!', { config: this.report() });
 			throw new Error('no secret or service account provided!');
 			// process.exit(0);

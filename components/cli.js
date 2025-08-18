@@ -8,7 +8,7 @@ const u = require('ak-tools');
 
 function cliParams() {
 	// @ts-ignore
-	const args = yargs(process.argv.splice(2))
+	const args = yargs(process.argv.slice(2))
 		.scriptName("mixpanel-import")
 		.usage(`${welcome}\n\nusage:\nnpx $0 --yes [file or folder] [options]
 
