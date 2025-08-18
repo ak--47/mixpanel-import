@@ -314,7 +314,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 		.options('vendor', {
 			demandOption: false,
 			default: '',
-			describe: 'transform amplitude, heap, ga4 data',
+			describe: 'transform amplitude, heap, ga4, june, posthog, mparticle, mixpanel data',
 			type: 'string'
 		})
 		.options('vendor-opts', {

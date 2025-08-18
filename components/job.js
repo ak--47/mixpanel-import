@@ -9,6 +9,7 @@ const { gaEventsToMp, gaUserToMp, gaGroupsToMp } = require('../vendor/ga4.js');
 const { mParticleEventsToMixpanel, mParticleUserToMixpanel, mParticleGroupToMixpanel } = require('../vendor/mparticle.js');
 const { postHogEventsToMp, postHogPersonToMpProfile } = require('../vendor/posthog.js');
 const { mixpanelEventsToMixpanel } = require('../vendor/mixpanel.js');
+const { juneEventsToMp, juneUserToMp, juneGroupToMp } = require('../vendor/june.js');
 const { buildMapFromPath } = require('./parsers.js');
 
 
@@ -528,6 +529,24 @@ class Job {
 							throw new Error('posthog does not support groups');
 						default:
 							vendorTransformFunc = postHogEventsToMp(this.vendorOpts, this.heavyObjects);
+							break;
+					}
+					break;
+				case 'june':
+					switch (recordType) {
+						case 'event':
+							vendorTransformFunc = juneEventsToMp(this.vendorOpts);
+							break;
+						case 'user':
+							this.dedupe = true;
+							this.deduper = transforms.dedupeRecords(this);
+							vendorTransformFunc = juneUserToMp(this.vendorOpts);
+							break;
+						case 'group':
+							vendorTransformFunc = juneGroupToMp(this.vendorOpts);
+							break;
+						default:
+							vendorTransformFunc = juneEventsToMp(this.vendorOpts);
 							break;
 					}
 					break;

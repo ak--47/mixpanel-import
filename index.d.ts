@@ -133,6 +133,7 @@ declare namespace main {
     | "heap"
     | "mixpanel"
     | "ga4"
+    | "june"
     | "adobe"
     | "pendo"
     | "mparticle"
@@ -381,7 +382,7 @@ declare namespace main {
     /**
      * options for built in transform functions
      */
-    vendorOpts?: amplitudeOpts | heapOpts | ga4Opts | postHogOpts | {};
+    vendorOpts?: amplitudeOpts | heapOpts | ga4Opts | juneOpts | postHogOpts | {};
     /**
      * whether or not to use http2; default `false` and http2 seems slower...
      */
@@ -892,6 +893,15 @@ declare namespace main {
     group_keys?: string[];
     device_id_map?: Map<string, string>;
     device_id_file?: string;
+  };
+
+  /**
+   * June.so transform opts
+   */
+  type juneOpts = {
+    user_id?: string;
+    anonymous_id?: string;
+    group_key?: string;
   };
 }
 

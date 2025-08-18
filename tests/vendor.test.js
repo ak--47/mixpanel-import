@@ -6,7 +6,6 @@
 require("dotenv").config();
 const { execSync } = require("child_process");
 
-
 function isDebugMode() {
 	// Check for Node.js debug flags
 	if (process.execArgv.some(arg => arg.includes('--inspect') || arg.includes('--debug'))) {
@@ -227,6 +226,66 @@ describe("vendor tests", () => {
 			expect(job.duplicates).toBe(0);			
 			const { dryRun: data } = job;
 			expect(data.every(e => e.$distinct_id)).toBe(true);
+		},
+		longTimeout
+	);
+
+	test(
+		"june: events",
+		async () => {
+			const job = await mp({}, "./testData/june/events-small.csv", { 
+				...opts, 
+				recordType: "event", 
+				vendor: "june", 
+				dryRun: true,
+				streamFormat: "csv"
+			});
+			expect(job.dryRun.length).toBeGreaterThan(0);
+			const { dryRun: data } = job;
+			expect(data.every(e => e.event)).toBe(true);
+			expect(data.every(e => e.properties)).toBe(true);
+			expect(data.every(e => e.properties?.distinct_id)).toBe(true);
+			expect(data.every(e => e.properties?.$source === 'june-to-mixpanel')).toBe(true);
+			expect(data.every(e => e.properties?.$insert_id)).toBe(true);
+		},
+		longTimeout
+	);
+
+	test(
+		"june: users",
+		async () => {
+			const job = await mp({}, "./testData/june/id-small.csv", { 
+				...opts, 
+				recordType: "user", 
+				vendor: "june", 
+				dryRun: true,
+				streamFormat: "csv"
+			});
+			expect(job.dryRun.length).toBeGreaterThan(0);
+			const { dryRun: data } = job;
+			expect(data.every(u => u.$distinct_id)).toBe(true);
+			expect(data.every(u => u.$set)).toBe(true);
+			expect(data.every(u => u.$set?.$source === 'june-to-mixpanel')).toBe(true);
+		},
+		longTimeout
+	);
+
+	test(
+		"june: groups",
+		async () => {
+			const job = await mp({}, "./testData/june/group-small.csv", { 
+				...opts, 
+				recordType: "group", 
+				vendor: "june", 
+				dryRun: true,
+				streamFormat: "csv"
+			});
+			expect(job.dryRun.length).toBeGreaterThan(0);
+			const { dryRun: data } = job;
+			expect(data.every(g => g.$group_id)).toBe(true);
+			expect(data.every(g => g.$group_key)).toBe(true);
+			expect(data.every(g => g.$set)).toBe(true);
+			expect(data.every(g => g.$set?.$source === 'june-to-mixpanel')).toBe(true);
 		},
 		longTimeout
 	);
