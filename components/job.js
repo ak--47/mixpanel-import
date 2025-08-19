@@ -175,6 +175,7 @@ class Job {
 		this.dryRun = u.isNil(opts.dryRun) ? false : opts.dryRun; //don't actually send data
 		this.http2 = u.isNil(opts.http2) ? false : opts.http2; //use http2
 		this.addToken = u.isNil(opts.addToken) ? false : opts.addToken; //add token to each record
+		this.isGzip = u.isNil(opts.isGzip) ? false : opts.isGzip; //force treat input as gzipped (overrides extension detection)
 		this.shouldWhiteBlackList = false;
 		this.shouldEpochFilter = false;
 		this.shouldAddTags = false;
@@ -354,7 +355,12 @@ class Job {
 	objectModeFileExt = ['.json'];
 	tableFileExt = ['.csv', '.tsv'];
 	otherFormats = ['.parquet'];
-	supportedFileExt = [...this.lineByLineFileExt, ...this.objectModeFileExt, ...this.tableFileExt, ...this.otherFormats];
+	// Add gzipped variants for local file support
+	gzippedLineByLineFileExt = ['.txt.gz', '.jsonl.gz', '.ndjson.gz'];
+	gzippedObjectModeFileExt = ['.json.gz'];
+	gzippedTableFileExt = ['.csv.gz', '.tsv.gz'];
+	gzippedOtherFormats = ['.parquet.gz'];
+	supportedFileExt = [...this.lineByLineFileExt, ...this.objectModeFileExt, ...this.tableFileExt, ...this.otherFormats, ...this.gzippedLineByLineFileExt, ...this.gzippedObjectModeFileExt, ...this.gzippedTableFileExt, ...this.gzippedOtherFormats];
 	endpoints = {
 		us: {
 			event: `https://api.mixpanel.com/import`,

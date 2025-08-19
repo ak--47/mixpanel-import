@@ -104,8 +104,20 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	l(`\nETL STARTED!\n`);
 	job.timer.start();
 
-	const stream = await determineDataType(data || cliData, job); // always stream[]
-	l(`\nSTREAM CREATED!\n`);
+	let stream;
+	try {
+
+		stream = await determineDataType(data || cliData, job); // always stream[]
+		l(`\nSTREAM CREATED!\n`);
+	}
+	catch (e) {
+		l(`ERROR: Failed to create stream - ${e.message}`);
+		if (isCLI) {
+			process.exit(1);
+		} else {
+			throw e;
+		}
+	}
 
 	try {
 
@@ -123,8 +135,8 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	l('\n');
 	if (job.createProfiles)  //job.transform = await createProfiles(job);
 
-	// clean up
-	job.timer.end(false);
+		// clean up
+		job.timer.end(false);
 	const summary = job.summary();
 	if (isCLI) l(`${job.type === 'export' ? 'export' : 'import'} complete in ${summary.durationHuman}\n`);
 	const stats = {
@@ -232,7 +244,7 @@ mpImport.createMpStream = pipeInterface;
 if (require.main === module) {
 	// Check if --ui flag is present
 	const args = cliParams();
-	
+
 	if (args.ui) {
 		// Start the web UI
 		const { startUI } = require('./ui/server.js');

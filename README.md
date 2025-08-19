@@ -26,7 +26,7 @@ This opens a browser-based interface where you can:
 - 💻 **Generate CLI commands** for automation
 - 📊 **Track progress** with real-time feedback
 
-**Supported file formats:** JSON, JSONL, CSV, Parquet (including `.gz` compressed versions)
+**Supported file formats:** JSON, JSONL, CSV, Parquet (including `.gz` compressed versions with automatic detection)
 
 ### UI Ships Two Powerful Tools:
 
@@ -123,6 +123,60 @@ Built-in transforms for importing from:
 
 ---
 
+## 📦 Gzip File Format Support
+
+mixpanel-import provides comprehensive support for gzipped files with **automatic detection** and **manual override** options:
+
+### 🔍 **Automatic Detection**
+Files ending with `.gz` are automatically detected and decompressed:
+- `events.json.gz` → processed as gzipped JSON
+- `data.jsonl.gz` → processed as gzipped JSONL  
+- `export.csv.gz` → processed as gzipped CSV
+- `dataset.parquet.gz` → processed as gzipped Parquet (cloud storage only)
+
+### ⚙️ **Manual Override**
+Use the `isGzip` option to force gzip processing regardless of file extension:
+
+```bash
+# Force gzip processing on file without .gz extension
+npx mixpanel-import compressed-data.json --token your-token --isGzip
+
+# JavaScript API
+const results = await mp(
+  { token: 'your-token' },
+  './compressed-data.json',
+  { isGzip: true }
+);
+```
+
+### 📁 **Supported Combinations**
+All standard formats work with gzip compression:
+
+| Format | Local Files | Cloud Storage (GCS/S3) |
+|--------|-------------|------------------------|
+| `.json.gz` | ✅ Automatic | ✅ Automatic |
+| `.jsonl.gz` | ✅ Automatic | ✅ Automatic |
+| `.csv.gz` | ✅ Automatic | ✅ Automatic |
+| `.parquet.gz` | ❌ Not supported | ✅ Automatic |
+
+### 💡 **Usage Examples**
+
+```bash
+# Automatic detection from file extension
+npx mixpanel-import events.json.gz --token your-token
+
+# Manual override for custom extensions
+npx mixpanel-import compressed.data --token your-token --isGzip
+
+# Cloud storage with gzip support
+npx mixpanel-import gs://bucket/data.csv.gz --token your-token
+npx mixpanel-import s3://bucket/events.parquet.gz --token your-token --s3Region us-east-1
+```
+
+**Note:** Gzipped files are always streamed for memory efficiency and cannot be loaded into memory even for small files.
+
+---
+
 ## 🔧 Data Processing Features
 
 ### 🛠️ **Automatic Data Fixes**
@@ -160,7 +214,7 @@ Built-in transforms for importing from:
 - **Concurrent Requests**: Process multiple batches simultaneously (default: 10 workers)
 - **Optimized Batching**: Pack 2000 records or 2MB per request (configurable)
 - **Streaming Architecture**: Process files larger than memory without disk storage
-- **Gzip Compression**: Reduce bandwidth usage for faster imports
+- **Gzip Compression**: Reduce bandwidth usage for faster imports (both input file decompression and output compression)
 
 ### 📊 **Real-Time Monitoring**
 - **Progress Tracking**: Visual progress bars and EPS (events per second) metrics
@@ -256,6 +310,7 @@ npx mixpanel-import messy_data.json \
 | `maxRetries` | `number` | `10` | Retry attempts for failed requests |
 | `compress` | `boolean` | `false` | Enable gzip compression (events only) |
 | `compressionLevel` | `number` | `6` | Gzip compression level (0-9) |
+| `isGzip` | `boolean` | `false` | Force gzip decompression (overrides extension detection) |
 
 ### 🛠️ **Data Processing Options**
 

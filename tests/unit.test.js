@@ -1037,3 +1037,410 @@ describe("parsers", () => {
 		expect(result).toBeInstanceOf(require("stream").Stream);
 	});
 });
+
+describe("gzip support", () => {
+	test("isGzip option is set correctly", () => {
+		const job = new Job(fakeCreds, { isGzip: true });
+		expect(job.isGzip).toBe(true);
+		
+		const jobDefault = new Job(fakeCreds);
+		expect(jobDefault.isGzip).toBe(false);
+	});
+
+	test("gzipped file extensions are supported", () => {
+		const job = new Job(fakeCreds);
+		expect(job.supportedFileExt).toContain('.json.gz');
+		expect(job.supportedFileExt).toContain('.jsonl.gz');
+		expect(job.supportedFileExt).toContain('.csv.gz');
+		expect(job.supportedFileExt).toContain('.parquet.gz');
+		expect(job.supportedFileExt).toContain('.ndjson.gz');
+		expect(job.supportedFileExt).toContain('.txt.gz');
+		expect(job.supportedFileExt).toContain('.tsv.gz');
+	});
+
+	test("analyzeFileFormat detects gzipped JSON", () => {
+		const { analyzeFileFormat } = require("../components/parsers.js");
+		const job = new Job(fakeCreds);
+		
+		const result = analyzeFileFormat('./testData/gzip-tests/events.json.gz', job);
+		expect(result.isGzipped).toBe(true);
+		expect(result.parsingCase).toBe('json');
+		expect(result.baseFormat).toBe('.json');
+	});
+
+	test("analyzeFileFormat detects gzipped JSONL", () => {
+		const { analyzeFileFormat } = require("../components/parsers.js");
+		const job = new Job(fakeCreds);
+		
+		const result = analyzeFileFormat('./testData/gzip-tests/bad_data.jsonl.gz', job);
+		expect(result.isGzipped).toBe(true);
+		expect(result.parsingCase).toBe('jsonl');
+		expect(result.baseFormat).toBe('.jsonl');
+	});
+
+	test("analyzeFileFormat detects gzipped CSV", () => {
+		const { analyzeFileFormat } = require("../components/parsers.js");
+		const job = new Job(fakeCreds);
+		
+		const result = analyzeFileFormat('./testData/gzip-tests/table.csv.gz', job);
+		expect(result.isGzipped).toBe(true);
+		expect(result.parsingCase).toBe('csv');
+		expect(result.baseFormat).toBe('.csv');
+	});
+
+	test("analyzeFileFormat detects gzipped Parquet", () => {
+		const { analyzeFileFormat } = require("../components/parsers.js");
+		const job = new Job(fakeCreds);
+		
+		const result = analyzeFileFormat('./testData/gzip-tests/playtika_sample.parquet.gz', job);
+		expect(result.isGzipped).toBe(true);
+		expect(result.parsingCase).toBe('parquet');
+		expect(result.baseFormat).toBe('.parquet');
+	});
+
+	test("isGzip option overrides extension detection", () => {
+		const { analyzeFileFormat } = require("../components/parsers.js");
+		const job = new Job(fakeCreds, { isGzip: true });
+		
+		// Test with non-gzipped file extension but isGzip=true
+		const result = analyzeFileFormat('./testData/events.json', job);
+		expect(result.isGzipped).toBe(true);
+		expect(result.parsingCase).toBe('json');
+	});
+
+	test("isGzip option works with .gz extension", () => {
+		const { analyzeFileFormat } = require("../components/parsers.js");
+		const job = new Job(fakeCreds, { isGzip: true });
+		
+		// Test with .gz extension - should still work
+		const result = analyzeFileFormat('./testData/events.json.gz', job);
+		expect(result.isGzipped).toBe(true);
+		expect(result.parsingCase).toBe('json');
+	});
+
+	// test("gzipped JSON file can be processed", async () => {
+	// 	const fs = require('fs');
+	// 	const path = require('path');
+		
+	// 	// Only run if test file exists
+	// 	if (fs.existsSync('./testData/gzip-tests/big.json.gz')) {
+	// 		const job = new Job(fakeCreds, { dryRun: true });
+	// 		const stream = await determineDataType('./testData/gzip-tests/big.json.gz', job);
+			
+	// 		expect(stream).toBeDefined();
+	// 		expect(job.wasStream).toBe(true);
+			
+	// 		// Collect data from stream to verify it works
+	// 		const data = [];
+	// 		stream.on('data', chunk => data.push(chunk));
+			
+	// 		return new Promise((resolve, reject) => {
+	// 			stream.on('end', () => {
+	// 				expect(data.length).toBeGreaterThan(0);
+	// 				expect(data[0]).toHaveProperty('event');
+	// 				resolve();
+	// 			});
+	// 			stream.on('error', reject);
+	// 		});
+	// 	}
+	// });
+
+	test("gzipped JSONL file can be processed", async () => {
+		const fs = require('fs');
+		
+		// Only run if test file exists
+		if (fs.existsSync('./testData/gzip-tests/bad_data.jsonl.gz')) {
+			const job = new Job(fakeCreds, { dryRun: true });
+			const stream = await determineDataType('./testData/gzip-tests/bad_data.jsonl.gz', job);
+			
+			expect(stream).toBeDefined();
+			expect(job.wasStream).toBe(true);
+			
+			// Collect data from stream to verify it works
+			const data = [];
+			stream.on('data', chunk => data.push(chunk));
+			
+			return new Promise((resolve, reject) => {
+				stream.on('end', () => {
+					expect(data.length).toBeGreaterThan(0);
+					resolve();
+				});
+				stream.on('error', reject);
+			});
+		}
+	});
+
+	test("gzipped CSV file can be processed", async () => {
+		const fs = require('fs');
+		
+		// Only run if test file exists
+		if (fs.existsSync('./testData/gzip-tests/table.csv.gz')) {
+			const job = new Job(fakeCreds, { dryRun: true });
+			const stream = await determineDataType('./testData/gzip-tests/table.csv.gz', job);
+			
+			expect(stream).toBeDefined();
+			expect(job.wasStream).toBe(true);
+			
+			// Collect data from stream to verify it works
+			const data = [];
+			stream.on('data', chunk => data.push(chunk));
+			
+			return new Promise((resolve, reject) => {
+				stream.on('end', () => {
+					expect(data.length).toBeGreaterThan(0);
+					expect(data[0]).toHaveProperty('event');
+					resolve();
+				});
+				stream.on('error', reject);
+			});
+		}
+	});
+
+	test("gzipped Parquet file throws appropriate error", async () => {
+		const fs = require('fs');
+		
+		// Only run if test file exists
+		if (fs.existsSync('./testData/gzip-tests/playtika_sample.parquet.gz')) {
+			const job = new Job(fakeCreds, { dryRun: true });
+			
+			await expect(determineDataType('./testData/gzip-tests/playtika_sample.parquet.gz', job))
+				.rejects
+				.toThrow('Gzipped parquet files');
+		}
+	});
+
+	// test("mixed gzip and non-gzip files in array throws error", async () => {
+	// 	const fs = require('fs');
+		
+	// 	if (fs.existsSync('./testData/events.json') && fs.existsSync('./testData/gzip-tests/events.json.gz')) {
+	// 		const job = new Job(fakeCreds, { dryRun: true });
+	// 		const files = ['./testData/events.json', './testData/gzip-tests/events.json.gz'];
+			
+	// 		await expect(determineDataType(files, job))
+	// 			.rejects
+	// 			.toThrow('All files in array/directory must have the same format and compression');
+	// 	}
+	// });
+
+	test("isGzip option forces gzip processing on regular files", async () => {
+		const fs = require('fs');
+		
+		// Create a temporary gzipped file without .gz extension
+		if (fs.existsSync('./testData/events.json')) {
+			const zlib = require('zlib');
+			const originalData = fs.readFileSync('./testData/events.json');
+			const gzippedData = zlib.gzipSync(originalData);
+			const tempFile = './testData/temp-gzipped-no-ext.json';
+			
+			fs.writeFileSync(tempFile, gzippedData);
+			
+			try {
+				const job = new Job(fakeCreds, { dryRun: true, isGzip: true, streamFormat: "jsonl" });
+				const stream = await determineDataType(tempFile, job);
+				
+				expect(stream).toBeDefined();
+				expect(job.wasStream).toBe(true);
+				
+				// Collect data from stream to verify it works
+				const data = [];
+				stream.on('data', chunk => data.push(chunk));
+				
+				return new Promise((resolve, reject) => {
+					stream.on('end', () => {
+						expect(data.length).toBeGreaterThan(0);
+						fs.unlinkSync(tempFile); // Clean up
+						resolve();
+					});
+					stream.on('error', (err) => {
+						fs.unlinkSync(tempFile); // Clean up
+						reject(err);
+					});
+				});
+			} catch (error) {
+				fs.unlinkSync(tempFile); // Clean up
+				throw error;
+			}
+		}
+	});
+
+	
+});
+
+describe("maxRecords functionality", () => {
+	const fakeCreds = { acct: "test", pass: "test", project: "test" };
+	const mpImport = require('../index.js');
+
+	// Helper function to generate test data
+	function generateTestData(count) {
+		const data = [];
+		for (let i = 0; i < count; i++) {
+			data.push({
+				event: 'test_event',
+				properties: {
+					distinct_id: `user_${i}`,
+					test_property: `value_${i}`,
+					time: Date.now()
+				}
+			});
+		}
+		return data;
+	}
+
+	test('maxRecords limits processing in normal mode', async () => {
+		const testData = generateTestData(200); // Generate 200 records
+		const maxRecords = 50;
+
+		const result = await mpImport(fakeCreds, testData, {
+			maxRecords,
+			dryRun: true // Use dry run to avoid actual API calls
+		});
+
+		// Should process exactly maxRecords records
+		expect(result.total).toBe(maxRecords);
+		expect(result.dryRun.length).toBe(maxRecords);
+	});
+
+	test('maxRecords limits processing in dryRun mode', async () => {
+		const testData = generateTestData(150); // Generate 150 records
+		const maxRecords = 25;
+
+		const result = await mpImport(fakeCreds, testData, {
+			maxRecords,
+			dryRun: true
+		});
+
+		// Should process exactly maxRecords records in dry run
+		expect(result.total).toBe(maxRecords);
+		expect(result.dryRun.length).toBe(maxRecords);
+	});
+
+	test('maxRecords null processes all records', async () => {
+		const testData = generateTestData(10); // Small dataset
+		
+		const result = await mpImport(fakeCreds, testData, {
+			maxRecords: null, // Explicitly null
+			dryRun: true
+		});
+
+		// Should process all 10 records
+		expect(result.total).toBe(10);
+		expect(result.dryRun.length).toBe(10);
+	});
+
+	test('no maxRecords processes all records', async () => {
+		const testData = generateTestData(15); // Small dataset
+		
+		const result = await mpImport(fakeCreds, testData, {
+			// No maxRecords specified
+			dryRun: true
+		});
+
+		// Should process all 15 records
+		expect(result.total).toBe(15);
+		expect(result.dryRun.length).toBe(15);
+	});
+
+	test('maxRecords respects transforms and filters', async () => {
+		const testData = generateTestData(100);
+		const maxRecords = 30;
+
+		// Transform that filters out even-numbered users
+		const transformFunc = (data) => {
+			const userId = parseInt(data.properties.distinct_id.split('_')[1]);
+			if (userId % 2 === 0) {
+				return {}; // Empty object gets filtered out
+			}
+			return data;
+		};
+
+		const result = await mpImport(fakeCreds, testData, {
+			maxRecords,
+			transformFunc,
+			dryRun: true
+		});
+
+		// Note: maxRecords is applied BEFORE transforms, so we process 30 records
+		// but some get filtered out by the transform
+		expect(result.total).toBe(maxRecords);
+		// The dry run results will be less than maxRecords due to filtering
+		expect(result.dryRun.length).toBeLessThanOrEqual(maxRecords);
+	});
+
+	test('maxRecords works with user profiles', async () => {
+		const testData = [];
+		for (let i = 0; i < 50; i++) {
+			testData.push({
+				$distinct_id: `user_${i}`,
+				$set: {
+					name: `User ${i}`,
+					email: `user${i}@test.com`
+				}
+			});
+		}
+
+		const maxRecords = 20;
+
+		const result = await mpImport(fakeCreds, testData, {
+			recordType: 'user',
+			maxRecords,
+			dryRun: true
+		});
+
+		expect(result.total).toBe(maxRecords);
+		expect(result.dryRun.length).toBe(maxRecords);
+		expect(result.recordType).toBe('user');
+	});
+
+	test('maxRecords=0 processes no records', async () => {
+		const testData = generateTestData(10);
+		
+		const result = await mpImport(fakeCreds, testData, {
+			maxRecords: 0,
+			dryRun: true
+		});
+
+		expect(result.total).toBe(0);
+		expect(result.dryRun.length).toBe(0);
+	});
+
+	test('maxRecords larger than dataset processes all records', async () => {
+		const testData = generateTestData(5); // Only 5 records
+		const maxRecords = 100; // Much larger limit
+		
+		const result = await mpImport(fakeCreds, testData, {
+			maxRecords,
+			dryRun: true
+		});
+
+		// Should process all 5 records, not limited by maxRecords
+		expect(result.total).toBe(5);
+		expect(result.dryRun.length).toBe(5);
+	});
+
+	test('maxRecords works with different record types', async () => {
+		const groupData = [];
+		for (let i = 0; i < 30; i++) {
+			groupData.push({
+				$group_id: `group_${i}`,
+				$group_key: 'company',
+				$set: {
+					name: `Company ${i}`,
+					size: i * 10
+				}
+			});
+		}
+
+		const maxRecords = 10;
+
+		const result = await mpImport(fakeCreds, groupData, {
+			recordType: 'group',
+			groupKey: 'company',
+			maxRecords,
+			dryRun: true
+		});
+
+		expect(result.total).toBe(maxRecords);
+		expect(result.dryRun.length).toBe(maxRecords);
+		expect(result.recordType).toBe('group');
+	});
+});

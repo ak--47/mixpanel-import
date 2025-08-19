@@ -21,6 +21,55 @@ const { console } = require('inspector');
 const { streamEvents, streamProfiles } = require('../components/exporters.js');
 const zlib = require('zlib');
 // const { logger } = require('../components/logs.js');
+const { NODE_ENV = "unknown" } = process.env;
+
+/**
+ * Determine if file is gzipped and extract base format
+ * @param {string} filePath - Path to file
+ * @param {import('../index').Job} job - Job configuration
+ * @returns {{isGzipped: boolean, baseFormat: string, parsingCase: string}}
+ */
+function analyzeFileFormat(filePath, job) {
+	const { lineByLineFileExt, objectModeFileExt, tableFileExt, gzippedLineByLineFileExt, gzippedObjectModeFileExt, gzippedTableFileExt, isGzip } = job;
+
+	// isGzip option overrides extension detection
+	if (isGzip) {
+		// When forcing gzip, determine format from base filename (remove .gz if present)
+		const baseFileName = filePath.endsWith('.gz') ? filePath.slice(0, -3) : filePath;
+		const baseExt = path.extname(baseFileName);
+
+		let parsingCase = '';
+		if (lineByLineFileExt.includes(baseExt)) parsingCase = 'jsonl';
+		else if (objectModeFileExt.includes(baseExt)) parsingCase = 'json';
+		else if (tableFileExt.includes(baseExt)) parsingCase = 'csv';
+		else if (baseFileName.endsWith('.parquet')) parsingCase = 'parquet';
+
+		return { isGzipped: true, baseFormat: baseExt, parsingCase };
+	}
+
+	// Check for gzipped extensions first
+	if (gzippedLineByLineFileExt.some(ext => filePath.endsWith(ext))) {
+		return { isGzipped: true, baseFormat: '.jsonl', parsingCase: 'jsonl' };
+	}
+	if (gzippedObjectModeFileExt.some(ext => filePath.endsWith(ext))) {
+		return { isGzipped: true, baseFormat: '.json', parsingCase: 'json' };
+	}
+	if (gzippedTableFileExt.some(ext => filePath.endsWith(ext))) {
+		return { isGzipped: true, baseFormat: '.csv', parsingCase: 'csv' };
+	}
+	if (filePath.endsWith('.parquet.gz')) {
+		return { isGzipped: true, baseFormat: '.parquet', parsingCase: 'parquet' };
+	}
+
+	// Check for regular extensions
+	let parsingCase = '';
+	if (lineByLineFileExt.includes(path.extname(filePath))) parsingCase = 'jsonl';
+	else if (objectModeFileExt.includes(path.extname(filePath))) parsingCase = 'json';
+	else if (tableFileExt.includes(path.extname(filePath))) parsingCase = 'csv';
+	else if (filePath.endsWith('.parquet')) parsingCase = 'parquet';
+
+	return { isGzipped: false, baseFormat: path.extname(filePath), parsingCase };
+}
 
 const { Storage } = require('@google-cloud/storage');
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
@@ -64,15 +113,15 @@ const GCS_STREAMING_CONFIG = {
 	// Buffer sizes for high-performance streaming
 	GCS_BUFFER_MULTIPLIER: 100,      // Multiply job.highWater by this for GCS reads
 	OBJECT_STREAM_MULTIPLIER: 10,    // Multiply job.highWater by this for object stream
-	
+
 	// Gzip decompression settings
 	GZIP_CHUNK_SIZE: 64 * 1024,      // 64KB chunks for decompression
 	GZIP_WINDOW_BITS: 15,            // Standard gzip window size
 	GZIP_MEM_LEVEL: 8,               // Memory vs speed tradeoff (1-9, 8 is balanced)
-	
+
 	// Error handling
 	MAX_PARSE_ERRORS: 1000,          // Stop logging parse errors after this many
-	
+
 	// GCS-specific optimizations
 	DISABLE_VALIDATION: false,       // Set to true for maximum speed on trusted files
 	DECOMPRESS: false                // Let us handle compression manually
@@ -83,20 +132,20 @@ const S3_STREAMING_CONFIG = {
 	// Buffer sizes for high-performance streaming
 	S3_BUFFER_MULTIPLIER: 100,       // Multiply job.highWater by this for S3 reads
 	OBJECT_STREAM_MULTIPLIER: 10,    // Multiply job.highWater by this for object stream
-	
+
 	// Gzip decompression settings
 	GZIP_CHUNK_SIZE: 64 * 1024,      // 64KB chunks for decompression
 	GZIP_WINDOW_BITS: 15,            // Standard gzip window size
 	GZIP_MEM_LEVEL: 8,               // Memory vs speed tradeoff (1-9, 8 is balanced)
-	
+
 	// Error handling
 	MAX_PARSE_ERRORS: 1000,          // Stop logging parse errors after this many
-	
+
 	// S3-specific optimizations
 	REQUEST_TIMEOUT: 30000,          // 30 second timeout for S3 requests
 	MAX_RETRY_ATTEMPTS: 3,           // Number of retry attempts for failed requests
 	PART_SIZE: 5 * 1024 * 1024,      // 5MB part size for streaming
-	
+
 	// Default region (can be overridden)
 	DEFAULT_REGION: 'us-east-1'      // Default AWS region if none specified
 };
@@ -112,7 +161,7 @@ const MEMORY_CONFIG = {
 const FILE_PROCESSING_CONFIG = {
 	CSV_MIN_LENGTH: 420,             // Minimum string length for CSV parsing attempts
 	PARQUET_CHUNK_SIZE: 1000,        // Records per chunk for Parquet processing
-	
+
 	// Stream vs Memory decision points
 	SMALL_FILE_THRESHOLD: 50 * 1024 * 1024,  // 50MB - files smaller load into memory
 	LARGE_FILE_STREAM_FORCE: true,    // Always stream files larger than memory threshold
@@ -124,7 +173,7 @@ const _STREAM_CONFIG = {
 	OBJECT_MODE_MULTIPLIER: 2,       // Multiply buffer size for object mode streams  
 	AUTO_CLOSE: true,                // Auto-close file streams
 	EMIT_CLOSE: true,                // Emit close events
-	
+
 	// File stream optimizations
 	FILE_STREAM_FLAGS: 'r',          // Read-only file access
 	FILE_STREAM_ENCODING: null       // Binary mode for maximum performance
@@ -135,7 +184,7 @@ const JSON_CONFIG = {
 	PARSE_ERROR_LIMIT: 1000,         // Maximum parse errors before stopping
 	LINE_BUFFER_SIZE: 8 * 1024,      // 8KB line buffer for JSONL processing
 	OBJECT_STREAM_HIGH_WATER: 1000,  // Object mode stream buffer size
-	
+
 	// Memory optimizations
 	STRINGIFY_SPACE: 0,              // No pretty printing for performance
 	REVIVER_FUNCTION: null           // No custom JSON parsing (performance)
@@ -158,7 +207,7 @@ const COMPRESSION_CONFIG = {
 	GZIP_WINDOW_BITS: 15,            // Standard gzip window
 	GZIP_MEM_LEVEL: 8,               // Memory usage level (1-9)
 	GZIP_CHUNK_SIZE: 16 * 1024,      // 16KB chunks for general gzip operations
-	
+
 	// Detection patterns
 	GZIP_EXTENSIONS: ['.gz', '.gzip'],
 	COMPRESSION_THRESHOLD: 1024       // Minimum bytes to consider compression
@@ -169,7 +218,7 @@ const _ERROR_CONFIG = {
 	MAX_PARSE_ERRORS: 1000,          // Stop after this many parse errors
 	MAX_RETRY_ATTEMPTS: 3,           // File operation retries
 	ERROR_SAMPLE_RATE: 0.1,          // Log only 10% of similar errors
-	
+
 	RECOVERABLE_ERRORS: [
 		'ENOENT', 'EACCES', 'EMFILE', 'ECONNRESET'
 	]
@@ -199,12 +248,12 @@ async function determineDataType(data, job) {
 	if (job.recordType === 'export-import-events') {
 		const exportStream = streamEvents(job);
 		job.recordType = 'event';
-	
+
 		if (job.secondToken) {
 			job.token = job.secondToken;
 			job.secret = "";
 			job.auth = job.resolveProjInfo();
-		} 
+		}
 
 		// @ts-ignore
 		if (job.secondRegion) job.region = job.secondRegion;
@@ -216,7 +265,7 @@ async function determineDataType(data, job) {
 		const exportStream = streamProfiles(job);
 		if (job.dataGroupId || job.groupKey) job.recordType = 'group';
 		else job.recordType = 'user';
-	
+
 		if (job.secondToken) {
 			job.token = job.secondToken;
 			job.secret = "";
@@ -299,7 +348,7 @@ async function determineDataType(data, job) {
 
 
 	// ALL OTHER PARSING
-
+	let parsingError;
 	try {
 		const { lineByLineFileExt, objectModeFileExt, tableFileExt, supportedFileExt, streamFormat, forceStream, highWater } = job;
 		let isArrayOfFileNames = false; // !ugh ... so disorganized 
@@ -316,16 +365,17 @@ async function determineDataType(data, job) {
 				if (fs.lstatSync(path.resolve(data)).isFile()) {
 					const fileInfo = fs.lstatSync(path.resolve(data));
 					//it's a file
-					let parsingCase = '';
-					if (lineByLineFileExt.includes(path.extname(data))) parsingCase = 'jsonl';
-					else if (objectModeFileExt.includes(path.extname(data))) parsingCase = 'json';
-					else if (tableFileExt.includes(path.extname(data))) parsingCase = 'csv';
-					else if (data?.endsWith('.parquet')) parsingCase = 'parquet';
+					const { isGzipped, baseFormat, parsingCase: detectedCase } = analyzeFileFormat(data, job);
+					let parsingCase = detectedCase;
+
+					// Allow streamFormat to override detected format
 					if (['jsonl', 'json', 'csv', 'parquet'].includes(streamFormat)) parsingCase = streamFormat;
 
 					let loadIntoMemory = false;
 					if (fileInfo.size < os.freemem() * MEMORY_CONFIG.FREE_MEMORY_THRESHOLD) loadIntoMemory = true;
 					if (forceStream) loadIntoMemory = false;
+					// Gzipped files must be streamed - cannot load into memory without decompression
+					if (isGzipped) loadIntoMemory = false;
 
 					if (parsingCase === 'jsonl') {
 						if (loadIntoMemory) {
@@ -340,7 +390,7 @@ async function determineDataType(data, job) {
 							}
 						}
 						job.wasStream = true;
-						return itemStream(path.resolve(data), "jsonl", job);
+						return itemStream(path.resolve(data), "jsonl", job, isGzipped);
 					}
 
 					if (parsingCase === 'json') {
@@ -361,7 +411,7 @@ async function determineDataType(data, job) {
 
 						//otherwise, stream it
 						job.wasStream = true;
-						return itemStream(path.resolve(data), "json", job);
+						return itemStream(path.resolve(data), "json", job, isGzipped);
 					}
 
 					//csv case
@@ -377,12 +427,12 @@ async function determineDataType(data, job) {
 
 						}
 						job.wasStream = true;
-						return csvStreamer(path.resolve(data), job);
+						return csvStreamer(path.resolve(data), job, isGzipped);
 					}
 
 					//parquet case
 					if (parsingCase === 'parquet') {
-						return await parquetStream(path.resolve(data), job);
+						return await parquetStream(path.resolve(data), job, isGzipped);
 					}
 				}
 
@@ -395,46 +445,63 @@ async function determineDataType(data, job) {
 			let files;
 			let exampleFile;
 			let parsingCase;
+			let isGzipped = false;
+
 			if (isArrayOfFileNames && Array.isArray(data)) {
 				//array of files case
 				files = data.map(filePath => path.resolve(filePath));
-				exampleFile = path.extname(files[0]);
+				exampleFile = files[0];
 			}
 			else {
 				//directory case
 				const enumDir = await u.ls(path.resolve(data));
 				files = Array.isArray(enumDir) ? enumDir.filter(filePath => supportedFileExt.includes(path.extname(filePath))) : [];
-				exampleFile = path.extname(files[0]);
+				exampleFile = files[0] || '';
 			}
 
-			if (lineByLineFileExt.includes(exampleFile)) parsingCase = 'jsonl';
-			else if (objectModeFileExt.includes(exampleFile)) parsingCase = 'json';
-			else if (tableFileExt.includes(exampleFile)) parsingCase = 'csv';
-			else if (exampleFile?.endsWith('.parquet')) parsingCase = 'parquet';
+			// Analyze format using the first file as example
+			if (exampleFile) {
+				const analysis = analyzeFileFormat(exampleFile, job);
+				parsingCase = analysis.parsingCase;
+				isGzipped = analysis.isGzipped;
+
+				// Validate all files have same format (basic check)
+				if (files.length > 1) {
+					const allSameFormat = files.every(file => {
+						const fileAnalysis = analyzeFileFormat(file, job);
+						return fileAnalysis.parsingCase === parsingCase && fileAnalysis.isGzipped === isGzipped;
+					});
+					if (!allSameFormat) {
+						throw new Error('All files in array/directory must have the same format and compression (gzipped or not gzipped)');
+					}
+				}
+			}
+
 			if (['jsonl', 'json', 'csv', 'parquet'].includes(streamFormat)) parsingCase = streamFormat;
 
 			switch (parsingCase) {
 				case 'jsonl':
-					return itemStream(files, "jsonl", job);
+					return itemStream(files, "jsonl", job, isGzipped);
 				case 'json':
-					return itemStream(files, "json", job);
+					return itemStream(files, "json", job, isGzipped);
 				case 'csv':
-					return csvStreamArray(files, job);
+					return csvStreamArray(files, job, isGzipped);
 				case 'parquet':
-					return parquetStreamArray(files, job);
+					return parquetStreamArray(files, job, isGzipped);
 				default:
-					return itemStream(files, "jsonl", job);
+					return itemStream(files, "jsonl", job, isGzipped);
 			}
 		}
 	}
 
 
 	catch (e) {
-		debugger;
+		if (NODE_ENV === "dev") debugger;
+		parsingError = e;
 
 	}
 
-	
+
 
 	// data is a string, and we have to guess what it is
 	if (typeof data === 'string') {
@@ -469,8 +536,12 @@ async function determineDataType(data, job) {
 	}
 
 	console.error(`ERROR:\n\t${data} is not a file, a folder, an array, a stream, or a string... (i could not determine it's type)`);
-	process.exit(1);
-
+	if (parsingError) {
+		throw parsingError;
+	}
+	else {
+		throw new Error('a very unusual error has occured');
+	}
 }
 
 /**
@@ -516,7 +587,7 @@ function createEnsureNewlineTransform() {
  * @param  {import('../index').SupportedFormats} type="jsonl"
  * @param {JobConfig} job
  */
-function itemStream(filePath, type = "jsonl", job) {
+function itemStream(filePath, type = "jsonl", job, isGzipped = false) {
 	let stream;
 	let parsedStream;
 	const parser = type === "jsonl" ? JsonlParser.parser : StreamArray.withParser;
@@ -526,18 +597,41 @@ function itemStream(filePath, type = "jsonl", job) {
 		emitClose: true
 
 	};
+
+	/**
+	 * Create a stream pipeline with optional gzip decompression
+	 * @param {string} file - file path
+	 * @returns {stream.Readable} - processed stream
+	 */
+	const createStreamWithGzipSupport = (file) => {
+		let fileStream = fs.createReadStream(file, streamOpts);
+
+		// Add gzip decompression if needed
+		if (isGzipped) {
+			const gunzip = zlib.createGunzip({
+				chunkSize: COMPRESSION_CONFIG.GZIP_CHUNK_SIZE,
+				windowBits: COMPRESSION_CONFIG.GZIP_WINDOW_BITS,
+				level: zlib.constants.Z_DEFAULT_COMPRESSION,
+				memLevel: COMPRESSION_CONFIG.GZIP_MEM_LEVEL
+			});
+			fileStream = fileStream.pipe(gunzip);
+		}
+
+		return fileStream;
+	};
+
 	//parsing folders
 	if (Array.isArray(filePath)) {
 
 		if (type === "jsonl") {
-			stream = new MultiStream(filePath.map((file) => fs.createReadStream(file, streamOpts).pipe(createEnsureNewlineTransform())), streamOpts);
+			stream = new MultiStream(filePath.map((file) => createStreamWithGzipSupport(file).pipe(createEnsureNewlineTransform())), streamOpts);
 			// @ts-ignore
 			parsedStream = stream.pipe(parser({ includeUndecided: false, errorIndicator: job.parseErrorHandler, ...streamOpts })).map(token => token.value);
 			return parsedStream;
 
 		}
 		if (type === "json") {
-			stream = filePath.map((file) => fs.createReadStream(file, streamOpts));
+			stream = filePath.map((file) => createStreamWithGzipSupport(file));
 			// @ts-ignore
 			parsedStream = MultiStream.obj(stream.map(s => s.pipe(parser(streamOpts)).map(token => token.value)));
 			return parsedStream;
@@ -546,7 +640,7 @@ function itemStream(filePath, type = "jsonl", job) {
 
 	//parsing files
 	else {
-		stream = fs.createReadStream(filePath, streamOpts);
+		stream = createStreamWithGzipSupport(filePath);
 		// @ts-ignore
 		parsedStream = stream.pipe(parser({ includeUndecided: false, errorIndicator: job.parseErrorHandler, ...streamOpts })).map(token => token.value);
 	}
@@ -595,7 +689,12 @@ function createParquetFactory(filePaths, job) {
  * @param  {string[]} filePaths
  * @param {JobConfig} job
  */
-function parquetStreamArray(filePaths, job) {
+function parquetStreamArray(filePaths, job, isGzipped = false) {
+	// Check for gzipped parquet files in the array
+	if (isGzipped) {
+		throw new Error(`Gzipped parquet files are not yet supported for local files. Please decompress the files first or use cloud storage which supports .parquet.gz files.`);
+	}
+
 	// @ts-ignore
 	const lazyStreamGen = createParquetFactory(filePaths, job);
 	// @ts-ignore
@@ -610,8 +709,14 @@ function parquetStreamArray(filePaths, job) {
  * @param {object}   [job]    - may include parseErrorHandler/fileErrorHandler
  * @returns {Promise<Readable>} – object-mode Readable of sanitized rows
  */
-async function parquetStream(filename, job = {}) {
+async function parquetStream(filename, job = {}, isGzipped = false) {
 	const filePath = path.resolve(filename);
+
+	// Check if DuckDB supports gzipped parquet files
+	if (isGzipped) {
+		throw new Error(`Gzipped parquet files (${filePath}) are not yet supported for local files. Please decompress the file first or use cloud storage which supports .parquet.gz files.`);
+	}
+
 	const db = new duckdb.Database(':memory:');
 	const conn = db.connect();
 
@@ -708,9 +813,9 @@ async function parquetStream(filename, job = {}) {
  * @param  {string[]} filePaths
  * @param  {JobConfig} jobConfig
  */
-function csvStreamArray(filePaths, jobConfig) {
+function csvStreamArray(filePaths, jobConfig, isGzipped = false) {
 	const streams = filePaths.map((filePath) => {
-		return csvStreamer(filePath, jobConfig);
+		return csvStreamer(filePath, jobConfig, isGzipped);
 	});
 	return MultiStream.obj(streams);
 }
@@ -720,8 +825,20 @@ function csvStreamArray(filePaths, jobConfig) {
  * @param  {string} filePath
  * @param {JobConfig} jobConfig
  */
-function csvStreamer(filePath, jobConfig) {
-	const fileStream = fs.createReadStream(path.resolve(filePath));
+function csvStreamer(filePath, jobConfig, isGzipped = false) {
+	let fileStream = fs.createReadStream(path.resolve(filePath));
+
+	// Add gzip decompression if needed
+	if (isGzipped) {
+		const gunzip = zlib.createGunzip({
+			chunkSize: COMPRESSION_CONFIG.GZIP_CHUNK_SIZE,
+			windowBits: COMPRESSION_CONFIG.GZIP_WINDOW_BITS,
+			level: zlib.constants.Z_DEFAULT_COMPRESSION,
+			memLevel: COMPRESSION_CONFIG.GZIP_MEM_LEVEL
+		});
+		fileStream = fileStream.pipe(gunzip);
+	}
+
 	const mappings = Object.entries(jobConfig.aliases);
 	const csvParser = Papa.parse(Papa.NODE_STREAM_INPUT, {
 		header: true,
@@ -1010,11 +1127,11 @@ async function fetchFromGCS(gcsPath, projectId = 'mixpanel-gtm-training') {
  */
 function detectGCSFormat(gcsPath) {
 	const fileName = gcsPath.split('/').pop() || '';
-	
+
 	if (fileName.endsWith('.parquet.gz') || fileName.endsWith('.parquet')) return 'parquet';
 	if (fileName.endsWith('.csv.gz') || fileName.endsWith('.csv')) return 'csv';
 	if (fileName.endsWith('.json.gz') || fileName.endsWith('.json') || fileName.endsWith('.jsonl') || fileName.endsWith('.jsonl.gz')) return 'json';
-	
+
 	// Default to JSON for unknown formats
 	return 'json';
 }
@@ -1027,7 +1144,7 @@ function detectGCSFormat(gcsPath) {
  */
 async function createGCSStream(gcsPath, job) {
 	const format = detectGCSFormat(gcsPath);
-	
+
 	switch (format) {
 		case 'csv':
 			return createGCSCSVStream(gcsPath, job);
@@ -1067,7 +1184,7 @@ async function createGCSJSONStream(gcsPath, job) {
 		if (!exists) {
 			throw new Error(`File not found: ${gcsPath}`);
 		}
-		
+
 		// Create read stream with tunable settings for high throughput
 		const gcsReadStream = gcsFile.createReadStream({
 			// Use configurable compression and validation settings
@@ -1248,7 +1365,7 @@ async function createGCSParquetStream(gcsPath, job) {
 				const subBuffer = buffer.subarray(start, end);
 				// Convert Buffer to ArrayBuffer
 				const arrayBuffer = subBuffer.buffer.slice(
-					subBuffer.byteOffset, 
+					subBuffer.byteOffset,
 					subBuffer.byteOffset + subBuffer.byteLength
 				);
 				return Promise.resolve(arrayBuffer);
@@ -1257,7 +1374,7 @@ async function createGCSParquetStream(gcsPath, job) {
 
 		// Use hyparquet's streaming interface (dynamically loaded)
 		const parquetReadFn = await getParquetRead();
-		
+
 		// Read parquet data first, then create stream
 		const parquetData = await new Promise((resolve, reject) => {
 			parquetReadFn({
@@ -1286,9 +1403,9 @@ async function createGCSParquetStream(gcsPath, job) {
 		});
 
 		// Create readable stream from the parsed data
-		return stream.Readable.from(parquetData, { 
-			objectMode: true, 
-			highWaterMark: job.highWater 
+		return stream.Readable.from(parquetData, {
+			objectMode: true,
+			highWaterMark: job.highWater
 		});
 
 	} catch (error) {
@@ -1316,13 +1433,13 @@ class JsonlObjectStream extends Transform {
 	_transform(chunk, _encoding, callback) {
 		// Add chunk to buffer
 		this.buffer += chunk.toString();
-		
+
 		// Process complete lines
 		const lines = this.buffer.split('\n');
-		
+
 		// Keep the last incomplete line in buffer
 		this.buffer = lines.pop() || '';
-		
+
 		// Process each complete line
 		for (const line of lines) {
 			if (line.trim()) {
@@ -1339,7 +1456,7 @@ class JsonlObjectStream extends Transform {
 				}
 			}
 		}
-		
+
 		callback();
 	}
 
@@ -1354,13 +1471,13 @@ class JsonlObjectStream extends Transform {
 				this.emit('warning', `JSON parse error on final line: ${error.message}`);
 			}
 		}
-		
+
 		// Emit statistics for monitoring
 		this.emit('stats', {
 			linesProcessed: this.lineCount,
 			parseErrors: this.parseErrors
 		});
-		
+
 		callback();
 	}
 }
@@ -1375,40 +1492,40 @@ class JsonlObjectStream extends Transform {
  */
 async function createMultiGCSStream(gcsPaths, job) {
 	const { PassThrough } = require('stream');
-	
+
 	// Validate that all files have the same format
 	const formats = gcsPaths.map(detectGCSFormat);
 	const uniqueFormats = [...new Set(formats)];
-	
+
 	if (uniqueFormats.length > 1) {
 		throw new Error(`Mixed file formats not supported. Found formats: ${uniqueFormats.join(', ')}. All files must be the same format.`);
 	}
-	
+
 	const format = uniqueFormats[0];
 	console.log(`Processing ${gcsPaths.length} ${format} files from GCS...`);
-	
+
 	// Create a passthrough stream that will be our final output
 	const output = new PassThrough({ objectMode: true });
-	
+
 	// Process files sequentially to avoid overwhelming GCS
 	let processedCount = 0;
 	let skippedCount = 0;
-	
+
 	const processNextFile = async () => {
 		if (processedCount + skippedCount >= gcsPaths.length) {
 			// All files processed, end the stream
 			output.end();
 			return;
 		}
-		
+
 		const gcsPath = gcsPaths[processedCount + skippedCount];
-		
+
 		try {
 			// Check if file exists first
 			const storage = new Storage({
 				projectId: job.gcpProjectId
 			});
-			
+
 			const matches = gcsPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
 			if (!matches) {
 				console.warn(`Skipping invalid GCS path: ${gcsPath}`);
@@ -1416,11 +1533,11 @@ async function createMultiGCSStream(gcsPaths, job) {
 				setImmediate(processNextFile);
 				return;
 			}
-			
+
 			const bucketName = matches[1];
 			const filePath = matches[2];
 			const file = storage.bucket(bucketName).file(filePath);
-			
+
 			// Check if file exists
 			const [exists] = await file.exists();
 			if (!exists) {
@@ -1429,36 +1546,36 @@ async function createMultiGCSStream(gcsPaths, job) {
 				setImmediate(processNextFile);
 				return;
 			}
-			
+
 			// Create stream for this file
 			const fileStream = await createGCSStream(gcsPath, job);
-			
+
 			// Pipe this file's data to our output stream
 			fileStream.on('data', (data) => {
 				output.write(data);
 			});
-			
+
 			fileStream.on('end', () => {
 				processedCount++;
 				setImmediate(processNextFile);
 			});
-			
+
 			fileStream.on('error', (error) => {
 				console.warn(`Error reading file ${gcsPath}: ${error.message}`);
 				skippedCount++;
 				setImmediate(processNextFile);
 			});
-			
+
 		} catch (error) {
 			console.warn(`Error processing file ${gcsPath}: ${error.message}`);
 			skippedCount++;
 			setImmediate(processNextFile);
 		}
 	};
-	
+
 	// Start processing the first file
 	setImmediate(processNextFile);
-	
+
 	return output;
 }
 
@@ -1469,11 +1586,11 @@ async function createMultiGCSStream(gcsPaths, job) {
  */
 function detectS3Format(s3Path) {
 	const fileName = s3Path.split('/').pop() || '';
-	
+
 	if (fileName.endsWith('.parquet.gz') || fileName.endsWith('.parquet')) return 'parquet';
 	if (fileName.endsWith('.csv.gz') || fileName.endsWith('.csv')) return 'csv';
 	if (fileName.endsWith('.json.gz') || fileName.endsWith('.json') || fileName.endsWith('.jsonl') || fileName.endsWith('.jsonl.gz')) return 'json';
-	
+
 	// Default to JSON for unknown formats
 	return 'json';
 }
@@ -1486,7 +1603,7 @@ function detectS3Format(s3Path) {
  */
 async function createS3Stream(s3Path, job) {
 	const format = detectS3Format(s3Path);
-	
+
 	switch (format) {
 		case 'csv':
 			return createS3CSVStream(s3Path, job);
@@ -1545,7 +1662,7 @@ async function createS3JSONStream(s3Path, job) {
 		});
 
 		const response = await s3Client.send(command);
-		
+
 		// Convert AWS SDK stream to Node.js stream
 		// @ts-ignore - AWS SDK stream conversion
 		const s3Stream = stream.Readable.from(response.Body);
@@ -1616,7 +1733,7 @@ async function createS3CSVStream(s3Path, job) {
 		});
 
 		const response = await s3Client.send(command);
-		
+
 		// Convert AWS SDK stream to Node.js stream
 		// @ts-ignore - AWS SDK stream conversion
 		const s3Stream = stream.Readable.from(response.Body);
@@ -1725,10 +1842,10 @@ async function createS3ParquetStream(s3Path, job) {
 		});
 
 		const response = await s3Client.send(command);
-		
+
 		// Convert AWS SDK stream to Node.js stream and collect chunks
 		const chunks = [];
-		
+
 		// Handle gzip decompression for .parquet.gz files
 		if (isGzipped) {
 			const gunzip = zlib.createGunzip({
@@ -1737,12 +1854,12 @@ async function createS3ParquetStream(s3Path, job) {
 				level: zlib.constants.Z_DEFAULT_COMPRESSION,
 				memLevel: S3_STREAMING_CONFIG.GZIP_MEM_LEVEL
 			});
-			
+
 			// Convert AWS SDK stream to Node.js stream and pipe through gunzip
 			// @ts-ignore - AWS SDK stream conversion
 			const s3Stream = stream.Readable.from(response.Body);
 			const decompressedStream = s3Stream.pipe(gunzip);
-			
+
 			for await (const chunk of decompressedStream) {
 				chunks.push(chunk);
 			}
@@ -1762,7 +1879,7 @@ async function createS3ParquetStream(s3Path, job) {
 				const subBuffer = buffer.subarray(start, end);
 				// Convert Buffer to ArrayBuffer
 				const arrayBuffer = subBuffer.buffer.slice(
-					subBuffer.byteOffset, 
+					subBuffer.byteOffset,
 					subBuffer.byteOffset + subBuffer.byteLength
 				);
 				return Promise.resolve(arrayBuffer);
@@ -1771,7 +1888,7 @@ async function createS3ParquetStream(s3Path, job) {
 
 		// Use hyparquet's streaming interface (dynamically loaded)
 		const parquetReadFn = await getParquetRead();
-		
+
 		// Read parquet data first, then create stream
 		const parquetData = await new Promise((resolve, reject) => {
 			parquetReadFn({
@@ -1800,9 +1917,9 @@ async function createS3ParquetStream(s3Path, job) {
 		});
 
 		// Create readable stream from the parsed data
-		return stream.Readable.from(parquetData, { 
-			objectMode: true, 
-			highWaterMark: job.highWater 
+		return stream.Readable.from(parquetData, {
+			objectMode: true,
+			highWaterMark: job.highWater
 		});
 
 	} catch (error) {
@@ -1820,21 +1937,21 @@ async function createS3ParquetStream(s3Path, job) {
  */
 async function createMultiS3Stream(s3Paths, job) {
 	const { PassThrough } = require('stream');
-	
+
 	// Validate that all files have the same format
 	const formats = s3Paths.map(detectS3Format);
 	const uniqueFormats = [...new Set(formats)];
-	
+
 	if (uniqueFormats.length > 1) {
 		throw new Error(`Mixed file formats not supported. Found formats: ${uniqueFormats.join(', ')}. All files must be the same format.`);
 	}
-	
+
 	const format = uniqueFormats[0];
 	console.log(`Processing ${s3Paths.length} ${format} files from S3...`);
-	
+
 	// Create a passthrough stream that will be our final output
 	const output = new PassThrough({ objectMode: true });
-	
+
 	// Configure S3 client with credentials from job config
 	const s3ClientConfig = {
 		region: job.s3Region || S3_STREAMING_CONFIG.DEFAULT_REGION,
@@ -1856,20 +1973,20 @@ async function createMultiS3Stream(s3Paths, job) {
 	}
 
 	const s3Client = new S3Client(s3ClientConfig);
-	
+
 	// Process files sequentially to avoid overwhelming S3
 	let processedCount = 0;
 	let skippedCount = 0;
-	
+
 	const processNextFile = async () => {
 		if (processedCount + skippedCount >= s3Paths.length) {
 			// All files processed, end the stream
 			output.end();
 			return;
 		}
-		
+
 		const s3Path = s3Paths[processedCount + skippedCount];
-		
+
 		try {
 			// Check if file exists first
 			const matches = s3Path.match(/^s3:\/\/([^\/]+)\/(.+)$/);
@@ -1879,16 +1996,16 @@ async function createMultiS3Stream(s3Paths, job) {
 				setImmediate(processNextFile);
 				return;
 			}
-			
+
 			const bucketName = matches[1];
 			const key = matches[2];
-			
+
 			// Check if file exists with a head request
 			const headCommand = new GetObjectCommand({
 				Bucket: bucketName,
 				Key: key
 			});
-			
+
 			try {
 				await s3Client.send(headCommand);
 			} catch (error) {
@@ -1897,36 +2014,36 @@ async function createMultiS3Stream(s3Paths, job) {
 				setImmediate(processNextFile);
 				return;
 			}
-			
+
 			// Create stream for this file
 			const fileStream = await createS3Stream(s3Path, job);
-			
+
 			// Pipe this file's data to our output stream
 			fileStream.on('data', (data) => {
 				output.write(data);
 			});
-			
+
 			fileStream.on('end', () => {
 				processedCount++;
 				setImmediate(processNextFile);
 			});
-			
+
 			fileStream.on('error', (error) => {
 				console.warn(`Error reading file ${s3Path}: ${error.message}`);
 				skippedCount++;
 				setImmediate(processNextFile);
 			});
-			
+
 		} catch (error) {
 			console.warn(`Error processing file ${s3Path}: ${error.message}`);
 			skippedCount++;
 			setImmediate(processNextFile);
 		}
 	};
-	
+
 	// Start processing the first file
 	setImmediate(processNextFile);
-	
+
 	return output;
 }
 
@@ -1982,5 +2099,6 @@ module.exports = {
 	StreamArray,
 	itemStream,
 	getEnvVars,
-	chunkForSize
+	chunkForSize,
+	analyzeFileFormat
 };
