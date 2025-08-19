@@ -57,6 +57,7 @@ export default async function scalingAnalysis(config = {}) {
 	const baseOptions = {
 		logs: false,
 		verbose: false,
+		showProgress: true,
 		recordType: 'event',
 		abridged: true,
 		dryRun: dryRun,

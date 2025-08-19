@@ -55,6 +55,7 @@ export default async function parameterMatrix(config = {}) {
 	const baseOptions = {
 		logs: false,
 		verbose: false,
+		showProgress: true,
 		streamFormat: 'jsonl',
 		recordType: 'event',
 		abridged: true,

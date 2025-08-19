@@ -47,6 +47,7 @@ export default async function workers(config = {}) {
 	const baseOptions = {
 		logs: false,
 		verbose: false,
+		showProgress: true,
 		recordType: 'event',
 		abridged: true,
 		dryRun: dryRun,

@@ -57,6 +57,7 @@ export default async function memoryVsStream(config = {}) {
 	const baseOptions = {
 		logs: false,
 		verbose: false,
+		showProgress: true,
 		streamFormat: 'jsonl',
 		recordType: 'event',
 		abridged: true,

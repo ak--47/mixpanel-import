@@ -29,6 +29,7 @@ export default async function httpOneOrTwo(config = {}) {
 	const baseOptions = {
 		logs: false,
 		verbose: false,
+		showProgress: true,
 		streamFormat: 'jsonl',
 		recordType: 'event',
 		abridged: true,

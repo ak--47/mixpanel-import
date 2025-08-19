@@ -74,15 +74,12 @@ class BenchmarkRunner {
 	constructor(options = {}) {
 		this.suite = options.suite || 'standard';
 		this.dataSize = options.dataSize || 'small';
-		this.dryRun = options.dryRun !== false; // default to true for safety
 		this.outputDir = options.outputDir || '../results';
 		this.timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 		this.results = [];
 		
-		// Check credentials unless running dry run
-		if (!this.dryRun) {
-			this.credentials = checkCredentials();
-		}
+		// Always check credentials since we never do dry run
+		this.credentials = checkCredentials();
 		
 		// Ensure output directory exists
 		if (!existsSync(this.outputDir)) {
@@ -95,7 +92,7 @@ class BenchmarkRunner {
 		console.log('='.repeat(60));
 		console.log(`📊 Suite: ${this.suite.toUpperCase()}`);
 		console.log(`📁 Data Size: ${this.dataSize} (${DATA_SIZES[this.dataSize]})`);
-		console.log(`🔬 Dry Run: ${this.dryRun ? 'YES (no actual API calls)' : 'NO (live API calls)'}`);
+		console.log(`🎯 Live API: YES (real performance testing)`);
 		console.log(`📂 Output: ${this.outputDir}`);
 		console.log('='.repeat(60));
 		console.log('');
@@ -118,7 +115,7 @@ class BenchmarkRunner {
 					benchmarkName,
 					dataSize: this.dataSize,
 					dataFile: DATA_SIZES[this.dataSize],
-					dryRun: this.dryRun,
+					liveAPI: true,
 					duration: duration,
 					timestamp: new Date().toISOString()
 				};
@@ -145,7 +142,7 @@ class BenchmarkRunner {
 	async runBenchmark(benchmarkName) {
 		const config = {
 			dataFile: DATA_SIZES[this.dataSize],
-			dryRun: this.dryRun,
+			dryRun: false,
 			credentials: this.credentials
 		};
 
@@ -172,7 +169,7 @@ class BenchmarkRunner {
 			summary: {
 				suite: this.suite,
 				dataSize: this.dataSize,
-				dryRun: this.dryRun,
+				liveAPI: true,
 				timestamp: this.timestamp,
 				totalBenchmarks: this.results.length,
 				successfulBenchmarks: this.results.filter(r => !r.error).length,
@@ -269,7 +266,7 @@ class BenchmarkRunner {
 		summary += `${'='.repeat(50)}\n\n`;
 		summary += `Suite: ${report.summary.suite}\n`;
 		summary += `Data Size: ${report.summary.dataSize}\n`;
-		summary += `Dry Run: ${report.summary.dryRun}\n`;
+		summary += `Live API: ${report.summary.liveAPI}\n`;
 		summary += `Timestamp: ${report.summary.timestamp}\n`;
 		summary += `Success Rate: ${report.summary.successfulBenchmarks}/${report.summary.totalBenchmarks}\n\n`;
 
@@ -326,7 +323,7 @@ async function main() {
 			options.dataSize = args[i + 1];
 			i++;
 		} else if (arg === '--live') {
-			options.dryRun = false;
+			// Legacy flag - ignore since we always use live API now
 		} else if (arg === '--output' && args[i + 1]) {
 			options.outputDir = args[i + 1];
 			i++;
@@ -337,14 +334,14 @@ Usage: node benchmarks/index.mjs [options]
 Options:
   --suite <type>     Benchmark suite to run (quick|standard|comprehensive) [default: standard]
   --size <size>      Data size to test (small|large) [default: small]
-  --live             Use live API calls instead of dry run [default: false]
+  --live             [Deprecated] All benchmarks now use live API calls
   --output <dir>     Output directory for results [default: ./benchmarks/results]
   --help             Show this help message
 
 Examples:
-  node benchmarks/index.mjs                           # Run standard suite with small data (dry run)
+  node benchmarks/index.mjs                           # Run standard suite with small data
   node benchmarks/index.mjs --suite comprehensive    # Run all benchmarks
-  node benchmarks/index.mjs --size large --live      # Test with large data and live API
+  node benchmarks/index.mjs --size large             # Test with large data
 			`);
 			return;
 		}

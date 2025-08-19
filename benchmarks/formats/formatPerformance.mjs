@@ -59,6 +59,7 @@ export default async function formatPerformance(config = {}) {
 	const baseOptions = {
 		logs: false,
 		verbose: false,
+		showProgress: true,
 		recordType: 'event',
 		abridged: true,
 		dryRun: dryRun,

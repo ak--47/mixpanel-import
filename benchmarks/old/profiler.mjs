@@ -44,7 +44,8 @@ export default async function profiler(config = {}) {
 
 	const baseOptions = {
 		logs: false,
-		verbose: true, // Enable verbose for detailed metrics
+		verbose: false,
+		showProgress: true,
 		recordType: 'event',
 		abridged: true,
 		dryRun: dryRun,

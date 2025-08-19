@@ -54,41 +54,47 @@ import workers from './old/workers.mjs';
  */
 
 const BENCHMARK_SUITES = {
-	// Quick suites for fast testing
+	// Quick suites for fast testing (250k records)
 	quick: {
+		dataSize: 'small',
 		new: ['workerOptimization', 'formatComparison'],
 		formats: ['formatPerformance'], 
 		old: ['main', 'workers']
 	},
 	
-	// Standard suites for regular optimization
+	// Standard suites for regular optimization (1M records)
 	standard: {
+		dataSize: 'large',
 		new: ['workerOptimization', 'parameterMatrix', 'formatComparison', 'transportComparison'],
 		formats: ['formatPerformance', 'compressionImpact'],
 		old: ['main', 'workers', 'transport', 'streamTypes']
 	},
 	
-	// Comprehensive suites for complete analysis
+	// Comprehensive suites for complete analysis (1M records)
 	comprehensive: {
+		dataSize: 'large',
 		new: ['workerOptimization', 'parameterMatrix', 'formatComparison', 'transformImpact', 'transportComparison', 'memoryVsStream'],
 		formats: ['formatPerformance', 'compressionImpact', 'scalingAnalysis'],
 		old: ['main', 'workers', 'transport', 'streamTypes', 'streamsVsMemory', 'profiler', 'httpOneOrTwo']
 	},
 	
-	// Individual suite options
+	// Individual suite options (use standard size by default)
 	'new-only': {
+		dataSize: 'large',
 		new: ['workerOptimization', 'parameterMatrix', 'formatComparison', 'transformImpact', 'transportComparison', 'memoryVsStream'],
 		formats: [],
 		old: []
 	},
 	
 	'formats-only': {
+		dataSize: 'large',
 		new: [],
 		formats: ['formatPerformance', 'compressionImpact', 'scalingAnalysis'],
 		old: []
 	},
 	
 	'old-only': {
+		dataSize: 'large',
 		new: [],
 		formats: [],
 		old: ['main', 'workers', 'transport', 'streamTypes', 'streamsVsMemory', 'profiler', 'httpOneOrTwo']
@@ -103,8 +109,6 @@ const DATA_SIZES = {
 class MasterBenchmarkRunner {
 	constructor(options = {}) {
 		this.suite = options.suite || 'standard';
-		this.dataSize = options.dataSize || 'small';
-		this.dryRun = options.dryRun !== false; // default to true for safety
 		this.outputDir = options.outputDir || './results';
 		this.timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 		this.results = {
@@ -113,10 +117,17 @@ class MasterBenchmarkRunner {
 			old: []
 		};
 		
-		// Check credentials unless running dry run
-		if (!this.dryRun) {
-			this.credentials = checkCredentials();
+		// Get suite configuration
+		const suiteConfig = BENCHMARK_SUITES[this.suite];
+		if (!suiteConfig) {
+			throw new Error(`Unknown suite: ${this.suite}. Available: ${Object.keys(BENCHMARK_SUITES).join(', ')}`);
 		}
+		
+		// Use suite's data size (can be overridden by options)
+		this.dataSize = options.dataSize || suiteConfig.dataSize || 'small';
+		
+		// Always check credentials since we never do dry run
+		this.credentials = checkCredentials();
 		
 		// Ensure output directory exists
 		if (!existsSync(this.outputDir)) {
@@ -129,7 +140,7 @@ class MasterBenchmarkRunner {
 		console.log('='.repeat(70));
 		console.log(`📊 Suite: ${this.suite.toUpperCase()}`);
 		console.log(`📁 Data Size: ${this.dataSize} (${DATA_SIZES[this.dataSize]} records)`);
-		console.log(`🔬 Dry Run: ${this.dryRun ? 'YES (no actual API calls)' : 'NO (live API calls)'}`);
+		console.log(`🎯 Live API: YES (real performance testing)`);
 		console.log(`📂 Output: ${this.outputDir}`);
 		console.log('='.repeat(70));
 		console.log('');
@@ -156,7 +167,7 @@ class MasterBenchmarkRunner {
 				const newRunner = new NewBenchmarkRunner({
 					suite: this.getNewSuiteName(suiteConfig.new),
 					dataSize: this.dataSize,
-					dryRun: this.dryRun,
+					dryRun: false, // Always live API
 					outputDir: path.join(this.outputDir, 'new')
 				});
 				
@@ -182,7 +193,7 @@ class MasterBenchmarkRunner {
 				const formatRunner = new FormatBenchmarkRunner({
 					suite: this.getFormatSuiteName(suiteConfig.formats),
 					dataSize: this.dataSize,
-					dryRun: this.dryRun,
+					dryRun: false, // Always live API
 					outputDir: path.join(this.outputDir, 'formats')
 				});
 				
@@ -242,7 +253,7 @@ class MasterBenchmarkRunner {
 			dataFile: this.dataSize === 'small' 
 				? './testData/dnd250.ndjson' 
 				: './testData/one-two-million.ndjson',
-			dryRun: this.dryRun,
+			dryRun: false, // Always live API
 			credentials: this.credentials
 		};
 
@@ -297,7 +308,7 @@ class MasterBenchmarkRunner {
 			metadata: {
 				suite: this.suite,
 				dataSize: this.dataSize,
-				dryRun: this.dryRun,
+				liveAPI: true,
 				timestamp: this.timestamp,
 				totalDuration: Date.now() // Will be updated
 			},
@@ -375,11 +386,7 @@ class MasterBenchmarkRunner {
 			recommendations.configuration.push('Review Legacy Benchmark Suite results for transport and processing optimizations');
 		}
 
-		recommendations.general.push(`Benchmark suite "${this.suite}" completed with ${this.dataSize} dataset`);
-		
-		if (this.dryRun) {
-			recommendations.general.push('Consider running with --live flag for real API performance testing');
-		}
+		recommendations.general.push(`Benchmark suite "${this.suite}" completed with ${this.dataSize} dataset using live API`);
 
 		return recommendations;
 	}
@@ -391,7 +398,7 @@ class MasterBenchmarkRunner {
 		summary += `${'='.repeat(60)}\n\n`;
 		summary += `Suite: ${report.metadata.suite}\n`;
 		summary += `Data Size: ${report.metadata.dataSize}\n`;
-		summary += `Dry Run: ${report.metadata.dryRun}\n`;
+		summary += `Live API: ${report.metadata.liveAPI}\n`;
 		summary += `Timestamp: ${report.metadata.timestamp}\n`;
 		summary += `Suites Run: ${report.summary.suitesRun.join(', ')}\n`;
 		summary += `Total Benchmarks: ${report.summary.totalBenchmarks}\n`;
@@ -439,8 +446,6 @@ async function runCLI() {
 		} else if (arg === '--size' && args[i + 1]) {
 			options.dataSize = args[i + 1];
 			i++;
-		} else if (arg === '--live') {
-			options.dryRun = false;
 		} else if (arg === '--output' && args[i + 1]) {
 			options.outputDir = args[i + 1];
 			i++;
@@ -451,25 +456,25 @@ Usage: node benchmarks/index.mjs [options]
 Options:
   --suite <type>     Benchmark suite to run [default: standard]
                      Available: quick, standard, comprehensive, new-only, formats-only, old-only
-  --size <size>      Data size to test (small|large) [default: small]
-  --live             Use live API calls instead of dry run [default: false]
+  --size <size>      Override data size (small|large) [default: suite-specific]
   --output <dir>     Output directory for results [default: ./results]
   --help             Show this help message
 
 Suite Types:
-  quick              Fast benchmarks from all suites (~10 min)
-  standard           Standard benchmarks from all suites (~30 min)  
-  comprehensive      All benchmarks from all suites (~60 min)
-  new-only           Only modern performance benchmarks (~30 min)
-  formats-only       Only data format benchmarks (~15 min)
-  old-only           Only legacy benchmarks (~20 min)
+  quick              Fast benchmarks with 250k records (~10 min)
+  standard           Standard benchmarks with 1M records (~30 min)  
+  comprehensive      All benchmarks with 1M records (~60 min)
+  new-only           Only modern performance benchmarks with 1M records (~30 min)
+  formats-only       Only data format benchmarks with 1M records (~15 min)
+  old-only           Only legacy benchmarks with 1M records (~20 min)
 
 Examples:
-  node benchmarks/index.mjs                              # Run standard suite with small data (dry run)
-  node benchmarks/index.mjs --suite comprehensive       # Run all benchmarks from all suites
-  node benchmarks/index.mjs --suite new-only --live     # Run only new benchmarks with live API
+  node benchmarks/index.mjs                              # Run standard suite (1M records)
+  node benchmarks/index.mjs --suite quick               # Run quick suite (250k records)
+  node benchmarks/index.mjs --suite comprehensive       # Run all benchmarks (1M records)
+  node benchmarks/index.mjs --suite new-only            # Run only modern benchmarks
   node benchmarks/index.mjs --suite formats-only        # Run only format benchmarks
-  node benchmarks/index.mjs --size large --live         # Test with large data and live API
+  node benchmarks/index.mjs --size small                # Override to use 250k records
 			`);
 			return;
 		}

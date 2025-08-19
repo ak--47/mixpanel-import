@@ -798,7 +798,7 @@ class Job {
 		// stats
 		if (summary.total && summary.duration && summary.requests && summary.bytes) {
 			summary.eps = Math.floor(summary.total / summary.duration * 1000);
-			summary.rps = u.round(summary.requests / summary.duration * 1000, 3);
+			summary.rps = summary.duration > 0 ? u.round(summary.requests / summary.duration * 1000, 3) : 0;
 			summary.mbps = u.round((summary.bytes / 1e+6) / summary.duration * 1000, 3);
 
 			// OLD QUOTA
