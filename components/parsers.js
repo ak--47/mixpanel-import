@@ -234,9 +234,7 @@ async function determineDataType(data, job) {
 		const folder = u.mkdir('./mixpanel-exports');
 		return path.resolve(folder);
 	}
-
 	if (job.recordType === 'profile-delete') return null;
-
 	if (job.recordType === 'annotations') return data;
 	if (job.recordType === 'get-annotations') return null;
 	if (job.recordType === 'delete-annotations') return null;
@@ -273,8 +271,7 @@ async function determineDataType(data, job) {
 		return stream.Readable.from(data, { objectMode: true, highWaterMark: job.highWater });
 	}
 
-	// CLOUD STORAGE
-
+	// CLOUD STORAGE PARSING
 
 	// Handle Google Cloud Storage URLs (gs://)
 	if (typeof data === 'string' && data.startsWith('gs://')) {

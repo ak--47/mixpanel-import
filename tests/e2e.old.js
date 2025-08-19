@@ -93,7 +93,7 @@ const heapParseError = `./testData/heap-parse-error.jsonl`;
 const scdUserNps = `./testData/scd/user-nps-scd-small.json`;
 const scdCompanyPlan = `./testData/scd/company-plan-scd.json`;
 
-/** @type {import('../index.d.ts').Options} */
+/** @type {import('../index.js').Options} */
 const opts = {
 	recordType: `event`,
 	compress: false,
