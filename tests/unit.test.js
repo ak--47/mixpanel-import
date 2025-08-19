@@ -233,7 +233,7 @@ describe("transforms", () => {
 		expect(transformed.$set.name).toBeUndefined();
 	});
 
-	test("adds events token (explicit)", () => {
+	test("adds events token", () => {
 		const config = { recordType: "event", token: "testToken" };
 		const record = {
 			event: "foo",
@@ -244,7 +244,7 @@ describe("transforms", () => {
 	});
 
 
-	test("adds users token (explicit)", () => {
+	test("adds users token", () => {
 		const config = { recordType: "user", token: "testToken" };
 		const record = {
 			$distinct_id: "123",
@@ -521,7 +521,7 @@ describe("transforms", () => {
 	// 	expect(sampleJobConfig.whiteListSkipped).toBe(1);
 	// });
 
-	test("combo: whitelist stringify all", () => {
+	test("combo: stringify all", () => {
 		params = {
 			comboWhiteList: {
 				count: [10] // Expecting a number
@@ -533,7 +533,7 @@ describe("transforms", () => {
 		expect(whiteAndBlackLister(sampleJobConfig, params)(recordNumber)).toEqual(recordNumber);
 	});
 
-	test("combo: blacklist nested props are OK", () => {
+	test("combo: nested props OK", () => {
 		params = {
 			comboBlackList: {
 				age: [30] // Number type
@@ -545,7 +545,7 @@ describe("transforms", () => {
 		expect(whiteAndBlackLister(sampleJobConfig, params)(recordAllowed)).toEqual(recordAllowed);
 	});
 
-	test("combo: whitelist and blacklist empty", () => {
+	test("combo: lists empty", () => {
 		params = {
 			comboWhiteList: {},
 			comboBlackList: {}
@@ -554,7 +554,7 @@ describe("transforms", () => {
 		expect(whiteAndBlackLister(sampleJobConfig, params)(recordAny)).toEqual(recordAny);
 	});
 
-	test("combo: blacklist with some properties matching", () => {
+	test("combo: blacklist partial", () => {
 		params = {
 			comboBlackList: {
 				key1: ['value1'],
@@ -863,7 +863,7 @@ describe("transforms", () => {
 		expect(resolveFallback(undefined, ['key1', 'key2'])).toBeNull();
 	});
 
-	test('resolve fallback: should return null if none of the keys exist in the data object', () => {
+	test('resolve fallback: missing keys', () => {
 		expect(resolveFallback(fallBackData, ['key9', 'key10'])).toBeNull();
 	});
 
@@ -1039,7 +1039,7 @@ describe("parsers", () => {
 });
 
 describe("gzip support", () => {
-	test("isGzip option is set correctly", () => {
+	test("isGzip option works", () => {
 		const job = new Job(fakeCreds, { isGzip: true });
 		expect(job.isGzip).toBe(true);
 		
@@ -1047,7 +1047,7 @@ describe("gzip support", () => {
 		expect(jobDefault.isGzip).toBe(false);
 	});
 
-	test("gzipped file extensions are supported", () => {
+	test("gzip extensions supported", () => {
 		const job = new Job(fakeCreds);
 		expect(job.supportedFileExt).toContain('.json.gz');
 		expect(job.supportedFileExt).toContain('.jsonl.gz');
@@ -1058,7 +1058,7 @@ describe("gzip support", () => {
 		expect(job.supportedFileExt).toContain('.tsv.gz');
 	});
 
-	test("analyzeFileFormat detects gzipped JSON", () => {
+	test("detects gzip JSON", () => {
 		const { analyzeFileFormat } = require("../components/parsers.js");
 		const job = new Job(fakeCreds);
 		
@@ -1068,7 +1068,7 @@ describe("gzip support", () => {
 		expect(result.baseFormat).toBe('.json');
 	});
 
-	test("analyzeFileFormat detects gzipped JSONL", () => {
+	test("detects gzip JSONL", () => {
 		const { analyzeFileFormat } = require("../components/parsers.js");
 		const job = new Job(fakeCreds);
 		
@@ -1078,7 +1078,7 @@ describe("gzip support", () => {
 		expect(result.baseFormat).toBe('.jsonl');
 	});
 
-	test("analyzeFileFormat detects gzipped CSV", () => {
+	test("detects gzip CSV", () => {
 		const { analyzeFileFormat } = require("../components/parsers.js");
 		const job = new Job(fakeCreds);
 		
@@ -1088,7 +1088,7 @@ describe("gzip support", () => {
 		expect(result.baseFormat).toBe('.csv');
 	});
 
-	test("analyzeFileFormat detects gzipped Parquet", () => {
+	test("detects gzip Parquet", () => {
 		const { analyzeFileFormat } = require("../components/parsers.js");
 		const job = new Job(fakeCreds);
 		
@@ -1098,7 +1098,7 @@ describe("gzip support", () => {
 		expect(result.baseFormat).toBe('.parquet');
 	});
 
-	test("isGzip option overrides extension detection", () => {
+	test("isGzip overrides detection", () => {
 		const { analyzeFileFormat } = require("../components/parsers.js");
 		const job = new Job(fakeCreds, { isGzip: true });
 		
@@ -1108,7 +1108,7 @@ describe("gzip support", () => {
 		expect(result.parsingCase).toBe('json');
 	});
 
-	test("isGzip option works with .gz extension", () => {
+	test("isGzip works with .gz", () => {
 		const { analyzeFileFormat } = require("../components/parsers.js");
 		const job = new Job(fakeCreds, { isGzip: true });
 		
@@ -1145,7 +1145,7 @@ describe("gzip support", () => {
 	// 	}
 	// });
 
-	test("gzipped JSONL file can be processed", async () => {
+	test("processes gzip JSONL", async () => {
 		const fs = require('fs');
 		
 		// Only run if test file exists
@@ -1170,7 +1170,7 @@ describe("gzip support", () => {
 		}
 	});
 
-	test("gzipped CSV file can be processed", async () => {
+	test("processes gzip CSV", async () => {
 		const fs = require('fs');
 		
 		// Only run if test file exists
@@ -1196,7 +1196,7 @@ describe("gzip support", () => {
 		}
 	});
 
-	test("gzipped Parquet file throws appropriate error", async () => {
+	test("gzipped parquet file throws", async () => {
 		const fs = require('fs');
 		
 		// Only run if test file exists
@@ -1222,7 +1222,7 @@ describe("gzip support", () => {
 	// 	}
 	// });
 
-	test("isGzip option forces gzip processing on regular files", async () => {
+	test("isGzip forces processing", async () => {
 		const fs = require('fs');
 		
 		// Create a temporary gzipped file without .gz extension
@@ -1286,7 +1286,7 @@ describe("maxRecords functionality", () => {
 		return data;
 	}
 
-	test('maxRecords limits processing in normal mode', async () => {
+	test('limits processing (normal)', async () => {
 		const testData = generateTestData(200); // Generate 200 records
 		const maxRecords = 50;
 
@@ -1300,7 +1300,7 @@ describe("maxRecords functionality", () => {
 		expect(result.dryRun.length).toBe(maxRecords);
 	});
 
-	test('maxRecords limits processing in dryRun mode', async () => {
+	test('limits processing (dryRun)', async () => {
 		const testData = generateTestData(150); // Generate 150 records
 		const maxRecords = 25;
 
@@ -1314,7 +1314,7 @@ describe("maxRecords functionality", () => {
 		expect(result.dryRun.length).toBe(maxRecords);
 	});
 
-	test('maxRecords null processes all records', async () => {
+	test('null processes all records', async () => {
 		const testData = generateTestData(10); // Small dataset
 		
 		const result = await mpImport(fakeCreds, testData, {
@@ -1327,7 +1327,7 @@ describe("maxRecords functionality", () => {
 		expect(result.dryRun.length).toBe(10);
 	});
 
-	test('no maxRecords processes all records', async () => {
+	test('undefined processes all', async () => {
 		const testData = generateTestData(15); // Small dataset
 		
 		const result = await mpImport(fakeCreds, testData, {
@@ -1340,7 +1340,7 @@ describe("maxRecords functionality", () => {
 		expect(result.dryRun.length).toBe(15);
 	});
 
-	test('maxRecords respects transforms and filters', async () => {
+	test('respects transforms', async () => {
 		const testData = generateTestData(100);
 		const maxRecords = 30;
 
@@ -1366,7 +1366,7 @@ describe("maxRecords functionality", () => {
 		expect(result.dryRun.length).toBeLessThanOrEqual(maxRecords);
 	});
 
-	test('maxRecords works with user profiles', async () => {
+	test('works with profiles', async () => {
 		const testData = [];
 		for (let i = 0; i < 50; i++) {
 			testData.push({
@@ -1391,7 +1391,7 @@ describe("maxRecords functionality", () => {
 		expect(result.recordType).toBe('user');
 	});
 
-	test('maxRecords=0 processes no records', async () => {
+	test('zero processes none', async () => {
 		const testData = generateTestData(10);
 		
 		const result = await mpImport(fakeCreds, testData, {
@@ -1403,7 +1403,7 @@ describe("maxRecords functionality", () => {
 		expect(result.dryRun.length).toBe(0);
 	});
 
-	test('maxRecords larger than dataset processes all records', async () => {
+	test('larger than dataset', async () => {
 		const testData = generateTestData(5); // Only 5 records
 		const maxRecords = 100; // Much larger limit
 		
@@ -1417,7 +1417,7 @@ describe("maxRecords functionality", () => {
 		expect(result.dryRun.length).toBe(5);
 	});
 
-	test('maxRecords works with different record types', async () => {
+	test('works with groups', async () => {
 		const groupData = [];
 		for (let i = 0; i < 30; i++) {
 			groupData.push({
