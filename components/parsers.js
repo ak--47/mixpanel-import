@@ -1010,9 +1010,10 @@ function getEnvVars() {
  *   • an NDJSON file (one JSON object per line)
  * @param {string} keyOne    The key for the id (e.g., "person_id")
  * @param {string} keyTwo    The key for the distinct_id (e.g., "distinct_id")
+ * @param {object} [job={}]  Job object containing GCS credentials and project info
  * @returns {Promise<Map<string,string>>}  Maps item.id → item.distinct_id
  */
-async function buildMapFromPath(filePath, keyOne, keyTwo) {
+async function buildMapFromPath(filePath, keyOne, keyTwo, job = {}) {
 	if (!keyOne || !keyTwo || !filePath) throw new Error("keyOne and keyTwo are required");
 
 	// Local file validation only
@@ -1032,7 +1033,7 @@ async function buildMapFromPath(filePath, keyOne, keyTwo) {
 	let fileContents;
 
 	//a gcp bucket
-	if (filePath?.startsWith('gs://')) fileContents = await fetchFromGCS(filePath);
+	if (filePath?.startsWith('gs://')) fileContents = await fetchFromGCS(filePath, job.gcpProjectId || 'mixpanel-gtm-training', job.gcsCredentials);
 	//an s3 bucket
 	else if (filePath?.startsWith('s3://')) fileContents = await fetchFromS3(filePath);
 	//a local file
@@ -1084,13 +1085,20 @@ async function buildMapFromPath(filePath, keyOne, keyTwo) {
  * @param {string} gcsPath Path in format gs://bucket-name/path/to/file.json
  * @returns {Promise<string>} File contents as a string
  */
-async function fetchFromGCS(gcsPath, projectId = 'mixpanel-gtm-training') {
+async function fetchFromGCS(gcsPath, projectId = 'mixpanel-gtm-training', gcsCredentials = '') {
 
 
-	// Create a storage client using application default credentials
-	const storage = new Storage({
+	// Create a storage client using either custom credentials or application default credentials
+	const storageConfig = {
 		projectId
-	});
+	};
+	
+	// Use custom credentials if provided, otherwise fall back to ADC
+	if (gcsCredentials) {
+		storageConfig.keyFilename = gcsCredentials;
+	}
+	
+	const storage = new Storage(storageConfig);
 
 	// Extract bucket and file path from the GCS path
 	// gs://bucket-name/path/to/file.json -> bucket="bucket-name", filePath="path/to/file.json"
@@ -1163,9 +1171,17 @@ async function createGCSStream(gcsPath, job) {
  * @returns {Promise<stream.Readable>}
  */
 async function createGCSJSONStream(gcsPath, job) {
-	const storage = new Storage({
+	// Create a storage client using either custom credentials or application default credentials
+	const storageConfig = {
 		projectId: job.gcpProjectId
-	});
+	};
+	
+	// Use custom credentials if provided, otherwise fall back to ADC
+	if (job.gcsCredentials) {
+		storageConfig.keyFilename = job.gcsCredentials;
+	}
+	
+	const storage = new Storage(storageConfig);
 
 	// Extract bucket and file path from the GCS path
 	const matches = gcsPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
@@ -1221,9 +1237,17 @@ async function createGCSJSONStream(gcsPath, job) {
  * @returns {Promise<stream.Readable>}
  */
 async function createGCSCSVStream(gcsPath, job) {
-	const storage = new Storage({
+	// Create a storage client using either custom credentials or application default credentials
+	const storageConfig = {
 		projectId: job.gcpProjectId
-	});
+	};
+	
+	// Use custom credentials if provided, otherwise fall back to ADC
+	if (job.gcsCredentials) {
+		storageConfig.keyFilename = job.gcsCredentials;
+	}
+	
+	const storage = new Storage(storageConfig);
 
 	// Extract bucket and file path from the GCS path
 	const matches = gcsPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
@@ -1312,9 +1336,17 @@ async function createGCSCSVStream(gcsPath, job) {
  * @returns {Promise<stream.Readable>}
  */
 async function createGCSParquetStream(gcsPath, job) {
-	const storage = new Storage({
+	// Create a storage client using either custom credentials or application default credentials
+	const storageConfig = {
 		projectId: job.gcpProjectId
-	});
+	};
+	
+	// Use custom credentials if provided, otherwise fall back to ADC
+	if (job.gcsCredentials) {
+		storageConfig.keyFilename = job.gcsCredentials;
+	}
+	
+	const storage = new Storage(storageConfig);
 
 	// Extract bucket and file path from the GCS path
 	const matches = gcsPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
@@ -1522,9 +1554,17 @@ async function createMultiGCSStream(gcsPaths, job) {
 
 		try {
 			// Check if file exists first
-			const storage = new Storage({
+			// Create a storage client using either custom credentials or application default credentials
+			const storageConfig = {
 				projectId: job.gcpProjectId
-			});
+			};
+			
+			// Use custom credentials if provided, otherwise fall back to ADC
+			if (job.gcsCredentials) {
+				storageConfig.keyFilename = job.gcsCredentials;
+			}
+			
+			const storage = new Storage(storageConfig);
 
 			const matches = gcsPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
 			if (!matches) {

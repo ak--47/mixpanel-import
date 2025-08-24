@@ -120,6 +120,10 @@ declare namespace main {
 	 */
 	s3Region?: string;
 	/**
+	 * - Path to GCS service account credentials JSON file (optional, defaults to ADC)
+	 */
+	gcsCredentials?: string;
+	/**
 	 * - a data_group_id to use for exporting group profiles
 	 */
 	dataGroupId?: string;

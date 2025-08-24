@@ -499,3 +499,77 @@ describe("amazon s3", () => {
 	);
 
 });
+
+// Test constants for the custom GCS project with credentials.json
+const CUSTOM_GCS_BUCKET_PREFIX = `gs://ak-in-the-sa-land/mixpanel-import`;
+const CUSTOM_TEST_FILE = `${CUSTOM_GCS_BUCKET_PREFIX}/json/someTestData-1.json`;
+const CREDENTIALS_PATH = './credentials.json';
+
+/** @type {import('../index.d.ts').Options} */
+const customGcsOpts = {
+	recordType: `event`,
+	compress: false,
+	workers: 20,
+	region: `US`,
+	recordsPerBatch: 2000,
+	bytesPerBatch: 2 * 1024 * 1024,
+	strict: true,
+	logs: false,
+	fixData: true,
+	showProgress: IS_DEBUG_MODE,
+	verbose: IS_DEBUG_MODE,
+	gcpProjectId: 'mixpanel-sa',  // Different project from the default
+	gcsCredentials: CREDENTIALS_PATH,  // Use custom credentials
+	transformFunc: function fillInDistinctId(e) {
+		if (e?.properties) {
+			if (!e.properties.distinct_id) {
+				if (e.properties.user_id) {
+					e.properties.distinct_id = e.properties.user_id;
+				} else {
+					e.properties.distinct_id = u.uid();
+				}
+			}
+		}
+		return e;
+	},
+	responseHandler: (data) => {
+		if (IS_DEBUG_MODE) {
+			console.log(`\nRESPONSE!\n`);
+		}
+	}
+};
+
+describe("gcs authentication methods", () => {
+	// Check if credentials.json exists before running custom auth tests
+	const fs = require('fs');
+	const credentialsExist = fs.existsSync(CREDENTIALS_PATH);
+
+	if (credentialsExist) {
+		test(
+			"credentials.json: can access custom project with service account credentials",
+			async () => {
+				const data = await mp({}, CUSTOM_TEST_FILE, { ...customGcsOpts });
+				expect(data.success).toBeGreaterThan(0);
+				expect(data.duration).toBeGreaterThan(0);
+			},
+			longTimeout
+		);
+
+		test(
+			"adc fallback: can still access default project without gcsCredentials",
+			async () => {
+				const file = TEST_PATHS.json[0];
+				const adcOpts = { ...opts }; // Use default opts which don't have gcsCredentials
+				const data = await mp({}, file, adcOpts);
+				expect(data.success).toBe(NUM_RECORDS_PER_FILE);
+				expect(data.failed).toBe(0);
+				expect(data.duration).toBeGreaterThan(0);
+			},
+			longTimeout
+		);
+	} else {
+		test.skip("credentials.json not found - skipping custom GCS auth tests", () => {
+			console.log('To test custom GCS credentials, place credentials.json in the project root');
+		});
+	}
+});

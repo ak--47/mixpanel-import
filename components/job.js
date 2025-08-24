@@ -66,6 +66,7 @@ class Job {
 		this.scdPropId = opts.scdPropId || ''; //scd prop id
 		this.transport = opts.transport || 'got'; // transport mechanism to use for sending data (default: got)
 		this.gcpProjectId = opts.gcpProjectId || safeCreds.gcpProjectId || 'mixpanel-gtm-training'; // Google Cloud project ID for GCS operations
+		this.gcsCredentials = opts.gcsCredentials || safeCreds.gcsCredentials || ''; // Path to GCS service account credentials JSON file (optional, defaults to ADC)
 		this.s3Key = opts.s3Key || safeCreds.s3Key || ''; // AWS S3 access key ID for S3 operations
 		this.s3Secret = opts.s3Secret || safeCreds.s3Secret || ''; // AWS S3 secret access key for S3 operations
 		this.s3Region = opts.s3Region || safeCreds.s3Region || ''; // AWS S3 region for S3 operations
@@ -76,7 +77,7 @@ class Job {
 		this.insertHeavyObjects = async function (arrayOfKeysAndFilesPaths = this.dimensionMaps) {
 			for (const keyFilePath of arrayOfKeysAndFilesPaths) {
 				const { filePath, keyOne, keyTwo, label = u.makeName(3, '-') } = keyFilePath;
-				const result = await buildMapFromPath(filePath, keyOne, keyTwo);
+				const result = await buildMapFromPath(filePath, keyOne, keyTwo, this);
 				this.heavyObjects[label] = result;
 			}
 		};
