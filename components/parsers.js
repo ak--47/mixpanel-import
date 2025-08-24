@@ -854,21 +854,21 @@ function csvStreamer(filePath, jobConfig, isGzipped = false) {
 	});
 	const transformer = new stream.Transform({
 		objectMode: true, highWaterMark: jobConfig.highWater, transform: (chunk, _encoding, callback) => {
-			const { distinct_id = "", $insert_id = "", time = 0, event, ...props } = chunk;
-			const mixpanelEvent = {
-				event,
-				properties: {
-					distinct_id,
-					$insert_id,
-					time: dayjs.utc(time).valueOf(),
-					...props
-				}
-			};
-			if (!distinct_id) delete mixpanelEvent.properties.distinct_id;
-			if (!$insert_id) delete mixpanelEvent.properties.$insert_id;
-			if (!time) delete mixpanelEvent.properties.time;
-
-			callback(null, mixpanelEvent);
+			// const { distinct_id = "", $insert_id = "", time = 0, event, ...props } = chunk;
+			// const mixpanelEvent = {
+			// 	event,
+			// 	properties: {
+			// 		distinct_id,
+			// 		$insert_id,
+			// 		time: dayjs.utc(time).valueOf(),
+			// 		...props
+			// 	}
+			// };
+			// if (!distinct_id) delete mixpanelEvent.properties.distinct_id;
+			// if (!$insert_id) delete mixpanelEvent.properties.$insert_id;
+			// if (!time) delete mixpanelEvent.properties.time;
+			// callback(null, mixpanelEvent);
+			callback(null, chunk);
 		}
 	});
 	const outStream = fileStream.pipe(csvParser).pipe(transformer);
@@ -1092,12 +1092,12 @@ async function fetchFromGCS(gcsPath, projectId = 'mixpanel-gtm-training', gcsCre
 	const storageConfig = {
 		projectId
 	};
-	
+
 	// Use custom credentials if provided, otherwise fall back to ADC
 	if (gcsCredentials) {
 		storageConfig.keyFilename = gcsCredentials;
 	}
-	
+
 	const storage = new Storage(storageConfig);
 
 	// Extract bucket and file path from the GCS path
@@ -1175,12 +1175,12 @@ async function createGCSJSONStream(gcsPath, job) {
 	const storageConfig = {
 		projectId: job.gcpProjectId
 	};
-	
+
 	// Use custom credentials if provided, otherwise fall back to ADC
 	if (job.gcsCredentials) {
 		storageConfig.keyFilename = job.gcsCredentials;
 	}
-	
+
 	const storage = new Storage(storageConfig);
 
 	// Extract bucket and file path from the GCS path
@@ -1241,12 +1241,12 @@ async function createGCSCSVStream(gcsPath, job) {
 	const storageConfig = {
 		projectId: job.gcpProjectId
 	};
-	
+
 	// Use custom credentials if provided, otherwise fall back to ADC
 	if (job.gcsCredentials) {
 		storageConfig.keyFilename = job.gcsCredentials;
 	}
-	
+
 	const storage = new Storage(storageConfig);
 
 	// Extract bucket and file path from the GCS path
@@ -1340,12 +1340,12 @@ async function createGCSParquetStream(gcsPath, job) {
 	const storageConfig = {
 		projectId: job.gcpProjectId
 	};
-	
+
 	// Use custom credentials if provided, otherwise fall back to ADC
 	if (job.gcsCredentials) {
 		storageConfig.keyFilename = job.gcsCredentials;
 	}
-	
+
 	const storage = new Storage(storageConfig);
 
 	// Extract bucket and file path from the GCS path
@@ -1558,12 +1558,12 @@ async function createMultiGCSStream(gcsPaths, job) {
 			const storageConfig = {
 				projectId: job.gcpProjectId
 			};
-			
+
 			// Use custom credentials if provided, otherwise fall back to ADC
 			if (job.gcsCredentials) {
 				storageConfig.keyFilename = job.gcsCredentials;
 			}
-			
+
 			const storage = new Storage(storageConfig);
 
 			const matches = gcsPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);

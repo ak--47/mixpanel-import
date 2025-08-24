@@ -6,9 +6,27 @@ const mixpanelImport = require('../index.js');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Configure multer for file uploads (store in memory)
+// Configure multer for file uploads (stream to disk for large files)
+// @ts-ignore - Using disk storage provides path property on files
+const fs = require('fs');
+
+// Ensure tmp directory exists
+const tmpDir = path.join(__dirname, '..', 'tmp');
+if (!fs.existsSync(tmpDir)) {
+	fs.mkdirSync(tmpDir, { recursive: true });
+}
+
 const upload = multer({
-	storage: multer.memoryStorage(),
+	storage: multer.diskStorage({
+		destination: (req, file, cb) => {
+			cb(null, tmpDir);
+		},
+		filename: (req, file, cb) => {
+			// Generate unique filename with timestamp
+			const uniqueName = `mixpanel-import-${Date.now()}-${Math.random().toString(36).substring(2)}-${file.originalname}`;
+			cb(null, uniqueName);
+		}
+	}),
 	limits: {
 		fileSize: 1000 * 1024 * 1024 // 1GB limit
 	}
@@ -17,6 +35,19 @@ const upload = multer({
 /** @typedef {import('../index.d.ts').Options} Options */
 /** @typedef {import('../index.d.ts').Creds} Creds */
 /** @typedef {import('../index.d.ts').Data} Data */
+
+// Extended multer file type for disk storage
+/** @typedef {Object} MulterDiskFile
+ * @property {string} fieldname
+ * @property {string} originalname
+ * @property {string} encoding
+ * @property {string} mimetype
+ * @property {number} size
+ * @property {string} destination
+ * @property {string} filename
+ * @property {string} path
+ * @property {Buffer} buffer
+ */
 
 
 // Middleware
@@ -84,31 +115,15 @@ app.post('/job', upload.array('files'), async (req, res) => {
 			}
 			// @ts-ignore
 		} else if (req.files && req.files.length > 0) {
-			// Handle local files
+			// Handle local files - pass file paths to mixpanel-import
 			if (req.files.length === 1) {
-				// Single file - convert buffer to JSON
-				const fileContent = req.files[0].buffer.toString('utf8');
-				try {
-					data = JSON.parse(fileContent);
-				} catch (err) {
-					// Try parsing as JSONL
-					data = fileContent.trim().split('\n').map(line => JSON.parse(line));
-				}
+				// Single file - pass file path
+				data = req.files[0].path;
+				console.log(`Using single local file: ${data}`);
 			} else {
-				// Multiple files - combine into array
-				data = [];
-				// @ts-ignore
-				for (const file of req.files) {
-					const fileContent = file.buffer.toString('utf8');
-					try {
-						const fileData = JSON.parse(fileContent);
-						data = data.concat(Array.isArray(fileData) ? fileData : [fileData]);
-					} catch (err) {
-						// Try parsing as JSONL
-						const jsonlData = fileContent.trim().split('\n').map(line => JSON.parse(line));
-						data = data.concat(jsonlData);
-					}
-				}
+				// Multiple files - pass array of file paths
+				data = req.files.map(file => file.path);
+				console.log(`Using multiple local files: ${data.join(', ')}`);
 			}
 		} else {
 			return res.status(400).json({
@@ -124,6 +139,18 @@ app.post('/job', upload.array('files'), async (req, res) => {
 		const { total, success, failed, empty } = result;
 		console.log(`Import job completed: ${total} records | ${success} success | ${failed} failed | ${empty} skipped`);
 
+		// Clean up temporary files
+		if (req.files && req.files.length > 0) {
+			for (const file of req.files) {
+				try {
+					fs.unlinkSync(file.path);
+					console.log(`Cleaned up temp file: ${file.path}`);
+				} catch (cleanupError) {
+					console.warn(`Failed to clean up temp file ${file.path}:`, cleanupError.message);
+				}
+			}
+		}
+
 		res.json({
 			success: true,
 			result
@@ -131,6 +158,19 @@ app.post('/job', upload.array('files'), async (req, res) => {
 
 	} catch (error) {
 		console.error('Job error:', error);
+		
+		// Clean up temporary files even on error
+		if (req.files && req.files.length > 0) {
+			for (const file of req.files) {
+				try {
+					fs.unlinkSync(file.path);
+					console.log(`Cleaned up temp file after error: ${file.path}`);
+				} catch (cleanupError) {
+					console.warn(`Failed to clean up temp file ${file.path}:`, cleanupError.message);
+				}
+			}
+		}
+		
 		res.status(500).json({
 			success: false,
 			error: error.message
@@ -147,12 +187,15 @@ app.post('/sample', upload.array('files'), async (req, res) => {
 		// Parse JSON strings
 		const creds = JSON.parse(credentials[0] || '{}');
 		const opts = JSON.parse(options[0] || '{}');
+		
+		// Override any fixData setting from client - must be false for raw preview
+		opts.fixData = false;
 
 		// Force sample settings - no transforms, maxRecords=500, dryRun=true
 		opts.dryRun = true;
 		opts.maxRecords = 500;
 		opts.transformFunc = function id(a) { return a; }; // Identity function
-		opts.fixData = false; // No data shaping
+		opts.fixData = false; // CRITICAL: Keep raw CSV structure
 		opts.removeNulls = false; // Keep raw data as-is
 		opts.flattenData = false; // No flattening
 		opts.vendor = ''; // No vendor transforms
@@ -161,6 +204,7 @@ app.post('/sample', upload.array('files'), async (req, res) => {
 		opts.compress = false; // No compression
 		opts.strict = false; // No validation
 		opts.dedupe = false; // No deduplication
+		opts.recordType = ''; // CRITICAL: Remove recordType to prevent CSV->event transformation
 
 		// Process files or cloud paths (same as main endpoint)
 		let data;
@@ -179,29 +223,15 @@ app.post('/sample', upload.array('files'), async (req, res) => {
 			}
 			// @ts-ignore
 		} else if (req.files && req.files.length > 0) {
+			// Handle local files - pass file paths to mixpanel-import
 			if (req.files.length === 1) {
-				const fileContent = req.files[0].buffer.toString('utf8');
-				try {
-					data = JSON.parse(fileContent);
-				} catch (err) {
-					// Try parsing as JSONL
-					data = fileContent.trim().split('\n').map(line => JSON.parse(line));
-				}
+				// Single file - pass file path
+				data = req.files[0].path;
+				console.log(`Sampling from single local file: ${data}`);
 			} else {
-				// Multiple files - combine into array
-				data = [];
-				// @ts-ignore
-				for (const file of req.files) {
-					const fileContent = file.buffer.toString('utf8');
-					try {
-						const fileData = JSON.parse(fileContent);
-						data = data.concat(Array.isArray(fileData) ? fileData : [fileData]);
-					} catch (err) {
-						// Try parsing as JSONL
-						const jsonlData = fileContent.trim().split('\n').map(line => JSON.parse(line));
-						data = data.concat(jsonlData);
-					}
-				}
+				// Multiple files - pass array of file paths
+				data = req.files.map(file => file.path);
+				console.log(`Sampling from multiple local files: ${data.join(', ')}`);
 			}
 		} else {
 			return res.status(400).json({
@@ -215,6 +245,18 @@ app.post('/sample', upload.array('files'), async (req, res) => {
 		// Run the sample
 		const result = await mixpanelImport(creds, data, opts);
 
+		// Clean up temporary files
+		if (req.files && req.files.length > 0) {
+			for (const file of req.files) {
+				try {
+					fs.unlinkSync(file.path);
+					console.log(`Cleaned up temp file: ${file.path}`);
+				} catch (cleanupError) {
+					console.warn(`Failed to clean up temp file ${file.path}:`, cleanupError.message);
+				}
+			}
+		}
+
 		res.json({
 			success: true,
 			sampleData: result.dryRun || []
@@ -222,6 +264,139 @@ app.post('/sample', upload.array('files'), async (req, res) => {
 
 	} catch (error) {
 		console.error('Sample error:', error);
+		
+		// Clean up temporary files even on error
+		if (req.files && req.files.length > 0) {
+			for (const file of req.files) {
+				try {
+					fs.unlinkSync(file.path);
+					console.log(`Cleaned up temp file after error: ${file.path}`);
+				} catch (cleanupError) {
+					console.warn(`Failed to clean up temp file ${file.path}:`, cleanupError.message);
+				}
+			}
+		}
+		
+		res.status(500).json({
+			success: false,
+			error: error.message
+		});
+	}
+});
+
+// Handle column detection for mapper
+// @ts-ignore
+app.post('/columns', upload.array('files'), async (req, res) => {
+	try {
+		const { credentials, options } = req.body;
+
+		// Parse JSON strings
+		const creds = JSON.parse(credentials[0] || '{}');
+		const opts = JSON.parse(options[0] || '{}');
+		
+		// Override any fixData setting from client - must be false for column detection
+		opts.fixData = false;
+
+		// Force sample settings - let mixpanel-import handle all parsing
+		opts.dryRun = true;
+		opts.maxRecords = 500; // Sample up to 500 records
+		opts.transformFunc = function id(a) { return a; }; // Identity function - no transforms
+		opts.fixData = false; // CRITICAL: Keep raw CSV structure - no event/properties shape
+		opts.removeNulls = false; // Keep all columns
+		opts.flattenData = false; // No flattening
+		opts.vendor = ''; // No vendor transforms
+		opts.fixTime = false; // No time fixing
+		opts.addToken = false; // No token addition
+		opts.compress = false; // No compression
+		opts.strict = false; // No validation
+		opts.dedupe = false; // No deduplication
+		opts.recordType = ''; // CRITICAL: Remove recordType to prevent CSV->event transformation
+
+		// Let mixpanel-import handle file parsing - pass raw data directly
+		let data;
+
+		// Check if cloud paths were provided
+		if (req.body.cloudPaths) {
+			try {
+				const cloudPaths = JSON.parse(req.body.cloudPaths);
+				console.log(`Detecting columns from cloud storage paths:`, cloudPaths);
+				// Only use the first file for column detection
+				data = Array.isArray(cloudPaths) ? cloudPaths[0] : cloudPaths;
+			} catch (err) {
+				return res.status(400).json({
+					success: false,
+					error: 'Invalid cloud paths format'
+				});
+			}
+		} else if (req.files && req.files.length > 0) {
+			// Use uploaded file from disk storage
+			const uploadedFile = req.files[0];
+			console.log(`Detecting columns from uploaded file: ${uploadedFile.originalname}`);
+			console.log(`Using file path: ${uploadedFile.path}`);
+			
+			data = uploadedFile.path; // Pass file path directly
+		} else {
+			return res.status(400).json({
+				success: false,
+				error: 'No files or cloud paths provided'
+			});
+		}
+
+		console.log(`Running column detection with up to ${opts.maxRecords} records`);
+
+		// Let mixpanel-import handle all parsing and get parsed results from dryRun
+		const result = await mixpanelImport(creds, data, opts);
+		
+		const sampleData = result.dryRun || [];
+		console.log(`Got ${sampleData.length} parsed records from mixpanel-import`);
+
+		// Extract unique column names from the parsed dryRun results
+		const columnSet = new Set();
+		sampleData.forEach((record, index) => {
+			if (record && typeof record === 'object') {
+				Object.keys(record).forEach(key => columnSet.add(key));
+			} else {
+				console.log(`Non-object record at index ${index}:`, typeof record, record);
+			}
+		});
+
+		const columns = Array.from(columnSet).sort();
+
+		console.log(`Detected ${columns.length} unique columns:`, columns);
+
+		// Clean up temporary files
+		if (req.files && req.files.length > 0) {
+			for (const file of req.files) {
+				try {
+					fs.unlinkSync(file.path);
+					console.log(`Cleaned up temp file: ${file.path}`);
+				} catch (cleanupError) {
+					console.warn(`Failed to clean up temp file ${file.path}:`, cleanupError.message);
+				}
+			}
+		}
+
+		res.json({
+			success: true,
+			columns: columns,
+			sampleCount: sampleData.length
+		});
+
+	} catch (error) {
+		console.error('Column detection error:', error);
+		
+		// Clean up temporary files even on error
+		if (req.files && req.files.length > 0) {
+			for (const file of req.files) {
+				try {
+					fs.unlinkSync(file.path);
+					console.log(`Cleaned up temp file after error: ${file.path}`);
+				} catch (cleanupError) {
+					console.warn(`Failed to clean up temp file ${file.path}:`, cleanupError.message);
+				}
+			}
+		}
+		
 		res.status(500).json({
 			success: false,
 			error: error.message
@@ -243,6 +418,7 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
 		// Force dry run with maxRecords limit
 		opts.dryRun = true;
 		opts.maxRecords = 100; // Limit dry run to 100 records for testing
+		// Ensure fixData is explicitly controlled by user options, not forced
 
 		// Add transform function if provided
 		if (transformCode && transformCode.trim()) {
@@ -274,29 +450,15 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
 			}
 			// @ts-ignore
 		} else if (req.files && req.files.length > 0) {
+			// Handle local files - pass file paths to mixpanel-import
 			if (req.files.length === 1) {
-				const fileContent = req.files[0].buffer.toString('utf8');
-				try {
-					data = JSON.parse(fileContent);
-				} catch (err) {
-					// Try parsing as JSONL
-					data = fileContent.trim().split('\n').map(line => JSON.parse(line));
-				}
+				// Single file - pass file path
+				data = req.files[0].path;
+				console.log(`Dry run with single local file: ${data}`);
 			} else {
-				// Multiple files - combine into array
-				data = [];
-				// @ts-ignore
-				for (const file of req.files) {
-					const fileContent = file.buffer.toString('utf8');
-					try {
-						const fileData = JSON.parse(fileContent);
-						data = data.concat(Array.isArray(fileData) ? fileData : [fileData]);
-					} catch (err) {
-						// Try parsing as JSONL
-						const jsonlData = fileContent.trim().split('\n').map(line => JSON.parse(line));
-						data = data.concat(jsonlData);
-					}
-				}
+				// Multiple files - pass array of file paths
+				data = req.files.map(file => file.path);
+				console.log(`Dry run with multiple local files: ${data.join(', ')}`);
 			}
 		} else {
 			return res.status(400).json({
@@ -310,7 +472,7 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
 		// Run raw data fetch first (no transforms) for comparison
 		const rawOpts = { ...opts };
 		rawOpts.transformFunc = null;
-		rawOpts.fixData = false;
+		rawOpts.fixData = false; // CRITICAL: Keep raw CSV structure
 		rawOpts.removeNulls = false;
 		rawOpts.flattenData = false;
 		rawOpts.vendor = '';
@@ -321,6 +483,18 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
 		// Run the transformed dry run
 		const transformedResult = await mixpanelImport(creds, data, opts);
 
+		// Clean up temporary files
+		if (req.files && req.files.length > 0) {
+			for (const file of req.files) {
+				try {
+					fs.unlinkSync(file.path);
+					console.log(`Cleaned up temp file: ${file.path}`);
+				} catch (cleanupError) {
+					console.warn(`Failed to clean up temp file ${file.path}:`, cleanupError.message);
+				}
+			}
+		}
+
 		res.json({
 			success: true,
 			result: transformedResult,
@@ -330,6 +504,19 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
 
 	} catch (error) {
 		console.error('Dry run error:', error);
+		
+		// Clean up temporary files even on error
+		if (req.files && req.files.length > 0) {
+			for (const file of req.files) {
+				try {
+					fs.unlinkSync(file.path);
+					console.log(`Cleaned up temp file after error: ${file.path}`);
+				} catch (cleanupError) {
+					console.warn(`Failed to clean up temp file ${file.path}:`, cleanupError.message);
+				}
+			}
+		}
+		
 		res.status(500).json({
 			success: false,
 			error: error.message

@@ -9,6 +9,8 @@ class MixpanelImportUI {
 		this.files = [];
 		this.editor = null;
 		this.sampleData = []; // Store up to 500 sample records for preview
+		this.detectedColumns = []; // Store columns detected from data
+		this.columnMappings = {}; // Store user-defined column mappings
 		this.initializeUI();
 		this.setupEventListeners();
 		this.initializeMonacoEditor();
@@ -39,9 +41,16 @@ class MixpanelImportUI {
 			this.dropzone = new Dropzone('#file-dropzone', {
 				url: '/upload', // This won't be used, we handle manually
 				autoProcessQueue: false,
-				clickable: true,
-				dictDefaultMessage: '',
+				clickable: '#file-dropzone', // Make entire dropzone clickable
+				dictDefaultMessage: `
+					<div class="dropzone-message">
+						<span class="dropzone-icon">⬆️</span>
+						<p>Drop files here or click to browse</p>
+						<small>JSON, JSONL, CSV, Parquet supported</small>
+					</div>
+				`,
 				previewsContainer: false,
+				createImageThumbnails: false,
 				init: function () {
 					this.on('addedfile', (file) => {
 						window.app.addFile(file);
@@ -242,9 +251,11 @@ class MixpanelImportUI {
 
 	updateFileList() {
 		const fileList = document.getElementById('file-list');
+		const columnMapperSection = document.getElementById('column-mapper-section');
 
 		if (this.files.length === 0) {
 			fileList.innerHTML = '';
+			if (columnMapperSection) columnMapperSection.style.display = 'none';
 			return;
 		}
 
@@ -255,6 +266,9 @@ class MixpanelImportUI {
                 <button type="button" class="file-remove" onclick="window.app.removeFile(${index})">✕</button>
             </div>
         `).join('');
+
+		// Show column mapper section when files are added
+		if (columnMapperSection) columnMapperSection.style.display = 'block';
 	}
 
 	formatFileSize(bytes) {
@@ -327,6 +341,14 @@ class MixpanelImportUI {
 		if (seeMoreBtn) {
 			seeMoreBtn.addEventListener('click', () => {
 				this.showMorePreviewRecords();
+			});
+		}
+
+		// Column mapper button - detect columns from data
+		const detectColumnsBtn = document.getElementById('detect-columns-btn');
+		if (detectColumnsBtn) {
+			detectColumnsBtn.addEventListener('click', () => {
+				this.detectColumns();
 			});
 		}
 
@@ -412,8 +434,11 @@ class MixpanelImportUI {
 		if (!cloudPathsEl || !preview) return;
 
 		const cloudPaths = cloudPathsEl.value;
+		const columnMapperSection = document.getElementById('column-mapper-section');
+		
 		if (!cloudPaths.trim()) {
 			preview.innerHTML = '';
+			if (columnMapperSection) columnMapperSection.style.display = 'none';
 			return;
 		}
 
@@ -424,6 +449,11 @@ class MixpanelImportUI {
 		}).join('');
 
 		preview.innerHTML = previewHTML;
+
+		// Show column mapper section when cloud paths are entered
+		if (columnMapperSection && paths.length > 0) {
+			columnMapperSection.style.display = 'block';
+		}
 
 		// Update CLI command when cloud paths change
 		this.updateCLICommand();
@@ -959,6 +989,12 @@ function transform(row) {
 		const vendor = document.getElementById('vendor').value;
 		if (vendor) options.vendor = vendor;
 
+		// Add aliases from column mapper (merged with text input, text takes precedence)
+		const currentAliases = this.getCurrentAliases();
+		if (Object.keys(currentAliases).length > 0) {
+			options.aliases = currentAliases;
+		}
+
 		formData.append('options', JSON.stringify(options));
 
 		// Add transform code if present
@@ -1371,6 +1407,195 @@ function transform(row) {
 			.replace(/:\s*(null)/g, ': <span class="json-null">$1</span>')
 			.replace(/:\s*(-?\d+\.?\d*)/g, ': <span class="json-number">$1</span>')
 			.replace(/([{}[\]])/g, '<span class="json-punctuation">$1</span>');
+	}
+
+	// Column Mapper Methods
+	async detectColumns() {
+		try {
+			// Validation - same as preview data
+			const fileSource = document.querySelector('input[name="fileSource"]:checked').value;
+
+			if (fileSource === 'local' && this.files.length === 0) {
+				this.showError('Please select at least one file to detect columns.');
+				return;
+			}
+
+			if (fileSource !== 'local') {
+				const cloudPathsEl = fileSource === 'gcs' ? 
+					document.getElementById('gcsPaths') : 
+					document.getElementById('s3Paths');
+				
+				if (!cloudPathsEl || !cloudPathsEl.value.trim()) {
+					this.showError('Please enter at least one cloud storage path to detect columns.');
+					return;
+				}
+			}
+
+			// Show loading state
+			const detectBtn = document.getElementById('detect-columns-btn');
+			const originalText = detectBtn.innerHTML;
+			detectBtn.innerHTML = '<span class="btn-icon">⏳</span> Detecting...';
+			detectBtn.disabled = true;
+
+			// Collect form data for column detection
+			const formData = this.collectFormData();
+
+			// Add minimal options for column detection
+			const options = {
+				recordType: document.getElementById('recordType').value || 'event',
+				region: document.getElementById('region')?.value || 'US'
+			};
+
+			formData.append('options', JSON.stringify(options));
+			formData.append('credentials', JSON.stringify({})); // Empty creds for detection
+
+			// Call columns endpoint
+			const response = await fetch('/columns', {
+				method: 'POST',
+				body: formData
+			});
+
+			console.log('Response status:', response.status);
+			console.log('Response headers:', response.headers);
+			
+			const responseText = await response.text();
+			console.log('Raw response:', responseText);
+
+			let result;
+			try {
+				result = JSON.parse(responseText);
+			} catch (parseError) {
+				console.error('JSON parse error:', parseError);
+				throw new Error(`Server returned invalid JSON: ${responseText.substring(0, 100)}...`);
+			}
+
+			if (!result.success) {
+				throw new Error(result.error || 'Column detection failed');
+			}
+
+			// Store detected columns and render mapper
+			this.detectedColumns = result.columns || [];
+			this.renderColumnMapper();
+
+			// Reset button
+			detectBtn.innerHTML = originalText;
+			detectBtn.disabled = false;
+
+		} catch (error) {
+			console.error('Column detection error:', error);
+			this.showError('Column detection failed: ' + error.message);
+
+			// Reset button
+			const detectBtn = document.getElementById('detect-columns-btn');
+			detectBtn.innerHTML = '<span class="btn-icon">🔍</span> Detect Columns from Data';
+			detectBtn.disabled = false;
+		}
+	}
+
+	renderColumnMapper() {
+		if (this.detectedColumns.length === 0) {
+			this.showError('No columns detected in your data.');
+			return;
+		}
+
+		const mapperContent = document.getElementById('column-mapper-content');
+		const mapperGrid = mapperContent.querySelector('.column-mapper-grid');
+
+		// Define Mixpanel target fields with icons and descriptions
+		const mixpanelFields = [
+			{ key: 'event', icon: '🎯', label: 'Event Name', description: 'The name of the event' },
+			{ key: 'time', icon: '⏰', label: 'Timestamp', description: 'Event timestamp (Unix milliseconds)' },
+			{ key: 'distinct_id', icon: '👤', label: 'User ID', description: 'Unique identifier for the user' },
+			{ key: 'insert_id', icon: '🔑', label: 'Insert ID', description: 'Unique identifier for deduplication' },
+			{ key: 'user_id', icon: '🆔', label: 'User ID (Alt)', description: 'Alternative user identifier' },
+			{ key: 'device_id', icon: '📱', label: 'Device ID', description: 'Device identifier' }
+		];
+
+		// Render mapping rows
+		mapperGrid.innerHTML = mixpanelFields.map(field => `
+			<div class="column-mapping-row mixpanel-field-${field.key}">
+				<div class="mixpanel-field-label">
+					<span class="mixpanel-field-icon">${field.icon}</span>
+					${field.label}
+				</div>
+				<select class="source-column-select" data-target="${field.key}">
+					<option value="">-- Select source column --</option>
+					${this.detectedColumns.map(col => 
+						`<option value="${col}" ${this.columnMappings[field.key] === col ? 'selected' : ''}>${col}</option>`
+					).join('')}
+				</select>
+				<button type="button" class="clear-mapping-btn" data-target="${field.key}" title="Clear mapping">
+					✕
+				</button>
+			</div>
+		`).join('');
+
+		// Add event listeners for the dropdowns and clear buttons
+		mapperGrid.querySelectorAll('.source-column-select').forEach(select => {
+			select.addEventListener('change', (e) => {
+				const target = e.target.dataset.target;
+				const value = e.target.value;
+				
+				if (value) {
+					this.columnMappings[target] = value;
+				} else {
+					delete this.columnMappings[target];
+				}
+				
+				this.updateMapperStatus();
+			});
+		});
+
+		mapperGrid.querySelectorAll('.clear-mapping-btn').forEach(btn => {
+			btn.addEventListener('click', (e) => {
+				const target = e.target.dataset.target;
+				const select = mapperGrid.querySelector(`select[data-target="${target}"]`);
+				
+				select.value = '';
+				delete this.columnMappings[target];
+				this.updateMapperStatus();
+			});
+		});
+
+		// Show the mapper content and update status
+		mapperContent.style.display = 'block';
+		this.updateMapperStatus();
+	}
+
+	updateMapperStatus() {
+		const statusEl = document.getElementById('mapper-status');
+		const statusContainer = statusEl.parentElement;
+		const mappingCount = Object.keys(this.columnMappings).length;
+
+		if (mappingCount === 0) {
+			statusEl.textContent = `Detected ${this.detectedColumns.length} columns from your data. Select mappings above to create aliases.`;
+			statusContainer.classList.remove('has-mappings');
+		} else {
+			const mappings = Object.entries(this.columnMappings)
+				.map(([target, source]) => `${source} → ${target}`)
+				.join(', ');
+			
+			statusEl.innerHTML = `<span class="mapping-count">${mappingCount} mapping${mappingCount === 1 ? '' : 's'}</span> created: ${mappings}`;
+			statusContainer.classList.add('has-mappings');
+		}
+	}
+
+	// Method to get the current aliases (combining text input + mapper)
+	getCurrentAliases() {
+		// Get aliases from text input (if it exists)
+		const aliasesInput = document.getElementById('aliases');
+		let textAliases = {};
+		
+		if (aliasesInput && aliasesInput.value.trim()) {
+			try {
+				textAliases = JSON.parse(aliasesInput.value.trim());
+			} catch (e) {
+				console.warn('Invalid JSON in aliases field:', e);
+			}
+		}
+
+		// Merge with column mapper aliases (text input takes precedence)
+		return { ...this.columnMappings, ...textAliases };
 	}
 }
 

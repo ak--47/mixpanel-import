@@ -131,6 +131,29 @@
 				</div>
 			</section>
 
+			<!-- Column Mapper Section -->
+			<section class="card" id="column-mapper-section" style="display: none;">
+				<h2 class="section-title">🔗 Column Mapping (Optional)</h2>
+				<p class="section-description">Map your data columns to common Mixpanel fields. This creates simple column renaming aliases for you.</p>
+				
+				<div class="column-mapper-actions">
+					<button type="button" id="detect-columns-btn" class="btn btn-secondary">
+						<span class="btn-icon">🔍</span>
+						Detect Columns from Data
+					</button>
+				</div>
+
+				<div id="column-mapper-content" style="display: none;">
+					<div class="column-mapper-grid">
+						<!-- Mixpanel field mappings will be populated here -->
+					</div>
+					
+					<div class="column-mapper-status">
+						<p id="mapper-status" class="section-description"></p>
+					</div>
+				</div>
+			</section>
+
 			<!-- Record Type Selection -->
 			<section class="card">
 				<h2 class="section-title">📋 Type of Import</h2>
