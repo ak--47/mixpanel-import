@@ -10,10 +10,29 @@ const port = process.env.PORT || 3000;
 // @ts-ignore - Using disk storage provides path property on files
 const fs = require('fs');
 
-// Ensure tmp directory exists
+// Ensure tmp directory exists and clean it on startup
 const tmpDir = path.join(__dirname, '..', 'tmp');
 if (!fs.existsSync(tmpDir)) {
 	fs.mkdirSync(tmpDir, { recursive: true });
+} else {
+	// Clean up any existing temp files on startup
+	try {
+		const files = fs.readdirSync(tmpDir);
+		let cleanedCount = 0;
+		for (const file of files) {
+			const filePath = path.join(tmpDir, file);
+			const stats = fs.statSync(filePath);
+			if (stats.isFile()) {
+				fs.unlinkSync(filePath);
+				cleanedCount++;
+			}
+		}
+		if (cleanedCount > 0) {
+			console.log(`Cleaned up ${cleanedCount} temporary files from ./tmp/`);
+		}
+	} catch (cleanupError) {
+		console.warn('Failed to clean tmp directory on startup:', cleanupError.message);
+	}
 }
 
 const upload = multer({
