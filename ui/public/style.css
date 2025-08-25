@@ -262,6 +262,21 @@ small {
     background: var(--bg-tertiary);
 }
 
+/* Recommended badges */
+.recommended-badge {
+    display: inline-block;
+    background: var(--success-bg);
+    color: var(--success);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 12px;
+    border: 1px solid var(--success);
+    margin-left: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
 input[type="checkbox"],
 input[type="radio"] {
     width: 16px;
@@ -373,6 +388,10 @@ input[type="radio"] {
     background: none;
     padding: 0;
     font-family: inherit;
+}
+
+.example code.after-transform {
+    color: var(--mp-blue);
 }
 
 .success-text {

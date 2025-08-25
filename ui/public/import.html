@@ -118,38 +118,50 @@
 				</div>
 
 				<!-- Data Preview Display -->
-				<div id="data-preview" class="preview-section" style="display: none; margin-top: 20px;">
-					<h3>Raw Data Preview</h3>
-					<p class="section-description">This shows your data as it appears before any transforms or processing.</p>
-					<div id="preview-content" class="results-data"></div>
-					<div class="preview-actions" style="margin-top: 16px; text-align: center;">
-						<button type="button" id="see-more-btn" class="btn btn-secondary btn-sm">
-							<span class="btn-icon">🔄</span>
-							See More Records
-						</button>
+				<div id="data-preview" class="preview-section collapsible-section" style="display: none; margin-top: 20px;">
+					<div class="section-header" onclick="toggleSection('preview-content-wrapper')">
+						<span class="section-icon">👁️</span>
+						<h3>Raw Data Preview</h3>
+						<span class="toggle-icon">▲</span>
+					</div>
+					<div id="preview-content-wrapper" class="collapsible-content">
+						<p class="section-description">This shows your data as it appears before any transforms or processing.</p>
+						<div id="preview-content" class="results-data"></div>
+						<div class="preview-actions" style="margin-top: 16px; text-align: center;">
+							<button type="button" id="see-more-btn" class="btn btn-secondary btn-sm">
+								<span class="btn-icon">🔄</span>
+								See More Records
+							</button>
+						</div>
 					</div>
 				</div>
 			</section>
 
 			<!-- Column Mapper Section -->
-			<section class="card" id="column-mapper-section" style="display: none;">
-				<h2 class="section-title">🔗 Column Mapping (Optional)</h2>
-				<p class="section-description">Map your data columns to common Mixpanel fields. This creates simple column renaming aliases for you.</p>
-				
-				<div class="column-mapper-actions">
-					<button type="button" id="detect-columns-btn" class="btn btn-secondary">
-						<span class="btn-icon">🔍</span>
-						Detect Columns from Data
-					</button>
+			<section class="card collapsible-section" id="column-mapper-section" style="display: none;">
+				<div class="section-header" onclick="toggleSection('column-mapper-wrapper')">
+					<span class="section-icon">🔗</span>
+					<h2>Column Mapping (Optional)</h2>
+					<span class="toggle-icon">▲</span>
 				</div>
-
-				<div id="column-mapper-content" style="display: none;">
-					<div class="column-mapper-grid">
-						<!-- Mixpanel field mappings will be populated here -->
-					</div>
+				<div id="column-mapper-wrapper" class="collapsible-content">
+					<p class="section-description">Map your data columns to common Mixpanel fields. This creates simple column renaming aliases for you.</p>
 					
-					<div class="column-mapper-status">
-						<p id="mapper-status" class="section-description"></p>
+					<div class="column-mapper-actions">
+						<button type="button" id="detect-columns-btn" class="btn btn-secondary">
+							<span class="btn-icon">🔍</span>
+							Detect Columns from Data
+						</button>
+					</div>
+
+					<div id="column-mapper-content" style="display: none;">
+						<div class="column-mapper-grid">
+							<!-- Mixpanel field mappings will be populated here -->
+						</div>
+						
+						<div class="column-mapper-status">
+							<p id="mapper-status" class="section-description"></p>
+						</div>
 					</div>
 				</div>
 			</section>
@@ -157,8 +169,7 @@
 			<!-- Record Type Selection -->
 			<section class="card">
 				<h2 class="section-title">📋 Type of Import</h2>
-				<p class="section-description">Select what type of data you're importing to show the correct
-					authentication options.</p>
+				<p class="section-description">Select your data type to show the correct authentication options.</p>
 
 				<div class="form-group">
 					<label for="recordType">Import Type*</label>
@@ -171,7 +182,7 @@
 						<option value="group">👥 Group Profiles</option>
 						<option value="table">📋 Lookup Tables</option>
 					</select>
-					<small>Different import types require different authentication settings</small>
+					<small>Authentication requirements vary by type</small>
 				</div>
 			</section>
 
@@ -179,10 +190,8 @@
 			<section class="card"
 				id="credentials-section"
 				style="display: none;">
-				<h2 class="section-title">🔑 Mixpanel Credentials</h2>
-				<p class="section-description"
-					id="credentials-description">Select an import type above to see the required authentication
-					settings.</p>
+				<h2 class="section-title">🔑 Credentials</h2>
+				<p class="section-description" id="credentials-description">Authentication requirements depend on your import type.</p>
 
 				<div class="form-group"
 					id="project-group"
@@ -193,7 +202,7 @@
 						name="project"
 						placeholder="Your project ID"
 						autocomplete="off">
-					<small>Found in your Mixpanel project settings</small>
+					<small>From your Mixpanel project settings</small>
 				</div>
 
 				<div class="form-group"
@@ -205,7 +214,7 @@
 						name="lookupTableId"
 						placeholder="Your lookup table ID"
 						autocomplete="off">
-					<small>ID of the lookup table to import into</small>
+					<small>Lookup table ID from Mixpanel</small>
 				</div>
 
 				<!-- Auth Method Toggle -->
@@ -259,7 +268,7 @@
 							id="secret"
 							name="secret"
 							placeholder="Your project's API secret">
-						<small>Legacy authentication method</small>
+						<small>Legacy auth method</small>
 					</div>
 				</div>
 
@@ -267,13 +276,12 @@
 				<div class="form-group"
 					id="token-group"
 					style="display: none;">
-					<label for="token">Project Token*</label>
+					<label for="token">Mixpanel Project Token*</label>
 					<input type="text"
 						id="token"
 						name="token"
 						placeholder="Your project token"
 						autocomplete="off">
-					<small>Required for user/group profiles</small>
 				</div>
 
 				<div class="form-group"
@@ -285,7 +293,6 @@
 						name="groupKey"
 						placeholder="Your group analytics key"
 						autocomplete="off">
-					<small>Required for group profile imports</small>
 				</div>
 
 				<!-- S3 Credentials -->
@@ -317,7 +324,31 @@
 							name="s3Region"
 							placeholder="us-east-1"
 							autocomplete="off">
-						<small>AWS region where your S3 bucket is located (e.g., us-east-1, eu-west-1)</small>
+					</div>
+				</div>
+
+				<!-- GCS Credentials -->
+				<div class="gcs-credentials"
+					id="gcs-credentials"
+					style="display: none;">
+					<h3 class="subsection-title">Google Cloud Storage Credentials</h3>
+					<div class="form-group">
+						<label for="gcpProjectId">GCP Project ID*</label>
+						<input type="text"
+							id="gcpProjectId"
+							name="gcpProjectId"
+							value="mixpanel-gtm-training"
+							placeholder="mixpanel-gtm-training"
+							autocomplete="off">
+					</div>
+					<div class="form-group">
+						<label for="gcsCredentials">Credentials JSON File (Optional)</label>
+						<input type="file"
+							id="gcsCredentials"
+							name="gcsCredentials"
+							accept=".json"
+							autocomplete="off">
+						<small>Upload service account JSON file, or leave empty to use Application Default Credentials</small>
 					</div>
 				</div>
 
@@ -328,39 +359,10 @@
 			<!-- Configuration Section -->
 			<section class="card">
 				<h2 class="section-title">⚙️ Import Configuration</h2>
-				<p class="section-description">Fine-tune your import settings for optimal performance and data quality.
-				</p>
+				<p class="section-description">Fine-tune settings for optimal performance and data quality.</p>
 
 				<!-- Core Settings -->
 				<div class="config-section">
-					<h3 class="subsection-title">Core Settings</h3>
-					<div class="form-row">
-						<div class="form-group">
-							<label for="workers"
-								title="Higher values import faster but may hit rate limits. Start with 10 and increase if your network can handle more concurrent requests">Concurrency
-								Workers</label>
-							<input type="number"
-								id="workers"
-								name="workers"
-								value="10"
-								min="1"
-								max="50"
-								autocomplete="off">
-							<small>Number of concurrent HTTP requests (default: 10)</small>
-						</div>
-						<div class="form-group">
-							<label for="recordsPerBatch">Records per Batch</label>
-							<input type="number"
-								id="recordsPerBatch"
-								name="recordsPerBatch"
-								value="2000"
-								min="1"
-								max="5000"
-								autocomplete="off">
-							<small>Records per API request (default: 2000)</small>
-						</div>
-					</div>
-
 					<div class="form-row">
 						<div class="form-group">
 							<label for="region">Data Residency</label>
@@ -370,7 +372,7 @@
 								<option value="EU">🇪🇺 European Union</option>
 								<option value="IN">🇮🇳 India</option>
 							</select>
-							<small>Your Mixpanel data residency region</small>
+							<small>Your data residency region</small>
 						</div>
 						<div class="form-group">
 							<label for="vendor">Vendor Transform</label>
@@ -387,7 +389,7 @@
 								<option value="mparticle">mParticle</option>
 								<option value="posthog">PostHog</option>
 							</select>
-							<small>Transform data from other analytics platforms</small>
+							<small>Transform from other platforms</small>
 						</div>
 					</div>
 				</div>
@@ -412,6 +414,33 @@
 					<div id="performance-section"
 						class="collapsible-content"
 						style="display: none;">
+						<div class="form-row">
+							<div class="form-group">
+								<label for="workers"
+									title="Higher values import faster but may hit rate limits. Start with 10 and increase if your network can handle more concurrent requests">Concurrency
+									Workers</label>
+								<input type="number"
+									id="workers"
+									name="workers"
+									value="10"
+									min="1"
+									max="50"
+									autocomplete="off">
+								<small>Number of concurrent HTTP requests (default: 10)</small>
+							</div>
+							<div class="form-group">
+								<label for="recordsPerBatch">Records per Batch</label>
+								<input type="number"
+									id="recordsPerBatch"
+									name="recordsPerBatch"
+									value="2000"
+									min="1"
+									max="5000"
+									autocomplete="off">
+								<small>Records per API request (default: 2000)</small>
+							</div>
+						</div>
+
 						<div class="form-row">
 							<div class="form-group">
 								<label for="bytesPerBatch">Bytes per Batch</label>
@@ -510,8 +539,7 @@
 								<div class="example">
 									<code>{"name": "John", "age": 30}</code> →
 									<code>{"event": "...", "properties": {"name": "John", "age": 30}}</code>
-									<small>Ensures proper Mixpanel event structure, converts IDs to strings, adds
-										$insert_id</small>
+									<small>Ensures proper event structure, converts IDs, adds $insert_id</small>
 								</div>
 							</div>
 
@@ -524,7 +552,7 @@
 								</label>
 								<div class="example">
 									<code>{"time": "2025-08-09T15:25:00Z"}</code> → <code>{"time": 1754767500}</code>
-									<small>Converts ISO dates and other formats to Unix epoch milliseconds</small>
+									<small>Converts timestamps to Unix milliseconds</small>
 								</div>
 							</div>
 
@@ -537,8 +565,7 @@
 								</label>
 								<div class="example">
 									<code>{"event": ""}</code> → <span class="error-text">❌ Rejected</span>
-									<small>Fail fast on validation errors (empty events, missing required
-										fields)</small>
+									<small>Fail fast on validation errors</small>
 								</div>
 							</div>
 
@@ -552,8 +579,7 @@
 								<div class="example">
 									<code>{"name": "John", "email": null, "tags": []}</code> →
 									<code>{"name": "John"}</code>
-									<small>Removes null values, empty strings, empty arrays/objects from
-										properties</small>
+									<small>Removes null values, empty strings, empty arrays/objects</small>
 								</div>
 							</div>
 
@@ -566,8 +592,7 @@
 								</label>
 								<div class="example">
 									<code>{"user": {"plan": "pro"}}</code> → <code>{"user.plan": "pro"}</code>
-									<small>Flattens nested objects in properties using dot notation (configurable
-										separator)</small>
+									<small>Flattens nested objects using dot notation</small>
 								</div>
 							</div>
 
@@ -580,8 +605,7 @@
 								</label>
 								<div class="example">
 									<code>{"meta": "{\"plan\":\"pro\"}"}</code> → <code>{"meta": {"plan": "pro"}}</code>
-									<small>Detects and parses JSON strings within properties, handles escaped
-										JSON</small>
+									<small>Detects and parses JSON strings within properties</small>
 								</div>
 							</div>
 
@@ -595,8 +619,7 @@
 								<div class="example">
 									<span class="muted-text">Same record × 3</span> → <span class="success-text">✓ 1
 										unique record</span>
-									<small>Uses MurmurHash v3 to detect and skip identical records across entire
-										dataset</small>
+									<small>Uses MurmurHash v3 to detect and skip identical records</small>
 								</div>
 							</div>
 						</div>
@@ -882,8 +905,7 @@
 			<!-- Transform Section -->
 			<section class="card">
 				<h2 class="section-title">🔧 Data Transform (Optional)</h2>
-				<p class="section-description">Write custom JavaScript to transform your data before importing. Use the
-					preview to test your changes.</p>
+				<p class="section-description">Write custom JavaScript to transform data before importing. Use preview to test changes.</p>
 
 				<div class="transform-editor">
 					<div id="monaco-editor"
@@ -893,8 +915,7 @@
 						<ul>
 							<li><code>row</code> - The current record object to transform</li>
 						</ul>
-						<p><strong>Examples:</strong> Add properties, rename fields, skip records (return {}), or split
-							into multiple records (return array)</p>
+						<p><strong>Examples:</strong> Add properties, rename fields, skip records (return {}), or split records (return array)</p>
 					</div>
 				</div>
 
@@ -915,8 +936,8 @@
 
 			<!-- CLI Command Preview -->
 			<section class="card">
-				<h2 class="section-title">💻 Equivalent CLI Command</h2>
-				<p class="section-description">Copy this command to run the same import from your terminal.</p>
+				<h2 class="section-title">💻 CLI Command</h2>
+				<p class="section-description">Copy this command to run the same import from terminal.</p>
 
 				<div class="cli-preview">
 					<div class="cli-header">
@@ -928,8 +949,7 @@
 							Copy
 						</button>
 					</div>
-					<pre id="cli-command"
-						class="cli-command">Select options above to generate CLI command...</pre>
+					<pre id="cli-command" class="cli-command">Select options above to generate CLI command...</pre>
 				</div>
 			</section>
 
@@ -956,7 +976,7 @@
 				<div class="loading-content">
 					<div class="loading-spinner"></div>
 					<h3 id="loading-title">Processing...</h3>
-					<p id="loading-message">Importing your data to Mixpanel</p>
+					<p id="loading-message">Importing your data to Mixpanel. Check your terminal for detailed progress updates.</p>
 				</div>
 			</div>
 

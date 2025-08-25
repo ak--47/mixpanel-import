@@ -147,7 +147,7 @@ class MixpanelExportUI {
 				descriptionElement.classList.remove('fading');
 
 				// Optional: Log the combination for debugging/fun
-				console.log(`New LTE combo: ${newCombo}`);
+				// console.log(`New LTE combo: ${newCombo}`);
 			}, 250); // Half of the transition time
 		};
 
@@ -219,7 +219,8 @@ class MixpanelExportUI {
 		// Hide all groups initially
 		const allGroups = [
 			'project-group', 'lookupTableId-group', 'token-group', 'groupKey-group',
-			'dataGroupId-group', 'secondToken-group', 'auth-toggle', 'service-auth', 'secret-auth'
+			'dataGroupId-group', 'secondToken-group', 'secondRegion-group', 'auth-toggle', 
+			'service-auth', 'secret-auth', 'destination-title', 'destination-description'
 		];
 		allGroups.forEach(groupId => {
 			const element = document.getElementById(groupId);
@@ -229,7 +230,7 @@ class MixpanelExportUI {
 		// Show credentials section if a record type is selected
 		if (!recordType) {
 			credentialsSection.style.display = 'none';
-			this.updateCLICommand(); // Update CLI when record type changes
+			this.updateCLICommand();
 			return;
 		}
 
@@ -238,13 +239,33 @@ class MixpanelExportUI {
 		// Define authentication requirements based on export type
 		switch (recordType) {
 			case 'export':
-			case 'profile-export':
-			case 'profile-delete':
-				// API secret OR service user/pass and project_id required, dataGroupId optional
-				credentialsDescription.textContent = 'Exports require either API secret or service account credentials with project ID. Data Group ID is optional.';
+				// Events: project ID + token/secret OR service account required, start/end dates required
+				credentialsDescription.textContent = 'Event exports require project ID and token/secret OR service account. Start and end dates are required.';
 				document.getElementById('project-group').style.display = 'block';
+				document.getElementById('token-group').style.display = 'block';
 				document.getElementById('auth-toggle').style.display = 'block';
 				document.getElementById('service-auth').style.display = 'block';
+				break;
+
+			case 'profile-export':
+			case 'profile-delete':
+				// User profiles: project ID + token/secret OR service account required
+				credentialsDescription.textContent = 'User profile operations require project ID and token/secret OR service account.';
+				document.getElementById('project-group').style.display = 'block';
+				document.getElementById('token-group').style.display = 'block';
+				document.getElementById('auth-toggle').style.display = 'block';
+				document.getElementById('service-auth').style.display = 'block';
+				break;
+
+			case 'group-export':
+			case 'group-delete':
+				// Group profiles: project ID + token/secret OR service account + groupKey + dataGroupId required
+				credentialsDescription.textContent = 'Group profile operations require project ID and token/secret OR service account, plus groupKey and dataGroupId.';
+				document.getElementById('project-group').style.display = 'block';
+				document.getElementById('token-group').style.display = 'block';
+				document.getElementById('auth-toggle').style.display = 'block';
+				document.getElementById('service-auth').style.display = 'block';
+				document.getElementById('groupKey-group').style.display = 'block';
 				document.getElementById('dataGroupId-group').style.display = 'block';
 				break;
 
@@ -252,7 +273,7 @@ class MixpanelExportUI {
 			case 'annotations':
 			case 'get-annotations':
 			case 'delete-annotations':
-				// Service user/pass and project_id required
+				// Other operations: service account required
 				credentialsDescription.textContent = 'This operation requires service account credentials and project ID.';
 				document.getElementById('project-group').style.display = 'block';
 				document.getElementById('service-auth').style.display = 'block';
@@ -261,17 +282,44 @@ class MixpanelExportUI {
 				break;
 
 			case 'export-import-events':
-			case 'export-import-profiles':
-				// API secret OR service user/pass and project_id required, secondToken optional
-				credentialsDescription.textContent = 'Export-import operations require either API secret or service account credentials. Second token, group key, and data group ID are optional.';
+				// Export-import events: project ID + token/secret OR service account + start/end dates + optional destination
+				credentialsDescription.textContent = 'Export-import events require project ID and token/secret OR service account, plus start/end dates. Destination project is optional.';
 				document.getElementById('project-group').style.display = 'block';
+				document.getElementById('token-group').style.display = 'block';
 				document.getElementById('auth-toggle').style.display = 'block';
 				document.getElementById('service-auth').style.display = 'block';
+				document.getElementById('destination-title').style.display = 'block';
+				document.getElementById('destination-description').style.display = 'block';
 				document.getElementById('secondToken-group').style.display = 'block';
-				if (recordType === 'export-import-profiles') {
-					document.getElementById('groupKey-group').style.display = 'block';
-					document.getElementById('dataGroupId-group').style.display = 'block';
-				}
+				document.getElementById('secondRegion-group').style.display = 'block';
+				break;
+
+			case 'export-import-profiles':
+				// Export-import user profiles: project ID + token/secret OR service account + optional destination
+				credentialsDescription.textContent = 'Export-import user profiles require project ID and token/secret OR service account. Destination project is optional.';
+				document.getElementById('project-group').style.display = 'block';
+				document.getElementById('token-group').style.display = 'block';
+				document.getElementById('auth-toggle').style.display = 'block';
+				document.getElementById('service-auth').style.display = 'block';
+				document.getElementById('destination-title').style.display = 'block';
+				document.getElementById('destination-description').style.display = 'block';
+				document.getElementById('secondToken-group').style.display = 'block';
+				document.getElementById('secondRegion-group').style.display = 'block';
+				break;
+
+			case 'export-import-groups':
+				// Export-import group profiles: project ID + token/secret OR service account + groupKey + dataGroupId + optional destination
+				credentialsDescription.textContent = 'Export-import group profiles require project ID and token/secret OR service account, plus groupKey and dataGroupId. Destination project is optional.';
+				document.getElementById('project-group').style.display = 'block';
+				document.getElementById('token-group').style.display = 'block';
+				document.getElementById('auth-toggle').style.display = 'block';
+				document.getElementById('service-auth').style.display = 'block';
+				document.getElementById('groupKey-group').style.display = 'block';
+				document.getElementById('dataGroupId-group').style.display = 'block';
+				document.getElementById('destination-title').style.display = 'block';
+				document.getElementById('destination-description').style.display = 'block';
+				document.getElementById('secondToken-group').style.display = 'block';
+				document.getElementById('secondRegion-group').style.display = 'block';
 				break;
 
 			default:
@@ -333,6 +381,39 @@ class MixpanelExportUI {
 				break;
 			}
 
+			case 'group-export':
+			case 'group-delete': {
+				// API secret OR service user/pass and project_id + groupKey + dataGroupId required
+				const groupProject = document.getElementById('project').value;
+				if (!groupProject) {
+					return { isValid: false, message: 'Project ID is required for group operations.' };
+				}
+
+				const groupKey = document.getElementById('groupKey').value;
+				const dataGroupId = document.getElementById('dataGroupId').value;
+				if (!groupKey) {
+					return { isValid: false, message: 'Group key is required for group operations.' };
+				}
+				if (!dataGroupId) {
+					return { isValid: false, message: 'Data group ID is required for group operations.' };
+				}
+
+				const groupAuthMethod = document.querySelector('input[name="authMethod"]:checked')?.value;
+				if (groupAuthMethod === 'service') {
+					const groupAcct = document.getElementById('acct').value;
+					const groupPass = document.getElementById('pass').value;
+					if (!groupAcct || !groupPass) {
+						return { isValid: false, message: 'Service account credentials are required for group operations.' };
+					}
+				} else {
+					const groupSecret = document.getElementById('secret').value;
+					if (!groupSecret) {
+						return { isValid: false, message: 'API secret is required for group operations.' };
+					}
+				}
+				break;
+			}
+
 			case 'export-import-events':
 			case 'export-import-profiles': {
 				// API secret OR service user/pass and project_id required
@@ -352,6 +433,38 @@ class MixpanelExportUI {
 					const eiSecret = document.getElementById('secret').value;
 					if (!eiSecret) {
 						return { isValid: false, message: 'API secret is required for export-import operations.' };
+					}
+				}
+				break;
+			}
+
+			case 'export-import-groups': {
+				// API secret OR service user/pass and project_id + groupKey + dataGroupId required
+				const eigProject = document.getElementById('project').value;
+				if (!eigProject) {
+					return { isValid: false, message: 'Project ID is required for export-import group operations.' };
+				}
+
+				const eigGroupKey = document.getElementById('groupKey').value;
+				const eigDataGroupId = document.getElementById('dataGroupId').value;
+				if (!eigGroupKey) {
+					return { isValid: false, message: 'Group key is required for export-import group operations.' };
+				}
+				if (!eigDataGroupId) {
+					return { isValid: false, message: 'Data group ID is required for export-import group operations.' };
+				}
+
+				const eigAuthMethod = document.querySelector('input[name="authMethod"]:checked')?.value;
+				if (eigAuthMethod === 'service') {
+					const eigAcct = document.getElementById('acct').value;
+					const eigPass = document.getElementById('pass').value;
+					if (!eigAcct || !eigPass) {
+						return { isValid: false, message: 'Service account credentials are required for export-import group operations.' };
+					}
+				} else {
+					const eigSecret = document.getElementById('secret').value;
+					if (!eigSecret) {
+						return { isValid: false, message: 'API secret is required for export-import group operations.' };
 					}
 				}
 				break;

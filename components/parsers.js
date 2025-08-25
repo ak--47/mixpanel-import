@@ -601,7 +601,7 @@ function itemStream(filePath, type = "jsonl", job, isGzipped = false) {
 	/**
 	 * Create a stream pipeline with optional gzip decompression
 	 * @param {string} file - file path
-	 * @returns {stream.Readable} - processed stream
+	 * @returns {stream.Readable | stream.Transform} - processed stream
 	 */
 	const createStreamWithGzipSupport = (file) => {
 		let fileStream = fs.createReadStream(file, streamOpts);
@@ -824,6 +824,8 @@ function csvStreamArray(filePaths, jobConfig, isGzipped = false) {
  * streamer for csv files
  * @param  {string} filePath
  * @param {JobConfig} jobConfig
+ * @param {boolean} isGzipped
+ * @returns {stream.Readable}
  */
 function csvStreamer(filePath, jobConfig, isGzipped = false) {
 	let fileStream = fs.createReadStream(path.resolve(filePath));

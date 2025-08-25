@@ -175,8 +175,6 @@ class MixpanelImportUI {
 				descriptionElement.textContent = newCombo;
 				descriptionElement.classList.remove('fading');
 
-				// Optional: Log the combination for debugging/fun
-				console.log(`New ETL combo: ${newCombo}`);
 			}, 250); // Half of the transition time
 		};
 
@@ -394,18 +392,24 @@ class MixpanelImportUI {
 		const gcsUpload = document.getElementById('gcs-upload');
 		const s3Upload = document.getElementById('s3-upload');
 		const s3Credentials = document.getElementById('s3-credentials');
+		const gcsCredentials = document.getElementById('gcs-credentials');
+
+		// Clear context when switching import sources
+		this.clearImportContext();
 
 		// Hide all upload sections first
 		localUpload.style.display = 'none';
 		gcsUpload.style.display = 'none';
 		s3Upload.style.display = 'none';
 		s3Credentials.style.display = 'none';
+		gcsCredentials.style.display = 'none';
 
 		// Show the selected upload section
 		if (fileSource === 'local') {
 			localUpload.style.display = 'block';
 		} else if (fileSource === 'gcs') {
 			gcsUpload.style.display = 'block';
+			gcsCredentials.style.display = 'block';
 		} else if (fileSource === 's3') {
 			s3Upload.style.display = 'block';
 			s3Credentials.style.display = 'block';
@@ -457,6 +461,36 @@ class MixpanelImportUI {
 
 		// Update CLI command when cloud paths change
 		this.updateCLICommand();
+	}
+
+	// Clear all import context when switching sources
+	clearImportContext() {
+		// Clear files
+		this.files = [];
+		this.updateFileList();
+		
+		// Clear cloud paths
+		const gcsPathsInput = document.getElementById('gcsPaths');
+		const s3PathsInput = document.getElementById('s3Paths');
+		if (gcsPathsInput) gcsPathsInput.value = '';
+		if (s3PathsInput) s3PathsInput.value = '';
+		
+		// Clear previews
+		const gcsPreview = document.getElementById('gcs-file-list');
+		const s3Preview = document.getElementById('s3-file-list');
+		if (gcsPreview) gcsPreview.innerHTML = '';
+		if (s3Preview) s3Preview.innerHTML = '';
+		
+		// Clear sample data and hide preview
+		this.sampleData = [];
+		const dataPreview = document.getElementById('data-preview');
+		if (dataPreview) dataPreview.style.display = 'none';
+		
+		// Clear column mappings
+		this.detectedColumns = [];
+		this.columnMappings = {};
+		const columnMapperSection = document.getElementById('column-mapper-section');
+		if (columnMapperSection) columnMapperSection.style.display = 'none';
 	}
 
 	updateFieldVisibility() {
@@ -795,45 +829,16 @@ class MixpanelImportUI {
 	getDefaultTransformFunction() {
 		return `
 function transform(row) {
-	// This function is called for each record in your data.
-	// you can use it to 
-	//   - add new props
-	//   - modify existing props
-	//   - filter unwanted data (return {}) to skip)
-	//   - split records (return array to create multiple records)
-
-	// Examples:
-    
-    // Add a custom property
-    // row.custom_source = 'my-import';
-    
-    // Fix timestamp format (convert to Unix milliseconds)
-    // if (row.timestamp) {
-    //     row.time = new Date(row.timestamp).getTime();
-    // }
-    
-    // Rename properties
-    // if (row.user_id) {
-    //     row.distinct_id = row.user_id;
-    //     delete row.user_id;
-    // }
-    
-    // Skip invalid records
-    // if (!row.event || !row.distinct_id) {
-    //     return {}; // Skip this record
-    // }
-    
-    // Split one record into multiple
-    // if (row.events && Array.isArray(row.events)) {
-    //     return row.events.map(event => ({
-    //         event: event.name,
-    //         properties: { ...row.properties, ...event.properties }
-    //     }));
-    // }
+	// Transform each record: add props, rename fields, filter, or split
 	
-	// always return the (possibly modified) record
-	// you can return {} which will exclude the record (like a filter)
-    return row; 
+	// Examples:
+	// row.custom_source = 'my-import'; // Add property
+	// row.time = new Date(row.timestamp).getTime(); // Fix time
+	// row.distinct_id = row.user_id; delete row.user_id; // Rename
+	// if (!row.event) return {}; // Skip record
+	// return [row1, row2]; // Split into multiple
+	
+	return row; // Return modified record
 }`;
 	}
 
@@ -953,6 +958,21 @@ function transform(row) {
 			if (s3RegionElement && s3RegionElement.value) credentials.s3Region = s3RegionElement.value;
 		}
 
+		// Add GCS credentials if GCS is selected
+		if (fileSource === 'gcs') {
+			const gcpProjectIdElement = document.getElementById('gcpProjectId');
+			const gcsCredentialsElement = document.getElementById('gcsCredentials');
+			
+			if (gcpProjectIdElement && gcpProjectIdElement.value) {
+				credentials.gcpProjectId = gcpProjectIdElement.value;
+			}
+			
+			// Add GCS credentials file if uploaded
+			if (gcsCredentialsElement?.files?.length > 0) {
+				formData.append('gcsCredentials', gcsCredentialsElement.files[0]);
+			}
+		}
+
 		const dataGroupIdElement = document.getElementById('dataGroupId');
 		if (dataGroupIdElement && dataGroupIdElement.closest('.form-group').style.display !== 'none' && dataGroupIdElement.value) {
 			credentials.dataGroupId = dataGroupIdElement.value;
@@ -1017,10 +1037,16 @@ function transform(row) {
 				return;
 			}
 
-			if (fileSource === 'cloud') {
-				const cloudPaths = document.getElementById('cloudPaths').value;
-				if (!cloudPaths.trim()) {
-					this.showError('Please enter at least one cloud storage path to preview.');
+			if (fileSource === 'gcs') {
+				const gcsPaths = document.getElementById('gcsPaths').value;
+				if (!gcsPaths.trim()) {
+					this.showError('Please enter at least one GCS path to preview.');
+					return;
+				}
+			} else if (fileSource === 's3') {
+				const s3Paths = document.getElementById('s3Paths').value;
+				if (!s3Paths.trim()) {
+					this.showError('Please enter at least one S3 path to preview.');
 					return;
 				}
 			}
@@ -1138,17 +1164,30 @@ function transform(row) {
 				return;
 			}
 
-			if (fileSource === 'cloud') {
-				const cloudPaths = document.getElementById('cloudPaths').value;
-				if (!cloudPaths.trim()) {
-					this.showError('Please enter at least one cloud storage path.');
+			if (fileSource === 'gcs') {
+				const gcsPaths = document.getElementById('gcsPaths').value;
+				if (!gcsPaths.trim()) {
+					this.showError('Please enter at least one GCS path.');
 					return;
 				}
 
-				const paths = cloudPaths.split(/[,\n]/).map(p => p.trim()).filter(p => p);
+				const paths = gcsPaths.split(/[,\n]/).map(p => p.trim()).filter(p => p);
 				const invalidPaths = paths.filter(p => !p.startsWith('gs://'));
 				if (invalidPaths.length > 0) {
-					this.showError('All cloud paths must start with gs://. Invalid paths: ' + invalidPaths.join(', '));
+					this.showError('All GCS paths must start with gs://. Invalid paths: ' + invalidPaths.join(', '));
+					return;
+				}
+			} else if (fileSource === 's3') {
+				const s3Paths = document.getElementById('s3Paths').value;
+				if (!s3Paths.trim()) {
+					this.showError('Please enter at least one S3 path.');
+					return;
+				}
+
+				const paths = s3Paths.split(/[,\n]/).map(p => p.trim()).filter(p => p);
+				const invalidPaths = paths.filter(p => !p.startsWith('s3://'));
+				if (invalidPaths.length > 0) {
+					this.showError('All S3 paths must start with s3://. Invalid paths: ' + invalidPaths.join(', '));
 					return;
 				}
 			}
@@ -1455,11 +1494,7 @@ function transform(row) {
 				body: formData
 			});
 
-			console.log('Response status:', response.status);
-			console.log('Response headers:', response.headers);
-			
 			const responseText = await response.text();
-			console.log('Raw response:', responseText);
 
 			let result;
 			try {
@@ -1600,55 +1635,49 @@ function transform(row) {
 }
 
 // Global function for collapsible sections
-// Used by HTML onclick handlers
 // eslint-disable-next-line no-unused-vars
 function toggleSection(sectionId) {
-	const content = document.getElementById(sectionId);
-	const header = content.previousElementSibling;
-	const isVisible = content.style.display !== 'none';
-
-	if (isVisible) {
-		content.style.display = 'none';
-		header.classList.remove('expanded');
-	} else {
-		content.style.display = 'block';
-		header.classList.add('expanded');
+	const section = document.getElementById(sectionId);
+	const header = section?.previousElementSibling || section?.parentElement?.querySelector('.section-header');
+	const toggleIcon = header?.querySelector('.toggle-icon');
+	
+	if (!section) return;
+	
+	const isVisible = section.style.display !== 'none';
+	section.style.display = isVisible ? 'none' : 'block';
+	
+	if (toggleIcon) {
+		toggleIcon.textContent = isVisible ? '▼' : '▲';
+	}
+	
+	if (header) {
+		header.setAttribute('aria-expanded', !isVisible);
 	}
 }
 
-// Global function to toggle all collapsible sections
+// Global function for toggling all sections
 // eslint-disable-next-line no-unused-vars
 function toggleAllSections() {
-	const sections = document.querySelectorAll('.collapsible-content');
 	const toggleBtn = document.getElementById('toggle-all-btn');
 	const toggleText = document.getElementById('toggle-all-text');
-	const btnIcon = toggleBtn.querySelector('.btn-icon');
-
-	// Check if any sections are currently expanded
-	const anyExpanded = Array.from(sections).some(section => section.style.display === 'block');
-
-	sections.forEach(section => {
-		const header = section.previousElementSibling;
-
-		if (anyExpanded) {
-			// Collapse all
-			section.style.display = 'none';
-			header.classList.remove('expanded');
-		} else {
-			// Expand all
-			section.style.display = 'block';
-			header.classList.add('expanded');
+	const collapsibleSections = document.querySelectorAll('.collapsible-content');
+	
+	const isExpanding = toggleText.textContent === 'Expand All';
+	
+	collapsibleSections.forEach(section => {
+		section.style.display = isExpanding ? 'block' : 'none';
+		const header = section.previousElementSibling || section.parentElement?.querySelector('.section-header');
+		const toggleIcon = header?.querySelector('.toggle-icon');
+		if (toggleIcon) {
+			toggleIcon.textContent = isExpanding ? '▲' : '▼';
+		}
+		if (header) {
+			header.setAttribute('aria-expanded', isExpanding);
 		}
 	});
-
-	// Update button text and icon
-	if (anyExpanded) {
-		toggleText.textContent = 'Collapse All';
-		btnIcon.textContent = '📁';
-	} else {
-		toggleText.textContent = 'Expand All';
-		btnIcon.textContent = '📂';
-	}
+	
+	toggleText.textContent = isExpanding ? 'Collapse All' : 'Expand All';
+	toggleBtn.querySelector('.btn-icon').textContent = isExpanding ? '📁' : '📂';
 }
 
 // Initialize the application

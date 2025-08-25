@@ -37,12 +37,15 @@
 						<option value="export">🛃 Export Events</option>
 						<option value="profile-export">👤📤 Export User Profiles</option>
 						<option value="profile-delete">👤🗑️ Delete User Profiles</option>
+						<option value="group-export">👥📤 Export Group Profiles</option>
+						<option value="group-delete">👥🗑️ Delete Group Profiles</option>
 						<option value="scd">🪁 SCD (Slowly Changing Dimensions)</option>
 						<option value="annotations">📝 Create Annotations</option>
 						<option value="get-annotations">📝📥 Get Annotations</option>
 						<option value="delete-annotations">📝🗑️ Delete Annotations</option>
 						<option value="export-import-events">🔄 Export → Import (events)</option>
-						<option value="export-import-profiles">🔃 Export → Import (profiles)</option>
+						<option value="export-import-profiles">🔃 Export → Import (user profiles)</option>
+						<option value="export-import-groups">🔃 Export → Import (group profiles)</option>
 					</select>
 					<small>Different export types require different authentication settings</small>
 				</div>
@@ -51,7 +54,7 @@
 			<!-- Credentials Section -->
 			<section class="card" id="credentials-section" style="display: none;">
 				<h2 class="section-title">🔑 Mixpanel Credentials</h2>
-				<p class="section-description" id="credentials-description">Select an export type above to see the required authentication settings.</p>
+				<p class="section-description" id="credentials-description">All types require project token/secret OR service account. Group operations need groupKey + dataGroupId.</p>
 
 				<div class="form-group" id="project-group" style="display: none;">
 					<label for="project">Project ID*</label>
@@ -113,17 +116,30 @@
 					<small>Required for group profile operations</small>
 				</div>
 
-				<!-- Export-specific fields -->
 				<div class="form-group" id="dataGroupId-group" style="display: none;">
-					<label for="dataGroupId">Data Group ID</label>
-					<input type="text" id="dataGroupId" name="dataGroupId" placeholder="Optional data group ID" autocomplete="off">
-					<small>Optional for profile exports and deletes</small>
+					<label for="dataGroupId">Data Group ID*</label>
+					<input type="text" id="dataGroupId" name="dataGroupId" placeholder="Your data group ID" autocomplete="off">
+					<small>Required for group profile operations</small>
 				</div>
 
+				<!-- Export-Import Destination Fields -->
+				<h3 class="subsection-title" id="destination-title" style="display: none;">Destination Project (Optional)</h3>
+				<p class="section-description" id="destination-description" style="display: none;">Leave empty to reimport into the same project.</p>
+				
 				<div class="form-group" id="secondToken-group" style="display: none;">
-					<label for="secondToken">Second Token</label>
-					<input type="text" id="secondToken" name="secondToken" placeholder="Destination project token" autocomplete="off">
-					<small>Optional for export-import operations</small>
+					<label for="secondToken">Destination Project Token</label>
+					<input type="text" id="secondToken" name="secondToken" placeholder="Destination project token (optional)" autocomplete="off">
+					<small>If different from source project</small>
+				</div>
+				
+				<div class="form-group" id="secondRegion-group" style="display: none;">
+					<label for="secondRegion">Destination Data Residency</label>
+					<select id="secondRegion" name="secondRegion">
+						<option value="US">🇺🇸 United States</option>
+						<option value="EU">🇪🇺 European Union</option>
+						<option value="IN">🇮🇳 India</option>
+					</select>
+					<small>If different from source region</small>
 				</div>
 			</section>
 
@@ -171,14 +187,14 @@
 					<div id="time-section" class="collapsible-content" style="display: none;">
 						<div class="form-row">
 							<div class="form-group">
-								<label for="start">Start Date (Export)</label>
+								<label for="start">Start Date (Export)*</label>
 								<input type="date" id="start" name="start">
-								<small>Start date for data exports</small>
+								<small>Required for event exports</small>
 							</div>
 							<div class="form-group">
-								<label for="end">End Date (Export)</label>
+								<label for="end">End Date (Export)*</label>
 								<input type="date" id="end" name="end">
-								<small>End date for data exports</small>
+								<small>Required for event exports</small>
 							</div>
 						</div>
 
@@ -209,7 +225,7 @@
 							<div class="form-group">
 								<label for="whereClause">Where Clause (Export)</label>
 								<input type="text" id="whereClause" name="whereClause" placeholder='properties["plan"] == "premium"'>
-								<small>Filter clause for data exports</small>
+								<small>Optional filter using <a href="https://developer.mixpanel.com/reference/segmentation-expressions" target="_blank">segmentation expressions</a></small>
 							</div>
 							<div class="form-group">
 								<label for="limit">Export Limit</label>

@@ -22,7 +22,8 @@ if (!fs.existsSync(tmpDir)) {
 		for (const file of files) {
 			const filePath = path.join(tmpDir, file);
 			const stats = fs.statSync(filePath);
-			if (stats.isFile()) {
+			if (stats.isFile() && !file.startsWith('.')) {
+				// not a dotfile, safe to delete
 				fs.unlinkSync(filePath);
 				cleanedCount++;
 			}
@@ -101,6 +102,30 @@ app.post('/job', upload.array('files'), async (req, res) => {
 		/** @type {Options} */
 		const opts = JSON.parse(options || '{}');
 
+		// Handle GCS credentials file if provided
+		const gcsCredentialsFile = req.files?.find(file => file.fieldname === 'gcsCredentials');
+		if (gcsCredentialsFile) {
+			try {
+				// Validate it's a JSON file
+				const credentialsContent = fs.readFileSync(gcsCredentialsFile.path, 'utf8');
+				const credentialsJson = JSON.parse(credentialsContent);
+				
+				// Validate it looks like a service account key
+				if (!credentialsJson.type || credentialsJson.type !== 'service_account') {
+					throw new Error('Invalid service account credentials file');
+				}
+				
+				// Pass the credentials file path to the import options
+				opts.gcsCredentials = gcsCredentialsFile.path;
+				console.log('Using custom GCS credentials file for authentication');
+			} catch (err) {
+				return res.status(400).json({
+					success: false,
+					error: `GCS credentials file error: ${err.message}`
+				});
+			}
+		}
+
 		// Add transform function if provided
 		if (transformCode && transformCode.trim()) {
 			try {
@@ -134,14 +159,24 @@ app.post('/job', upload.array('files'), async (req, res) => {
 			}
 			// @ts-ignore
 		} else if (req.files && req.files.length > 0) {
+			// Filter out non-data files (like GCS credentials)
+			const dataFiles = req.files.filter(file => file.fieldname === 'files');
+			
+			if (dataFiles.length === 0) {
+				return res.status(400).json({
+					success: false,
+					error: 'No data files provided'
+				});
+			}
+			
 			// Handle local files - pass file paths to mixpanel-import
-			if (req.files.length === 1) {
+			if (dataFiles.length === 1) {
 				// Single file - pass file path
-				data = req.files[0].path;
+				data = dataFiles[0].path;
 				console.log(`Using single local file: ${data}`);
 			} else {
 				// Multiple files - pass array of file paths
-				data = req.files.map(file => file.path);
+				data = dataFiles.map(file => file.path);
 				console.log(`Using multiple local files: ${data.join(', ')}`);
 			}
 		} else {
@@ -162,12 +197,29 @@ app.post('/job', upload.array('files'), async (req, res) => {
 		if (req.files && req.files.length > 0) {
 			for (const file of req.files) {
 				try {
-					fs.unlinkSync(file.path);
-					console.log(`Cleaned up temp file: ${file.path}`);
+					// Don't clean up GCS credentials file immediately - it might still be needed
+					if (file.fieldname !== 'gcsCredentials') {
+						fs.unlinkSync(file.path);
+						console.log(`Cleaned up temp file: ${file.path}`);
+					}
 				} catch (cleanupError) {
 					console.warn(`Failed to clean up temp file ${file.path}:`, cleanupError.message);
 				}
 			}
+			
+			// Clean up GCS credentials file after a delay
+			setTimeout(() => {
+				for (const file of req.files) {
+					if (file.fieldname === 'gcsCredentials') {
+						try {
+							fs.unlinkSync(file.path);
+							console.log(`Cleaned up GCS credentials file: ${file.path}`);
+						} catch (cleanupError) {
+							console.warn(`Failed to clean up GCS credentials file ${file.path}:`, cleanupError.message);
+						}
+					}
+				}
+			}, 5000); // 5 second delay
 		}
 
 		res.json({

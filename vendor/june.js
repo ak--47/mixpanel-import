@@ -109,12 +109,12 @@ function juneEventsToMp(options = {}) {
 
 		// Add any remaining context properties that weren't specifically mapped
 		const contextCopy = { ...context };
-		delete contextCopy.page;
-		delete contextCopy.userAgent;
-		delete contextCopy.ip;
-		delete contextCopy.locale;
-		delete contextCopy.library;
-		delete contextCopy.integration;
+		if ('page' in contextCopy) delete contextCopy.page;
+		if ('userAgent' in contextCopy) delete contextCopy.userAgent;
+		if ('ip' in contextCopy) delete contextCopy.ip;
+		if ('locale' in contextCopy) delete contextCopy.locale;
+		if ('library' in contextCopy) delete contextCopy.library;
+		if ('integration' in contextCopy) delete contextCopy.integration;
 
 		// Flatten remaining context with june_context_ prefix
 		Object.keys(contextCopy).forEach(key => {

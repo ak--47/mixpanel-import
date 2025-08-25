@@ -1,0 +1,30 @@
+# Test files and directories
+tests/
+testData/
+benchmarks/
+logs/
+tmp/
+mixpanel-exports/
+
+# Development files
+.vscode/
+.idea/
+*.log
+*.tmp
+.env
+.env.local
+
+# Coverage reports
+coverage/
+.nyc_output/
+
+# Runtime files
+node_modules/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Git files
+.git/
+.gitignore

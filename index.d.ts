@@ -36,6 +36,8 @@ declare namespace main {
     | "export"
     | "profile-export"
     | "profile-delete"
+    | "group-export"
+    | "group-delete"
     | "events"
     | "users"
     | "groups"
@@ -45,7 +47,8 @@ declare namespace main {
     | "get-annotations"
 	| "delete-annotations"
 	| "export-import-events"
-	| "export-import-profiles";
+	| "export-import-profiles"
+	| "export-import-groups";
 	
   /**
    * - a path to a file/folder, objects in memory, or a readable object/file stream that contains data you wish to import
@@ -142,8 +145,7 @@ declare namespace main {
     | "pendo"
     | "mparticle"
     | ""
-	| "posthog"
-    | void;
+	| "posthog";
 
   type WhiteAndBlackListParams = {
     eventWhitelist: string[];
@@ -172,6 +174,13 @@ declare namespace main {
    */
   interface Job extends Options {
     bytesCache?: WeakMap<any, number>;
+    lineByLineFileExt: string[];
+    objectModeFileExt: string[];
+    tableFileExt: string[];
+    gzippedLineByLineFileExt: string[];
+    gzippedObjectModeFileExt: string[];
+    gzippedTableFileExt: string[];
+    streamFormat: SupportedFormats;
   }
 
   /**
@@ -490,7 +499,7 @@ declare namespace main {
 	/**
 	 * - for export/import (the destination project)
 	 */
-	secondRegion?: "US" | "EU" | "IN";
+	secondRegion?: "US" | "EU" | "IN" | "";
 
 	/**
 	 * - keep bad records in the results
@@ -528,6 +537,10 @@ declare namespace main {
 	 * - cache for byte calculations to improve performance
 	 */
 	bytesCache?: WeakMap<any, number>;
+	/**
+	 * Path to GCS service account credentials JSON file (optional, defaults to ADC)
+	 */
+	gcsCredentials?: string;
   };
 
   /**
@@ -867,7 +880,7 @@ declare namespace main {
   };
 
   /**
-   * amplitude transform opts
+   * mparticle transform opts
    */
   type mparticleOpts = {
     user_id?: string[];
@@ -878,7 +891,7 @@ declare namespace main {
     identities?: boolean;
     application_info?: boolean;
     device_info?: boolean;
-    source_info: ?boolean;
+    source_info?: boolean;
   };
 
   /**
@@ -972,6 +985,21 @@ declare module 'stream' {
   }
 }
 
+declare module 'fs' {
+  interface ReadStream {
+    path?: string | Buffer;
+    pending?: boolean;
+  }
+}
+
+// Extend Node.js zlib types
+declare module 'zlib' {
+  interface Gunzip extends import('stream').Transform {
+    path?: string | Buffer;
+    pending?: boolean;
+  }
+}
+
 // Extend Express Request type for multer file uploads
 declare global {
   namespace Express {
@@ -983,7 +1011,20 @@ declare global {
         encoding: string;
         mimetype: string;
         size: number;
+        path?: string;
       }>;
+    }
+  }
+  
+  namespace Express.Multer {
+    interface File {
+      buffer: Buffer;
+      fieldname: string;
+      originalname: string;
+      encoding: string;
+      mimetype: string;
+      size: number;
+      path?: string;
     }
   }
   
