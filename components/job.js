@@ -36,7 +36,7 @@ class Job {
 		// Allow empty credentials for dry runs and data transformation operations
 		const allowEmptyCredentials = opts.dryRun || opts.writeToFile || opts.fixData;
 		if (!creds && !allowEmptyCredentials) throw new Error('no credentials provided!');
-		
+
 		// Use empty object if creds is null/undefined but operation is allowed without creds
 		const safeCreds = creds || {};
 		this.acct = safeCreds.acct || ``; //service acct username
@@ -73,12 +73,14 @@ class Job {
 
 		this.dimensionMaps = opts.dimensionMaps || []; //dimension map for scd
 		this.maxRecords = opts.maxRecords !== undefined ? opts.maxRecords : null; //maximum records to process before stopping stream
-		this.heavyObjects = {}; //used to store heavy objects
+		this.heavyObjects = opts.heavyObjects || {}; //used to store heavy objects
 		this.insertHeavyObjects = async function (arrayOfKeysAndFilesPaths = this.dimensionMaps) {
-			for (const keyFilePath of arrayOfKeysAndFilesPaths) {
-				const { filePath, keyOne, keyTwo, label = u.makeName(3, '-') } = keyFilePath;
-				const result = await buildMapFromPath(filePath, keyOne, keyTwo, this);
-				this.heavyObjects[label] = result;
+			if (Object.keys(this.heavyObjects).length === 0) {
+				for (const keyFilePath of arrayOfKeysAndFilesPaths) {
+					const { filePath, keyOne, keyTwo, label = u.makeName(3, '-') } = keyFilePath;
+					const result = await buildMapFromPath(filePath, keyOne, keyTwo, this);
+					this.heavyObjects[label] = result;
+				}
 			}
 		};
 
@@ -443,7 +445,7 @@ class Job {
 					switch (recordType) {
 						case 'event':
 							vendorTransformFunc = mixpanelEventsToMixpanel(this.vendorOpts);
-							break;						
+							break;
 						default:
 							vendorTransformFunc = mixpanelEventsToMixpanel(this.vendorOpts);
 							break;

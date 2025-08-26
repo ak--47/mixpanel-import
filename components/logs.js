@@ -23,7 +23,7 @@ async function writeLogs(data) {
 	const filePath = `${fileDir}/${fileName}`;
 	const file = await u.touch(filePath, data, true);
 	// @ts-ignore
-	l(`\nfull log written to:\n${file}`);
+	// l(`\nfull log written to:\n${file}`);
 }
 
 

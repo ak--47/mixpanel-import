@@ -497,6 +497,12 @@ declare namespace main {
 	dimensionMaps?: dependentTables[]; 
 
 	/**
+	 * A cache for heavy objects used in data transformation and lookups.
+	 * it's better to use dimensionMaps if possible
+	 */
+	heavyObjects?: Object
+
+	/**
 	 * - for export/import (the destination project)
 	 */
 	secondRegion?: "US" | "EU" | "IN" | "";
@@ -924,6 +930,7 @@ declare namespace main {
     user_id?: string;
     anonymous_id?: string;
     group_key?: string;
+    v2compat?: boolean;
   };
 }
 
