@@ -1,10 +1,118 @@
 const express = require('express');
 const path = require('path');
 const multer = require('multer');
+const WebSocket = require('ws');
+const { createServer } = require('http');
 const mixpanelImport = require('../index.js');
 
 const app = express();
+const server = createServer(app);
 const port = process.env.PORT || 3000;
+
+// WebSocket server for real-time progress updates
+const wss = new WebSocket.Server({ server });
+
+// Job tracking for WebSocket connections
+const activeJobs = new Map(); // jobId -> { ws, startTime, lastUpdate }
+
+// WebSocket connection handler
+wss.on('connection', (ws) => {
+	console.log('WebSocket client connected');
+	
+	ws.on('message', (message) => {
+		try {
+			const data = JSON.parse(message);
+			
+			if (data.type === 'register-job') {
+				const jobId = data.jobId;
+				activeJobs.set(jobId, {
+					ws: ws,
+					startTime: Date.now(),
+					lastUpdate: Date.now()
+				});
+				console.log(`Registered job ${jobId} for WebSocket updates`);
+				
+				// Send confirmation
+				ws.send(JSON.stringify({
+					type: 'job-registered',
+					jobId: jobId
+				}));
+			}
+		} catch (error) {
+			console.error('WebSocket message error:', error);
+		}
+	});
+	
+	ws.on('close', () => {
+		console.log('WebSocket client disconnected');
+		// Clean up any jobs associated with this WebSocket
+		for (const [jobId, jobData] of activeJobs.entries()) {
+			if (jobData.ws === ws) {
+				activeJobs.delete(jobId);
+				console.log(`Cleaned up job ${jobId} on WebSocket disconnect`);
+			}
+		}
+	});
+	
+	ws.on('error', (error) => {
+		console.error('WebSocket error:', error);
+	});
+});
+
+// Function to broadcast progress updates to WebSocket clients
+function broadcastProgress(jobId, progressData) {
+	const jobData = activeJobs.get(jobId);
+	if (jobData && jobData.ws.readyState === WebSocket.OPEN) {
+		try {
+			const message = {
+				type: 'progress',
+				jobId: jobId,
+				data: progressData,
+				timestamp: Date.now()
+			};
+			jobData.ws.send(JSON.stringify(message));
+			jobData.lastUpdate = Date.now();
+		} catch (error) {
+			console.error(`Failed to send progress to job ${jobId}:`, error);
+			// Clean up dead connection
+			activeJobs.delete(jobId);
+		}
+	}
+}
+
+// Function to signal job completion
+function signalJobComplete(jobId, result) {
+	const jobData = activeJobs.get(jobId);
+	if (jobData && jobData.ws.readyState === WebSocket.OPEN) {
+		try {
+			jobData.ws.send(JSON.stringify({
+				type: 'job-complete',
+				jobId: jobId,
+				result: result,
+				timestamp: Date.now()
+			}));
+		} catch (error) {
+			console.error(`Failed to send completion to job ${jobId}:`, error);
+		}
+	}
+	// Clean up job tracking
+	activeJobs.delete(jobId);
+	console.log(`Job ${jobId} completed and cleaned up`);
+}
+
+// Function to create a progress callback for a specific job
+function createProgressCallback(jobId) {
+	return (recordType, processed, requests, eps, bytesProcessed) => {
+		broadcastProgress(jobId, {
+			recordType: recordType || '',
+			processed: processed || 0,
+			requests: requests || 0,
+			eps: eps || '',
+			bytesProcessed: bytesProcessed || 0,
+			memory: process.memoryUsage().heapUsed
+		});
+	};
+}
 
 // Configure multer for file uploads (stream to disk for large files)
 // @ts-ignore - Using disk storage provides path property on files
@@ -186,46 +294,77 @@ app.post('/job', upload.array('files'), async (req, res) => {
 			});
 		}
 
-		console.log(`Starting import job with ${Array.isArray(data) ? data.length : 'unknown'} records`);
+		// Generate unique job ID for WebSocket tracking
+		const jobId = `job-${Date.now()}-${Math.random().toString(36).substring(2)}`;
+		
+		// Add progress callback for WebSocket updates
+		opts.progressCallback = createProgressCallback(jobId);
+		
+		console.log(`Starting import job ${jobId} with ${Array.isArray(data) ? data.length : 'unknown'} files`);
 
-		// Run the import
-		const result = await mixpanelImport(creds, data, opts);
-		const { total, success, failed, empty } = result;
-		console.log(`Import job completed: ${total} records | ${success} success | ${failed} failed | ${empty} skipped`);
-
-		// Clean up temporary files
-		if (req.files && req.files.length > 0) {
-			for (const file of req.files) {
-				try {
-					// Don't clean up GCS credentials file immediately - it might still be needed
-					if (file.fieldname !== 'gcsCredentials') {
-						fs.unlinkSync(file.path);
-						console.log(`Cleaned up temp file: ${file.path}`);
-					}
-				} catch (cleanupError) {
-					console.warn(`Failed to clean up temp file ${file.path}:`, cleanupError.message);
-				}
-			}
-			
-			// Clean up GCS credentials file after a delay
-			setTimeout(() => {
-				for (const file of req.files) {
-					if (file.fieldname === 'gcsCredentials') {
-						try {
-							fs.unlinkSync(file.path);
-							console.log(`Cleaned up GCS credentials file: ${file.path}`);
-						} catch (cleanupError) {
-							console.warn(`Failed to clean up GCS credentials file ${file.path}:`, cleanupError.message);
-						}
-					}
-				}
-			}, 5000); // 5 second delay
-		}
-
+		// Return job ID immediately so client can connect WebSocket
 		res.json({
 			success: true,
-			result
+			jobId: jobId,
+			message: 'connecting to websocket; initiating streaming'
 		});
+
+		// Run the import asynchronously
+		try {
+			const result = await mixpanelImport(creds, data, opts);
+			const { total, success, failed, empty } = result;
+			console.log(`Import job ${jobId} completed: ${total} records | ${success} success | ${failed} failed | ${empty} skipped`);
+			
+			// Signal job completion via WebSocket
+			signalJobComplete(jobId, result);
+		} catch (jobError) {
+			console.error(`Import job ${jobId} failed:`, jobError);
+			
+			// Signal job failure via WebSocket
+			const jobData = activeJobs.get(jobId);
+			if (jobData && jobData.ws.readyState === WebSocket.OPEN) {
+				try {
+					jobData.ws.send(JSON.stringify({
+						type: 'job-error',
+						jobId: jobId,
+						error: jobError.message,
+						timestamp: Date.now()
+					}));
+				} catch (wsError) {
+					console.error(`Failed to send error to job ${jobId}:`, wsError);
+				}
+			}
+			activeJobs.delete(jobId);
+		} finally {
+			// Clean up temporary files after job completion/failure
+			if (req.files && req.files.length > 0) {
+				for (const file of req.files) {
+					try {
+						// Don't clean up GCS credentials file immediately - it might still be needed
+						if (file.fieldname !== 'gcsCredentials') {
+							fs.unlinkSync(file.path);
+							console.log(`Cleaned up temp file: ${file.path}`);
+						}
+					} catch (cleanupError) {
+						console.warn(`Failed to clean up temp file ${file.path}:`, cleanupError.message);
+					}
+				}
+				
+				// Clean up GCS credentials file after a delay
+				setTimeout(() => {
+					for (const file of req.files) {
+						if (file.fieldname === 'gcsCredentials') {
+							try {
+								fs.unlinkSync(file.path);
+								console.log(`Cleaned up GCS credentials file: ${file.path}`);
+							} catch (cleanupError) {
+								console.warn(`Failed to clean up GCS credentials file ${file.path}:`, cleanupError.message);
+							}
+						}
+					}
+				}, 5000); // 5 second delay
+			}
+		}
 
 	} catch (error) {
 		console.error('Job error:', error);
@@ -538,7 +677,7 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
 			});
 		}
 
-		console.log(`Starting dry run with ${Array.isArray(data) ? data.length : 'unknown'} records`);
+		console.log(`Starting dry run with ${Array.isArray(data) ? data.length : 'unknown'} files`);
 
 		// Run raw data fetch first (no transforms) for comparison
 		const rawOpts = { ...opts };
@@ -633,55 +772,47 @@ app.post('/export', async (req, res) => {
 			outputFilePath: exportData.outputFilePath
 		};
 
-		console.log(`Starting export operation: ${opts.recordType}`);
+		// Generate unique job ID for WebSocket tracking
+		const jobId = `export-${Date.now()}-${Math.random().toString(36).substring(2)}`;
+		
+		// Add progress callback for WebSocket updates
+		opts.progressCallback = createProgressCallback(jobId);
+		
+		console.log(`Starting export operation ${jobId}: ${opts.recordType}`);
 
-		// Run the export - note that for exports, data parameter can be null/empty
-		const result = await mixpanelImport(creds, null, opts);
-
-		console.log(`Export completed: ${result.total} records processed`);
-
-		// Check if we should stream the file back or just return results
-		if (opts.writeToFile && opts.outputFilePath) {
-			// Try to read and stream the file back to client
-			try {
-				const fs = require('fs');
-				const path = require('path');
-
-				if (fs.existsSync(opts.outputFilePath)) {
-					// Set appropriate headers for file download
-					const filename = path.basename(opts.outputFilePath);
-					res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-					res.setHeader('Content-Type', 'application/json');
-
-					// Stream the file
-					const fileStream = fs.createReadStream(opts.outputFilePath);
-					fileStream.pipe(res);
-
-					// Clean up file after streaming (optional - comment out if you want to keep files)
-					fileStream.on('end', () => {
-						setTimeout(() => {
-							try {
-								fs.unlinkSync(opts.outputFilePath);
-								console.log(`Cleaned up temporary file: ${opts.outputFilePath}`);
-							} catch (cleanupError) {
-								console.warn(`Failed to clean up file ${opts.outputFilePath}:`, cleanupError.message);
-							}
-						}, 1000);
-					});
-
-					return; // Don't send JSON response
-				}
-			} catch (fileError) {
-				console.warn('File handling error:', fileError.message);
-				// Fall through to JSON response
-			}
-		}
-
-		// Return JSON result if no file streaming
+		// Return job ID immediately so client can connect WebSocket
 		res.json({
 			success: true,
-			result
+			jobId: jobId,
+			message: 'Export started - connect WebSocket for progress updates'
 		});
+
+		// Run the export asynchronously
+		try {
+			const result = await mixpanelImport(creds, null, opts);
+			console.log(`Export ${jobId} completed: ${result.total} records processed`);
+			
+			// Signal job completion via WebSocket
+			signalJobComplete(jobId, result);
+		} catch (exportError) {
+			console.error(`Export ${jobId} failed:`, exportError);
+			
+			// Signal job failure via WebSocket
+			const jobData = activeJobs.get(jobId);
+			if (jobData && jobData.ws.readyState === WebSocket.OPEN) {
+				try {
+					jobData.ws.send(JSON.stringify({
+						type: 'job-error',
+						jobId: jobId,
+						error: exportError.message,
+						timestamp: Date.now()
+					}));
+				} catch (wsError) {
+					console.error(`Failed to send error to export ${jobId}:`, wsError);
+				}
+			}
+			activeJobs.delete(jobId);
+		}
 
 	} catch (error) {
 		console.error('Export error:', error);
@@ -772,7 +903,7 @@ _  _ _ _  _ ___  ____ _  _ ____ _       _ _  _ ___  ____ ____ ___
 \tby AK (ak@mixpanel.com)`;
 
 	return new Promise((resolve, reject) => {
-		const server = app.listen(serverPort, (err) => {
+		server.listen(serverPort, (err) => {
 			if (err) {
 				reject(err);
 			} else {
@@ -780,6 +911,7 @@ _  _ _ _  _ ___  ____ _  _ ____ _       _ _  _ ___  ____ ____ ___
 				console.log(hero);
 				console.log(banner);
 				console.log(`\n🚀 UI running at http://localhost:${serverPort}`);
+				console.log(`📡 WebSocket server alive`);
 				resolve(server);
 			}
 		});

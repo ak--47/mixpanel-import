@@ -4,8 +4,145 @@
 // Mixpanel Export UI Application (L.T.E Tool)
 class MixpanelExportUI {
 	constructor() {
+		this.websocket = null; // WebSocket connection for real-time progress
+		this.currentJobId = null; // Track current job ID
 		this.initializeLTECycling();
 		this.setupEventListeners();
+	}
+
+	// WebSocket connection methods
+	connectWebSocket(jobId) {
+		try {
+			const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+			const wsUrl = `${protocol}//${window.location.host}`;
+			
+			this.websocket = new WebSocket(wsUrl);
+			this.currentJobId = jobId;
+			
+			this.websocket.onopen = () => {
+				console.log('WebSocket connected for export job:', jobId);
+				// Register this connection with the job
+				this.websocket.send(JSON.stringify({
+					type: 'register-job',
+					jobId: jobId
+				}));
+			};
+			
+			this.websocket.onmessage = (event) => {
+				try {
+					const data = JSON.parse(event.data);
+					this.handleWebSocketMessage(data);
+				} catch (error) {
+					console.error('Failed to parse WebSocket message:', error);
+				}
+			};
+			
+			this.websocket.onerror = (error) => {
+				console.error('WebSocket error:', error);
+			};
+			
+			this.websocket.onclose = () => {
+				console.log('WebSocket disconnected');
+				this.websocket = null;
+				this.currentJobId = null;
+			};
+			
+		} catch (error) {
+			console.error('Failed to connect WebSocket:', error);
+		}
+	}
+	
+	disconnectWebSocket() {
+		if (this.websocket) {
+			this.websocket.close();
+			this.websocket = null;
+			this.currentJobId = null;
+		}
+	}
+	
+	handleWebSocketMessage(data) {
+		if (data.jobId !== this.currentJobId) {
+			return; // Ignore messages for other jobs
+		}
+		
+		switch (data.type) {
+			case 'job-registered':
+				console.log('Export job registration confirmed:', data.jobId);
+				break;
+				
+			case 'progress':
+				this.updateProgressDisplay(data.data);
+				break;
+				
+			case 'job-complete':
+				console.log('Export job completed:', data.result);
+				this.hideLoading();
+				this.showResults(data.result);
+				this.disconnectWebSocket();
+				break;
+				
+			case 'job-error':
+				console.error('Export job failed:', data.error);
+				this.hideLoading();
+				this.showError(`Export failed: ${data.error}`);
+				this.disconnectWebSocket();
+				break;
+				
+			default:
+				console.log('Unknown WebSocket message type:', data.type);
+		}
+	}
+	
+	updateProgressDisplay(progressData) {
+		// Update the loading message with real-time progress
+		const loadingMessage = document.querySelector('.loading-details');
+		if (loadingMessage) {
+			const { recordType, processed, requests, eps, memory, bytesProcessed } = progressData;
+			
+			const formatNumber = (num) => {
+				if (typeof num === 'number') {
+					return num.toLocaleString();
+				}
+				return num || '0';
+			};
+			
+			const formatBytes = (bytes) => {
+				if (!bytes || bytes === 0) return '0 B';
+				const k = 1024;
+				const sizes = ['B', 'KB', 'MB', 'GB'];
+				const i = Math.floor(Math.log(bytes) / Math.log(k));
+				return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+			};
+			
+			loadingMessage.innerHTML = `
+				<div class="progress-stats">
+					<div class="stat-item">
+						<span class="stat-label">${recordType || 'Records'}:</span>
+						<span class="stat-value">${formatNumber(processed)}</span>
+					</div>
+					${requests ? `
+					<div class="stat-item">
+						<span class="stat-label">Requests:</span>
+						<span class="stat-value">${formatNumber(requests)}</span>
+					</div>` : ''}
+					${eps ? `
+					<div class="stat-item">
+						<span class="stat-label">Events/sec:</span>
+						<span class="stat-value">${eps}</span>
+					</div>` : ''}
+					${memory ? `
+					<div class="stat-item">
+						<span class="stat-label">Memory:</span>
+						<span class="stat-value">${formatBytes(memory)}</span>
+					</div>` : ''}
+					${bytesProcessed ? `
+					<div class="stat-item">
+						<span class="stat-label">Processed:</span>
+						<span class="stat-value">${formatBytes(bytesProcessed)}</span>
+					</div>` : ''}
+				</div>
+			`;
+		}
 	}
 
 	// Helper method for safe element access
@@ -23,6 +160,55 @@ class MixpanelExportUI {
 	getElementChecked(id) {
 		const el = this.getElement(id);
 		return el ? el.checked : false;
+	}
+
+	// Fill form with development values for quick testing
+	fillDevValues() {
+		try {
+			// Set record type to event first (to show credentials section)
+			const recordTypeSelect = document.getElementById('recordType');
+			if (recordTypeSelect) {
+				recordTypeSelect.value = 'event';
+				recordTypeSelect.dispatchEvent(new Event('change'));
+			}
+
+			// Set auth method to secret
+			const secretRadio = document.querySelector('input[name="authMethod"][value="secret"]');
+			if (secretRadio) {
+				secretRadio.checked = true;
+				secretRadio.dispatchEvent(new Event('change'));
+			}
+			
+			// Fill project token after a brief delay to ensure visibility
+			setTimeout(() => {
+				const tokenInput = document.getElementById('token');
+				if (tokenInput) {
+					tokenInput.value = '921270447fc5f98015b04a1b95d23572';
+				}
+			}, 100);
+
+			// Set some default date range (last 7 days)
+			const startInput = document.getElementById('start');
+			const endInput = document.getElementById('end');
+			if (startInput && endInput) {
+				const end = new Date();
+				const start = new Date();
+				start.setDate(end.getDate() - 7);
+				
+				startInput.value = start.toISOString().split('T')[0];
+				endInput.value = end.toISOString().split('T')[0];
+			}
+
+			// Enable show progress
+			const showProgressCheckbox = document.getElementById('showProgress');
+			if (showProgressCheckbox) {
+				showProgressCheckbox.checked = true;
+			}
+
+			console.log('Export dev values filled successfully');
+		} catch (error) {
+			console.error('Failed to fill export dev values:', error);
+		}
 	}
 
 	initializeLTECycling() {
@@ -195,6 +381,17 @@ class MixpanelExportUI {
 		// Update CLI command when form changes
 		form.addEventListener('input', this.updateCLICommand.bind(this));
 		form.addEventListener('change', this.updateCLICommand.bind(this));
+
+		// Clean up WebSocket connection when page is unloaded
+		window.addEventListener('beforeunload', () => {
+			this.disconnectWebSocket();
+		});
+
+		// Dev key button for quick form filling
+		const devKeyBtn = document.getElementById('dev-key-btn');
+		if (devKeyBtn) {
+			devKeyBtn.addEventListener('click', this.fillDevValues.bind(this));
+		}
 	}
 
 	toggleAuthMethod() {
@@ -617,10 +814,28 @@ class MixpanelExportUI {
 
 			const result = await response.json();
 
-			if (result.success) {
-				this.showResults(result, isDryRun);
+			// Handle different responses for dry runs vs real exports
+			if (isDryRun) {
+				this.hideLoading();
+				if (result.success) {
+					this.showResults(result, isDryRun);
+				} else {
+					throw new Error(result.error || 'Export test failed');
+				}
 			} else {
-				throw new Error(result.error || 'Export failed');
+				// For real exports, the server returns a jobId and runs asynchronously
+				if (result.success && result.jobId) {
+					// Connect WebSocket for real-time progress updates
+					this.connectWebSocket(result.jobId);
+					// Update loading message to show that export has started
+					const loadingMessage = document.querySelector('.loading-details');
+					if (loadingMessage) {
+						loadingMessage.innerHTML = 'Export started - connecting for real-time updates...';
+					}
+				} else {
+					this.hideLoading();
+					throw new Error(result.error || 'Export failed');
+				}
 			}
 
 		} catch (error) {

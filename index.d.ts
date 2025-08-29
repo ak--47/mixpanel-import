@@ -240,6 +240,12 @@ declare namespace main {
      */
     showProgress?: boolean;
     /**
+     * - optional callback function for progress updates (used by UI WebSocket)
+     * - signature: (recordType, processed, requests, eps, bytesProcessed) => void
+     * - default `null`
+     */
+    progressCallback?: (recordType: string, processed: number, requests: number, eps: string, bytesProcessed: number) => void;
+    /**
      * - apply various transformations to ensure data is properly ingested
      * - default `true`
      */

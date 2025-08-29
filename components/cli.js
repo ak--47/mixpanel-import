@@ -391,8 +391,11 @@ cliParams.welcome = welcome;
  * @param  {string} record
  * @param  {number} processed
  * @param  {number} requests
+ * @param  {string} eps
+ * @param  {number} amountSent
+ * @param  {Function} [callback] - optional callback for progress updates (used by UI WebSocket)
  */
-function showProgress(record = "", processed = 0, requests = 0, eps = "", amountSent = 0) {
+function showProgress(record = "", processed = 0, requests = 0, eps = "", amountSent = 0, callback = null) {
 	const { heapUsed } = process.memoryUsage();
 	// const { rss, heapTotal, heapUsed } = process.memoryUsage();
 	// const percentHeap = (heapUsed / heapTotal) * 100;
@@ -417,11 +420,19 @@ function showProgress(record = "", processed = 0, requests = 0, eps = "", amount
 	if (line.length < terminalWidth) {
 		line = line.padEnd(terminalWidth, ' ');
 	}
-	// @ts-ignore
-	readline.cursorTo(process.stdout, 0);
-	// @ts-ignore
-	readline.clearLine(process.stdout, 0);
-	process.stdout.write(line);
+	// If callback is provided (for UI WebSocket), call it with progress data
+	if (callback && typeof callback === 'function') {
+		callback(record, processed, requests, eps, amountSent);
+	}
+	
+	// Only show CLI progress if no callback (to avoid duplicate progress display)
+	if (!callback) {
+		// @ts-ignore
+		readline.cursorTo(process.stdout, 0);
+		// @ts-ignore
+		readline.clearLine(process.stdout, 0);
+		process.stdout.write(line);
+	}
 }
 
 cliParams.showProgress = showProgress;

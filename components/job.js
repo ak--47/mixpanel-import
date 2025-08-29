@@ -168,6 +168,7 @@ class Job {
 		this.where = u.isNil(opts.logs) ? '' : opts.where; // where to put logs
 		this.verbose = u.isNil(opts.verbose) ? false : opts.verbose;  // print to stdout?
 		this.showProgress = u.isNil(opts.showProgress) ? false : opts.showProgress; // show progress bar
+		this.progressCallback = opts.progressCallback || null; // optional callback for progress updates (used by UI WebSocket)
 		this.fixData = u.isNil(opts.fixData) ? false : opts.fixData; //apply transforms on the data
 		this.fixTime = u.isNil(opts.fixTime) ? false : opts.fixTime; //fix time to utc
 		this.fixJson = u.isNil(opts.fixJson) ? false : opts.fixJson; //fix json

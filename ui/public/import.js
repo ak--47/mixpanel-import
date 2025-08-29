@@ -11,10 +11,145 @@ class MixpanelImportUI {
 		this.sampleData = []; // Store up to 500 sample records for preview
 		this.detectedColumns = []; // Store columns detected from data
 		this.columnMappings = {}; // Store user-defined column mappings
+		this.websocket = null; // WebSocket connection for real-time progress
+		this.currentJobId = null; // Track current job ID
 		this.initializeUI();
 		this.setupEventListeners();
 		this.initializeMonacoEditor();
 		this.initializeETLCycling();
+	}
+
+	// WebSocket connection methods
+	connectWebSocket(jobId) {
+		try {
+			const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+			const wsUrl = `${protocol}//${window.location.host}`;
+			
+			this.websocket = new WebSocket(wsUrl);
+			this.currentJobId = jobId;
+			
+			this.websocket.onopen = () => {
+				// Register this connection with the job
+				this.websocket.send(JSON.stringify({
+					type: 'register-job',
+					jobId: jobId
+				}));
+			};
+			
+			this.websocket.onmessage = (event) => {
+				try {
+					const data = JSON.parse(event.data);
+					this.handleWebSocketMessage(data);
+				} catch (error) {
+					console.error('Failed to parse WebSocket message:', error);
+				}
+			};
+			
+			this.websocket.onerror = (error) => {
+				console.error('WebSocket error:', error);
+			};
+			
+			this.websocket.onclose = () => {
+				this.websocket = null;
+				this.currentJobId = null;
+			};
+			
+		} catch (error) {
+			console.error('Failed to connect WebSocket:', error);
+		}
+	}
+	
+	disconnectWebSocket() {
+		if (this.websocket) {
+			this.websocket.close();
+			this.websocket = null;
+			this.currentJobId = null;
+		}
+	}
+	
+	handleWebSocketMessage(data) {
+		if (data.jobId !== this.currentJobId) {
+			return; // Ignore messages for other jobs
+		}
+		
+		switch (data.type) {
+			case 'job-registered':
+				break;
+				
+			case 'progress':
+				this.updateProgressDisplay(data.data);
+				break;
+				
+			case 'job-complete':
+				this.hideLoading();
+				// Clear any previous results first
+				this.clearResults();
+				this.showResults(data.result, false);
+				this.disconnectWebSocket();
+				break;
+				
+			case 'job-error':
+				console.error('Job failed:', data.error);
+				this.hideLoading();
+				this.showError(`Import failed: ${data.error}`);
+				this.disconnectWebSocket();
+				break;
+				
+			default:
+				// Unknown message type - ignore silently
+		}
+	}
+	
+	updateProgressDisplay(progressData) {
+		// Update the loading message with real-time progress
+		const loadingMessage = document.querySelector('.loading-details');
+		if (loadingMessage) {
+			const { recordType, processed, requests, eps, memory, bytesProcessed } = progressData;
+			
+			const formatNumber = (num) => {
+				if (typeof num === 'number') {
+					return num.toLocaleString();
+				}
+				return num || '0';
+			};
+			
+			const formatBytes = (bytes) => {
+				if (!bytes || bytes === 0) return '0 B';
+				const k = 1024;
+				const sizes = ['B', 'KB', 'MB', 'GB'];
+				const i = Math.floor(Math.log(bytes) / Math.log(k));
+				return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+			};
+			
+			loadingMessage.innerHTML = `
+				<div class="progress-stats">
+					<div class="stat-item">
+						<span class="stat-label">${recordType || 'Records'}:</span>
+						<span class="stat-value">${formatNumber(processed)}</span>
+					</div>
+					${requests ? `
+					<div class="stat-item">
+						<span class="stat-label">Requests:</span>
+						<span class="stat-value">${formatNumber(requests)}</span>
+					</div>` : ''}
+					${eps ? `
+					<div class="stat-item">
+						<span class="stat-label">Events/sec:</span>
+						<span class="stat-value">${eps}</span>
+					</div>` : ''}
+					${memory ? `
+					<div class="stat-item">
+						<span class="stat-label">Memory:</span>
+						<span class="stat-value">${formatBytes(memory)}</span>
+					</div>` : ''}
+					${bytesProcessed ? `
+					<div class="stat-item">
+						<span class="stat-label">Processed:</span>
+						<span class="stat-value">${formatBytes(bytesProcessed)}</span>
+					</div>` : ''}
+				</div>
+			`;
+		}
 	}
 
 	// Helper method for safe element access
@@ -32,6 +167,48 @@ class MixpanelImportUI {
 	getElementChecked(id) {
 		const el = this.getElement(id);
 		return el ? el.checked : false;
+	}
+
+	// Fill form with development values for quick testing
+	fillDevValues() {
+		try {
+			// Set record type to event first (to show credentials section)
+			const recordTypeSelect = document.getElementById('recordType');
+			if (recordTypeSelect) {
+				recordTypeSelect.value = 'event';
+				recordTypeSelect.dispatchEvent(new Event('change'));
+			}
+
+			// Set file source to GCS
+			const gcsRadio = document.querySelector('input[name="fileSource"][value="gcs"]');
+			if (gcsRadio) {
+				gcsRadio.checked = true;
+				gcsRadio.dispatchEvent(new Event('change'));
+			}
+
+			// Fill GCS path
+			const gcsPathsInput = document.getElementById('gcsPaths');
+			if (gcsPathsInput) {
+				gcsPathsInput.value = 'gs://ak-bucky/mixpanel-import/large/two-fifty-thousand-events.json';
+				gcsPathsInput.dispatchEvent(new Event('input'));
+			}
+
+			// Fill project token
+			const tokenInput = document.getElementById('token');
+			if (tokenInput) {
+				tokenInput.value = '921270447fc5f98015b04a1b95d23572';
+			}
+
+			// Enable show progress
+			const showProgressCheckbox = document.getElementById('showProgress');
+			if (showProgressCheckbox) {
+				showProgressCheckbox.checked = true;
+			}
+
+			console.log('Dev values filled successfully');
+		} catch (error) {
+			console.error('Failed to fill dev values:', error);
+		}
 	}
 
 	initializeUI() {
@@ -278,12 +455,6 @@ class MixpanelImportUI {
 	}
 
 	setupEventListeners() {
-		// Auth method toggle
-		const authRadios = document.querySelectorAll('input[name="authMethod"]');
-		authRadios.forEach(radio => {
-			radio.addEventListener('change', this.toggleAuthMethod);
-		});
-
 		// File source toggle
 		const fileSourceRadios = document.querySelectorAll('input[name="fileSource"]');
 		fileSourceRadios.forEach(radio => {
@@ -370,21 +541,19 @@ class MixpanelImportUI {
 		// Update CLI command when form changes
 		form.addEventListener('input', this.updateCLICommand.bind(this));
 		form.addEventListener('change', this.updateCLICommand.bind(this));
-	}
 
-	toggleAuthMethod() {
-		const serviceAuth = document.getElementById('service-auth');
-		const secretAuth = document.getElementById('secret-auth');
-		const selectedMethod = document.querySelector('input[name="authMethod"]:checked').value;
+		// Clean up WebSocket connection when page is unloaded
+		window.addEventListener('beforeunload', () => {
+			this.disconnectWebSocket();
+		});
 
-		if (selectedMethod === 'service') {
-			serviceAuth.style.display = 'block';
-			secretAuth.style.display = 'none';
-		} else {
-			serviceAuth.style.display = 'none';
-			secretAuth.style.display = 'block';
+		// Dev key button for quick form filling
+		const devKeyBtn = document.getElementById('dev-key-btn');
+		if (devKeyBtn) {
+			devKeyBtn.addEventListener('click', this.fillDevValues.bind(this));
 		}
 	}
+
 
 	toggleFileSource() {
 		const fileSource = document.querySelector('input[name="fileSource"]:checked').value;
@@ -533,27 +702,8 @@ class MixpanelImportUI {
 				document.getElementById('groupKey-group').style.display = 'block';
 				break;
 
-			case 'table':
-				// lookupTableId, project id, service account user + pass required
-				credentialsDescription.textContent = 'Lookup tables require table ID, project ID, and service account credentials.';
-				document.getElementById('lookupTableId-group').style.display = 'block';
-				document.getElementById('project-group').style.display = 'block';
-				document.getElementById('service-auth').style.display = 'block';
-				// Force service auth for tables
-				document.querySelector('input[name=\"authMethod\"][value=\"service\"]').checked = true;
-				break;
-
-
-
-
 			default:
 				credentialsDescription.textContent = 'Select an import type to see required authentication settings.';
-		}
-
-		// Update auth method visibility and trigger toggle
-		const authToggle = document.getElementById('auth-toggle');
-		if (authToggle.style.display === 'block') {
-			this.toggleAuthMethod();
 		}
 
 		// Update CLI command after field visibility changes
@@ -585,24 +735,6 @@ class MixpanelImportUI {
 				break;
 			}
 
-			case 'table': {
-				// lookupTableId, project id, service account user + pass required
-				const lookupTableId = document.getElementById('lookupTableId').value;
-				const project = document.getElementById('project').value;
-				const acct = document.getElementById('acct').value;
-				const pass = document.getElementById('pass').value;
-
-				if (!lookupTableId) {
-					return { isValid: false, message: 'Lookup Table ID is required for table imports.' };
-				}
-				if (!project) {
-					return { isValid: false, message: 'Project ID is required for table imports.' };
-				}
-				if (!acct || !pass) {
-					return { isValid: false, message: 'Service account username and password are required for table imports.' };
-				}
-				break;
-			}
 
 
 
@@ -670,21 +802,12 @@ class MixpanelImportUI {
 				command += ` --group ${groupKeyElement.value}`;
 			}
 
-			const lookupTableIdElement = document.getElementById('lookupTableId');
-			if (lookupTableIdElement && lookupTableIdElement.closest('.form-group').style.display !== 'none' && lookupTableIdElement.value) {
-				command += ` --table ${lookupTableIdElement.value}`;
-			}
 
-			const authMethod = document.querySelector('input[name="authMethod"]:checked')?.value;
-			if (authMethod === 'service') {
-				const acctElement = document.getElementById('acct');
-				const passElement = document.getElementById('pass');
-				if (acctElement && acctElement.value) command += ` --acct ${acctElement.value}`;
-				if (passElement && passElement.value) command += ` --pass [password]`;
-			} else {
-				const secretElement = document.getElementById('secret');
-				if (secretElement && secretElement.value) command += ` --secret [api-secret]`;
-			}
+			// Service account credentials
+			const acctElement = document.getElementById('acct');
+			const passElement = document.getElementById('pass');
+			if (acctElement && acctElement.value) command += ` --acct ${acctElement.value}`;
+			if (passElement && passElement.value) command += ` --pass [password]`;
 
 			// S3 credentials if S3 is selected
 			if (fileSource === 's3') {
@@ -910,7 +1033,6 @@ function transform(row) {
 		}
 
 		// Collect credentials
-		const authMethod = document.querySelector('input[name="authMethod"]:checked')?.value || 'service';
 		const credentials = {};
 
 		// Add project ID if visible
@@ -919,22 +1041,12 @@ function transform(row) {
 			credentials.project = projectElement.value;
 		}
 
-		// Add lookup table ID if visible
-		const lookupTableIdElement = document.getElementById('lookupTableId');
-		if (lookupTableIdElement && lookupTableIdElement.closest('.form-group').style.display !== 'none' && lookupTableIdElement.value) {
-			credentials.lookupTableId = lookupTableIdElement.value;
-		}
 
-		// Add authentication based on method
-		if (authMethod === 'service') {
-			const acctElement = document.getElementById('acct');
-			const passElement = document.getElementById('pass');
-			if (acctElement && acctElement.value) credentials.acct = acctElement.value;
-			if (passElement && passElement.value) credentials.pass = passElement.value;
-		} else {
-			const secretElement = document.getElementById('secret');
-			if (secretElement && secretElement.value) credentials.secret = secretElement.value;
-		}
+		// Add service account authentication
+		const acctElement = document.getElementById('acct');
+		const passElement = document.getElementById('pass');
+		if (acctElement && acctElement.value) credentials.acct = acctElement.value;
+		if (passElement && passElement.value) credentials.pass = passElement.value;
 
 		// Add optional fields if visible and have values
 		const tokenElement = document.getElementById('token');
@@ -1205,6 +1317,9 @@ function transform(row) {
 				return;
 			}
 
+			// Clear any previous results
+			this.clearResults();
+
 			// Show loading
 			this.showLoading(isDryRun ? 'Running Test...' : 'Importing Data...',
 				isDryRun ? 'Processing sample data to preview results' : 'Importing your data to Mixpanel');
@@ -1221,12 +1336,28 @@ function transform(row) {
 
 			const result = await response.json();
 
-			this.hideLoading();
-
-			if (result.success) {
-				this.showResults(result, isDryRun);
+			// Handle different responses for dry runs vs real jobs
+			if (isDryRun) {
+				this.hideLoading();
+				if (result.success) {
+					this.showResults(result, isDryRun);
+				} else {
+					this.showError(`Test failed: ${result.error}`);
+				}
 			} else {
-				this.showError(`${isDryRun ? 'Test' : 'Import'} failed: ${result.error}`);
+				// For real jobs, the server returns a jobId and runs asynchronously
+				if (result.success && result.jobId) {
+					// Connect WebSocket for real-time progress updates
+					this.connectWebSocket(result.jobId);
+					// Update loading message to show that job has started
+					const loadingMessage = document.querySelector('.loading-details');
+					if (loadingMessage) {
+						loadingMessage.innerHTML = 'connecting to websocket; initiating streaming';
+					}
+				} else {
+					this.hideLoading();
+					this.showError(`Import failed: ${result.error}`);
+				}
 			}
 
 		} catch (error) {
@@ -1246,6 +1377,21 @@ function transform(row) {
 		document.getElementById('loading').style.display = 'none';
 	}
 
+	clearResults() {
+		const resultsSection = document.getElementById('results');
+		const resultsData = document.getElementById('results-data');
+		
+		if (resultsSection) {
+			resultsSection.style.display = 'none';
+		}
+		if (resultsData) {
+			resultsData.innerHTML = '';
+		}
+		
+		// Clear any stored comparison data
+		this.comparisonData = null;
+	}
+
 	showResults(result, isDryRun) {
 		const resultsSection = document.getElementById('results');
 		const resultsTitle = document.getElementById('results-title');
@@ -1258,7 +1404,8 @@ function transform(row) {
 			this.showSideBySideComparison(result.rawData, result.previewData);
 		} else {
 			// Regular single display for non-dry runs or legacy dry runs
-			let displayData = result.result;
+			// Handle both WebSocket results (direct result object) and HTTP results (wrapped in .result)
+			let displayData = result.result || result;
 			
 			if (isDryRun && result.previewData && result.previewData.length > 0) {
 				displayData = [...result.previewData.slice(0, 100)];
@@ -1439,6 +1586,9 @@ function transform(row) {
 	}
 
 	highlightJSON(jsonString) {
+		if (!jsonString || typeof jsonString !== 'string') {
+			return '';
+		}
 		return jsonString
 			.replace(/("([^"\\]|\\.)*")\s*:/g, '<span class="json-key">$1</span>:')
 			.replace(/:\s*("([^"\\]|\\.)*")/g, ': <span class="json-string">$1</span>')
@@ -1688,13 +1838,7 @@ document.addEventListener('DOMContentLoaded', () => {
 	window.app = app;
 
 	// Initialize default section states
-	// Keep performance section open by default
-	const performanceSection = document.getElementById('performance-section');
-	const performanceHeader = performanceSection?.previousElementSibling;
-	if (performanceSection) {
-		performanceSection.style.display = 'block';
-		performanceHeader?.classList.add('expanded');
-	}
+	// All subsections start collapsed by default
 
 	// Initialize CLI command
 	if (window.app && window.app.updateCLICommand) {

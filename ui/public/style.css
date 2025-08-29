@@ -66,7 +66,7 @@ body {
     background: var(--bg-primary);
     color: var(--text-primary);
     line-height: 1.6;
-    font-size: 19px;
+    font-size: 14px;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
@@ -139,7 +139,7 @@ body {
 
 .subtitle {
     color: rgba(255, 255, 255, 0.8);
-    font-size: 21px;
+    font-size: 16px;
     font-weight: 400;
     position: relative;
     z-index: 1;
@@ -162,7 +162,7 @@ body {
 }
 
 .section-title {
-    font-size: 25px;
+    font-size: 18px;
     font-weight: 600;
     color: var(--text-primary);
     margin-bottom: 8px;
@@ -316,37 +316,66 @@ input[type="radio"] {
 .section-header {
     display: flex;
     align-items: center;
-    padding: 16px 20px;
+    justify-content: space-between;
     cursor: pointer;
-    background: var(--bg-tertiary);
-    border-bottom: 1px solid var(--border-secondary);
+    border: none;
+    background: transparent;
+    padding: 12px;
+    margin-bottom: 16px;
     transition: all 0.2s ease;
 }
 
 .section-header:hover {
-    background: var(--bg-elevated);
+    border: 1px solid var(--mp-orange);
+    border-radius: var(--radius-md);
+    background: rgba(255, 140, 0, 0.05);
 }
 
+.section-header:hover .toggle-icon {
+    color: var(--mp-purple);
+    background: var(--mp-purple-bg);
+    border-color: var(--mp-purple);
+}
+
+.section-header h2,
 .section-header h3 {
     flex: 1;
-    margin: 0 0 0 12px;
-    font-size: 21px;
+    margin: 0;
+    font-size: 18px;
     font-weight: 600;
     color: var(--text-primary);
 }
 
 .section-icon {
     font-size: 23px;
+	padding-right: 8px;
 }
 
 .toggle-icon {
-    font-size: 14px;
+    font-size: 12px;
     color: var(--text-secondary);
-    transition: transform 0.2s ease;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    background: transparent;
+    border: 1px solid var(--border-secondary);
+}
+
+.toggle-icon:hover {
+    background: var(--bg-elevated);
+    border-color: var(--mp-purple-light);
+    color: var(--text-primary);
 }
 
 .section-header[aria-expanded="true"] .toggle-icon {
     transform: rotate(180deg);
+    background: var(--mp-purple-bg);
+    border-color: var(--mp-purple);
+    color: var(--mp-purple);
 }
 
 .collapsible-content {
@@ -1250,4 +1279,82 @@ input[type="range"]::-moz-range-thumb {
 }
 .mixpanel-field-device_id .mixpanel-field-icon {
     color: var(--success);
+}
+
+/* WebSocket Progress Display */
+.progress-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+    padding: 1rem;
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.stat-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.25rem;
+}
+
+.stat-value {
+    font-size: 1.25rem;
+    color: var(--text-primary);
+    font-weight: 700;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+/* Responsive progress stats */
+@media (max-width: 768px) {
+    .progress-stats {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.75rem;
+        padding: 0.75rem;
+    }
+    
+    .stat-value {
+        font-size: 1rem;
+    }
+}
+
+/* Dev Key Button */
+.dev-key-btn {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.5rem;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+}
+
+.dev-key-btn:hover {
+    background: var(--bg-elevated);
+    border-color: var(--mp-purple-light);
+    transform: scale(1.05);
+}
+
+.dev-key-btn:active {
+    transform: scale(0.95);
 }

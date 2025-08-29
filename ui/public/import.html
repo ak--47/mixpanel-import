@@ -26,6 +26,7 @@
 				<span id="cute-description">Extract Transform Load</span>
 			</h1>
 			<p class="subtitle">stream data to mixpanel with powerful transforms</p>
+			<button type="button" id="dev-key-btn" class="dev-key-btn" title="Fill form with dev values">🔑</button>
 		</header>
 
 		<!-- Main Form -->
@@ -180,7 +181,6 @@
 						<option value="event">🎯 Events</option>
 						<option value="user">👤 User Profiles</option>
 						<option value="group">👥 Group Profiles</option>
-						<option value="table">📋 Lookup Tables</option>
 					</select>
 					<small>Authentication requirements vary by type</small>
 				</div>
@@ -205,36 +205,6 @@
 					<small>From your Mixpanel project settings</small>
 				</div>
 
-				<div class="form-group"
-					id="lookupTableId-group"
-					style="display: none;">
-					<label for="lookupTableId">Lookup Table ID*</label>
-					<input type="text"
-						id="lookupTableId"
-						name="lookupTableId"
-						placeholder="Your lookup table ID"
-						autocomplete="off">
-					<small>Lookup table ID from Mixpanel</small>
-				</div>
-
-				<!-- Auth Method Toggle -->
-				<div class="auth-toggle"
-					id="auth-toggle"
-					style="display: none;">
-					<label class="toggle-label">
-						<input type="radio"
-							name="authMethod"
-							value="service"
-							checked>
-						Service Account (Recommended)
-					</label>
-					<label class="toggle-label">
-						<input type="radio"
-							name="authMethod"
-							value="secret">
-						API Secret (Legacy)
-					</label>
-				</div>
 
 				<!-- Service Account Fields -->
 				<div id="service-auth"
@@ -255,20 +225,6 @@
 								name="pass"
 								placeholder="Your service account password">
 						</div>
-					</div>
-				</div>
-
-				<!-- API Secret Fields -->
-				<div id="secret-auth"
-					class="auth-section"
-					style="display: none;">
-					<div class="form-group">
-						<label for="secret">API Secret*</label>
-						<input type="password"
-							id="secret"
-							name="secret"
-							placeholder="Your project's API secret">
-						<small>Legacy auth method</small>
 					</div>
 				</div>
 
@@ -331,7 +287,7 @@
 				<div class="gcs-credentials"
 					id="gcs-credentials"
 					style="display: none;">
-					<h3 class="subsection-title">Google Cloud Storage Credentials</h3>
+					<!-- <h3 class="subsection-title">Google Cloud Storage Credentials</h3> -->
 					<div class="form-group">
 						<label for="gcpProjectId">GCP Project ID*</label>
 						<input type="text"
@@ -358,8 +314,12 @@
 
 			<!-- Configuration Section -->
 			<section class="card">
-				<h2 class="section-title">⚙️ Import Configuration</h2>
-				<p class="section-description">Fine-tune settings for optimal performance and data quality.</p>
+				<div class="section-header" onclick="toggleSection('import-config-content')">
+					<h2 class="section-title">⚙️ Import Configuration</h2>
+					<span class="toggle-icon">▲</span>
+				</div>
+				<div id="import-config-content" class="collapsible-content" style="display: block;">
+					<p class="section-description">Fine-tune settings for optimal performance and data quality.</p>
 
 				<!-- Core Settings -->
 				<div class="config-section">
@@ -900,12 +860,17 @@
 						</div>
 					</div>
 				</div>
+				</div>
 			</section>
 
 			<!-- Transform Section -->
 			<section class="card">
-				<h2 class="section-title">🔧 Data Transform (Optional)</h2>
-				<p class="section-description">Write custom JavaScript to transform data before importing. Use preview to test changes.</p>
+				<div class="section-header" onclick="toggleSection('transform-content')">
+					<h2 class="section-title">🔧 Data Transform (Optional)</h2>
+					<span class="toggle-icon">▼</span>
+				</div>
+				<div id="transform-content" class="collapsible-content" style="display: none;">
+					<p class="section-description">Write custom JavaScript to transform data before importing. Use preview to test changes.</p>
 
 				<div class="transform-editor">
 					<div id="monaco-editor"
@@ -932,7 +897,8 @@
 					<div id="preview-content"
 						class="preview-content"></div>
 				</div>
-			</section>
+			</div>
+		</section>
 
 			<!-- CLI Command Preview -->
 			<section class="card">
@@ -977,6 +943,7 @@
 					<div class="loading-spinner"></div>
 					<h3 id="loading-title">Processing...</h3>
 					<p id="loading-message">Importing your data to Mixpanel. Check your terminal for detailed progress updates.</p>
+					<div class="loading-details"></div>
 				</div>
 			</div>
 
