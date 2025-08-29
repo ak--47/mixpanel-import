@@ -114,7 +114,7 @@ function juneEventsToMp(options = {}) {
 		const finalEvent = {
 			event: name || "unnamed june event",
 			properties: mixpanelProperties
-		}
+		};
 
 		return finalEvent;
 	};
@@ -128,84 +128,45 @@ function juneUserToMp(options = {}) {
 	const { user_id = "user_id" } = options;
 
 	return function transform(juneUser) {
-		// CSV data gets wrapped in properties object by the pipeline
-		const userData = juneUser.properties || juneUser;
+		let { user_id = "", anonymous_id = "", traits = {}, context = {} } = juneUser;
 
-		// Parse JSON fields from CSV
-		let traits = {};
-		let context = {};
+		if (!user_id) return {};
 
 		try {
-			if (typeof userData.traits === 'string') {
-				traits = JSON.parse(userData.traits);
-			} else if (typeof userData.traits === 'object') {
-				traits = userData.traits || {};
-			}
-		} catch (e) {
-			traits = {};
+			traits = JSON.parse(traits);
+		}
+		catch (e) {
+			//noop
 		}
 
 		try {
-			if (typeof userData.context === 'string') {
-				context = JSON.parse(userData.context);
-			} else if (typeof userData.context === 'object') {
-				context = userData.context || {};
-			}
+			context = JSON.parse(context);
 		} catch (e) {
-			context = {};
+			// noop
+		}
+
+		const props = {
+			...context,
+			...traits
+		};
+
+		const juneMixMap = Object.fromEntries(juneMixPairs);
+
+		for (const key in props) {
+			const mixpanelKey = juneMixMap[key];
+			if (mixpanelKey) {
+				props[mixpanelKey] = props[key];
+				delete props[key];
+			}
 		}
 
 		const mixpanelUser = {
-			$distinct_id: userData.user_id || userData.anonymous_id,
+			$distinct_id: user_id,
 			$set: {
-				$source: 'june-to-mixpanel'
+				$source: 'june-to-mixpanel',
+				...props
 			}
 		};
-
-		// Skip if no user identifier
-		if (!mixpanelUser.$distinct_id || mixpanelUser.$distinct_id === '') {
-			return null;
-		}
-
-		// Add user traits as profile properties
-		Object.keys(traits).forEach(key => {
-			let value = traits[key];
-
-			// Map common fields to Mixpanel standard properties
-			switch (key) {
-				case 'email':
-					mixpanelUser.$set.$email = value;
-					break;
-				case 'firstName':
-					mixpanelUser.$set.$first_name = value;
-					break;
-				case 'lastName':
-					mixpanelUser.$set.$last_name = value;
-					break;
-				case 'phoneNumber':
-					mixpanelUser.$set.$phone = value;
-					break;
-				case 'creationDate':
-					mixpanelUser.$set.$created = dayjs.utc(value).toISOString();
-					break;
-				default:
-					mixpanelUser.$set[key] = value;
-			}
-		});
-
-		// Add context data with june_context_ prefix
-		Object.keys(context).forEach(key => {
-			if (key === 'ip') {
-				mixpanelUser.$ip = context[key];
-			} else {
-				mixpanelUser.$set[`june_context_${key}`] = context[key];
-			}
-		});
-
-		// Add anonymous_id if present
-		if (userData.anonymous_id) {
-			mixpanelUser.$set.june_anonymous_id = userData.anonymous_id;
-		}
 
 		return mixpanelUser;
 	};
@@ -219,76 +180,46 @@ function juneGroupToMp(options = {}) {
 	const { group_key = "group_id" } = options;
 
 	return function transform(juneGroup) {
-		// CSV data gets wrapped in properties object by the pipeline
-		const groupData = juneGroup.properties || juneGroup;
-
-		// Parse JSON fields from CSV
-		let traits = {};
-		let context = {};
-
+		let { group_id = "", traits = {}, context = {} } = juneGroup;
+		if (!group_id) return {};
 		try {
-			if (typeof groupData.traits === 'string') {
-				traits = JSON.parse(groupData.traits);
-			} else if (typeof groupData.traits === 'object') {
-				traits = groupData.traits || {};
-			}
-		} catch (e) {
-			traits = {};
+			traits = JSON.parse(traits);
+		}
+		catch (e) {
+			// noop
 		}
 
 		try {
-			if (typeof groupData.context === 'string') {
-				context = JSON.parse(groupData.context);
-			} else if (typeof groupData.context === 'object') {
-				context = groupData.context || {};
-			}
-		} catch (e) {
-			context = {};
+			context = JSON.parse(context);
+		}
+		catch (e) {
+			// noop
 		}
 
-		const mixpanelGroup = {
-			$group_key: group_key,
-			$group_id: groupData.group_id,
-			$set: {
-				$source: 'june-to-mixpanel'
-			}
+		const props = {
+			...traits,
+			...context
 		};
 
-		// Skip if no group identifier
-		if (!mixpanelGroup.$group_id || mixpanelGroup.$group_id === '') {
-			return null;
-		}
+		const juneMixMap = Object.fromEntries(juneMixPairs);
 
-		// Add group traits as group profile properties
-		Object.keys(traits).forEach(key => {
-			let value = traits[key];
-
-			// Map common fields
-			switch (key) {
-				case 'name':
-					mixpanelGroup.$set.name = value;
-					break;
-				case 'creationDate':
-					mixpanelGroup.$set.$created = dayjs.utc(value).toISOString();
-					break;
-				default:
-					mixpanelGroup.$set[key] = value;
+		for (const key in props) {
+			const mixpanelKey = juneMixMap[key];
+			if (mixpanelKey) {
+				props[mixpanelKey] = props[key];
+				delete props[key];
 			}
-		});
-
-		// Add context data with june_context_ prefix
-		Object.keys(context).forEach(key => {
-			mixpanelGroup.$set[`june_context_${key}`] = context[key];
-		});
-
-		// Add user association if present
-		if (groupData.user_id) {
-			mixpanelGroup.$set.associated_user_id = groupData.user_id;
 		}
 
-		if (groupData.anonymous_id) {
-			mixpanelGroup.$set.june_anonymous_id = groupData.anonymous_id;
-		}
+
+		const mixpanelGroup = {
+			$group_id: group_id,
+			$group_key: group_key,
+			$set: {
+				$source: 'june-to-mixpanel',
+				...props
+			}
+		};
 
 		return mixpanelGroup;
 	};
@@ -298,7 +229,14 @@ function juneGroupToMp(options = {}) {
 const juneMixPairs = [
 	["user_id", "$user_id"],
 	["anonymous_id", "anonymous_id"],
-	["timestamp", "time"]
+	["timestamp", "time"],
+	["firstName", "$first_name"],
+	["lastName", "$last_name"],
+	["email", "$email"],
+	["phoneNumber", "$phone"],
+	["creationDate", "$created"],
+	["ip", "$ip"],
+	["name", "$name"]
 ];
 
 module.exports = {
