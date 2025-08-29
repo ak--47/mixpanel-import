@@ -159,7 +159,7 @@ declare namespace main {
   };
 
   type Regions = "US" | "EU" | "IN";
-  type SupportedFormats = "json" | "jsonl" | "csv" | "parquet";
+  type SupportedFormats = "strict_json" | "jsonl" | "csv" | "parquet";
   type transports = 'got' | 'undici';
 
   type dependentTables = {

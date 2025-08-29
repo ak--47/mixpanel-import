@@ -228,8 +228,8 @@ describe("sanity: in memory", () => {
 });
 
 describe("sanity: inference", () => {
-	test("infers json", async () => {
-		const data = await mp({}, eventsJSON, { ...opts, streamFormat: "" });
+	test("parses strict_json when explicitly specified", async () => {
+		const data = await mp({}, eventsJSON, { ...opts, streamFormat: "strict_json" });
 		expect(data.success).toBe(3);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);
@@ -242,6 +242,23 @@ describe("sanity: inference", () => {
 		expect(data.duration).toBeGreaterThan(0);
 		expect(data).toHaveProperty("startTime");
 		expect(data).toHaveProperty("endTime");
+	});
+
+	test("handles strict_json format with explicit streamFormat", async () => {
+		// Test with a file that contains a JSON array - requires explicit strict_json format
+		const data = await mp({}, './testData/multijson/1.json', { ...opts, streamFormat: "strict_json" });
+		expect(data.success).toBeGreaterThan(0);
+		expect(data.failed).toBe(0);
+		expect(data.duration).toBeGreaterThan(0);
+	});
+
+	test("auto-detects .json files as JSONL format", async () => {
+		// Test that .json files are now auto-detected as JSONL (newline-delimited) format
+		// Using events.json which is actually JSONL format despite .json extension
+		const data = await mp({}, './testData/events.json', { ...opts, streamFormat: "" });
+		expect(data.success).toBeGreaterThan(0);
+		expect(data.failed).toBe(0);
+		expect(data.duration).toBeGreaterThan(0);
 	});
 
 	test("infers csv", async () => {

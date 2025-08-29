@@ -369,7 +369,7 @@ async function determineDataType(data, job) {
 					let parsingCase = detectedCase;
 
 					// Allow streamFormat to override detected format
-					if (['jsonl', 'json', 'csv', 'parquet'].includes(streamFormat)) parsingCase = streamFormat;
+					if (['jsonl', 'strict_json', 'csv', 'parquet'].includes(streamFormat)) parsingCase = streamFormat;
 
 					let loadIntoMemory = false;
 					if (fileInfo.size < os.freemem() * MEMORY_CONFIG.FREE_MEMORY_THRESHOLD) loadIntoMemory = true;
@@ -393,7 +393,7 @@ async function determineDataType(data, job) {
 						return itemStream(path.resolve(data), "jsonl", job, isGzipped);
 					}
 
-					if (parsingCase === 'json') {
+					if (parsingCase === 'strict_json') {
 						if (loadIntoMemory) {
 							try {
 								job.wasStream = false;
@@ -477,12 +477,12 @@ async function determineDataType(data, job) {
 				}
 			}
 
-			if (['jsonl', 'json', 'csv', 'parquet'].includes(streamFormat)) parsingCase = streamFormat;
+			if (['jsonl', 'strict_json', 'csv', 'parquet'].includes(streamFormat)) parsingCase = streamFormat;
 
 			switch (parsingCase) {
 				case 'jsonl':
 					return itemStream(files, "jsonl", job, isGzipped);
-				case 'json':
+				case 'strict_json':
 					return itemStream(files, "json", job, isGzipped);
 				case 'csv':
 					return csvStreamArray(files, job, isGzipped);

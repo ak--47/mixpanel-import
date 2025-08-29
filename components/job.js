@@ -357,13 +357,13 @@ class Job {
 
 	// ? props
 	version = this.getVersion();
-	lineByLineFileExt = ['.txt', '.jsonl', '.ndjson'];
-	objectModeFileExt = ['.json'];
+	lineByLineFileExt = ['.txt', '.jsonl', '.ndjson', '.json'];
+	objectModeFileExt = [];
 	tableFileExt = ['.csv', '.tsv'];
 	otherFormats = ['.parquet'];
 	// Add gzipped variants for local file support
-	gzippedLineByLineFileExt = ['.txt.gz', '.jsonl.gz', '.ndjson.gz'];
-	gzippedObjectModeFileExt = ['.json.gz'];
+	gzippedLineByLineFileExt = ['.txt.gz', '.jsonl.gz', '.ndjson.gz', '.json.gz'];
+	gzippedObjectModeFileExt = [];
 	gzippedTableFileExt = ['.csv.gz', '.tsv.gz'];
 	gzippedOtherFormats = ['.parquet.gz'];
 	supportedFileExt = [...this.lineByLineFileExt, ...this.objectModeFileExt, ...this.tableFileExt, ...this.otherFormats, ...this.gzippedLineByLineFileExt, ...this.gzippedObjectModeFileExt, ...this.gzippedTableFileExt, ...this.gzippedOtherFormats];
