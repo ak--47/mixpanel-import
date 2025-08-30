@@ -262,7 +262,7 @@ describe("sanity: inference", () => {
 	});
 
 	test("infers csv", async () => {
-		const data = await mp({}, table, { ...opts, strict: false, streamFormat: "", aliases: { id: "$insert_id", name: "distinct_id", category: "event" }, forceStream: false });
+		const data = await mp({}, table, { ...opts, strict: false, streamFormat: "none", aliases: { id: "$insert_id", name: "distinct_id", category: "event" }, forceStream: false });
 		expect(data.success).toBe(3);
 		expect(data.failed).toBe(0);
 		expect(data.duration).toBeGreaterThan(0);

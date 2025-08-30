@@ -49,13 +49,19 @@ function analyzeFileFormat(filePath, job) {
 
 	// Check for gzipped extensions first
 	if (gzippedLineByLineFileExt.some(ext => filePath.endsWith(ext))) {
-		return { isGzipped: true, baseFormat: '.jsonl', parsingCase: 'jsonl' };
+		// Extract the base format from the gzipped filename
+		const baseFormat = filePath.endsWith('.gz') ? path.extname(filePath.slice(0, -3)) : path.extname(filePath);
+		return { isGzipped: true, baseFormat, parsingCase: 'jsonl' };
 	}
 	if (gzippedObjectModeFileExt.some(ext => filePath.endsWith(ext))) {
-		return { isGzipped: true, baseFormat: '.json', parsingCase: 'json' };
+		// Extract the base format from the gzipped filename
+		const baseFormat = filePath.endsWith('.gz') ? path.extname(filePath.slice(0, -3)) : path.extname(filePath);
+		return { isGzipped: true, baseFormat, parsingCase: 'json' };
 	}
 	if (gzippedTableFileExt.some(ext => filePath.endsWith(ext))) {
-		return { isGzipped: true, baseFormat: '.csv', parsingCase: 'csv' };
+		// Extract the base format from the gzipped filename  
+		const baseFormat = filePath.endsWith('.gz') ? path.extname(filePath.slice(0, -3)) : path.extname(filePath);
+		return { isGzipped: true, baseFormat, parsingCase: 'csv' };
 	}
 	if (filePath.endsWith('.parquet.gz')) {
 		return { isGzipped: true, baseFormat: '.parquet', parsingCase: 'parquet' };
@@ -358,7 +364,6 @@ async function determineDataType(data, job) {
 				isArrayOfFileNames = true;
 			}
 		}
-
 		// data refers to file/folder on disk
 		if (typeof data === 'string' && !isArrayOfFileNames) {
 			if (fs.existsSync(path.resolve(data))) {
@@ -505,6 +510,16 @@ async function determineDataType(data, job) {
 
 	// data is a string, and we have to guess what it is
 	if (typeof data === 'string') {
+		// Special check for gzipped parquet files - they should not be processed as regular strings
+		if (data.endsWith('.parquet.gz')) {
+			throw new Error(`Gzipped parquet files (${data}) are not yet supported for local files. Please decompress the file first or use cloud storage which supports .parquet.gz files.`);
+		}
+		
+		// If we have a parsing error from file processing and the data looks like a file path, 
+		// throw the error instead of trying to parse the path as data
+		if (parsingError && (data.includes('/') || data.includes('\\') || data.includes('.'))) {
+			throw parsingError;
+		}
 
 		//stringified JSON
 		try {

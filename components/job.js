@@ -135,7 +135,7 @@ class Job {
 
 		// ? string options
 		this.recordType = opts.recordType || `event`; // event, user, group or table		
-		this.streamFormat = opts.streamFormat || 'jsonl'; // json or jsonl ... only relevant for streams
+		this.streamFormat = opts.streamFormat || ""; 
 		this.region = opts.region || `US`; // US or EU or IN
 		/** @type {import('../index.d.ts').Regions | ''} */
 		this.secondRegion = opts.secondRegion || ''; // US or EU or IN; used for exports => import
