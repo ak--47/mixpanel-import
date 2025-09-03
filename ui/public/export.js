@@ -78,6 +78,12 @@ class MixpanelExportUI {
 				console.log('Export job completed:', data.result);
 				this.hideLoading();
 				this.showResults(data.result);
+				
+				// If the export produced files, automatically download them
+				if (data.result.downloadUrl) {
+					this.downloadExportFile(data.result.downloadUrl, data.result.files);
+				}
+				
 				this.disconnectWebSocket();
 				break;
 				
@@ -903,6 +909,38 @@ class MixpanelExportUI {
 	hideLoading() {
 		document.getElementById('loading').style.display = 'none';
 	}
+	
+	showError(errorMessage) {
+		// Hide loading and show error in results section
+		this.hideLoading();
+		
+		const resultsSection = document.getElementById('results');
+		const resultsTitle = document.getElementById('results-title');
+		const resultsData = document.getElementById('results-data');
+
+		resultsTitle.textContent = 'Export Failed';
+		resultsData.innerHTML = `
+			<div class="error-message">
+				<div class="error-icon">❌</div>
+				<div class="error-content">
+					<h4>Export Error</h4>
+					<p>${errorMessage}</p>
+					<details style="margin-top: 10px;">
+						<summary>What can I try?</summary>
+						<ul style="margin-left: 20px; margin-top: 10px;">
+							<li>Check your credentials and project settings</li>
+							<li>Verify your date range and filters</li>
+							<li>Try reducing the export limit or date range</li>
+							<li>Check the console for more detailed error information</li>
+						</ul>
+					</details>
+				</div>
+			</div>
+		`;
+		
+		resultsSection.style.display = 'block';
+		resultsSection.scrollIntoView({ behavior: 'smooth' });
+	}
 
 	showResults(result, isDryRun) {
 		this.hideLoading();
@@ -912,11 +950,157 @@ class MixpanelExportUI {
 		const resultsData = document.getElementById('results-data');
 
 		resultsTitle.textContent = isDryRun ? 'Export Test Complete!' : 'Export Complete!';
-		resultsData.innerHTML = `<pre>${JSON.stringify(result, null, 2)}</pre>`;
+		
+		// Show download info for file exports
+		let resultHtml = `<pre>${JSON.stringify(result, null, 2)}</pre>`;
+		if (result.files && result.files.length > 0 && !isDryRun) {
+			resultHtml = `
+				<div class="export-files-info">
+					<h4>📁 Exported Files:</h4>
+					<ul>
+						${result.files.map(file => `
+							<li>
+								<strong>${file.name}</strong> (${this.formatFileSize(file.size)})
+								${result.downloadUrl ? '<span class="download-status">📥 Downloaded</span>' : ''}
+							</li>
+						`).join('')}
+					</ul>
+					${result.downloadUrl ? '<p class="download-note">💡 Files have been automatically downloaded to your Downloads folder.</p>' : ''}
+				</div>
+				<details style="margin-top: 20px;">
+					<summary>📊 Full Export Results</summary>
+					<pre>${JSON.stringify(result, null, 2)}</pre>
+				</details>
+			`;
+		}
+		
+		resultsData.innerHTML = resultHtml;
 		resultsSection.style.display = 'block';
 
 		// Scroll to results
 		resultsSection.scrollIntoView({ behavior: 'smooth' });
+	}
+	
+	formatFileSize(bytes) {
+		if (bytes === 0) return '0 B';
+		const k = 1024;
+		const sizes = ['B', 'KB', 'MB', 'GB'];
+		const i = Math.floor(Math.log(bytes) / Math.log(k));
+		return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+	}
+	
+	downloadExportFile(downloadUrl, files) {
+		try {
+			// Create a hidden link and trigger download
+			const link = document.createElement('a');
+			link.href = downloadUrl;
+			link.style.display = 'none';
+			
+			// Set download attribute with filename if we have file info
+			if (files && files.length === 1) {
+				link.download = files[0].name;
+			}
+			
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+			
+			console.log('Export file download initiated:', downloadUrl);
+			
+			// Show success message
+			this.showDownloadSuccess(files);
+			
+		} catch (error) {
+			console.error('Failed to download export file:', error);
+			this.showDownloadError(downloadUrl);
+		}
+	}
+	
+	showDownloadSuccess(files) {
+		// Create a temporary success message
+		const successMsg = document.createElement('div');
+		successMsg.className = 'download-success-toast';
+		successMsg.innerHTML = `
+			<div class="toast-content">
+				<span class="toast-icon">✅</span>
+				<span class="toast-message">Export file downloaded successfully!</span>
+			</div>
+		`;
+		successMsg.style.cssText = `
+			position: fixed;
+			top: 20px;
+			right: 20px;
+			background: #4CAF50;
+			color: white;
+			padding: 12px 20px;
+			border-radius: 8px;
+			box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+			z-index: 10000;
+			opacity: 0;
+			transition: opacity 0.3s ease;
+		`;
+		
+		document.body.appendChild(successMsg);
+		
+		// Fade in
+		setTimeout(() => {
+			successMsg.style.opacity = '1';
+		}, 100);
+		
+		// Remove after 5 seconds
+		setTimeout(() => {
+			successMsg.style.opacity = '0';
+			setTimeout(() => {
+				if (successMsg.parentNode) {
+					document.body.removeChild(successMsg);
+				}
+			}, 300);
+		}, 5000);
+	}
+	
+	showDownloadError(downloadUrl) {
+		// Show error message with manual download link
+		const errorMsg = document.createElement('div');
+		errorMsg.className = 'download-error-toast';
+		errorMsg.innerHTML = `
+			<div class="toast-content">
+				<span class="toast-icon">⚠️</span>
+				<span class="toast-message">
+					Automatic download failed. 
+					<a href="${downloadUrl}" target="_blank" style="color: #fff; text-decoration: underline;">Click here to download manually</a>
+				</span>
+			</div>
+		`;
+		errorMsg.style.cssText = `
+			position: fixed;
+			top: 20px;
+			right: 20px;
+			background: #f44336;
+			color: white;
+			padding: 12px 20px;
+			border-radius: 8px;
+			box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+			z-index: 10000;
+			opacity: 0;
+			transition: opacity 0.3s ease;
+		`;
+		
+		document.body.appendChild(errorMsg);
+		
+		// Fade in
+		setTimeout(() => {
+			errorMsg.style.opacity = '1';
+		}, 100);
+		
+		// Remove after 10 seconds (longer for error messages)
+		setTimeout(() => {
+			errorMsg.style.opacity = '0';
+			setTimeout(() => {
+				if (errorMsg.parentNode) {
+					document.body.removeChild(errorMsg);
+				}
+			}, 300);
+		}, 10000);
 	}
 }
 

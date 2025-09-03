@@ -753,6 +753,15 @@ app.post('/export', async (req, res) => {
 			secondToken: exportData.secondToken
 		};
 
+		// Generate unique job ID for this export
+		const jobId = `export-${Date.now()}-${Math.random().toString(36).substring(2)}`;
+		
+		// Create job-specific temp directory
+		const jobTmpDir = path.join(tmpDir, jobId);
+		if (!fs.existsSync(jobTmpDir)) {
+			fs.mkdirSync(jobTmpDir, { recursive: true });
+		}
+
 		/** @type {Options} */
 		const opts = {
 			recordType: exportData.recordType,
@@ -767,51 +776,95 @@ app.post('/export', async (req, res) => {
 			logs: exportData.logs || false,
 			verbose: exportData.verbose || false,
 			showProgress: exportData.showProgress || true,
-			writeToFile: exportData.writeToFile || false,
-			where: exportData.where,
+			writeToFile: exportData.writeToFile !== false, // Default to true for exports that create files
+			where: jobTmpDir, // Save files to job-specific temp directory
 			outputFilePath: exportData.outputFilePath
 		};
 
-		// Generate unique job ID for WebSocket tracking
-		const jobId = `export-${Date.now()}-${Math.random().toString(36).substring(2)}`;
+		// Check if this is a file-producing export type
+		const fileProducingTypes = ['export', 'profile-export', 'profile-delete', 'group-export', 'group-delete', 'annotations', 'get-annotations'];
+		const isFileProducing = fileProducingTypes.includes(exportData.recordType);
 		
-		// Add progress callback for WebSocket updates
-		opts.progressCallback = createProgressCallback(jobId);
-		
-		console.log(`Starting export operation ${jobId}: ${opts.recordType}`);
-
-		// Return job ID immediately so client can connect WebSocket
-		res.json({
-			success: true,
-			jobId: jobId,
-			message: 'Export started - connect WebSocket for progress updates'
-		});
-
-		// Run the export asynchronously
-		try {
-			const result = await mixpanelImport(creds, null, opts);
-			console.log(`Export ${jobId} completed: ${result.total} records processed`);
+		if (isFileProducing) {
+			// For file-producing exports, we need to handle WebSocket + file streaming
 			
-			// Signal job completion via WebSocket
-			signalJobComplete(jobId, result);
-		} catch (exportError) {
-			console.error(`Export ${jobId} failed:`, exportError);
+			// Add progress callback for WebSocket updates
+			opts.progressCallback = createProgressCallback(jobId);
 			
-			// Signal job failure via WebSocket
-			const jobData = activeJobs.get(jobId);
-			if (jobData && jobData.ws.readyState === WebSocket.OPEN) {
-				try {
-					jobData.ws.send(JSON.stringify({
-						type: 'job-error',
-						jobId: jobId,
-						error: exportError.message,
-						timestamp: Date.now()
-					}));
-				} catch (wsError) {
-					console.error(`Failed to send error to export ${jobId}:`, wsError);
+			console.log(`Starting file export operation ${jobId}: ${opts.recordType}`);
+
+			// Return job ID immediately so client can connect WebSocket
+			res.json({
+				success: true,
+				jobId: jobId,
+				message: 'Export started - connect WebSocket for progress updates'
+			});
+
+			// Run the export asynchronously
+			try {
+				const result = await mixpanelImport(creds, null, opts);
+				console.log(`Export ${jobId} completed: ${result.total} records processed`);
+				
+				// Find the created file(s) and prepare for download
+				const exportedFiles = [];
+				if (fs.existsSync(jobTmpDir)) {
+					const files = fs.readdirSync(jobTmpDir);
+					for (const file of files) {
+						const filePath = path.join(jobTmpDir, file);
+						const stats = fs.statSync(filePath);
+						if (stats.isFile()) {
+							exportedFiles.push({
+								name: file,
+								path: filePath,
+								size: stats.size
+							});
+						}
+					}
 				}
+				
+				// Signal job completion via WebSocket with file info
+				signalJobComplete(jobId, {
+					...result,
+					files: exportedFiles,
+					downloadUrl: exportedFiles.length === 1 ? `/download/${jobId}/${exportedFiles[0].name}` : `/download/${jobId}`
+				});
+			} catch (exportError) {
+				console.error(`Export ${jobId} failed:`, exportError);
+				
+				// Clean up temp directory on error
+				if (fs.existsSync(jobTmpDir)) {
+					fs.rmSync(jobTmpDir, { recursive: true, force: true });
+				}
+				
+				// Signal job failure via WebSocket
+				const jobData = activeJobs.get(jobId);
+				if (jobData && jobData.ws.readyState === WebSocket.OPEN) {
+					try {
+						jobData.ws.send(JSON.stringify({
+							type: 'job-error',
+							jobId: jobId,
+							error: exportError.message,
+							timestamp: Date.now()
+						}));
+					} catch (wsError) {
+						console.error(`Failed to send error to export ${jobId}:`, wsError);
+					}
+				}
+				activeJobs.delete(jobId);
 			}
-			activeJobs.delete(jobId);
+			
+		} else {
+			// For stream-to-stream operations (export-import), run synchronously and return result
+			console.log(`Starting stream export-import operation: ${opts.recordType}`);
+			
+			const result = await mixpanelImport(creds, null, opts);
+			console.log(`Stream export-import completed: ${result.total} records processed`);
+			
+			res.json({
+				success: true,
+				result: result,
+				message: 'Export-import operation completed'
+			});
 		}
 
 	} catch (error) {
@@ -875,6 +928,100 @@ app.post('/export-dry-run', async (req, res) => {
 
 	} catch (error) {
 		console.error('Export dry run error:', error);
+		res.status(500).json({
+			success: false,
+			error: error.message
+		});
+	}
+});
+
+// File download endpoint for exported files
+app.get('/download/:jobId/:filename?', (req, res) => {
+	try {
+		const jobId = req.params.jobId;
+		const filename = req.params.filename;
+		
+		// Job temp directory
+		const jobTmpDir = path.join(tmpDir, jobId);
+		
+		if (!fs.existsSync(jobTmpDir)) {
+			return res.status(404).json({
+				success: false,
+				error: `Export files not found for job ${jobId}. The files may have been cleaned up or the export may not have completed successfully.`
+			});
+		}
+		
+		// Get list of files in the job directory
+		const files = fs.readdirSync(jobTmpDir).filter(file => {
+			const filePath = path.join(jobTmpDir, file);
+			return fs.statSync(filePath).isFile();
+		});
+		
+		if (files.length === 0) {
+			return res.status(404).json({
+				success: false,
+				error: `No export files found for job ${jobId}.`
+			});
+		}
+		
+		let targetFile;
+		if (filename) {
+			// Download specific file
+			if (!files.includes(filename)) {
+				return res.status(404).json({
+					success: false,
+					error: `File ${filename} not found for job ${jobId}.`
+				});
+			}
+			targetFile = filename;
+		} else {
+			// Download first/only file if no filename specified
+			targetFile = files[0];
+		}
+		
+		const filePath = path.join(jobTmpDir, targetFile);
+		const stats = fs.statSync(filePath);
+		
+		// Set appropriate headers for file download
+		res.setHeader('Content-Disposition', `attachment; filename="${targetFile}"`);
+		res.setHeader('Content-Type', 'application/octet-stream');
+		res.setHeader('Content-Length', stats.size);
+		
+		// Stream the file to the client
+		const fileStream = fs.createReadStream(filePath);
+		
+		fileStream.pipe(res);
+		
+		// Handle stream errors
+		fileStream.on('error', (error) => {
+			console.error(`Error streaming file ${filePath}:`, error);
+			if (!res.headersSent) {
+				res.status(500).json({
+					success: false,
+					error: 'Failed to stream export file'
+				});
+			}
+		});
+		
+		// Clean up temp directory after successful download
+		fileStream.on('end', () => {
+			console.log(`Successfully downloaded export file: ${targetFile} (${stats.size} bytes)`);
+			
+			// Clean up the temp directory after download
+			setTimeout(() => {
+				try {
+					if (fs.existsSync(jobTmpDir)) {
+						fs.rmSync(jobTmpDir, { recursive: true, force: true });
+						console.log(`Cleaned up temp directory for job ${jobId}`);
+					}
+				} catch (cleanupError) {
+					console.warn(`Failed to clean up temp directory for job ${jobId}:`, cleanupError.message);
+				}
+			}, 1000); // Small delay to ensure download completes
+		});
+		
+	} catch (error) {
+		console.error('Download error:', error);
 		res.status(500).json({
 			success: false,
 			error: error.message
