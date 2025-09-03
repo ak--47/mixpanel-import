@@ -95,20 +95,41 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	const l = logger(job);
 	if (isCLI) l(cliParams.welcome);
 	if (isCLI) global.l = l; // hacky way to make logger available globally
-	l(`\nMIXPANEL IMPORTER\n`);
-	l(`\nJOB CREATED!\n`);
+	l(`\n🚀 MIXPANEL IMPORTER\n`);
+	
+	// Enhanced job creation logging with configuration details
+	l(`\n✅ JOB CREATED!\n`);
+	if (job.verbose) {
+		l(`📋 Configuration Summary:`);
+		l(`   • Record Type: ${job.recordType}`);
+		l(`   • Region: ${job.region.toUpperCase()}`);
+		l(`   • Workers: ${job.workers}`);
+		l(`   • Records per Batch: ${u.comma(job.recordsPerBatch)}`);
+		l(`   • Stream Format: ${job.streamFormat}`);
+		if (job.recordType.includes('export')) {
+			l(`   • Export Mode: ${job.where ? (job.where.startsWith('gs://') ? '☁️  GCS' : job.where.startsWith('s3://') ? '☁️  S3' : '💾 Local') : '💾 Local'}`);
+			if (job.params && Object.keys(job.params).length > 0) {
+				// Format params more cleanly
+				const paramCount = Object.keys(job.params).length;
+				l(`   • Export Params: ${paramCount} custom parameter${paramCount > 1 ? 's' : ''} configured`);
+			}
+		}
+		if (job.transformFunc) l(`   • Transform: Custom function`);
+		if (job.vendor) l(`   • Vendor Transform: ${job.vendor}`);
+		l(``);
+	}
 	await job.init();
-	l(`\nDEPS LOADED!\n`);
+	l(`\n📦 DEPS LOADED!\n`);
 
 	// ETL
-	l(`\nETL STARTED!\n`);
+	l(`\n⚡ ETL STARTED!\n`);
 	job.timer.start();
 
 	let stream;
 	try {
 
 		stream = await determineDataType(data || cliData, job); // always stream[]
-		l(`\nSTREAM CREATED!\n`);
+		l(`\n🌊 STREAM CREATED!\n`);
 	}
 	catch (e) {
 		l(`ERROR: Failed to create stream - ${e.message}`);
@@ -138,7 +159,11 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 		// clean up
 		job.timer.end(false);
 	const summary = job.summary();
-	if (isCLI) l(`${job.type === 'export' ? 'export' : 'import'} complete in ${summary.durationHuman}\n`);
+	// Always show completion message for exports (even when not CLI)
+	if (job.type === 'export' || isCLI) {
+		l(`\n🎉 ${job.type === 'export' ? 'EXPORT' : 'IMPORT'} COMPLETE in ${summary.durationHuman}!\n`);
+	}
+	
 	const stats = {
 		total: u.comma(summary.total),
 		success: u.comma(summary.success),
@@ -149,9 +174,30 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	};
 
 	if (isCLI) {
-		l("STATS");
+		l("📊 STATS");
 		l(stats, true);
 		l('\n');
+	}
+	
+	// For verbose mode, show key info even when not CLI
+	if (job.verbose && !isCLI) {
+		if (job.type === 'export') {
+			l(`📊 ${summary.success} records exported in ${summary.durationHuman}`);
+			if (job.where && (job.where.startsWith('gs://') || job.where.startsWith('s3://'))) {
+				l(`☁️  Saved to: ${job.where}`);
+			}
+		} else {
+			// Import summary
+			l(`📊 ${summary.success} records imported in ${summary.durationHuman}`);
+			if (summary.failed > 0) {
+				l(`❌ ${summary.failed} records failed`);
+			}
+			if (summary.duplicates > 0) {
+				l(`🔄 ${summary.duplicates} duplicates skipped`);
+			}
+			l(`⚡ ${summary.eps} events/sec • ${summary.rps} requests/sec`);
+		}
+		l('');
 	}
 
 	if (job.logs) await writeLogs(summary);

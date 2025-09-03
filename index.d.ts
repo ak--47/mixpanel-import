@@ -496,6 +496,13 @@ declare namespace main {
 	whereClause?: string; 
 
 	/**
+	 * arbitrary query parameters for export endpoints
+	 * gets merged into the export URL as search parameters
+	 * example: { event: ['event_name'], limit: 1000 }
+	 */
+	params?: Record<string, any>;
+
+	/**
 	 * allowing arbitrary lookups which get turned into maps() in heavyObject
 	 * this will be provided to the transformer function and lets you do on-the-fly lookups
 	 * 

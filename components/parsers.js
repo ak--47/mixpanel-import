@@ -26,7 +26,7 @@ const { NODE_ENV = "unknown" } = process.env;
 /**
  * Determine if file is gzipped and extract base format
  * @param {string} filePath - Path to file
- * @param {import('../index').Job} job - Job configuration
+ * @param {JobConfig} job - Job configuration
  * @returns {{isGzipped: boolean, baseFormat: string, parsingCase: string}}
  */
 function analyzeFileFormat(filePath, job) {
@@ -230,7 +230,7 @@ const _ERROR_CONFIG = {
 	]
 };
 
-/** @typedef {import('./job')} JobConfig */
+/** @typedef {InstanceType<typeof import('./job')>} JobConfig */
 /** @typedef {import('../index').Data} Data */
 
 
@@ -240,9 +240,13 @@ const _ERROR_CONFIG = {
  */
 async function determineDataType(data, job) {
 	// const l = logger(job);
-	//exports are saved locally
+	//exports are saved locally or to cloud storage
 	if (job.recordType === 'export') {
 		if (job.where) {
+			// Don't resolve cloud paths - return them as-is
+			if (job.where.startsWith('gs://') || job.where.startsWith('s3://')) {
+				return job.where;
+			}
 			return path.resolve(job.where);
 		}
 		const folder = u.mkdir('./mixpanel-exports');
@@ -284,6 +288,10 @@ async function determineDataType(data, job) {
 
 	if (job.recordType === 'profile-export') {
 		if (job.where) {
+			// Don't resolve cloud paths - return them as-is  
+			if (job.where.startsWith('gs://') || job.where.startsWith('s3://')) {
+				return job.where;
+			}
 			return path.resolve(job.where);
 		}
 		const folder = u.mkdir('./mixpanel-exports');
@@ -416,6 +424,7 @@ async function determineDataType(data, job) {
 
 						//otherwise, stream it
 						job.wasStream = true;
+						// @ts-ignore
 						return itemStream(path.resolve(data), "json", job, isGzipped);
 					}
 
@@ -488,7 +497,7 @@ async function determineDataType(data, job) {
 				case 'jsonl':
 					return itemStream(files, "jsonl", job, isGzipped);
 				case 'strict_json':
-					return itemStream(files, "json", job, isGzipped);
+					return itemStream(files, "strict_json", job, isGzipped);
 				case 'csv':
 					return csvStreamArray(files, job, isGzipped);
 				case 'parquet':
@@ -542,6 +551,7 @@ async function determineDataType(data, job) {
 		//CSV or TSV
 		try {
 			if (data.length > FILE_PROCESSING_CONFIG.CSV_MIN_LENGTH) {
+				// @ts-ignore
 				return stream.Readable.from(Papa.parse(data, CSV_CONFIG).data, { objectMode: true, highWaterMark: job.highWater });
 			}
 		}
@@ -555,7 +565,7 @@ async function determineDataType(data, job) {
 		throw parsingError;
 	}
 	else {
-		throw new Error('a very unusual error has occured');
+		throw new Error('a very unusual error has occurred');
 	}
 }
 
@@ -645,7 +655,7 @@ function itemStream(filePath, type = "jsonl", job, isGzipped = false) {
 			return parsedStream;
 
 		}
-		if (type === "json") {
+		if (type === "strict_json") {
 			stream = filePath.map((file) => createStreamWithGzipSupport(file));
 			// @ts-ignore
 			parsedStream = MultiStream.obj(stream.map(s => s.pipe(parser(streamOpts)).map(token => token.value)));

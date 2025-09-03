@@ -39,37 +39,97 @@ class Job {
 
 		// Use empty object if creds is null/undefined but operation is allowed without creds
 		const safeCreds = creds || {};
-		this.acct = safeCreds.acct || ``; //service acct username
-		this.pass = safeCreds.pass || ``; //service acct secret
-		this.project = safeCreds.project || ``; //project id
-		this.workspace = safeCreds.workspace || ``; //workspace id
-		this.org = safeCreds.org || ``; //org id
-		this.secret = safeCreds.secret || ``; //api secret (deprecated auth)
+		
+		/** @type {string} service account username */
+		this.acct = safeCreds.acct || ``;
+		
+		/** @type {string} service account secret */
+		this.pass = safeCreds.pass || ``;
+		
+		/** @type {string} project id */
+		this.project = safeCreds.project || ``;
+		
+		/** @type {string} workspace id */
+		this.workspace = safeCreds.workspace || ``;
+		
+		/** @type {string} org id */
+		this.org = safeCreds.org || ``;
+		
+		/** @type {string} api secret (deprecated auth) */
+		this.secret = safeCreds.secret || ``;
+		
+		/** @type {string} bearer token */
 		this.bearer = safeCreds.bearer || ``;
-		this.token = safeCreds.token || ``; //project token 
-		this.secondToken = safeCreds.secondToken || ``; //second token for export / import
-		this.lookupTableId = safeCreds.lookupTableId || ``; //lookup table id
-		this.groupKey = safeCreds.groupKey || opts.groupKey || ``; //group key id
+		
+		/** @type {string} project token */
+		this.token = safeCreds.token || ``;
+		
+		/** @type {string} second token for export / import */
+		this.secondToken = safeCreds.secondToken || ``;
+		
+		/** @type {string} lookup table id */
+		this.lookupTableId = safeCreds.lookupTableId || ``;
+		
+		/** @type {string} group key id */
+		this.groupKey = safeCreds.groupKey || opts.groupKey || ``;
+		/** @type {string} resolved authentication info */
 		this.auth = this.resolveProjInfo();
+		
+		/** @type {string} start time of the job */
 		this.startTime = new Date().toISOString();
+		
+		/** @type {string|null} end time of the job */
 		this.endTime = null;
-		this.hashTable = new Set(); //used if de-dupe is on
-		this.memorySamples = []; //used to calculate memory usage
-		this.wasStream = null; //was the data loaded into memory or streamed?
-		this.dryRunResults = []; //results of dry run	
+		
+		/** @type {Set} used if de-dupe is on */
+		this.hashTable = new Set();
+		
+		/** @type {Array} used to calculate memory usage */
+		this.memorySamples = [];
+		
+		/** @type {boolean|null} was the data loaded into memory or streamed? */
+		this.wasStream = null;
+		
+		/** @type {Array} results of dry run */
+		this.dryRunResults = [];
+		
+		/** @type {Object} storage for invalid records */
 		this.badRecords = {};
-		this.insertIdTuple = opts.insertIdTuple || []; //tuple of keys for insert_id	
-		this.scdLabel = opts.scdLabel || ''; //scd label
-		this.scdKey = opts.scdKey || ''; //scd key
-		this.scdType = opts.scdType || 'string'; //scd type
-		this.scdId = opts.scdId || ''; //scd id
-		this.scdPropId = opts.scdPropId || ''; //scd prop id
-		this.transport = opts.transport || 'got'; // transport mechanism to use for sending data (default: got)
-		this.gcpProjectId = opts.gcpProjectId || safeCreds.gcpProjectId || 'mixpanel-gtm-training'; // Google Cloud project ID for GCS operations
-		this.gcsCredentials = opts.gcsCredentials || safeCreds.gcsCredentials || ''; // Path to GCS service account credentials JSON file (optional, defaults to ADC)
-		this.s3Key = opts.s3Key || safeCreds.s3Key || ''; // AWS S3 access key ID for S3 operations
-		this.s3Secret = opts.s3Secret || safeCreds.s3Secret || ''; // AWS S3 secret access key for S3 operations
-		this.s3Region = opts.s3Region || safeCreds.s3Region || ''; // AWS S3 region for S3 operations
+		
+		/** @type {Array} tuple of keys for insert_id */
+		this.insertIdTuple = opts.insertIdTuple || [];
+		
+		/** @type {string} scd label */
+		this.scdLabel = opts.scdLabel || '';
+		
+		/** @type {string} scd key */
+		this.scdKey = opts.scdKey || '';
+		
+		/** @type {string} scd type */
+		this.scdType = opts.scdType || 'string';
+		
+		/** @type {string} scd id */
+		this.scdId = opts.scdId || '';
+		
+		/** @type {string} scd prop id */
+		this.scdPropId = opts.scdPropId || '';
+		/** @type {string} transport mechanism to use for sending data (default: got) */
+		this.transport = opts.transport || 'got';
+		
+		/** @type {string} Google Cloud project ID for GCS operations */
+		this.gcpProjectId = opts.gcpProjectId || safeCreds.gcpProjectId || 'mixpanel-gtm-training';
+		
+		/** @type {string} Path to GCS service account credentials JSON file (optional, defaults to ADC) */
+		this.gcsCredentials = opts.gcsCredentials || safeCreds.gcsCredentials || '';
+		
+		/** @type {string} AWS S3 access key ID for S3 operations */
+		this.s3Key = opts.s3Key || safeCreds.s3Key || '';
+		
+		/** @type {string} AWS S3 secret access key for S3 operations */
+		this.s3Secret = opts.s3Secret || safeCreds.s3Secret || '';
+		
+		/** @type {string} AWS S3 region for S3 operations */
+		this.s3Region = opts.s3Region || safeCreds.s3Region || '';
 
 		this.dimensionMaps = opts.dimensionMaps || []; //dimension map for scd
 		this.maxRecords = opts.maxRecords !== undefined ? opts.maxRecords : null; //maximum records to process before stopping stream
@@ -93,6 +153,9 @@ class Job {
 		if (opts.whereClause) {
 			this.whereClause = opts.whereClause;
 		}
+		
+		// ? arbitrary export params
+		this.params = opts.params || {};
 
 		//? dates
 		if (opts.start) {
@@ -165,7 +228,7 @@ class Job {
 		this.compress = u.isNil(opts.compress) ? true : opts.compress; //gzip data (events only)
 		this.strict = u.isNil(opts.strict) ? true : opts.strict; // use strict mode?
 		this.logs = u.isNil(opts.logs) ? false : opts.logs; //create log file
-		this.where = u.isNil(opts.logs) ? '' : opts.where; // where to put logs
+		this.where = u.isNil(opts.where) ? './' : opts.where; // where to put logs
 		this.verbose = u.isNil(opts.verbose) ? false : opts.verbose;  // print to stdout?
 		this.showProgress = u.isNil(opts.showProgress) ? false : opts.showProgress; // show progress bar
 		this.progressCallback = opts.progressCallback || null; // optional callback for progress updates (used by UI WebSocket)
@@ -405,14 +468,28 @@ class Job {
 	};
 
 	// ? get/set	
+	/** 
+	 * Get the record type
+	 * @returns {string} The record type
+	 */
 	get type() {
 		return this.recordType;
 	}
+	
+	/** 
+	 * Get the Mixpanel API URL for the current record type and region
+	 * @returns {string} The API endpoint URL
+	 */
 	get url() {
 		let url = this.endpoints[this.region.toLowerCase()][this.recordType.toLowerCase()];
 		if (this.recordType === "table") url += this.lookupTableId;
 		return url;
 	}
+	
+	/** 
+	 * Get the current job options as an object
+	 * @returns {Object} Current job configuration options
+	 */
 	get opts() {
 		const { recordType, compress, streamSize, workers, region, recordsPerBatch, bytesPerBatch, strict, logs, fixData, streamFormat, transformFunc } = this;
 		return { recordType, compress, streamSize, workers, region, recordsPerBatch, bytesPerBatch, strict, logs, fixData, streamFormat, transformFunc };
