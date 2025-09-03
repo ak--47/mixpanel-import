@@ -152,10 +152,118 @@ async function exportEvents(filename, job) {
 		}
 	});
 
+	// Create a transform stream that processes and writes records
+	const transformAndWriteStream = new stream.Writable({
+		write(chunk, encoding, callback) {
+			// Convert the chunk to a string and append it to the buffer
+			buffer += chunk.toString();
+
+			// Split the buffer into lines
+			const lines = buffer.split("\n");
+
+			// Keep the last partial line in the buffer (if any)
+			buffer = lines.pop() || "";
+
+			// Process each complete line
+			lines.forEach(line => {
+				if (!line.trim()) return;
+				
+				try {
+					let row = JSON.parse(line.trim());
+					
+					// Apply transform function if provided
+					if (job.transformFunc && typeof job.transformFunc === 'function') {
+						try {
+							const transformed = job.transformFunc(row);
+							// Handle case where transform returns array (explosion)
+							if (Array.isArray(transformed)) {
+								transformed.forEach(item => {
+									if (cloudInfo.isCloud) {
+										fileStream.write(JSON.stringify(item) + '\n');
+									} else {
+										fileStream.write(JSON.stringify(item) + '\n');
+									}
+								});
+								return;
+							} else if (transformed) {
+								row = transformed;
+							}
+						} catch (transformError) {
+							// Log transform error but continue processing
+							if (job.verbose) {
+								console.warn(`Transform error on record: ${transformError.message}`);
+							}
+							// Use original row if transform fails
+						}
+					}
+					
+					// Write the (possibly transformed) record
+					if (cloudInfo.isCloud) {
+						fileStream.write(JSON.stringify(row) + '\n');
+					} else {
+						fileStream.write(JSON.stringify(row) + '\n');
+					}
+				}
+				catch (parseError) {
+					// Skip malformed lines
+					if (job.verbose) {
+						console.warn(`Parse error on line: ${parseError.message}`);
+					}
+				}
+			});
+
+			callback();
+		},
+
+		final(callback) {
+			// Process the remaining data in the buffer as the last line
+			if (buffer.trim()) {
+				try {
+					let row = JSON.parse(buffer.trim());
+					
+					// Apply transform function if provided
+					if (job.transformFunc && typeof job.transformFunc === 'function') {
+						try {
+							const transformed = job.transformFunc(row);
+							if (Array.isArray(transformed)) {
+								transformed.forEach(item => {
+									fileStream.write(JSON.stringify(item) + '\n');
+								});
+								callback();
+								return;
+							} else if (transformed) {
+								row = transformed;
+							}
+						} catch (transformError) {
+							if (job.verbose) {
+								console.warn(`Transform error on final record: ${transformError.message}`);
+							}
+						}
+					}
+					
+					fileStream.write(JSON.stringify(row) + '\n');
+				}
+				catch (parseError) {
+					if (job.verbose) {
+						console.warn(`Parse error on final line: ${parseError.message}`);
+					}
+				}
+			}
+			callback();
+		}
+	});
+
 	const allResults = [];
 
 	// Choose the appropriate stream
-	const outputStream = skipWriteToDisk ? memoryStream : fileStream;
+	let outputStream;
+	if (skipWriteToDisk) {
+		outputStream = memoryStream;
+	} else if (job.transformFunc && typeof job.transformFunc === 'function') {
+		outputStream = transformAndWriteStream;
+	} else {
+		outputStream = fileStream;
+	}
 
 	// Use the chosen stream in the pipeline
 	await pipeline(request, outputStream);
@@ -263,6 +371,10 @@ async function exportProfiles(folder, job) {
 
 	// write first page of profiles
 	let profiles = response.results;
+	
+	// Apply transforms if provided
+	profiles = applyTransformToRecords(profiles, job);
+	
 	let firstFile, nextFile;
 	if (skipWriteToDisk) {
 		allResults.push(...profiles);
@@ -336,6 +448,9 @@ async function exportProfiles(folder, job) {
 		if (job.verbose || job.showProgress) showProgress("profile", job.success, iterations + 1);
 
 		profiles = response.results;
+		
+		// Apply transforms if provided
+		profiles = applyTransformToRecords(profiles, job);
 
 		if (skipWriteToDisk) {
 			allResults.push(...profiles);
@@ -553,6 +668,42 @@ function createS3WriteStream(s3Path, job) {
 			}
 		}
 	});
+}
+
+/**
+ * Apply transform function to an array of records with error handling
+ * @param {Array} records - array of records to transform
+ * @param {jobConfig} job - job configuration
+ * @returns {Array} - transformed records
+ */
+function applyTransformToRecords(records, job) {
+	if (!job.transformFunc || typeof job.transformFunc !== 'function') {
+		return records;
+	}
+	
+	const transformedRecords = [];
+	
+	for (const record of records) {
+		try {
+			const transformed = job.transformFunc(record);
+			// Handle case where transform returns array (explosion)
+			if (Array.isArray(transformed)) {
+				transformedRecords.push(...transformed);
+			} else if (transformed) {
+				transformedRecords.push(transformed);
+			}
+			// If transform returns null/undefined, skip the record
+		} catch (transformError) {
+			// Log transform error but continue processing
+			if (job.verbose) {
+				console.warn(`Transform error on profile record: ${transformError.message}`);
+			}
+			// Use original record if transform fails
+			transformedRecords.push(record);
+		}
+	}
+	
+	return transformedRecords;
 }
 
 /**
