@@ -111,49 +111,9 @@ async function exportEvents(filename, job) {
 		fileStream = fs.createWriteStream(filename);
 	}
 	
+	// Create a unified processing stream that handles both memory and file/cloud output
 	let buffer = "";
-	const memoryStream = new stream.Writable({
-		write(chunk, encoding, callback) {
-
-			// Convert the chunk to a string and append it to the buffer
-			buffer += chunk.toString();
-
-			// Split the buffer into lines
-			const lines = buffer.split("\n");
-
-			// Keep the last partial line in the buffer (if any)
-			buffer = lines.pop() || "";
-
-			// Push each complete line into the results array
-			lines.forEach(line => {
-				try {
-					const row = JSON.parse(line.trim());
-					allResults.push(row);
-				}
-				catch (e) {
-					// console.log(e);
-				}
-			});
-
-			callback();
-		},
-
-		final(callback) {
-			// Push the remaining data in the buffer as the last line
-			if (buffer) {
-				try {
-					allResults.push(JSON.parse(buffer.trim()));
-				}
-				catch (e) {
-					// console.log
-				}
-			}
-			callback();
-		}
-	});
-
-	// Create a transform stream that processes and writes records
-	const transformAndWriteStream = new stream.Writable({
+	const processingStream = new stream.Writable({
 		write(chunk, encoding, callback) {
 			// Convert the chunk to a string and append it to the buffer
 			buffer += chunk.toString();
@@ -178,8 +138,8 @@ async function exportEvents(filename, job) {
 							// Handle case where transform returns array (explosion)
 							if (Array.isArray(transformed)) {
 								transformed.forEach(item => {
-									if (cloudInfo.isCloud) {
-										fileStream.write(JSON.stringify(item) + '\n');
+									if (skipWriteToDisk) {
+										allResults.push(item);
 									} else {
 										fileStream.write(JSON.stringify(item) + '\n');
 									}
@@ -198,8 +158,8 @@ async function exportEvents(filename, job) {
 					}
 					
 					// Write the (possibly transformed) record
-					if (cloudInfo.isCloud) {
-						fileStream.write(JSON.stringify(row) + '\n');
+					if (skipWriteToDisk) {
+						allResults.push(row);
 					} else {
 						fileStream.write(JSON.stringify(row) + '\n');
 					}
@@ -227,8 +187,16 @@ async function exportEvents(filename, job) {
 							const transformed = job.transformFunc(row);
 							if (Array.isArray(transformed)) {
 								transformed.forEach(item => {
-									fileStream.write(JSON.stringify(item) + '\n');
+									if (skipWriteToDisk) {
+										allResults.push(item);
+									} else {
+										fileStream.write(JSON.stringify(item) + '\n');
+									}
 								});
+								// Ensure cloud streams are properly finalized
+								if (!skipWriteToDisk && cloudInfo.isCloud) {
+									fileStream.end();
+								}
 								callback();
 								return;
 							} else if (transformed) {
@@ -241,7 +209,11 @@ async function exportEvents(filename, job) {
 						}
 					}
 					
-					fileStream.write(JSON.stringify(row) + '\n');
+					if (skipWriteToDisk) {
+						allResults.push(row);
+					} else {
+						fileStream.write(JSON.stringify(row) + '\n');
+					}
 				}
 				catch (parseError) {
 					if (job.verbose) {
@@ -249,19 +221,24 @@ async function exportEvents(filename, job) {
 					}
 				}
 			}
+			
+			// Ensure cloud streams are properly finalized
+			if (!skipWriteToDisk && cloudInfo.isCloud) {
+				fileStream.end();
+			}
 			callback();
 		}
 	});
 
 	const allResults = [];
 
-	// Choose the appropriate stream
+	// Choose the appropriate stream based on whether transforms are needed
 	let outputStream;
-	if (skipWriteToDisk) {
-		outputStream = memoryStream;
-	} else if (job.transformFunc && typeof job.transformFunc === 'function') {
-		outputStream = transformAndWriteStream;
+	if (skipWriteToDisk || (job.transformFunc && typeof job.transformFunc === 'function')) {
+		// Use processing stream when we need transforms or memory mode
+		outputStream = processingStream;
 	} else {
+		// Use direct file stream when no transforms (more efficient for cloud)
 		outputStream = fileStream;
 	}
 
