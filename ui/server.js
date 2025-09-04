@@ -935,11 +935,105 @@ app.post('/export-dry-run', async (req, res) => {
 	}
 });
 
-// File download endpoint for exported files
-app.get('/download/:jobId/:filename?', (req, res) => {
+// File download endpoint for exported files - with filename
+app.get('/download/:jobId/:filename', (req, res) => {
 	try {
 		const jobId = req.params.jobId;
 		const filename = req.params.filename;
+		
+		// Job temp directory
+		const jobTmpDir = path.join(tmpDir, jobId);
+		
+		if (!fs.existsSync(jobTmpDir)) {
+			return res.status(404).json({
+				success: false,
+				error: `Export files not found for job ${jobId}. The files may have been cleaned up or the export may not have completed successfully.`
+			});
+		}
+		
+		// Get list of files in the job directory
+		const files = fs.readdirSync(jobTmpDir).filter(file => {
+			const filePath = path.join(jobTmpDir, file);
+			return fs.statSync(filePath).isFile();
+		});
+		
+		if (files.length === 0) {
+			return res.status(404).json({
+				success: false,
+				error: `No export files found for job ${jobId}.`
+			});
+		}
+		
+		let targetFile;
+		if (filename) {
+			// Download specific file
+			if (!files.includes(filename)) {
+				return res.status(404).json({
+					success: false,
+					error: `File ${filename} not found for job ${jobId}.`
+				});
+			}
+			targetFile = filename;
+		} else {
+			// Download first/only file if no filename specified
+			targetFile = files[0];
+		}
+		
+		const filePath = path.join(jobTmpDir, targetFile);
+		const stats = fs.statSync(filePath);
+		
+		// Set appropriate headers for file download
+		res.setHeader('Content-Disposition', `attachment; filename="${targetFile}"`);
+		res.setHeader('Content-Type', 'application/octet-stream');
+		res.setHeader('Content-Length', stats.size);
+		
+		// Stream the file to the client
+		const fileStream = fs.createReadStream(filePath);
+		
+		fileStream.pipe(res);
+		
+		// Handle stream errors
+		fileStream.on('error', (error) => {
+			console.error(`Error streaming file ${filePath}:`, error);
+			if (!res.headersSent) {
+				res.status(500).json({
+					success: false,
+					error: 'Failed to stream export file'
+				});
+			}
+		});
+		
+		// Clean up temp directory after successful download
+		fileStream.on('end', () => {
+			console.log(`Successfully downloaded export file: ${targetFile} (${stats.size} bytes)`);
+			
+			// Clean up the temp directory after download
+			setTimeout(() => {
+				try {
+					if (fs.existsSync(jobTmpDir)) {
+						fs.rmSync(jobTmpDir, { recursive: true, force: true });
+						console.log(`Cleaned up temp directory for job ${jobId}`);
+					}
+				} catch (cleanupError) {
+					console.warn(`Failed to clean up temp directory for job ${jobId}:`, cleanupError.message);
+				}
+			}, 1000); // Small delay to ensure download completes
+		});
+		
+	} catch (error) {
+		console.error('Download error:', error);
+		res.status(500).json({
+			success: false,
+			error: error.message
+		});
+	}
+});
+
+// File download endpoint for exported files - without filename
+app.get('/download/:jobId', (req, res) => {
+	try {
+		const jobId = req.params.jobId;
+		const filename = undefined; // No filename specified
 		
 		// Job temp directory
 		const jobTmpDir = path.join(tmpDir, jobId);
