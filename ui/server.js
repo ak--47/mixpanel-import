@@ -9,19 +9,37 @@ const { createGcpLoggingPinoConfig } = require('@google-cloud/pino-logging-gcp-c
 const { NODE_ENV = "" } = process.env;
 if (!NODE_ENV) throw new Error("NODE_ENV not set");
 
-// Configure Pino logger with GCP logging configuration
+// Configure Pino logger with environment-appropriate configuration
 const logLevel = NODE_ENV === 'production' ? 'info' : NODE_ENV === 'test' ? 'warn' : 'debug';
-const logger = pino(createGcpLoggingPinoConfig(
-	{
-		serviceContext: {
-			service: 'mixpanel-import-ui',
-			version: require('../package.json').version || '1.0.0'
+
+let logger;
+if (NODE_ENV === 'production') {
+	// Use GCP structured logging in production
+	logger = pino(createGcpLoggingPinoConfig(
+		{
+			serviceContext: {
+				service: 'mixpanel-import-ui',
+				version: require('../package.json').version || '1.0.0'
+			}
+		},
+		{
+			level: logLevel
 		}
-	},
-	{
-		level: logLevel
-	}
-));
+	));
+} else {
+	// Use pino-pretty for better developer experience in non-production
+	logger = pino({
+		level: logLevel,
+		transport: {
+			target: 'pino-pretty',
+			options: {
+				colorize: true,
+				translateTime: 'SYS:standard',
+				ignore: 'pid,hostname'
+			}
+		}
+	});
+}
 
 const app = express();
 const server = createServer(app);

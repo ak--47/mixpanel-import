@@ -85,6 +85,7 @@
     "jest-extended": "^4.0.1",
     "make-mp-data": "^1.5.54",
     "nodemon": "^2.0.15",
+    "pino-pretty": "^13.1.1",
     "typescript": "^5.2.2"
   }
 }
