@@ -4,6 +4,24 @@ const multer = require('multer');
 const WebSocket = require('ws');
 const { createServer } = require('http');
 const mixpanelImport = require('../index.js');
+const pino = require('pino');
+const { createGcpLoggingPinoConfig } = require('@google-cloud/pino-logging-gcp-config');
+const { NODE_ENV = "" } = process.env;
+if (!NODE_ENV) throw new Error("NODE_ENV not set");
+
+// Configure Pino logger with GCP logging configuration
+const logLevel = NODE_ENV === 'production' ? 'info' : NODE_ENV === 'test' ? 'warn' : 'debug';
+const logger = pino(createGcpLoggingPinoConfig(
+	{
+		serviceContext: {
+			service: 'mixpanel-import-ui',
+			version: require('../package.json').version || '1.0.0'
+		}
+	},
+	{
+		level: logLevel
+	}
+));
 
 const app = express();
 const server = createServer(app);
@@ -17,12 +35,12 @@ const activeJobs = new Map(); // jobId -> { ws, startTime, lastUpdate }
 
 // WebSocket connection handler
 wss.on('connection', (ws) => {
-	console.log('WebSocket client connected');
-	
+	// WebSocket connections are ephemeral - no logging needed
+
 	ws.on('message', (message) => {
 		try {
 			const data = JSON.parse(message);
-			
+
 			if (data.type === 'register-job') {
 				const jobId = data.jobId;
 				activeJobs.set(jobId, {
@@ -30,8 +48,8 @@ wss.on('connection', (ws) => {
 					startTime: Date.now(),
 					lastUpdate: Date.now()
 				});
-				console.log(`Registered job ${jobId} for WebSocket updates`);
-				
+				logger.debug({ jobId }, 'Registered job for WebSocket updates');
+
 				// Send confirmation
 				ws.send(JSON.stringify({
 					type: 'job-registered',
@@ -39,23 +57,23 @@ wss.on('connection', (ws) => {
 				}));
 			}
 		} catch (error) {
-			console.error('WebSocket message error:', error);
+			logger.error({ err: error }, 'WebSocket message error');
 		}
 	});
-	
+
 	ws.on('close', () => {
-		console.log('WebSocket client disconnected');
+		// WebSocket disconnections are ephemeral - no logging needed
 		// Clean up any jobs associated with this WebSocket
 		for (const [jobId, jobData] of activeJobs.entries()) {
 			if (jobData.ws === ws) {
 				activeJobs.delete(jobId);
-				console.log(`Cleaned up job ${jobId} on WebSocket disconnect`);
+				logger.debug({ jobId }, 'Cleaned up job on WebSocket disconnect');
 			}
 		}
 	});
-	
+
 	ws.on('error', (error) => {
-		console.error('WebSocket error:', error);
+		logger.error({ err: error }, 'WebSocket error');
 	});
 });
 
@@ -73,7 +91,7 @@ function broadcastProgress(jobId, progressData) {
 			jobData.ws.send(JSON.stringify(message));
 			jobData.lastUpdate = Date.now();
 		} catch (error) {
-			console.error(`Failed to send progress to job ${jobId}:`, error);
+			logger.error({ err: error, jobId }, 'Failed to send progress to job');
 			// Clean up dead connection
 			activeJobs.delete(jobId);
 		}
@@ -92,12 +110,12 @@ function signalJobComplete(jobId, result) {
 				timestamp: Date.now()
 			}));
 		} catch (error) {
-			console.error(`Failed to send completion to job ${jobId}:`, error);
+			logger.error({ err: error, jobId }, 'Failed to send completion to job');
 		}
 	}
 	// Clean up job tracking
 	activeJobs.delete(jobId);
-	console.log(`Job ${jobId} completed and cleaned up`);
+	logger.info({ jobId }, 'Job completed and cleaned up');
 }
 
 // Function to create a progress callback for a specific job
@@ -137,10 +155,10 @@ if (!fs.existsSync(tmpDir)) {
 			}
 		}
 		if (cleanedCount > 0) {
-			console.log(`Cleaned up ${cleanedCount} temporary files from ./tmp/`);
+			logger.info({ cleanedCount }, 'Cleaned up temporary files from ./tmp/');
 		}
 	} catch (cleanupError) {
-		console.warn('Failed to clean tmp directory on startup:', cleanupError.message);
+		logger.warn({ err: cleanupError }, 'Failed to clean tmp directory on startup');
 	}
 }
 
@@ -217,15 +235,15 @@ app.post('/job', upload.array('files'), async (req, res) => {
 				// Validate it's a JSON file
 				const credentialsContent = fs.readFileSync(gcsCredentialsFile.path, 'utf8');
 				const credentialsJson = JSON.parse(credentialsContent);
-				
+
 				// Validate it looks like a service account key
 				if (!credentialsJson.type || credentialsJson.type !== 'service_account') {
 					throw new Error('Invalid service account credentials file');
 				}
-				
+
 				// Pass the credentials file path to the import options
 				opts.gcsCredentials = gcsCredentialsFile.path;
-				console.log('Using custom GCS credentials file for authentication');
+				logger.info('Using custom GCS credentials file for authentication');
 			} catch (err) {
 				return res.status(400).json({
 					success: false,
@@ -257,7 +275,7 @@ app.post('/job', upload.array('files'), async (req, res) => {
 		if (req.body.cloudPaths) {
 			try {
 				const cloudPaths = JSON.parse(req.body.cloudPaths);
-				console.log(`Using cloud storage paths:`, cloudPaths);
+				logger.info({ cloudPaths }, 'Using cloud storage paths');
 				data = cloudPaths; // Pass cloud paths directly to mixpanel-import
 			} catch (err) {
 				return res.status(400).json({
@@ -269,23 +287,23 @@ app.post('/job', upload.array('files'), async (req, res) => {
 		} else if (req.files && req.files.length > 0) {
 			// Filter out non-data files (like GCS credentials)
 			const dataFiles = req.files.filter(file => file.fieldname === 'files');
-			
+
 			if (dataFiles.length === 0) {
 				return res.status(400).json({
 					success: false,
 					error: 'No data files provided'
 				});
 			}
-			
+
 			// Handle local files - pass file paths to mixpanel-import
 			if (dataFiles.length === 1) {
 				// Single file - pass file path
 				data = dataFiles[0].path;
-				console.log(`Using single local file: ${data}`);
+				logger.info({ filePath: data }, 'Using single local file');
 			} else {
 				// Multiple files - pass array of file paths
 				data = dataFiles.map(file => file.path);
-				console.log(`Using multiple local files: ${data.join(', ')}`);
+				logger.info({ files: data }, 'Using multiple local files');
 			}
 		} else {
 			return res.status(400).json({
@@ -296,11 +314,11 @@ app.post('/job', upload.array('files'), async (req, res) => {
 
 		// Generate unique job ID for WebSocket tracking
 		const jobId = `job-${Date.now()}-${Math.random().toString(36).substring(2)}`;
-		
+
 		// Add progress callback for WebSocket updates
 		opts.progressCallback = createProgressCallback(jobId);
-		
-		console.log(`Starting import job ${jobId} with ${Array.isArray(data) ? data.length : 'unknown'} files`);
+
+		logger.info({ jobId, fileCount: Array.isArray(data) ? data.length : 'unknown' }, 'Starting import job');
 
 		// Return job ID immediately so client can connect WebSocket
 		res.json({
@@ -313,13 +331,13 @@ app.post('/job', upload.array('files'), async (req, res) => {
 		try {
 			const result = await mixpanelImport(creds, data, opts);
 			const { total, success, failed, empty } = result;
-			console.log(`Import job ${jobId} completed: ${total} records | ${success} success | ${failed} failed | ${empty} skipped`);
-			
+			logger.info({ jobId, total, success, failed, empty }, 'Import job completed');
+
 			// Signal job completion via WebSocket
 			signalJobComplete(jobId, result);
 		} catch (jobError) {
-			console.error(`Import job ${jobId} failed:`, jobError);
-			
+			logger.error({ err: jobError, jobId }, 'Import job failed');
+
 			// Signal job failure via WebSocket
 			const jobData = activeJobs.get(jobId);
 			if (jobData && jobData.ws.readyState === WebSocket.OPEN) {
@@ -331,7 +349,7 @@ app.post('/job', upload.array('files'), async (req, res) => {
 						timestamp: Date.now()
 					}));
 				} catch (wsError) {
-					console.error(`Failed to send error to job ${jobId}:`, wsError);
+					logger.error({ err: wsError, jobId }, 'Failed to send error to job');
 				}
 			}
 			activeJobs.delete(jobId);
@@ -343,22 +361,22 @@ app.post('/job', upload.array('files'), async (req, res) => {
 						// Don't clean up GCS credentials file immediately - it might still be needed
 						if (file.fieldname !== 'gcsCredentials') {
 							fs.unlinkSync(file.path);
-							console.log(`Cleaned up temp file: ${file.path}`);
+							logger.debug({ filePath: file.path }, 'Cleaned up temp file');
 						}
 					} catch (cleanupError) {
-						console.warn(`Failed to clean up temp file ${file.path}:`, cleanupError.message);
+						logger.warn({ err: cleanupError, filePath: file.path }, 'Failed to clean up temp file');
 					}
 				}
-				
+
 				// Clean up GCS credentials file after a delay
 				setTimeout(() => {
 					for (const file of req.files) {
 						if (file.fieldname === 'gcsCredentials') {
 							try {
 								fs.unlinkSync(file.path);
-								console.log(`Cleaned up GCS credentials file: ${file.path}`);
+								logger.debug({ filePath: file.path }, 'Cleaned up GCS credentials file');
 							} catch (cleanupError) {
-								console.warn(`Failed to clean up GCS credentials file ${file.path}:`, cleanupError.message);
+								logger.warn({ err: cleanupError, filePath: file.path }, 'Failed to clean up GCS credentials file');
 							}
 						}
 					}
@@ -367,20 +385,20 @@ app.post('/job', upload.array('files'), async (req, res) => {
 		}
 
 	} catch (error) {
-		console.error('Job error:', error);
-		
+		logger.error({ err: error }, 'Job error');
+
 		// Clean up temporary files even on error
 		if (req.files && req.files.length > 0) {
 			for (const file of req.files) {
 				try {
 					fs.unlinkSync(file.path);
-					console.log(`Cleaned up temp file after error: ${file.path}`);
+					logger.debug({ filePath: file.path }, 'Cleaned up temp file after error');
 				} catch (cleanupError) {
-					console.warn(`Failed to clean up temp file ${file.path}:`, cleanupError.message);
+					logger.warn({ err: cleanupError, filePath: file.path }, 'Failed to clean up temp file');
 				}
 			}
 		}
-		
+
 		res.status(500).json({
 			success: false,
 			error: error.message
@@ -397,7 +415,7 @@ app.post('/sample', upload.array('files'), async (req, res) => {
 		// Parse JSON strings
 		const creds = JSON.parse(credentials[0] || '{}');
 		const opts = JSON.parse(options[0] || '{}');
-		
+
 		// Override any fixData setting from client - must be false for raw preview
 		opts.fixData = false;
 
@@ -423,7 +441,7 @@ app.post('/sample', upload.array('files'), async (req, res) => {
 		if (req.body.cloudPaths) {
 			try {
 				const cloudPaths = JSON.parse(req.body.cloudPaths);
-				console.log(`Sample data from cloud storage paths:`, cloudPaths);
+				logger.info({ cloudPaths }, 'Sample data from cloud storage paths');
 				data = cloudPaths;
 			} catch (err) {
 				return res.status(400).json({
@@ -437,11 +455,11 @@ app.post('/sample', upload.array('files'), async (req, res) => {
 			if (req.files.length === 1) {
 				// Single file - pass file path
 				data = req.files[0].path;
-				console.log(`Sampling from single local file: ${data}`);
+				logger.info({ filePath: data }, 'Sampling from single local file');
 			} else {
 				// Multiple files - pass array of file paths
 				data = req.files.map(file => file.path);
-				console.log(`Sampling from multiple local files: ${data.join(', ')}`);
+				logger.info({ files: data }, 'Sampling from multiple local files');
 			}
 		} else {
 			return res.status(400).json({
@@ -450,7 +468,7 @@ app.post('/sample', upload.array('files'), async (req, res) => {
 			});
 		}
 
-		console.log(`Sampling raw data: up to ${opts.maxRecords} records`);
+		logger.info({ maxRecords: opts.maxRecords }, 'Sampling raw data');
 
 		// Run the sample
 		const result = await mixpanelImport(creds, data, opts);
@@ -460,9 +478,9 @@ app.post('/sample', upload.array('files'), async (req, res) => {
 			for (const file of req.files) {
 				try {
 					fs.unlinkSync(file.path);
-					console.log(`Cleaned up temp file: ${file.path}`);
+					logger.debug({ filePath: file.path }, 'Cleaned up temp file');
 				} catch (cleanupError) {
-					console.warn(`Failed to clean up temp file ${file.path}:`, cleanupError.message);
+					logger.warn({ err: cleanupError, filePath: file.path }, 'Failed to clean up temp file');
 				}
 			}
 		}
@@ -473,20 +491,20 @@ app.post('/sample', upload.array('files'), async (req, res) => {
 		});
 
 	} catch (error) {
-		console.error('Sample error:', error);
-		
+		logger.error({ err: error }, 'Sample error');
+
 		// Clean up temporary files even on error
 		if (req.files && req.files.length > 0) {
 			for (const file of req.files) {
 				try {
 					fs.unlinkSync(file.path);
-					console.log(`Cleaned up temp file after error: ${file.path}`);
+					logger.debug({ filePath: file.path }, 'Cleaned up temp file after error');
 				} catch (cleanupError) {
-					console.warn(`Failed to clean up temp file ${file.path}:`, cleanupError.message);
+					logger.warn({ err: cleanupError, filePath: file.path }, 'Failed to clean up temp file');
 				}
 			}
 		}
-		
+
 		res.status(500).json({
 			success: false,
 			error: error.message
@@ -503,7 +521,7 @@ app.post('/columns', upload.array('files'), async (req, res) => {
 		// Parse JSON strings
 		const creds = JSON.parse(credentials[0] || '{}');
 		const opts = JSON.parse(options[0] || '{}');
-		
+
 		// Override any fixData setting from client - must be false for column detection
 		opts.fixData = false;
 
@@ -529,7 +547,7 @@ app.post('/columns', upload.array('files'), async (req, res) => {
 		if (req.body.cloudPaths) {
 			try {
 				const cloudPaths = JSON.parse(req.body.cloudPaths);
-				console.log(`Detecting columns from cloud storage paths:`, cloudPaths);
+				logger.info({ cloudPaths }, 'Detecting columns from cloud storage paths');
 				// Only use the first file for column detection
 				data = Array.isArray(cloudPaths) ? cloudPaths[0] : cloudPaths;
 			} catch (err) {
@@ -541,9 +559,9 @@ app.post('/columns', upload.array('files'), async (req, res) => {
 		} else if (req.files && req.files.length > 0) {
 			// Use uploaded file from disk storage
 			const uploadedFile = req.files[0];
-			console.log(`Detecting columns from uploaded file: ${uploadedFile.originalname}`);
-			console.log(`Using file path: ${uploadedFile.path}`);
-			
+			logger.info({ fileName: uploadedFile.originalname }, 'Detecting columns from uploaded file');
+			logger.debug({ filePath: uploadedFile.path }, 'Using file path for column detection');
+
 			data = uploadedFile.path; // Pass file path directly
 		} else {
 			return res.status(400).json({
@@ -552,13 +570,13 @@ app.post('/columns', upload.array('files'), async (req, res) => {
 			});
 		}
 
-		console.log(`Running column detection with up to ${opts.maxRecords} records`);
+		logger.info({ maxRecords: opts.maxRecords }, 'Running column detection');
 
 		// Let mixpanel-import handle all parsing and get parsed results from dryRun
 		const result = await mixpanelImport(creds, data, opts);
-		
+
 		const sampleData = result.dryRun || [];
-		console.log(`Got ${sampleData.length} parsed records from mixpanel-import`);
+		logger.debug({ recordCount: sampleData.length }, 'Got parsed records from mixpanel-import');
 
 		// Extract unique column names from the parsed dryRun results
 		const columnSet = new Set();
@@ -566,22 +584,22 @@ app.post('/columns', upload.array('files'), async (req, res) => {
 			if (record && typeof record === 'object') {
 				Object.keys(record).forEach(key => columnSet.add(key));
 			} else {
-				console.log(`Non-object record at index ${index}:`, typeof record, record);
+				logger.debug({ index, recordType: typeof record, record }, 'Non-object record found');
 			}
 		});
 
 		const columns = Array.from(columnSet).sort();
 
-		console.log(`Detected ${columns.length} unique columns:`, columns);
+		logger.info({ columnCount: columns.length, columns }, 'Detected unique columns');
 
 		// Clean up temporary files
 		if (req.files && req.files.length > 0) {
 			for (const file of req.files) {
 				try {
 					fs.unlinkSync(file.path);
-					console.log(`Cleaned up temp file: ${file.path}`);
+					logger.debug({ filePath: file.path }, 'Cleaned up temp file');
 				} catch (cleanupError) {
-					console.warn(`Failed to clean up temp file ${file.path}:`, cleanupError.message);
+					logger.warn({ err: cleanupError, filePath: file.path }, 'Failed to clean up temp file');
 				}
 			}
 		}
@@ -593,20 +611,20 @@ app.post('/columns', upload.array('files'), async (req, res) => {
 		});
 
 	} catch (error) {
-		console.error('Column detection error:', error);
-		
+		logger.error({ err: error }, 'Column detection error');
+
 		// Clean up temporary files even on error
 		if (req.files && req.files.length > 0) {
 			for (const file of req.files) {
 				try {
 					fs.unlinkSync(file.path);
-					console.log(`Cleaned up temp file after error: ${file.path}`);
+					logger.debug({ filePath: file.path }, 'Cleaned up temp file after error');
 				} catch (cleanupError) {
-					console.warn(`Failed to clean up temp file ${file.path}:`, cleanupError.message);
+					logger.warn({ err: cleanupError, filePath: file.path }, 'Failed to clean up temp file');
 				}
 			}
 		}
-		
+
 		res.status(500).json({
 			success: false,
 			error: error.message
@@ -650,7 +668,7 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
 		if (req.body.cloudPaths) {
 			try {
 				const cloudPaths = JSON.parse(req.body.cloudPaths);
-				console.log(`Dry run with cloud storage paths:`, cloudPaths);
+				logger.info({ cloudPaths }, 'Dry run with cloud storage paths');
 				data = cloudPaths; // Pass cloud paths directly to mixpanel-import
 			} catch (err) {
 				return res.status(400).json({
@@ -664,11 +682,11 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
 			if (req.files.length === 1) {
 				// Single file - pass file path
 				data = req.files[0].path;
-				console.log(`Dry run with single local file: ${data}`);
+				logger.info({ filePath: data }, 'Dry run with single local file');
 			} else {
 				// Multiple files - pass array of file paths
 				data = req.files.map(file => file.path);
-				console.log(`Dry run with multiple local files: ${data.join(', ')}`);
+				logger.info({ files: data }, 'Dry run with multiple local files');
 			}
 		} else {
 			return res.status(400).json({
@@ -677,7 +695,7 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
 			});
 		}
 
-		console.log(`Starting dry run with ${Array.isArray(data) ? data.length : 'unknown'} files`);
+		logger.info({ fileCount: Array.isArray(data) ? data.length : 'unknown' }, 'Starting dry run');
 
 		// Run raw data fetch first (no transforms) for comparison
 		const rawOpts = { ...opts };
@@ -698,9 +716,9 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
 			for (const file of req.files) {
 				try {
 					fs.unlinkSync(file.path);
-					console.log(`Cleaned up temp file: ${file.path}`);
+					logger.debug({ filePath: file.path }, 'Cleaned up temp file');
 				} catch (cleanupError) {
-					console.warn(`Failed to clean up temp file ${file.path}:`, cleanupError.message);
+					logger.warn({ err: cleanupError, filePath: file.path }, 'Failed to clean up temp file');
 				}
 			}
 		}
@@ -713,20 +731,20 @@ app.post('/dry-run', upload.array('files'), async (req, res) => {
 		});
 
 	} catch (error) {
-		console.error('Dry run error:', error);
-		
+		logger.error({ err: error }, 'Dry run error');
+
 		// Clean up temporary files even on error
 		if (req.files && req.files.length > 0) {
 			for (const file of req.files) {
 				try {
 					fs.unlinkSync(file.path);
-					console.log(`Cleaned up temp file after error: ${file.path}`);
+					logger.debug({ filePath: file.path }, 'Cleaned up temp file after error');
 				} catch (cleanupError) {
-					console.warn(`Failed to clean up temp file ${file.path}:`, cleanupError.message);
+					logger.warn({ err: cleanupError, filePath: file.path }, 'Failed to clean up temp file');
 				}
 			}
 		}
-		
+
 		res.status(500).json({
 			success: false,
 			error: error.message
@@ -755,7 +773,7 @@ app.post('/export', async (req, res) => {
 
 		// Generate unique job ID for this export
 		const jobId = `export-${Date.now()}-${Math.random().toString(36).substring(2)}`;
-		
+
 		// Create job-specific temp directory
 		const jobTmpDir = path.join(tmpDir, jobId);
 		if (!fs.existsSync(jobTmpDir)) {
@@ -784,14 +802,14 @@ app.post('/export', async (req, res) => {
 		// Check if this is a file-producing export type
 		const fileProducingTypes = ['export', 'profile-export', 'profile-delete', 'group-export', 'group-delete', 'annotations', 'get-annotations'];
 		const isFileProducing = fileProducingTypes.includes(exportData.recordType);
-		
+
 		if (isFileProducing) {
 			// For file-producing exports, we need to handle WebSocket + file streaming
-			
+
 			// Add progress callback for WebSocket updates
 			opts.progressCallback = createProgressCallback(jobId);
-			
-			console.log(`Starting file export operation ${jobId}: ${opts.recordType}`);
+
+			logger.info({ jobId, recordType: opts.recordType }, 'Starting file export operation');
 
 			// Return job ID immediately so client can connect WebSocket
 			res.json({
@@ -803,8 +821,8 @@ app.post('/export', async (req, res) => {
 			// Run the export asynchronously
 			try {
 				const result = await mixpanelImport(creds, null, opts);
-				console.log(`Export ${jobId} completed: ${result.total} records processed`);
-				
+				logger.info({ jobId, recordsProcessed: result.total }, 'Export completed');
+
 				// Find the created file(s) and prepare for download
 				const exportedFiles = [];
 				if (fs.existsSync(jobTmpDir)) {
@@ -821,7 +839,7 @@ app.post('/export', async (req, res) => {
 						}
 					}
 				}
-				
+
 				// Signal job completion via WebSocket with file info
 				signalJobComplete(jobId, {
 					...result,
@@ -829,13 +847,13 @@ app.post('/export', async (req, res) => {
 					downloadUrl: exportedFiles.length === 1 ? `/download/${jobId}/${exportedFiles[0].name}` : `/download/${jobId}`
 				});
 			} catch (exportError) {
-				console.error(`Export ${jobId} failed:`, exportError);
-				
+				logger.error({ err: exportError, jobId }, 'Export failed');
+
 				// Clean up temp directory on error
 				if (fs.existsSync(jobTmpDir)) {
 					fs.rmSync(jobTmpDir, { recursive: true, force: true });
 				}
-				
+
 				// Signal job failure via WebSocket
 				const jobData = activeJobs.get(jobId);
 				if (jobData && jobData.ws.readyState === WebSocket.OPEN) {
@@ -847,19 +865,19 @@ app.post('/export', async (req, res) => {
 							timestamp: Date.now()
 						}));
 					} catch (wsError) {
-						console.error(`Failed to send error to export ${jobId}:`, wsError);
+						logger.error({ err: wsError, jobId }, 'Failed to send error to export');
 					}
 				}
 				activeJobs.delete(jobId);
 			}
-			
+
 		} else {
 			// For stream-to-stream operations (export-import), run synchronously and return result
-			console.log(`Starting stream export-import operation: ${opts.recordType}`);
-			
+			logger.info({ recordType: opts.recordType }, 'Starting stream export-import operation');
+
 			const result = await mixpanelImport(creds, null, opts);
-			console.log(`Stream export-import completed: ${result.total} records processed`);
-			
+			logger.info({ recordsProcessed: result.total }, 'Stream export-import completed');
+
 			res.json({
 				success: true,
 				result: result,
@@ -868,7 +886,7 @@ app.post('/export', async (req, res) => {
 		}
 
 	} catch (error) {
-		console.error('Export error:', error);
+		logger.error({ err: error }, 'Export error');
 		res.status(500).json({
 			success: false,
 			error: error.message
@@ -913,12 +931,12 @@ app.post('/export-dry-run', async (req, res) => {
 			logs: false // No logs for dry run
 		};
 
-		console.log(`Starting export dry run: ${opts.recordType}`);
+		logger.info({ recordType: opts.recordType }, 'Starting export dry run');
 
 		// Run the dry run export
 		const result = await mixpanelImport(creds, null, opts);
 
-		console.log(`Export dry run completed: ${result.total} records would be exported`);
+		logger.info({ recordCount: result.total }, 'Export dry run completed');
 
 		res.json({
 			success: true,
@@ -927,7 +945,7 @@ app.post('/export-dry-run', async (req, res) => {
 		});
 
 	} catch (error) {
-		console.error('Export dry run error:', error);
+		logger.error({ err: error }, 'Export dry run error');
 		res.status(500).json({
 			success: false,
 			error: error.message
@@ -940,30 +958,30 @@ app.get('/download/:jobId/:filename', (req, res) => {
 	try {
 		const jobId = req.params.jobId;
 		const filename = req.params.filename;
-		
+
 		// Job temp directory
 		const jobTmpDir = path.join(tmpDir, jobId);
-		
+
 		if (!fs.existsSync(jobTmpDir)) {
 			return res.status(404).json({
 				success: false,
 				error: `Export files not found for job ${jobId}. The files may have been cleaned up or the export may not have completed successfully.`
 			});
 		}
-		
+
 		// Get list of files in the job directory
 		const files = fs.readdirSync(jobTmpDir).filter(file => {
 			const filePath = path.join(jobTmpDir, file);
 			return fs.statSync(filePath).isFile();
 		});
-		
+
 		if (files.length === 0) {
 			return res.status(404).json({
 				success: false,
 				error: `No export files found for job ${jobId}.`
 			});
 		}
-		
+
 		let targetFile;
 		if (filename) {
 			// Download specific file
@@ -978,23 +996,23 @@ app.get('/download/:jobId/:filename', (req, res) => {
 			// Download first/only file if no filename specified
 			targetFile = files[0];
 		}
-		
+
 		const filePath = path.join(jobTmpDir, targetFile);
 		const stats = fs.statSync(filePath);
-		
+
 		// Set appropriate headers for file download
 		res.setHeader('Content-Disposition', `attachment; filename="${targetFile}"`);
 		res.setHeader('Content-Type', 'application/octet-stream');
 		res.setHeader('Content-Length', stats.size);
-		
+
 		// Stream the file to the client
 		const fileStream = fs.createReadStream(filePath);
-		
+
 		fileStream.pipe(res);
-		
+
 		// Handle stream errors
 		fileStream.on('error', (error) => {
-			console.error(`Error streaming file ${filePath}:`, error);
+			logger.error({ err: error, filePath }, 'Error streaming file');
 			if (!res.headersSent) {
 				res.status(500).json({
 					success: false,
@@ -1002,26 +1020,26 @@ app.get('/download/:jobId/:filename', (req, res) => {
 				});
 			}
 		});
-		
+
 		// Clean up temp directory after successful download
 		fileStream.on('end', () => {
-			console.log(`Successfully downloaded export file: ${targetFile} (${stats.size} bytes)`);
-			
+			logger.info({ fileName: targetFile, fileSize: stats.size }, 'Successfully downloaded export file');
+
 			// Clean up the temp directory after download
 			setTimeout(() => {
 				try {
 					if (fs.existsSync(jobTmpDir)) {
 						fs.rmSync(jobTmpDir, { recursive: true, force: true });
-						console.log(`Cleaned up temp directory for job ${jobId}`);
+						logger.debug({ jobId }, 'Cleaned up temp directory for job');
 					}
 				} catch (cleanupError) {
-					console.warn(`Failed to clean up temp directory for job ${jobId}:`, cleanupError.message);
+					logger.warn({ err: cleanupError, jobId }, 'Failed to clean up temp directory for job');
 				}
 			}, 1000); // Small delay to ensure download completes
 		});
-		
+
 	} catch (error) {
-		console.error('Download error:', error);
+		logger.error({ err: error }, 'Download error');
 		res.status(500).json({
 			success: false,
 			error: error.message
@@ -1034,30 +1052,30 @@ app.get('/download/:jobId', (req, res) => {
 	try {
 		const jobId = req.params.jobId;
 		const filename = undefined; // No filename specified
-		
+
 		// Job temp directory
 		const jobTmpDir = path.join(tmpDir, jobId);
-		
+
 		if (!fs.existsSync(jobTmpDir)) {
 			return res.status(404).json({
 				success: false,
 				error: `Export files not found for job ${jobId}. The files may have been cleaned up or the export may not have completed successfully.`
 			});
 		}
-		
+
 		// Get list of files in the job directory
 		const files = fs.readdirSync(jobTmpDir).filter(file => {
 			const filePath = path.join(jobTmpDir, file);
 			return fs.statSync(filePath).isFile();
 		});
-		
+
 		if (files.length === 0) {
 			return res.status(404).json({
 				success: false,
 				error: `No export files found for job ${jobId}.`
 			});
 		}
-		
+
 		let targetFile;
 		if (filename) {
 			// Download specific file
@@ -1072,23 +1090,23 @@ app.get('/download/:jobId', (req, res) => {
 			// Download first/only file if no filename specified
 			targetFile = files[0];
 		}
-		
+
 		const filePath = path.join(jobTmpDir, targetFile);
 		const stats = fs.statSync(filePath);
-		
+
 		// Set appropriate headers for file download
 		res.setHeader('Content-Disposition', `attachment; filename="${targetFile}"`);
 		res.setHeader('Content-Type', 'application/octet-stream');
 		res.setHeader('Content-Length', stats.size);
-		
+
 		// Stream the file to the client
 		const fileStream = fs.createReadStream(filePath);
-		
+
 		fileStream.pipe(res);
-		
+
 		// Handle stream errors
 		fileStream.on('error', (error) => {
-			console.error(`Error streaming file ${filePath}:`, error);
+			logger.error({ err: error, filePath }, 'Error streaming file');
 			if (!res.headersSent) {
 				res.status(500).json({
 					success: false,
@@ -1096,26 +1114,26 @@ app.get('/download/:jobId', (req, res) => {
 				});
 			}
 		});
-		
+
 		// Clean up temp directory after successful download
 		fileStream.on('end', () => {
-			console.log(`Successfully downloaded export file: ${targetFile} (${stats.size} bytes)`);
-			
+			logger.info({ fileName: targetFile, fileSize: stats.size }, 'Successfully downloaded export file');
+
 			// Clean up the temp directory after download
 			setTimeout(() => {
 				try {
 					if (fs.existsSync(jobTmpDir)) {
 						fs.rmSync(jobTmpDir, { recursive: true, force: true });
-						console.log(`Cleaned up temp directory for job ${jobId}`);
+						logger.debug({ jobId }, 'Cleaned up temp directory for job');
 					}
 				} catch (cleanupError) {
-					console.warn(`Failed to clean up temp directory for job ${jobId}:`, cleanupError.message);
+					logger.warn({ err: cleanupError, jobId }, 'Failed to clean up temp directory for job');
 				}
 			}, 1000); // Small delay to ensure download completes
 		});
-		
+
 	} catch (error) {
-		console.error('Download error:', error);
+		logger.error({ err: error }, 'Download error');
 		res.status(500).json({
 			success: false,
 			error: error.message
@@ -1149,10 +1167,13 @@ _  _ _ _  _ ___  ____ _  _ ____ _       _ _  _ ___  ____ ____ ___
 				reject(err);
 			} else {
 				// Show CLI logo first
-				console.log(hero);
-				console.log(banner);
-				console.log(`\n🚀 UI running at http://localhost:${serverPort}`);
-				console.log(`📡 WebSocket server alive`);
+				if (NODE_ENV !== "production") {
+					console.log(hero);
+					console.log(banner);
+					console.log(`\n🚀 UI running at http://localhost:${serverPort}`);
+					console.log(`📡 WebSocket server alive`);
+				}
+				logger.info({ port: serverPort }, 'Mixpanel Import UI server started');
 				resolve(server);
 			}
 		});
