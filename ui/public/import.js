@@ -189,7 +189,7 @@ class MixpanelImportUI {
 			// Fill GCS path
 			const gcsPathsInput = document.getElementById('gcsPaths');
 			if (gcsPathsInput) {
-				gcsPathsInput.value = 'gs://ak-bucky/mixpanel-import/large/two-fifty-thousand-events.json';
+				gcsPathsInput.value = 'gs://mixpanel-import-public-data/example-dnd-events.json';
 				gcsPathsInput.dispatchEvent(new Event('input'));
 			}
 
@@ -1690,10 +1690,10 @@ function transform(row) {
 		const mixpanelFields = [
 			{ key: 'event', icon: '🎯', label: 'Event Name', description: 'The name of the event' },
 			{ key: 'time', icon: '⏰', label: 'Timestamp', description: 'Event timestamp (Unix milliseconds)' },
-			{ key: 'distinct_id', icon: '👤', label: 'User ID', description: 'Unique identifier for the user' },
+			{ key: 'distinct_id', icon: '👤', label: 'Distinct ID (orig)', description: 'Unique identifier for the user' },
 			{ key: 'insert_id', icon: '🔑', label: 'Insert ID', description: 'Unique identifier for deduplication' },
-			{ key: 'user_id', icon: '🆔', label: 'User ID (Alt)', description: 'Alternative user identifier' },
-			{ key: 'device_id', icon: '📱', label: 'Device ID', description: 'Device identifier' }
+			{ key: 'user_id', icon: '🆔', label: 'User ID (simp)', description: '$user_id for simplified id merge' },
+			{ key: 'device_id', icon: '📱', label: 'Device ID (simp)', description: '$device_id for simplified id merge' }
 		];
 
 		// Render mapping rows

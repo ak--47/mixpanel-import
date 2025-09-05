@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const os = require('os');
 const multer = require('multer');
 const WebSocket = require('ws');
 const { createServer } = require('http');
@@ -43,13 +44,19 @@ if (NODE_ENV === 'production') {
 
 const app = express();
 const server = createServer(app);
-const port = process.env.PORT || 3000;
+const port = parseInt(process.env.PORT) || 3000;
 
 // WebSocket server for real-time progress updates
 const wss = new WebSocket.Server({ server });
 
 // Job tracking for WebSocket connections
+// WARNING: In-memory storage - not suitable for serverless production deployment
+// TODO: Replace with external storage (Redis/DynamoDB) for serverless compatibility
 const activeJobs = new Map(); // jobId -> { ws, startTime, lastUpdate }
+
+// In-memory job status tracking (serverless-unfriendly, but functional for single-instance)
+// TODO: Replace with external job queue and status store for true serverless deployment
+const jobStatuses = new Map(); // jobId -> { status, progress, result, startTime, lastUpdate }
 
 // WebSocket connection handler
 wss.on('connection', (ws) => {
@@ -95,19 +102,35 @@ wss.on('connection', (ws) => {
 	});
 });
 
-// Function to broadcast progress updates to WebSocket clients
-function broadcastProgress(jobId, progressData) {
+// Function to update job status and optionally broadcast via WebSocket
+function updateJobStatus(jobId, status, progressData = null, result = null) {
+	const timestamp = Date.now();
+	
+	// Update persistent job status (survives WebSocket disconnections)
+	const currentStatus = jobStatuses.get(jobId) || {};
+	jobStatuses.set(jobId, {
+		...currentStatus,
+		status: status,
+		progress: progressData || currentStatus.progress,
+		result: result || currentStatus.result,
+		lastUpdate: timestamp,
+		startTime: currentStatus.startTime || timestamp
+	});
+	
+	// Also broadcast via WebSocket if connection exists (optional enhancement)
 	const jobData = activeJobs.get(jobId);
 	if (jobData && jobData.ws.readyState === WebSocket.OPEN) {
 		try {
 			const message = {
-				type: 'progress',
+				type: status === 'running' ? 'progress' : 'status-update',
 				jobId: jobId,
+				status: status,
 				data: progressData,
-				timestamp: Date.now()
+				result: result,
+				timestamp: timestamp
 			};
 			jobData.ws.send(JSON.stringify(message));
-			jobData.lastUpdate = Date.now();
+			jobData.lastUpdate = timestamp;
 		} catch (error) {
 			logger.error({ err: error, jobId }, 'Failed to send progress to job');
 			// Clean up dead connection
@@ -116,8 +139,17 @@ function broadcastProgress(jobId, progressData) {
 	}
 }
 
+// Function to broadcast progress updates to WebSocket clients (legacy compatibility)
+function broadcastProgress(jobId, progressData) {
+	updateJobStatus(jobId, 'running', progressData);
+}
+
 // Function to signal job completion
 function signalJobComplete(jobId, result) {
+	// Update job status to completed (persists beyond WebSocket)
+	updateJobStatus(jobId, 'completed', null, result);
+	
+	// Also send via WebSocket if available (optional enhancement)
 	const jobData = activeJobs.get(jobId);
 	if (jobData && jobData.ws.readyState === WebSocket.OPEN) {
 		try {
@@ -131,9 +163,10 @@ function signalJobComplete(jobId, result) {
 			logger.error({ err: error, jobId }, 'Failed to send completion to job');
 		}
 	}
-	// Clean up job tracking
+	
+	// Clean up WebSocket tracking (but keep job status for REST API)
 	activeJobs.delete(jobId);
-	logger.info({ jobId }, 'Job completed and cleaned up');
+	logger.info({ jobId }, 'Job completed and WebSocket cleaned up');
 }
 
 // Function to create a progress callback for a specific job
@@ -154,10 +187,21 @@ function createProgressCallback(jobId) {
 // @ts-ignore - Using disk storage provides path property on files
 const fs = require('fs');
 
+// Cloud Run compatible temporary directory configuration
+let tmpDir;
+if (NODE_ENV === "production") {
+	// Use system temp directory in production (Cloud Run compatible)
+	tmpDir = path.join(os.tmpdir(), 'mixpanel-import');
+} else {
+	// Use local ./tmp directory in development
+	tmpDir = path.join(__dirname, '..', 'tmp');
+}
+
 // Ensure tmp directory exists and clean it on startup
-const tmpDir = path.join(__dirname, '..', 'tmp');
+logger.info({ tmpDir, environment: NODE_ENV }, 'Configuring temporary directory');
 if (!fs.existsSync(tmpDir)) {
 	fs.mkdirSync(tmpDir, { recursive: true });
+	logger.info({ tmpDir }, 'Created temporary directory');
 } else {
 	// Clean up any existing temp files on startup
 	try {
@@ -330,23 +374,30 @@ app.post('/job', upload.array('files'), async (req, res) => {
 			});
 		}
 
-		// Generate unique job ID for WebSocket tracking
+		// Generate unique job ID for tracking
 		const jobId = `job-${Date.now()}-${Math.random().toString(36).substring(2)}`;
 
-		// Add progress callback for WebSocket updates
+		// Initialize job status (serverless-friendly tracking)
+		updateJobStatus(jobId, 'starting');
+
+		// Add progress callback for updates
 		opts.progressCallback = createProgressCallback(jobId);
 
 		logger.info({ jobId, fileCount: Array.isArray(data) ? data.length : 'unknown' }, 'Starting import job');
 
-		// Return job ID immediately so client can connect WebSocket
+		// Return job ID immediately so client can connect WebSocket or poll status
 		res.json({
 			success: true,
 			jobId: jobId,
-			message: 'connecting to websocket; initiating streaming'
+			message: 'connecting to websocket; initiating streaming',
+			statusUrl: `/job/${jobId}/status`
 		});
 
 		// Run the import asynchronously
 		try {
+			// Update status to running
+			updateJobStatus(jobId, 'running');
+			
 			const result = await mixpanelImport(creds, data, opts);
 			const { total, success, failed, empty } = result;
 			logger.info({ jobId, total, success, failed, empty }, 'Import job completed');
@@ -356,7 +407,10 @@ app.post('/job', upload.array('files'), async (req, res) => {
 		} catch (jobError) {
 			logger.error({ err: jobError, jobId }, 'Import job failed');
 
-			// Signal job failure via WebSocket
+			// Update job status to failed (persists beyond WebSocket)
+		updateJobStatus(jobId, 'failed', null, { error: jobError.message });
+
+		// Also signal failure via WebSocket if available
 			const jobData = activeJobs.get(jobId);
 			if (jobData && jobData.ws.readyState === WebSocket.OPEN) {
 				try {
@@ -872,7 +926,10 @@ app.post('/export', async (req, res) => {
 					fs.rmSync(jobTmpDir, { recursive: true, force: true });
 				}
 
-				// Signal job failure via WebSocket
+				// Update job status to failed (persists beyond WebSocket)
+		updateJobStatus(jobId, 'failed', null, { error: jobError.message });
+
+		// Also signal failure via WebSocket if available
 				const jobData = activeJobs.get(jobId);
 				if (jobData && jobData.ws.readyState === WebSocket.OPEN) {
 					try {
@@ -1158,6 +1215,125 @@ app.get('/download/:jobId', (req, res) => {
 		});
 	}
 });
+
+// Job status endpoint - provides REST API alternative to WebSocket
+app.get('/job/:jobId/status', (req, res) => {
+	const jobId = req.params.jobId;
+	const jobStatus = jobStatuses.get(jobId);
+	
+	if (!jobStatus) {
+		return res.status(404).json({
+			success: false,
+			error: 'Job not found',
+			jobId: jobId
+		});
+	}
+	
+	res.json({
+		success: true,
+		jobId: jobId,
+		status: jobStatus.status,
+		progress: jobStatus.progress || {},
+		result: jobStatus.result,
+		startTime: jobStatus.startTime,
+		lastUpdate: jobStatus.lastUpdate
+	});
+});
+
+// Job cleanup endpoint - helps with serverless memory management
+app.delete('/job/:jobId', (req, res) => {
+	const jobId = req.params.jobId;
+	const existed = jobStatuses.has(jobId);
+	
+	// Clean up job status
+	jobStatuses.delete(jobId);
+	activeJobs.delete(jobId);
+	
+	// Clean up any temporary files for this job
+	const jobTmpDir = path.join(tmpDir, jobId);
+	if (fs.existsSync(jobTmpDir)) {
+		try {
+			fs.rmSync(jobTmpDir, { recursive: true, force: true });
+			logger.debug({ jobId, jobTmpDir }, 'Cleaned up job temporary directory');
+		} catch (cleanupError) {
+			logger.warn({ err: cleanupError, jobId, jobTmpDir }, 'Failed to clean up job temporary directory');
+		}
+	}
+	
+	logger.debug({ jobId, existed }, 'Job manually cleaned up');
+	
+	res.json({
+		success: true,
+		jobId: jobId,
+		cleaned: existed
+	});
+});
+
+// Automatic cleanup function for old jobs and temp files
+function cleanupOldJobs() {
+	const now = Date.now();
+	const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+	let cleanedJobs = 0;
+	let cleanedFiles = 0;
+	
+	// Clean up old job statuses
+	for (const [jobId, jobStatus] of jobStatuses.entries()) {
+		if (now - jobStatus.lastUpdate > maxAge) {
+			jobStatuses.delete(jobId);
+			activeJobs.delete(jobId);
+			cleanedJobs++;
+			
+			// Clean up associated temp files
+			const jobTmpDir = path.join(tmpDir, jobId);
+			if (fs.existsSync(jobTmpDir)) {
+				try {
+					fs.rmSync(jobTmpDir, { recursive: true, force: true });
+					cleanedFiles++;
+				} catch (cleanupError) {
+					logger.warn({ err: cleanupError, jobId, jobTmpDir }, 'Failed to clean up expired job directory');
+				}
+			}
+		}
+	}
+	
+	// Clean up orphaned temp directories (no corresponding job status)
+	try {
+		if (fs.existsSync(tmpDir)) {
+			const entries = fs.readdirSync(tmpDir, { withFileTypes: true });
+			for (const entry of entries) {
+				if (entry.isDirectory()) {
+					const dirName = entry.name;
+					// Check if this looks like a job directory and has no corresponding job status
+					if ((dirName.startsWith('job-') || dirName.startsWith('export-')) && !jobStatuses.has(dirName)) {
+						const dirPath = path.join(tmpDir, dirName);
+						const stats = fs.statSync(dirPath);
+						if (now - stats.mtime.getTime() > maxAge) {
+							try {
+								fs.rmSync(dirPath, { recursive: true, force: true });
+								cleanedFiles++;
+								logger.debug({ dirPath }, 'Cleaned up orphaned temp directory');
+							} catch (cleanupError) {
+								logger.warn({ err: cleanupError, dirPath }, 'Failed to clean up orphaned temp directory');
+							}
+						}
+					}
+				}
+			}
+		}
+	} catch (cleanupError) {
+		logger.warn({ err: cleanupError, tmpDir }, 'Failed to scan temp directory for cleanup');
+	}
+	
+	if (cleanedJobs > 0 || cleanedFiles > 0) {
+		logger.info({ cleanedJobs, cleanedFiles }, 'Automatic cleanup completed');
+	}
+}
+
+// Run cleanup every hour
+setInterval(cleanupOldJobs, 60 * 60 * 1000);
+
+// Run initial cleanup after 5 minutes (allow server to stabilize first)
+setTimeout(cleanupOldJobs, 5 * 60 * 1000);
 
 // Health check
 app.get('/health', (req, res) => {
