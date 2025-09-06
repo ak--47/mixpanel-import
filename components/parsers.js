@@ -1,7 +1,6 @@
 const readline = require('readline');
 const stream = require('stream');
 const { Transform, Readable } = require('stream');
-const duckdb = require('duckdb');
 const MultiStream = require('multistream');
 const path = require('path');
 const fs = require('fs');
@@ -727,8 +726,8 @@ function parquetStreamArray(filePaths, job, isGzipped = false) {
 }
 
 /**
- * Streams rows from a Parquet file via DuckDB's each-row API, but
- * detects EOF by first querying COUNT(*) and then counting callbacks.
+ * Streams rows from a Parquet file using hyparquet for pure JavaScript processing.
+ * Replaces DuckDB dependency with native JS solution.
  *
  * @param {string}   filename – path to the Parquet file
  * @param {object}   [job]    - may include parseErrorHandler/fileErrorHandler
@@ -737,98 +736,83 @@ function parquetStreamArray(filePaths, job, isGzipped = false) {
 async function parquetStream(filename, job = {}, isGzipped = false) {
 	const filePath = path.resolve(filename);
 
-	// Check if DuckDB supports gzipped parquet files
+	// Check if gzipped parquet files are supported
 	if (isGzipped) {
 		throw new Error(`Gzipped parquet files (${filePath}) are not yet supported for local files. Please decompress the file first or use cloud storage which supports .parquet.gz files.`);
 	}
-
-	const db = new duckdb.Database(':memory:');
-	const conn = db.connect();
-
-	// SQL pieces, with single-quotes escaped
-	const esc = filePath.replace(/'/g, "''");
-	const dataSQL = `SELECT * FROM read_parquet('${esc}')`;
-	const countSQL = `SELECT COUNT(*) AS cnt FROM read_parquet('${esc}')`;
 
 	// Handlers
 	const fileErrorHandler = job.fileErrorHandler || (err => {
 		console.error(`Error reading ${filePath}:`, err.message || err);
 		throw new Error(`Error reading ${filePath}: ${err.message || err}`);
-		// return null;
-	});
-	const rowErrorHandler = job.parseErrorHandler || ((err, row) => {
-		console.error(`Error parsing row`, row, `from ${filePath}:`, err);
-		return {};
 	});
 
-	// 1) Get total row count (cheap, returns a single number)
-	let total = await new Promise(resolve => {
-		conn.all(countSQL, (err, rows) => {
-			if (err) {
-				console.error(`Failed to count ${filePath}:`, err);
-				resolve(0);
-			} else {
-				resolve(rows[0]?.cnt ?? 0);
-			}
-		});
-	});
-	total = Number(total); // Ensure it's a number
-
-	// 2) Build our output Readable
-	const out = new Readable({
-		objectMode: true,
-		read() { }
-	});
-	out._destroy = (err, cb) => db.close(() => cb(err));
-
-	// 3) Zero-row shortcut
-	if (total === 0) {
-		process.nextTick(() => db.close(() => out.push(null)));
-		return out;
-	}
-
-	// 4) Stream rows, counting as we go
-	let seen = 0;
-	conn.each(
-		dataSQL,
-		(err, row) => {
-			seen++;
-			if (err) {
-				out.push(fileErrorHandler(err));
-			} else {
-				try {
-					// sanitize in-place
-					for (const k of Object.keys(row)) {
-						const v = row[k];
-						if (v?.toISOString) row[k] = dayjs.utc(v).toISOString();
-						else if (typeof v === 'bigint') row[k] =
-							(v <= Number.MAX_SAFE_INTEGER && v >= Number.MIN_SAFE_INTEGER)
-								? Number(v)
-								: v.toString();
-						else if (Buffer.isBuffer(v)) row[k] = v.toString('utf-8');
-						else if (v === undefined) row[k] = null;
-					}
-					out.push(row);
-				}
-
-				catch (err) {
-					out.push(rowErrorHandler(err, row));
-				}
-
-			}
-
-			// If we've now emitted the last row, close & EOF
-			if (seen >= total) {
-				db.close(closeErr => {
-					if (closeErr) out.destroy(closeErr);
-					else out.push(null);
-				});
-			}
+	try {
+		// Check if file exists
+		if (!fs.existsSync(filePath)) {
+			throw new Error(`File not found: ${filePath}`);
 		}
-		// no completion callback here ☝️
-	);
 
-	return out;
+		// Read the parquet file into buffer
+		const buffer = fs.readFileSync(filePath);
+
+		// Create async buffer interface for hyparquet (convert Buffer to ArrayBuffer)
+		const asyncBuffer = {
+			byteLength: buffer.length,
+			slice: (start, end) => {
+				const subBuffer = buffer.subarray(start, end);
+				// Convert Buffer to ArrayBuffer
+				const arrayBuffer = subBuffer.buffer.slice(
+					subBuffer.byteOffset,
+					subBuffer.byteOffset + subBuffer.byteLength
+				);
+				return Promise.resolve(arrayBuffer);
+			}
+		};
+
+		// Use hyparquet's streaming interface (dynamically loaded)
+		const parquetReadFn = await getParquetRead();
+
+		// Read parquet data first, then create stream
+		const parquetData = await new Promise((resolve, reject) => {
+			parquetReadFn({
+				file: asyncBuffer,
+				rowFormat: 'object',
+				onComplete: (data) => {
+					try {
+						// Sanitize each row in-place before resolving (same logic as DuckDB version)
+						if (data && data.length > 0) {
+							for (const row of data) {
+								// sanitize in-place
+								for (const k of Object.keys(row)) {
+									const v = row[k];
+									if (v?.toISOString) row[k] = dayjs.utc(v).toISOString();
+									else if (typeof v === 'bigint') row[k] =
+										(v <= Number.MAX_SAFE_INTEGER && v >= Number.MIN_SAFE_INTEGER)
+											? Number(v)
+											: v.toString();
+									else if (Buffer.isBuffer(v)) row[k] = v.toString('utf-8');
+									else if (v === undefined) row[k] = null;
+								}
+							}
+						}
+						resolve(data || []);
+					} catch (sanitizeError) {
+						reject(new Error(`Error sanitizing parquet data: ${sanitizeError.message}`));
+					}
+				}
+			}).catch(reject);
+		});
+
+		// Create readable stream from the parsed data
+		return stream.Readable.from(parquetData, {
+			objectMode: true,
+			highWaterMark: job.highWater
+		});
+
+	} catch (error) {
+		return fileErrorHandler(error);
+	}
 }
 
 
