@@ -100,7 +100,7 @@ async function exportEvents(filename, job) {
 	// Define streams upfront
 	const cloudInfo = detectCloudDestination(filename);
 	let fileStream;
-	
+
 	if (cloudInfo.isCloud) {
 		if (cloudInfo.provider === 'gcs') {
 			fileStream = createGCSWriteStream(filename, job);
@@ -110,7 +110,7 @@ async function exportEvents(filename, job) {
 	} else {
 		fileStream = fs.createWriteStream(filename);
 	}
-	
+
 	// Create a unified processing stream that handles both memory and file/cloud output
 	let buffer = "";
 	const processingStream = new stream.Writable({
@@ -127,10 +127,10 @@ async function exportEvents(filename, job) {
 			// Process each complete line
 			lines.forEach(line => {
 				if (!line.trim()) return;
-				
+
 				try {
 					let row = JSON.parse(line.trim());
-					
+
 					// Apply transform function if provided
 					if (job.transformFunc && typeof job.transformFunc === 'function') {
 						try {
@@ -156,7 +156,7 @@ async function exportEvents(filename, job) {
 							// Use original row if transform fails
 						}
 					}
-					
+
 					// Write the (possibly transformed) record
 					if (skipWriteToDisk) {
 						allResults.push(row);
@@ -180,7 +180,7 @@ async function exportEvents(filename, job) {
 			if (buffer.trim()) {
 				try {
 					let row = JSON.parse(buffer.trim());
-					
+
 					// Apply transform function if provided
 					if (job.transformFunc && typeof job.transformFunc === 'function') {
 						try {
@@ -208,7 +208,7 @@ async function exportEvents(filename, job) {
 							}
 						}
 					}
-					
+
 					if (skipWriteToDisk) {
 						allResults.push(row);
 					} else {
@@ -221,7 +221,7 @@ async function exportEvents(filename, job) {
 					}
 				}
 			}
-			
+
 			// Ensure cloud streams are properly finalized
 			if (!skipWriteToDisk && cloudInfo.isCloud) {
 				fileStream.end();
@@ -287,7 +287,7 @@ async function exportProfiles(folder, job) {
 	let iterations = 0;
 	let fileName = `${entityName}-${iterations}.json`;
 	let file;
-	
+
 	if (cloudInfo.isCloud) {
 		// For cloud storage, treat 'folder' as a prefix
 		// Ensure it ends with / for proper prefix behavior
@@ -307,7 +307,7 @@ async function exportProfiles(folder, job) {
 			'content-type': 'application/x-www-form-urlencoded'
 		},
 		searchParams: {
-			...job.params
+			...job.params || {}
 		},
 		responseType: 'json',
 		retry: { limit: 50 }
@@ -316,7 +316,13 @@ async function exportProfiles(folder, job) {
 	if (job.project) options.searchParams.project_id = job.project;
 
 	if (job.cohortId) {
-		options.body = `filter_by_cohort={"id": ${job.cohortId}}&include_all_users=true`;
+		options.body = `filter_by_cohort={"id": ${job.cohortId}}&include_all_users=false`;
+		options.body = encodeURIComponent(options.body);
+	}
+
+	if (job.whereClause) {
+		// @ts-ignore
+		options.body = `filter_by_cohort=${JSON.stringify(job.whereClause)}&include_all_users=false`;
 		options.body = encodeURIComponent(options.body);
 	}
 	// if (job.dataGroupId) options.body = `data_group_id=${job.dataGroupId}`;
@@ -350,10 +356,10 @@ async function exportProfiles(folder, job) {
 
 	// write first page of profiles
 	let profiles = response.results;
-	
+
 	// Apply transforms if provided
 	profiles = applyTransformToRecords(profiles, job);
-	
+
 	let firstFile, nextFile;
 	if (skipWriteToDisk) {
 		allResults.push(...profiles);
@@ -427,7 +433,7 @@ async function exportProfiles(folder, job) {
 		if (job.verbose || job.showProgress) showProgress("profile", job.success, iterations + 1);
 
 		profiles = response.results;
-		
+
 		// Apply transforms if provided
 		profiles = applyTransformToRecords(profiles, job);
 
@@ -625,13 +631,13 @@ function createS3WriteStream(s3Path, job) {
 
 	// Create a custom writable stream that buffers data and uploads on end
 	const chunks = [];
-	
+
 	return new stream.Writable({
 		write(chunk, encoding, callback) {
 			chunks.push(chunk);
 			callback();
 		},
-		
+
 		async final(callback) {
 			try {
 				const body = Buffer.concat(chunks);
@@ -659,9 +665,9 @@ function applyTransformToRecords(records, job) {
 	if (!job.transformFunc || typeof job.transformFunc !== 'function') {
 		return records;
 	}
-	
+
 	const transformedRecords = [];
-	
+
 	for (const record of records) {
 		try {
 			const transformed = job.transformFunc(record);
@@ -681,7 +687,7 @@ function applyTransformToRecords(records, job) {
 			transformedRecords.push(record);
 		}
 	}
-	
+
 	return transformedRecords;
 }
 
@@ -694,13 +700,13 @@ function applyTransformToRecords(records, job) {
  */
 async function writeCloudJSON(cloudPath, data, job) {
 	const cloudInfo = detectCloudDestination(cloudPath);
-	
+
 	if (!cloudInfo.isCloud) {
 		throw new Error(`Expected cloud path, got local path: ${cloudPath}`);
 	}
 
 	const jsonData = JSON.stringify(data, null, 2);
-	
+
 	if (cloudInfo.provider === 'gcs') {
 		const matches = cloudPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
 		if (!matches) {
@@ -728,7 +734,7 @@ async function writeCloudJSON(cloudPath, data, job) {
 		});
 
 		return cloudPath;
-		
+
 	} else if (cloudInfo.provider === 's3') {
 		const matches = cloudPath.match(/^s3:\/\/([^\/]+)\/(.+)$/);
 		if (!matches) {
@@ -754,7 +760,7 @@ async function writeCloudJSON(cloudPath, data, job) {
 		}
 
 		const s3Client = new S3Client(s3ClientConfig);
-		
+
 		await s3Client.send(new PutObjectCommand({
 			Bucket: bucketName,
 			Key: key,
@@ -764,7 +770,7 @@ async function writeCloudJSON(cloudPath, data, job) {
 
 		return cloudPath;
 	}
-	
+
 	throw new Error(`Unsupported cloud provider: ${cloudInfo.provider}`);
 }
 
@@ -859,8 +865,8 @@ function streamProfiles(job) {
 
 				const searchParams = {
 					page: this._page,
-					session_id: this._session_id					
-				}
+					session_id: this._session_id
+				};
 				if (job.project) searchParams.project_id = job.project;
 				const res = await got({
 					method: 'POST',
