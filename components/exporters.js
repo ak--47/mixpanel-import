@@ -306,7 +306,9 @@ async function exportProfiles(folder, job) {
 			Authorization: auth,
 			'content-type': 'application/x-www-form-urlencoded'
 		},
-		searchParams: {},
+		searchParams: {
+			...job.params
+		},
 		responseType: 'json',
 		retry: { limit: 50 }
 	};
