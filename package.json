@@ -1,6 +1,6 @@
 {
   "name": "mixpanel-import",
-  "version": "2.9.0",
+  "version": "3.0.0",
   "description": "stream and import data to mixpanel from node.js",
   "main": "index.js",
   "types": "index.d.ts",
@@ -38,6 +38,10 @@
   },
   "author": "AK",
   "license": "ISC",
+  "engines": {
+    "node": ">=20.18.1",
+    "npm": ">=10.0.0"
+  },
   "bugs": {
     "url": "https://github.com/ak--47/mixpanel-import/issues"
   },
