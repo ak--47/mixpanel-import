@@ -746,6 +746,10 @@ async function parquetStream(filename, job = {}, isGzipped = false) {
 		console.error(`Error reading ${filePath}:`, err.message || err);
 		throw new Error(`Error reading ${filePath}: ${err.message || err}`);
 	});
+	const parseErrorHandler = job.parseErrorHandler || ((err, row) => {
+		console.error(`Error parsing row`, row, `from ${filePath}:`, err);
+		return {};
+	});
 
 	try {
 		// Check if file exists
@@ -782,21 +786,33 @@ async function parquetStream(filename, job = {}, isGzipped = false) {
 					try {
 						// Sanitize each row in-place before resolving (same logic as DuckDB version)
 						if (data && data.length > 0) {
+							const sanitizedData = [];
 							for (const row of data) {
-								// sanitize in-place
-								for (const k of Object.keys(row)) {
-									const v = row[k];
-									if (v?.toISOString) row[k] = dayjs.utc(v).toISOString();
-									else if (typeof v === 'bigint') row[k] =
-										(v <= Number.MAX_SAFE_INTEGER && v >= Number.MIN_SAFE_INTEGER)
-											? Number(v)
-											: v.toString();
-									else if (Buffer.isBuffer(v)) row[k] = v.toString('utf-8');
-									else if (v === undefined) row[k] = null;
+								try {
+									// sanitize in-place
+									for (const k of Object.keys(row)) {
+										const v = row[k];
+										if (v?.toISOString) row[k] = dayjs.utc(v).toISOString();
+										else if (typeof v === 'bigint') row[k] =
+											(v <= Number.MAX_SAFE_INTEGER && v >= Number.MIN_SAFE_INTEGER)
+												? Number(v)
+												: v.toString();
+										else if (Buffer.isBuffer(v)) row[k] = v.toString('utf-8');
+										else if (v === undefined) row[k] = null;
+									}
+									sanitizedData.push(row);
+								} catch (rowError) {
+									// Use parseErrorHandler for row-level errors, push the result
+									const errorResult = parseErrorHandler(rowError, row);
+									if (errorResult !== null && errorResult !== undefined) {
+										sanitizedData.push(errorResult);
+									}
 								}
 							}
+							resolve(sanitizedData);
+						} else {
+							resolve([]);
 						}
-						resolve(data || []);
 					} catch (sanitizeError) {
 						reject(new Error(`Error sanitizing parquet data: ${sanitizeError.message}`));
 					}
