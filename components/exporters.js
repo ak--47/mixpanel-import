@@ -368,7 +368,7 @@ async function exportProfiles(folder, job) {
 		if (cloudInfo.isCloud) {
 			firstFile = await writeCloudJSON(file, profiles, job);
 		} else {
-			firstFile = await u.touch(file, profiles, true);
+			firstFile = await writeLocalJSONL(file, profiles);
 		}
 		allResults.push(firstFile);
 	}
@@ -444,7 +444,7 @@ async function exportProfiles(folder, job) {
 			if (cloudInfo.isCloud) {
 				nextFile = await writeCloudJSON(file, profiles, job);
 			} else {
-				nextFile = await u.touch(file, profiles, true);
+				nextFile = await writeLocalJSONL(file, profiles);
 			}
 			allResults.push(nextFile);
 		}
@@ -692,9 +692,31 @@ function applyTransformToRecords(records, job) {
 }
 
 /**
- * Write JSON data to cloud storage (replicates u.touch functionality for cloud)
+ * Write data to local file as JSONL (newline-delimited JSON)
+ * @param {string} filePath - local file path
+ * @param {Array} data - data to write as JSONL
+ * @returns {Promise<string>} - the file path that was written to
+ */
+async function writeLocalJSONL(filePath, data) {
+	// Convert to JSONL format (newline-delimited JSON)
+	const jsonlData = data.map(item => JSON.stringify(item)).join('\n') + '\n';
+	
+	// Ensure directory exists
+	const dir = path.dirname(filePath);
+	if (!fs.existsSync(dir)) {
+		fs.mkdirSync(dir, { recursive: true });
+	}
+	
+	// Write file
+	await fs.promises.writeFile(filePath, jsonlData, 'utf8');
+	
+	return filePath;
+}
+
+/**
+ * Write data to cloud storage as JSONL (newline-delimited JSON)
  * @param {string} cloudPath - cloud storage path
- * @param {Array} data - data to write as JSON
+ * @param {Array} data - data to write as JSONL
  * @param {jobConfig} job - job configuration
  * @returns {Promise<string>} - the cloud path that was written to
  */
@@ -705,7 +727,8 @@ async function writeCloudJSON(cloudPath, data, job) {
 		throw new Error(`Expected cloud path, got local path: ${cloudPath}`);
 	}
 
-	const jsonData = JSON.stringify(data, null, 2);
+	// Convert to JSONL format (newline-delimited JSON) instead of JSON array
+	const jsonlData = data.map(item => JSON.stringify(item)).join('\n') + '\n';
 
 	if (cloudInfo.provider === 'gcs') {
 		const matches = cloudPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
@@ -727,7 +750,7 @@ async function writeCloudJSON(cloudPath, data, job) {
 		const storage = new Storage(storageConfig);
 		const file = storage.bucket(bucketName).file(filePath);
 
-		await file.save(jsonData, {
+		await file.save(jsonlData, {
 			metadata: {
 				contentType: 'application/json'
 			}
@@ -764,7 +787,7 @@ async function writeCloudJSON(cloudPath, data, job) {
 		await s3Client.send(new PutObjectCommand({
 			Bucket: bucketName,
 			Key: key,
-			Body: jsonData,
+			Body: jsonlData,
 			ContentType: 'application/json'
 		}));
 

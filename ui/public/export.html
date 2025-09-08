@@ -264,16 +264,88 @@
 							</label>
 						</div>
 
-						<div class="form-row">
-							<div class="form-group">
-								<label for="where">Output Directory</label>
-								<input type="text" id="where" name="where" placeholder="./exports">
-								<small>Directory for exported files and logs</small>
+						<!-- Destination Type Selection -->
+						<div class="form-group">
+							<label>Export Destination</label>
+							<div class="auth-toggle">
+								<label class="toggle-label">
+									<input type="radio" name="destinationType" value="local" checked>
+									💻 Local Download
+								</label>
+								<label class="toggle-label">
+									<input type="radio" name="destinationType" value="gcs">
+									☁️ Google Cloud Storage
+								</label>
+								<label class="toggle-label">
+									<input type="radio" name="destinationType" value="s3">
+									🪣 Amazon S3
+								</label>
+							</div>
+							<small>Choose where to save your exported data</small>
+						</div>
+
+						<!-- Local Destination Fields -->
+						<div id="local-destination" class="destination-section">
+							<div class="form-row">
+								<div class="form-group">
+									<label for="where">Output Directory</label>
+									<input type="text" id="where" name="where" placeholder="./exports">
+									<small>Directory for exported files and logs</small>
+								</div>
+								<div class="form-group">
+									<label for="outputFilePath">Output File Path</label>
+									<input type="text" id="outputFilePath" name="outputFilePath" placeholder="./export-data.json">
+									<small>Path for exported data file</small>
+								</div>
+							</div>
+						</div>
+
+						<!-- GCS Destination Fields -->
+						<div id="gcs-destination" class="destination-section" style="display: none;">
+							<div class="form-row">
+								<div class="form-group">
+									<label for="gcsPath">GCS Path*</label>
+									<input type="text" id="gcsPath" name="gcsPath" placeholder="gs://your-bucket/exports/data.jsonl">
+									<small>Google Cloud Storage path (gs://bucket/path/file.jsonl)</small>
+								</div>
+								<div class="form-group">
+									<label for="gcpProjectId">GCP Project ID</label>
+									<input type="text" id="gcpProjectId" name="gcpProjectId" placeholder="your-gcp-project">
+									<small>Google Cloud Project ID (optional if using ADC)</small>
+								</div>
 							</div>
 							<div class="form-group">
-								<label for="outputFilePath">Output File Path</label>
-								<input type="text" id="outputFilePath" name="outputFilePath" placeholder="./export-data.json">
-								<small>Path for exported data file</small>
+								<label for="gcsCredentials">GCS Credentials Path</label>
+								<input type="text" id="gcsCredentials" name="gcsCredentials" placeholder="/path/to/service-account.json">
+								<small>Path to GCS service account key file (optional if using ADC)</small>
+							</div>
+						</div>
+
+						<!-- S3 Destination Fields -->
+						<div id="s3-destination" class="destination-section" style="display: none;">
+							<div class="form-row">
+								<div class="form-group">
+									<label for="s3Path">S3 Path*</label>
+									<input type="text" id="s3Path" name="s3Path" placeholder="s3://your-bucket/exports/data.jsonl">
+									<small>Amazon S3 path (s3://bucket/path/file.jsonl)</small>
+								</div>
+								<div class="form-group">
+									<label for="s3Region">S3 Region*</label>
+									<input type="text" id="s3Region" name="s3Region" placeholder="us-east-1">
+									<small>AWS region where your S3 bucket is located</small>
+								</div>
+							</div>
+							<div class="form-row">
+								<div class="form-group">
+									<label for="s3Key">AWS Access Key ID</label>
+									<input type="text" id="s3Key" name="s3Key" placeholder="AKIA...">
+									<small>AWS Access Key (optional if using IAM roles)</small>
+								</div>
+								<div class="form-group">
+									<label for="s3Secret">AWS Secret Access Key</label>
+									<input type="password" id="s3Secret" name="s3Secret" placeholder="...">
+									<small>AWS Secret Key (optional if using IAM roles)</small>
+								</div>
 							</div>
 						</div>
 					</div>
@@ -302,6 +374,10 @@
 				<button type="button" id="dry-run-btn" class="btn btn-secondary">
 					<span class="btn-icon">🧪</span>
 					Test Export (Dry Run)
+				</button>
+				<button type="button" id="test-run-btn" class="btn btn-secondary">
+					<span class="btn-icon">🔬</span>
+					Test Run (1000 records)
 				</button>
 				<button type="submit" id="export-btn" class="btn btn-primary">
 					<span class="btn-icon">📦</span>

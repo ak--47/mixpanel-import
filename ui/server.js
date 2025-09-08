@@ -882,9 +882,59 @@ app.post("/export", async (req, res) => {
 			verbose: exportData.verbose || false,
 			showProgress: exportData.showProgress || true,
 			writeToFile: exportData.writeToFile !== false, // Default to true for exports that create files
-			where: jobTmpDir, // Save files to job-specific temp directory
-			outputFilePath: exportData.outputFilePath
+			where: jobTmpDir, // Save files to job-specific temp directory (local default)
+			outputFilePath: exportData.outputFilePath,
+			
+			// Cloud destination options
+			gcpProjectId: exportData.gcpProjectId,
+			gcsCredentials: exportData.gcsCredentials,
+			s3Region: exportData.s3Region,
+			s3Key: exportData.s3Key,
+			s3Secret: exportData.s3Secret
 		};
+
+		// Handle cloud destinations
+		const destinationType = exportData.destinationType || 'local';
+		if (destinationType === 'gcs' && exportData.gcsPath) {
+			// Validate GCS write access before starting export
+			try {
+				const { validateCloudWriteAccess } = require('../components/parsers.js');
+				await validateCloudWriteAccess(exportData.gcsPath, {
+					gcpProjectId: opts.gcpProjectId,
+					gcsCredentials: opts.gcsCredentials
+				});
+				
+				// Set GCS path as export destination
+				opts.where = exportData.gcsPath;
+				logger.info({ jobId, gcsPath: exportData.gcsPath }, "Validated GCS write access for export");
+			} catch (error) {
+				logger.error({ err: error, jobId, gcsPath: exportData.gcsPath }, "GCS write validation failed");
+				return res.status(400).json({
+					success: false,
+					error: `GCS write validation failed: ${error.message}`
+				});
+			}
+		} else if (destinationType === 's3' && exportData.s3Path) {
+			// Validate S3 write access before starting export
+			try {
+				const { validateCloudWriteAccess } = require('../components/parsers.js');
+				await validateCloudWriteAccess(exportData.s3Path, {
+					s3Region: opts.s3Region,
+					s3Key: opts.s3Key,
+					s3Secret: opts.s3Secret
+				});
+				
+				// Set S3 path as export destination
+				opts.where = exportData.s3Path;
+				logger.info({ jobId, s3Path: exportData.s3Path }, "Validated S3 write access for export");
+			} catch (error) {
+				logger.error({ err: error, jobId, s3Path: exportData.s3Path }, "S3 write validation failed");
+				return res.status(400).json({
+					success: false,
+					error: `S3 write validation failed: ${error.message}`
+				});
+			}
+		}
 
 		// Check if this is a file-producing export type
 		const fileProducingTypes = ["export", "profile-export", "profile-delete", "group-export", "group-delete", "annotations", "get-annotations"];

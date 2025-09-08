@@ -77,7 +77,7 @@ function analyzeFileFormat(filePath, job) {
 }
 
 const { Storage } = require('@google-cloud/storage');
-const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 
 // Lazy load hyparquet since it's an ES module
 let parquetRead = null;
@@ -2115,6 +2115,128 @@ async function createMultiS3Stream(s3Paths, job) {
 }
 
 /**
+ * Test if we can write to a GCS path by creating and deleting a small test file
+ * @param {string} gcsPath Path in format gs://bucket-name/path/to/file.json
+ * @param {string} projectId GCP Project ID
+ * @param {string} gcsCredentials Path to GCS credentials file
+ * @returns {Promise<boolean>} True if writable, throws error if not
+ */
+async function testGCSWriteAccess(gcsPath, projectId = 'mixpanel-gtm-training', gcsCredentials = '') {
+	// Create a storage client using either custom credentials or application default credentials
+	const storageConfig = {
+		projectId
+	};
+
+	// Use custom credentials if provided, otherwise fall back to ADC
+	if (gcsCredentials) {
+		storageConfig.keyFilename = gcsCredentials;
+	}
+
+	const storage = new Storage(storageConfig);
+
+	// Extract bucket and file path from the GCS path
+	const matches = gcsPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
+	if (!matches) {
+		throw new Error(`Invalid GCS path: ${gcsPath}`);
+	}
+
+	const bucketName = matches[1];
+	const filePath = matches[2];
+	
+	// Create test file path in same directory
+	const testFileName = `${path.dirname(filePath)}/.write-test-${Date.now()}-${Math.random().toString(36).substring(2)}`;
+
+	try {
+		const bucket = storage.bucket(bucketName);
+		const testFile = bucket.file(testFileName);
+		
+		// Try to create a small test file
+		await testFile.save('test-write-access', {
+			metadata: {
+				contentType: 'text/plain'
+			}
+		});
+		
+		// Clean up test file
+		await testFile.delete();
+		
+		return true;
+	} catch (error) {
+		throw new Error(`Cannot write to GCS path ${gcsPath}: ${error.message}`);
+	}
+}
+
+/**
+ * Test if we can write to an S3 path by creating and deleting a small test file
+ * @param {string} s3Path Path in format s3://bucket-name/path/to/file.json
+ * @param {object} s3Config S3 configuration with region, credentials
+ * @returns {Promise<boolean>} True if writable, throws error if not
+ */
+async function testS3WriteAccess(s3Path, s3Config = {}) {
+	// Extract bucket and key from the S3 path
+	const matches = s3Path.match(/^s3:\/\/([^\/]+)\/(.+)$/);
+	if (!matches) {
+		throw new Error(`Invalid S3 path: ${s3Path}`);
+	}
+
+	const bucketName = matches[1];
+	const key = matches[2];
+	
+	// Create test key in same directory
+	const testKey = `${path.dirname(key)}/.write-test-${Date.now()}-${Math.random().toString(36).substring(2)}`;
+
+	// Configure S3 client
+	const s3ClientConfig = {
+		region: s3Config.s3Region || S3_STREAMING_CONFIG.DEFAULT_REGION,
+		...s3Config
+	};
+
+	const s3Client = new S3Client(s3ClientConfig);
+
+	try {
+		// Try to create a small test file
+		await s3Client.send(new PutObjectCommand({
+			Bucket: bucketName,
+			Key: testKey,
+			Body: 'test-write-access',
+			ContentType: 'text/plain'
+		}));
+		
+		// Clean up test file
+		await s3Client.send(new DeleteObjectCommand({
+			Bucket: bucketName,
+			Key: testKey
+		}));
+		
+		return true;
+	} catch (error) {
+		throw new Error(`Cannot write to S3 path ${s3Path}: ${error.message}`);
+	}
+}
+
+/**
+ * Validate that a cloud path is writable before starting export
+ * @param {string} cloudPath GCS or S3 path
+ * @param {object} config Configuration with credentials
+ * @returns {Promise<boolean>} True if writable, throws error if not
+ */
+async function validateCloudWriteAccess(cloudPath, config = {}) {
+	if (cloudPath.startsWith('gs://')) {
+		return testGCSWriteAccess(cloudPath, config.gcpProjectId, config.gcsCredentials);
+	} else if (cloudPath.startsWith('s3://')) {
+		return testS3WriteAccess(cloudPath, {
+			s3Region: config.s3Region,
+			credentials: config.s3Key && config.s3Secret ? {
+				accessKeyId: config.s3Key,
+				secretAccessKey: config.s3Secret
+			} : undefined
+		});
+	} else {
+		throw new Error(`Unsupported cloud path format: ${cloudPath}. Use gs:// for Google Cloud Storage or s3:// for Amazon S3`);
+	}
+}
+
+/**
  * Fetch a file from Amazon S3
  * @param {string} s3Path Path in format s3://bucket-name/path/to/file.json
  * @returns {Promise<string>} File contents as a string
@@ -2167,5 +2289,6 @@ module.exports = {
 	itemStream,
 	getEnvVars,
 	chunkForSize,
-	analyzeFileFormat
+	analyzeFileFormat,
+	validateCloudWriteAccess
 };

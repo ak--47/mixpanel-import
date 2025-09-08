@@ -375,6 +375,19 @@ class MixpanelExportUI {
 			this.submitExport(true);
 		});
 
+		// Test run button (1000 records)
+		const testRunBtn = document.getElementById('test-run-btn');
+		testRunBtn.addEventListener('click', () => {
+			this.submitExport(false, 1000);
+		});
+
+		// Destination type toggle
+		const destinationRadios = document.querySelectorAll('input[name="destinationType"]');
+		destinationRadios.forEach(radio => {
+			radio.addEventListener('change', this.toggleDestinationType);
+		});
+		this.toggleDestinationType(); // Initial call
+
 		// Record type change - show/hide relevant fields
 		const recordTypeSelect = document.getElementById('recordType');
 		recordTypeSelect.addEventListener('change', this.updateFieldVisibility.bind(this));
@@ -411,6 +424,31 @@ class MixpanelExportUI {
 		} else {
 			serviceAuth.style.display = 'none';
 			secretAuth.style.display = 'block';
+		}
+	}
+
+	toggleDestinationType() {
+		const localDestination = document.getElementById('local-destination');
+		const gcsDestination = document.getElementById('gcs-destination');
+		const s3Destination = document.getElementById('s3-destination');
+		const selectedDestination = document.querySelector('input[name="destinationType"]:checked')?.value || 'local';
+
+		// Hide all destination sections
+		localDestination.style.display = 'none';
+		gcsDestination.style.display = 'none';
+		s3Destination.style.display = 'none';
+
+		// Show selected destination section
+		switch (selectedDestination) {
+			case 'local':
+				localDestination.style.display = 'block';
+				break;
+			case 'gcs':
+				gcsDestination.style.display = 'block';
+				break;
+			case 's3':
+				s3Destination.style.display = 'block';
+				break;
 		}
 	}
 
@@ -677,6 +715,30 @@ class MixpanelExportUI {
 				return { isValid: false, message: 'Please select a valid export type.' };
 		}
 
+		// Validate cloud destination settings
+		const destinationType = document.querySelector('input[name="destinationType"]:checked')?.value || 'local';
+		if (destinationType === 'gcs') {
+			const gcsPath = document.getElementById('gcsPath').value;
+			if (!gcsPath) {
+				return { isValid: false, message: 'GCS path is required when using Google Cloud Storage destination.' };
+			}
+			if (!gcsPath.startsWith('gs://')) {
+				return { isValid: false, message: 'GCS path must start with gs:// (e.g., gs://bucket/path/file.jsonl).' };
+			}
+		} else if (destinationType === 's3') {
+			const s3Path = document.getElementById('s3Path').value;
+			const s3Region = document.getElementById('s3Region').value;
+			if (!s3Path) {
+				return { isValid: false, message: 'S3 path is required when using Amazon S3 destination.' };
+			}
+			if (!s3Path.startsWith('s3://')) {
+				return { isValid: false, message: 'S3 path must start with s3:// (e.g., s3://bucket/path/file.jsonl).' };
+			}
+			if (!s3Region) {
+				return { isValid: false, message: 'S3 region is required when using Amazon S3 destination.' };
+			}
+		}
+
 		return { isValid: true };
 	}
 
@@ -790,23 +852,40 @@ class MixpanelExportUI {
 		}
 	}
 
-	async submitExport(isDryRun = false) {
+	async submitExport(isDryRun = false, maxRecords = null) {
 		const recordType = document.getElementById('recordType').value;
 
-		// Validate required fields
+		// Validate required fields (including cloud destinations)
 		const validation = this.validateRequiredFields(recordType);
 		if (!validation.isValid) {
 			alert(validation.message);
 			return;
 		}
 
-		this.showLoading(isDryRun ? 'Testing Export...' : 'Exporting Data...',
-			isDryRun ? 'Running export test' : 'Exporting your data from Mixpanel');
+		// Set loading message based on operation type
+		let loadingTitle, loadingMessage;
+		if (isDryRun) {
+			loadingTitle = 'Testing Export...';
+			loadingMessage = 'Running export test';
+		} else if (maxRecords) {
+			loadingTitle = 'Test Run...';
+			loadingMessage = `Testing export with up to ${maxRecords.toLocaleString()} records`;
+		} else {
+			loadingTitle = 'Exporting Data...';
+			loadingMessage = 'Exporting your data from Mixpanel';
+		}
+
+		this.showLoading(loadingTitle, loadingMessage);
 
 		try {
 			// Collect form data
 			const formData = this.collectFormData();
 			formData.isDryRun = isDryRun;
+			
+			// Apply maxRecords limit for Test Run
+			if (maxRecords) {
+				formData.limit = Math.min(formData.limit || maxRecords, maxRecords);
+			}
 
 			// Submit to appropriate endpoint
 			const endpoint = isDryRun ? '/export-dry-run' : '/export';
@@ -886,7 +965,17 @@ class MixpanelExportUI {
 			showProgress: this.getElementChecked('showProgress'),
 			writeToFile: this.getElementChecked('writeToFile'),
 			where: this.getElementValue('where'),
-			outputFilePath: this.getElementValue('outputFilePath')
+			outputFilePath: this.getElementValue('outputFilePath'),
+
+			// Cloud destination options
+			destinationType: this.getElementValue('destinationType', 'local'),
+			gcsPath: this.getElementValue('gcsPath'),
+			gcpProjectId: this.getElementValue('gcpProjectId'),
+			gcsCredentials: this.getElementValue('gcsCredentials'),
+			s3Path: this.getElementValue('s3Path'),
+			s3Region: this.getElementValue('s3Region'),
+			s3Key: this.getElementValue('s3Key'),
+			s3Secret: this.getElementValue('s3Secret')
 		};
 
 		// Remove empty values
