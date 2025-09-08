@@ -315,22 +315,24 @@ async function exportProfiles(folder, job) {
 	// @ts-ignore
 	if (job.project) options.searchParams.project_id = job.project;
 
+	// Build form data for POST body
+	const encodedParams = new URLSearchParams();
+	
 	if (job.cohortId) {
-		options.body = `filter_by_cohort={"id": ${job.cohortId}}&include_all_users=false`;
-		options.body = encodeURIComponent(options.body);
+		encodedParams.set('filter_by_cohort', JSON.stringify({id: job.cohortId}));
+		encodedParams.set('include_all_users', 'false');
 	}
 
 	if (job.whereClause) {
-		// @ts-ignore
-		options.body = `filter_by_cohort=${JSON.stringify(job.whereClause)}&include_all_users=false`;
-		options.body = encodeURIComponent(options.body);
+		encodedParams.set('where', job.whereClause);
 	}
-	// if (job.dataGroupId) options.body = `data_group_id=${job.dataGroupId}`;
-	// @ts-ignore
 
 	if (job.dataGroupId) {
-		const encodedParams = new URLSearchParams();
 		encodedParams.set('data_group_id', job.dataGroupId);
+	}
+
+	// Only set body if we have form parameters
+	if (encodedParams.toString()) {
 		options.body = encodedParams.toString();
 	}
 
