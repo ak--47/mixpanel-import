@@ -280,12 +280,17 @@ app.use(express.urlencoded({ extended: true, limit: "100mb" }));
 // Helper function to safely serve files
 function serveFile(res, filename) {
 	const filePath = path.join(__dirname, "public", filename);
-	const absolutePath = path.resolve(filePath);
 	
-	if (fs.existsSync(absolutePath)) {
-		res.sendFile(absolutePath);
-	} else {
-		res.status(404).send(`File not found: ${filename} at ${absolutePath}`);
+	try {
+		if (fs.existsSync(filePath)) {
+			const content = fs.readFileSync(filePath, 'utf8');
+			res.setHeader('Content-Type', 'text/html');
+			res.send(content);
+		} else {
+			res.status(404).send(`File not found: ${filename} at ${filePath}`);
+		}
+	} catch (error) {
+		res.status(500).send(`Error serving file: ${error.message}`);
 	}
 }
 
