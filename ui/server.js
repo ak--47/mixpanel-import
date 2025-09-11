@@ -277,24 +277,17 @@ const upload = multer({
 app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ extended: true, limit: "100mb" }));
 
-// Serve specific routes first before static middleware
-// Serve the main landing page
-app.get("/", (req, res) => {
-	res.sendFile(path.resolve(__dirname, "public", "index.html"));
-});
+// Static files middleware - this serves index.html at / automatically
+app.use(express.static(path.resolve(__dirname, "public")));
 
-// Serve the import UI (E.T.L tool)
+// Explicit routes for import and export (since static middleware doesn't handle these paths)
 app.get("/import", (req, res) => {
 	res.sendFile(path.resolve(__dirname, "public", "import.html"));
 });
 
-// Serve the export UI (L.T.E tool)
 app.get("/export", (req, res) => {
 	res.sendFile(path.resolve(__dirname, "public", "export.html"));
 });
-
-// Static files middleware (after specific routes)
-app.use(express.static(path.resolve(__dirname, "public")));
 
 // Handle job submission
 // @ts-ignore
