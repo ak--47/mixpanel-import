@@ -7,7 +7,8 @@ const { createServer } = require("http");
 const mixpanelImport = require("../index.js");
 const pino = require("pino");
 const { createGcpLoggingPinoConfig } = require("@google-cloud/pino-logging-gcp-config");
-const { NODE_ENV = "" } = process.env;
+let { NODE_ENV = "" } = process.env;
+if (!NODE_ENV) NODE_ENV = "local"; 
 if (!NODE_ENV) throw new Error("NODE_ENV not set");
 
 // Configure Pino logger with environment-appropriate configuration
