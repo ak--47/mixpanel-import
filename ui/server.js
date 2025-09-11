@@ -276,21 +276,21 @@ const upload = multer({
 // Middleware
 app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ extended: true, limit: "100mb" }));
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.resolve(__dirname, "public")));
 
-// Serve the main landing page (will be created next)
+// Serve the main landing page
 app.get("/", (req, res) => {
-	res.sendFile(path.join(__dirname, "public", "index.html"));
+	res.sendFile(path.resolve(__dirname, "public", "index.html"));
 });
 
 // Serve the import UI (E.T.L tool)
 app.get("/import", (req, res) => {
-	res.sendFile(path.join(__dirname, "public", "import.html"));
+	res.sendFile(path.resolve(__dirname, "public", "import.html"));
 });
 
 // Serve the export UI (L.T.E tool)
 app.get("/export", (req, res) => {
-	res.sendFile(path.join(__dirname, "public", "export.html"));
+	res.sendFile(path.resolve(__dirname, "public", "export.html"));
 });
 
 // Handle job submission
@@ -1437,7 +1437,7 @@ _  _ _ _  _ ___  ____ _  _ ____ _       _ _  _ ___  ____ ____ ___
 					console.log(hero);
 					console.log(banner);
 					console.log(`\n🚀 UI running at http://localhost:${serverPort}`);
-					console.log(`📡 WebSocket server alive`);
+					console.log(`📡 WebSocket server alive\n\n`);
 				}
 				logger.info({ port: serverPort }, "Mixpanel Import UI server started");
 				resolve(server);
