@@ -277,16 +277,28 @@ const upload = multer({
 app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ extended: true, limit: "100mb" }));
 
+// Helper function to safely serve files
+function serveFile(res, filename) {
+	const filePath = path.join(__dirname, "public", filename);
+	const absolutePath = path.resolve(filePath);
+	
+	if (fs.existsSync(absolutePath)) {
+		res.sendFile(absolutePath);
+	} else {
+		res.status(404).send(`File not found: ${filename} at ${absolutePath}`);
+	}
+}
+
 // Static files middleware - this serves index.html at / automatically
-app.use(express.static(path.resolve(__dirname, "public")));
+app.use(express.static(path.join(__dirname, "public")));
 
 // Explicit routes for import and export (since static middleware doesn't handle these paths)
 app.get("/import", (req, res) => {
-	res.sendFile(path.resolve(__dirname, "public", "import.html"));
+	serveFile(res, "import.html");
 });
 
 app.get("/export", (req, res) => {
-	res.sendFile(path.resolve(__dirname, "public", "export.html"));
+	serveFile(res, "export.html");
 });
 
 // Handle job submission
