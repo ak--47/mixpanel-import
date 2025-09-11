@@ -31,18 +31,27 @@ if (NODE_ENV === "production") {
 		)
 	);
 } else {
-	// Use pino-pretty for better developer experience in non-production
-	logger = pino({
-		level: logLevel,
-		transport: {
-			target: "pino-pretty",
-			options: {
-				colorize: true,
-				translateTime: "SYS:standard",
-				ignore: "pid,hostname"
+	// Use pino-pretty for better developer experience in non-production (if available)
+	try {
+		require.resolve("pino-pretty");
+		// pino-pretty is available, use it
+		logger = pino({
+			level: logLevel,
+			transport: {
+				target: "pino-pretty",
+				options: {
+					colorize: true,
+					translateTime: "SYS:standard",
+					ignore: "pid,hostname"
+				}
 			}
-		}
-	});
+		});
+	} catch (err) {
+		// pino-pretty not available (production npm install), use basic console logger
+		logger = pino({
+			level: logLevel
+		});
+	}
 }
 
 const app = express();
