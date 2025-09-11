@@ -9,6 +9,9 @@ const u = require('ak-tools');
 const showProgress = require('./cli').showProgress;
 const { Transform, Readable } = require('stream');
 
+const { Storage } = require('@google-cloud/storage');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+
 let mainFunc;
 function getMain() {
 	if (!mainFunc) {
@@ -33,7 +36,9 @@ async function exportEvents(filename, job) {
 		url: job.url,
 		searchParams: {
 			from_date: job.start,
-			to_date: job.end
+			to_date: job.end,
+			// Merge in arbitrary params from job.params
+			...job.params
 		},
 		method: job.reqMethod,
 		retry: { limit: 50 },
@@ -93,11 +98,23 @@ async function exportEvents(filename, job) {
 	});
 
 	// Define streams upfront
-	const fileStream = fs.createWriteStream(filename);
-	let buffer = "";
-	const memoryStream = new stream.Writable({
-		write(chunk, encoding, callback) {
+	const cloudInfo = detectCloudDestination(filename);
+	let fileStream;
 
+	if (cloudInfo.isCloud) {
+		if (cloudInfo.provider === 'gcs') {
+			fileStream = createGCSWriteStream(filename, job);
+		} else if (cloudInfo.provider === 's3') {
+			fileStream = createS3WriteStream(filename, job);
+		}
+	} else {
+		fileStream = fs.createWriteStream(filename);
+	}
+
+	// Create a unified processing stream that handles both memory and file/cloud output
+	let buffer = "";
+	const processingStream = new stream.Writable({
+		write(chunk, encoding, callback) {
 			// Convert the chunk to a string and append it to the buffer
 			buffer += chunk.toString();
 
@@ -107,14 +124,51 @@ async function exportEvents(filename, job) {
 			// Keep the last partial line in the buffer (if any)
 			buffer = lines.pop() || "";
 
-			// Push each complete line into the results array
+			// Process each complete line
 			lines.forEach(line => {
+				if (!line.trim()) return;
+
 				try {
-					const row = JSON.parse(line.trim());
-					allResults.push(row);
+					let row = JSON.parse(line.trim());
+
+					// Apply transform function if provided
+					if (job.transformFunc && typeof job.transformFunc === 'function') {
+						try {
+							const transformed = job.transformFunc(row);
+							// Handle case where transform returns array (explosion)
+							if (Array.isArray(transformed)) {
+								transformed.forEach(item => {
+									if (skipWriteToDisk) {
+										allResults.push(item);
+									} else {
+										fileStream.write(JSON.stringify(item) + '\n');
+									}
+								});
+								return;
+							} else if (transformed) {
+								row = transformed;
+							}
+						} catch (transformError) {
+							// Log transform error but continue processing
+							if (job.verbose) {
+								console.warn(`Transform error on record: ${transformError.message}`);
+							}
+							// Use original row if transform fails
+						}
+					}
+
+					// Write the (possibly transformed) record
+					if (skipWriteToDisk) {
+						allResults.push(row);
+					} else {
+						fileStream.write(JSON.stringify(row) + '\n');
+					}
 				}
-				catch (e) {
-					// console.log(e);
+				catch (parseError) {
+					// Skip malformed lines
+					if (job.verbose) {
+						console.warn(`Parse error on line: ${parseError.message}`);
+					}
 				}
 			});
 
@@ -122,14 +176,55 @@ async function exportEvents(filename, job) {
 		},
 
 		final(callback) {
-			// Push the remaining data in the buffer as the last line
-			if (buffer) {
+			// Process the remaining data in the buffer as the last line
+			if (buffer.trim()) {
 				try {
-					allResults.push(JSON.parse(buffer.trim()));
+					let row = JSON.parse(buffer.trim());
+
+					// Apply transform function if provided
+					if (job.transformFunc && typeof job.transformFunc === 'function') {
+						try {
+							const transformed = job.transformFunc(row);
+							if (Array.isArray(transformed)) {
+								transformed.forEach(item => {
+									if (skipWriteToDisk) {
+										allResults.push(item);
+									} else {
+										fileStream.write(JSON.stringify(item) + '\n');
+									}
+								});
+								// Ensure cloud streams are properly finalized
+								if (!skipWriteToDisk && cloudInfo.isCloud) {
+									fileStream.end();
+								}
+								callback();
+								return;
+							} else if (transformed) {
+								row = transformed;
+							}
+						} catch (transformError) {
+							if (job.verbose) {
+								console.warn(`Transform error on final record: ${transformError.message}`);
+							}
+						}
+					}
+
+					if (skipWriteToDisk) {
+						allResults.push(row);
+					} else {
+						fileStream.write(JSON.stringify(row) + '\n');
+					}
 				}
-				catch (e) {
-					// console.log
+				catch (parseError) {
+					if (job.verbose) {
+						console.warn(`Parse error on final line: ${parseError.message}`);
+					}
 				}
+			}
+
+			// Ensure cloud streams are properly finalized
+			if (!skipWriteToDisk && cloudInfo.isCloud) {
+				fileStream.end();
 			}
 			callback();
 		}
@@ -137,8 +232,15 @@ async function exportEvents(filename, job) {
 
 	const allResults = [];
 
-	// Choose the appropriate stream
-	const outputStream = skipWriteToDisk ? memoryStream : fileStream;
+	// Choose the appropriate stream based on whether transforms are needed
+	let outputStream;
+	if (skipWriteToDisk || (job.transformFunc && typeof job.transformFunc === 'function')) {
+		// Use processing stream when we need transforms or memory mode
+		outputStream = processingStream;
+	} else {
+		// Use direct file stream when no transforms (more efficient for cloud)
+		outputStream = fileStream;
+	}
 
 	// Use the chosen stream in the pipeline
 	await pipeline(request, outputStream);
@@ -150,13 +252,22 @@ async function exportEvents(filename, job) {
 		return allResults;
 	}
 
-	const lines = await countFileLines(filename);
-	job.recordsProcessed += lines;
-	job.success += lines;
-	job.file = filename;
-
-
-	return filename;
+	if (cloudInfo.isCloud) {
+		// For cloud storage, we can't easily count lines after upload
+		// Count lines from the memory buffer if available, or estimate
+		const lines = allResults.length || 0;
+		job.recordsProcessed += lines;
+		job.success += lines;
+		job.file = filename;
+		return filename;
+	} else {
+		// For local files, count lines from the file
+		const lines = await countFileLines(filename);
+		job.recordsProcessed += lines;
+		job.success += lines;
+		job.file = filename;
+		return filename;
+	}
 
 }
 
@@ -172,9 +283,20 @@ async function exportProfiles(folder, job) {
 	let entityName = `users`;
 	if (job.dataGroupId) entityName = `group`;
 
+	const cloudInfo = detectCloudDestination(folder);
 	let iterations = 0;
 	let fileName = `${entityName}-${iterations}.json`;
-	let file = path.resolve(`${folder}/${fileName}`);
+	let file;
+
+	if (cloudInfo.isCloud) {
+		// For cloud storage, treat 'folder' as a prefix
+		// Ensure it ends with / for proper prefix behavior
+		const prefix = folder.endsWith('/') ? folder : folder + '/';
+		file = `${prefix}${fileName}`;
+	} else {
+		// For local storage, use path.resolve as before
+		file = path.resolve(`${folder}/${fileName}`);
+	}
 
 	/** @type {got.Options} */
 	const options = {
@@ -184,23 +306,33 @@ async function exportProfiles(folder, job) {
 			Authorization: auth,
 			'content-type': 'application/x-www-form-urlencoded'
 		},
-		searchParams: {},
+		searchParams: {
+			...job.params || {}
+		},
 		responseType: 'json',
 		retry: { limit: 50 }
 	};
 	// @ts-ignore
 	if (job.project) options.searchParams.project_id = job.project;
 
+	// Build form data for POST body
+	const encodedParams = new URLSearchParams();
+	
 	if (job.cohortId) {
-		options.body = `filter_by_cohort={"id": ${job.cohortId}}&include_all_users=true`;
-		options.body = encodeURIComponent(options.body);
+		encodedParams.set('filter_by_cohort', JSON.stringify({id: job.cohortId}));
+		encodedParams.set('include_all_users', 'false');
 	}
-	// if (job.dataGroupId) options.body = `data_group_id=${job.dataGroupId}`;
-	// @ts-ignore
+
+	if (job.whereClause) {
+		encodedParams.set('where', job.whereClause);
+	}
 
 	if (job.dataGroupId) {
-		const encodedParams = new URLSearchParams();
 		encodedParams.set('data_group_id', job.dataGroupId);
+	}
+
+	// Only set body if we have form parameters
+	if (encodedParams.toString()) {
 		options.body = encodedParams.toString();
 	}
 
@@ -226,12 +358,20 @@ async function exportProfiles(folder, job) {
 
 	// write first page of profiles
 	let profiles = response.results;
+
+	// Apply transforms if provided
+	profiles = applyTransformToRecords(profiles, job);
+
 	let firstFile, nextFile;
 	if (skipWriteToDisk) {
 		allResults.push(...profiles);
 	}
 	if (!skipWriteToDisk) {
-		firstFile = await u.touch(file, profiles, true);
+		if (cloudInfo.isCloud) {
+			firstFile = await writeCloudJSON(file, profiles, job);
+		} else {
+			firstFile = await writeLocalJSONL(file, profiles);
+		}
 		allResults.push(firstFile);
 	}
 
@@ -258,7 +398,12 @@ async function exportProfiles(folder, job) {
 		iterations++;
 
 		fileName = `${entityName}-${iterations}.json`;
-		file = path.resolve(`${folder}/${fileName}`);
+		if (cloudInfo.isCloud) {
+			const prefix = folder.endsWith('/') ? folder : folder + '/';
+			file = `${prefix}${fileName}`;
+		} else {
+			file = path.resolve(`${folder}/${fileName}`);
+		}
 		// @ts-ignore
 		options.searchParams.page = page;
 		// @ts-ignore
@@ -291,11 +436,18 @@ async function exportProfiles(folder, job) {
 
 		profiles = response.results;
 
+		// Apply transforms if provided
+		profiles = applyTransformToRecords(profiles, job);
+
 		if (skipWriteToDisk) {
 			allResults.push(...profiles);
 		}
 		if (!skipWriteToDisk) {
-			nextFile = await u.touch(file, profiles, true);
+			if (cloudInfo.isCloud) {
+				nextFile = await writeCloudJSON(file, profiles, job);
+			} else {
+				nextFile = await writeLocalJSONL(file, profiles);
+			}
 			allResults.push(nextFile);
 		}
 
@@ -313,7 +465,11 @@ async function exportProfiles(folder, job) {
 	if (!skipWriteToDisk) {
 		// @ts-ignore
 		job.file = allResults;
-		job.folder = folder;
+		if (cloudInfo.isCloud) {
+			job.folder = folder; // Keep the cloud prefix as folder
+		} else {
+			job.folder = folder;
+		}
 	}
 
 
@@ -394,6 +550,255 @@ async function countFileLines(filePath) {
 	});
 }
 
+/**
+ * Detect if a path is a cloud storage path
+ * @param {string} destination 
+ * @returns {{isCloud: boolean, provider: 'gcs'|'s3'|null}}
+ */
+function detectCloudDestination(destination) {
+	if (destination.startsWith('gs://')) {
+		return { isCloud: true, provider: 'gcs' };
+	}
+	if (destination.startsWith('s3://')) {
+		return { isCloud: true, provider: 's3' };
+	}
+	return { isCloud: false, provider: null };
+}
+
+/**
+ * Create a writable stream to GCS
+ * @param {string} gcsPath - gs://bucket/file path
+ * @param {jobConfig} job - Job configuration
+ * @returns {stream.Writable}
+ */
+function createGCSWriteStream(gcsPath, job) {
+	const matches = gcsPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
+	if (!matches) {
+		throw new Error(`Invalid GCS path: ${gcsPath}`);
+	}
+
+	const bucketName = matches[1];
+	const filePath = matches[2];
+
+	const storageConfig = {
+		projectId: job.gcpProjectId
+	};
+
+	if (job.gcsCredentials) {
+		storageConfig.keyFilename = job.gcsCredentials;
+	}
+
+	const storage = new Storage(storageConfig);
+	const file = storage.bucket(bucketName).file(filePath);
+
+	return file.createWriteStream({
+		metadata: {
+			contentType: 'application/x-ndjson'
+		},
+		resumable: false
+	});
+}
+
+/**
+ * Create a writable stream to S3
+ * @param {string} s3Path - s3://bucket/file path  
+ * @param {jobConfig} job - Job configuration
+ * @returns {stream.Writable}
+ */
+function createS3WriteStream(s3Path, job) {
+	const matches = s3Path.match(/^s3:\/\/([^\/]+)\/(.+)$/);
+	if (!matches) {
+		throw new Error(`Invalid S3 path: ${s3Path}`);
+	}
+
+	const bucketName = matches[1];
+	const key = matches[2];
+
+	const s3ClientConfig = {
+		region: job.s3Region
+	};
+
+	if (job.s3Key && job.s3Secret) {
+		s3ClientConfig.credentials = {
+			accessKeyId: job.s3Key,
+			secretAccessKey: job.s3Secret
+		};
+	}
+
+	if (!job.s3Region) {
+		throw new Error('S3 region is required. Please specify s3Region in job config.');
+	}
+
+	const s3Client = new S3Client(s3ClientConfig);
+
+	// Create a custom writable stream that buffers data and uploads on end
+	const chunks = [];
+
+	return new stream.Writable({
+		write(chunk, encoding, callback) {
+			chunks.push(chunk);
+			callback();
+		},
+
+		async final(callback) {
+			try {
+				const body = Buffer.concat(chunks);
+				await s3Client.send(new PutObjectCommand({
+					Bucket: bucketName,
+					Key: key,
+					Body: body,
+					ContentType: 'application/x-ndjson'
+				}));
+				callback();
+			} catch (error) {
+				callback(error);
+			}
+		}
+	});
+}
+
+/**
+ * Apply transform function to an array of records with error handling
+ * @param {Array} records - array of records to transform
+ * @param {jobConfig} job - job configuration
+ * @returns {Array} - transformed records
+ */
+function applyTransformToRecords(records, job) {
+	if (!job.transformFunc || typeof job.transformFunc !== 'function') {
+		return records;
+	}
+
+	const transformedRecords = [];
+
+	for (const record of records) {
+		try {
+			const transformed = job.transformFunc(record);
+			// Handle case where transform returns array (explosion)
+			if (Array.isArray(transformed)) {
+				transformedRecords.push(...transformed);
+			} else if (transformed) {
+				transformedRecords.push(transformed);
+			}
+			// If transform returns null/undefined, skip the record
+		} catch (transformError) {
+			// Log transform error but continue processing
+			if (job.verbose) {
+				console.warn(`Transform error on profile record: ${transformError.message}`);
+			}
+			// Use original record if transform fails
+			transformedRecords.push(record);
+		}
+	}
+
+	return transformedRecords;
+}
+
+/**
+ * Write data to local file as JSONL (newline-delimited JSON)
+ * @param {string} filePath - local file path
+ * @param {Array} data - data to write as JSONL
+ * @returns {Promise<string>} - the file path that was written to
+ */
+async function writeLocalJSONL(filePath, data) {
+	// Convert to JSONL format (newline-delimited JSON)
+	const jsonlData = data.map(item => JSON.stringify(item)).join('\n') + '\n';
+	
+	// Ensure directory exists
+	const dir = path.dirname(filePath);
+	if (!fs.existsSync(dir)) {
+		fs.mkdirSync(dir, { recursive: true });
+	}
+	
+	// Write file
+	await fs.promises.writeFile(filePath, jsonlData, 'utf8');
+	
+	return filePath;
+}
+
+/**
+ * Write data to cloud storage as JSONL (newline-delimited JSON)
+ * @param {string} cloudPath - cloud storage path
+ * @param {Array} data - data to write as JSONL
+ * @param {jobConfig} job - job configuration
+ * @returns {Promise<string>} - the cloud path that was written to
+ */
+async function writeCloudJSON(cloudPath, data, job) {
+	const cloudInfo = detectCloudDestination(cloudPath);
+
+	if (!cloudInfo.isCloud) {
+		throw new Error(`Expected cloud path, got local path: ${cloudPath}`);
+	}
+
+	// Convert to JSONL format (newline-delimited JSON) instead of JSON array
+	const jsonlData = data.map(item => JSON.stringify(item)).join('\n') + '\n';
+
+	if (cloudInfo.provider === 'gcs') {
+		const matches = cloudPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
+		if (!matches) {
+			throw new Error(`Invalid GCS path: ${cloudPath}`);
+		}
+
+		const bucketName = matches[1];
+		const filePath = matches[2];
+
+		const storageConfig = {
+			projectId: job.gcpProjectId
+		};
+
+		if (job.gcsCredentials) {
+			storageConfig.keyFilename = job.gcsCredentials;
+		}
+
+		const storage = new Storage(storageConfig);
+		const file = storage.bucket(bucketName).file(filePath);
+
+		await file.save(jsonlData, {
+			metadata: {
+				contentType: 'application/json'
+			}
+		});
+
+		return cloudPath;
+
+	} else if (cloudInfo.provider === 's3') {
+		const matches = cloudPath.match(/^s3:\/\/([^\/]+)\/(.+)$/);
+		if (!matches) {
+			throw new Error(`Invalid S3 path: ${cloudPath}`);
+		}
+
+		const bucketName = matches[1];
+		const key = matches[2];
+
+		const s3ClientConfig = {
+			region: job.s3Region
+		};
+
+		if (job.s3Key && job.s3Secret) {
+			s3ClientConfig.credentials = {
+				accessKeyId: job.s3Key,
+				secretAccessKey: job.s3Secret
+			};
+		}
+
+		if (!job.s3Region) {
+			throw new Error('S3 region is required. Please specify s3Region in job config.');
+		}
+
+		const s3Client = new S3Client(s3ClientConfig);
+
+		await s3Client.send(new PutObjectCommand({
+			Bucket: bucketName,
+			Key: key,
+			Body: jsonlData,
+			ContentType: 'application/json'
+		}));
+
+		return cloudPath;
+	}
+
+	throw new Error(`Unsupported cloud provider: ${cloudInfo.provider}`);
+}
+
 
 
 
@@ -471,7 +876,7 @@ function streamProfiles(job) {
 		objectMode: true,
 		async read() {
 			try {
-				// on first call initialise pagination state on the stream instance
+				// on first call initialize pagination state on the stream instance
 				if (!this._page) {
 					this._page = 0;
 					this._session_id = null;
@@ -485,8 +890,8 @@ function streamProfiles(job) {
 
 				const searchParams = {
 					page: this._page,
-					session_id: this._session_id					
-				}
+					session_id: this._session_id
+				};
 				if (job.project) searchParams.project_id = job.project;
 				const res = await got({
 					method: 'POST',

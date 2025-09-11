@@ -1,0 +1,45 @@
+steps:
+  # Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/${_PROJECT_ID}/${_SERVICE_NAME}:latest', '.']
+  
+  # Push the container image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/${_PROJECT_ID}/${_SERVICE_NAME}:latest']
+  
+  # Deploy to Cloud Run
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_SERVICE_NAME}'
+      - '--image=gcr.io/${_PROJECT_ID}/${_SERVICE_NAME}:latest'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '${_ALLOW_UNAUTHENTICATED}'
+      - '--memory=${_MEMORY}'
+      - '--cpu=${_CPU}'
+      - '--timeout=${_TIMEOUT}'
+      - '--max-instances=${_MAX_INSTANCES}'
+      - '--min-instances=${_MIN_INSTANCES}'
+      - '--port=8080'
+      - '--set-env-vars=NODE_ENV=production'
+
+# Substitution variables (defaults, can be overridden by deploy.sh)
+substitutions:
+  _SERVICE_NAME: 'etl-lte'
+  _REGION: 'us-central1'
+  _PROJECT_ID: 'mixpanel-gtm-training'
+  _MEMORY: '8Gi'
+  _CPU: '4'
+  _TIMEOUT: '3600'
+  _MAX_INSTANCES: '10'
+  _MIN_INSTANCES: '0'
+  _ALLOW_UNAUTHENTICATED: '--no-allow-unauthenticated'
+
+# Container image will be stored in Container Registry
+images:
+  - 'gcr.io/${_PROJECT_ID}/${_SERVICE_NAME}:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

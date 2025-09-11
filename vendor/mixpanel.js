@@ -37,67 +37,8 @@ function mixpanelEventsToMixpanel(options) {
 	};
 }
 
-/**
- * returns a function that transforms an amplitude user into a mixpanel user
- * @param  {import('../index').amplitudeOpts} options
- */
-function ampUserToMp(options) {
-	const { user_id = "user_id" } = options;
 
-	return function transform(ampEvent) {
-		const userProps = ampEvent.user_properties;
 
-		//skip empty props
-		if (Object.keys(userProps).length === 0) return {};
-
-		let distinct_id;
-		//canonical id resolution
-		if (ampEvent?.user_properties?.[user_id]) distinct_id = ampEvent.user_properties[user_id];
-		if (ampEvent[user_id]) distinct_id = ampEvent[user_id];
-
-		//skip no user_id
-		if (!distinct_id) return {};
-
-		const mixpanelProfile = {
-			$distinct_id: distinct_id,
-			$ip: ampEvent.ip_address,
-			$set: userProps
-		};
-
-		//include defaults, if they exist
-		for (let ampMixPair of ampMixPairs) {
-			if (ampEvent[ampMixPair[0]]) {
-				mixpanelProfile.$set[ampMixPair[1]] = ampEvent[ampMixPair[0]];
-			}
-		}
-
-		return mixpanelProfile;
-	};
-}
-
-/**
- * returns a function that transforms an amplitude group into a mixpanel group
- * @param  {import('../index').amplitudeOpts} options
- */
-function ampGroupToMp(options) {
-	// const { user_id, group_keys } = options;
-
-	return function transform(ampEvent) {
-		const groupProps = ampEvent.group_properties;
-
-		//skip empty + no user_id
-		if (Object.keys(groupProps).length === 0) return {};
-		if (!ampEvent.user_id) return {};
-
-		const mixpanelGroup = {
-			$group_key: null,
-			$group_id: null,
-			$set: groupProps
-		};
-
-		return mixpanelGroup;
-	};
-}
 
 
 
@@ -107,7 +48,5 @@ function ampGroupToMp(options) {
 
 module.exports = {
 	mixpanelEventsToMixpanel,
-	// ampUserToMp,
-	// ampGroupToMp,
-	// ampMixPairs
+
 };

@@ -41,6 +41,33 @@ if (!MP_PROJECT || !MP_ACCT || !MP_PASS || !MP_SECRET || !MP_TOKEN || !MP_TABLE_
 	process.exit(1);
 }
 
+function isDebugMode() {
+	// Check for Node.js debug flags
+	if (process.execArgv.some(arg => arg.includes('--inspect') || arg.includes('--debug'))) {
+		return true;
+	}
+
+	// Check NODE_OPTIONS
+	if (process.env.NODE_OPTIONS?.match(/--inspect|--debug/)) {
+		return true;
+	}
+
+	// Check if debugger port is set
+	if (process.debugPort) {
+		return true;
+	}
+
+	// VS Code specific
+	if (process.env.VSCODE_DEBUG === 'true') {
+		return true;
+	}
+
+	return false;
+}
+
+const IS_DEBUG_MODE = isDebugMode();
+
+
 const mp = require("../index.js");
 const { createMpStream } = require("../index.js");
 const { createReadStream } = require("fs");
@@ -66,7 +93,7 @@ const heapParseError = `./testData/heap-parse-error.jsonl`;
 const scdUserNps = `./testData/scd/user-nps-scd-small.json`;
 const scdCompanyPlan = `./testData/scd/company-plan-scd.json`;
 
-/** @type {import('../index.d.ts').Options} */
+/** @type {import('../index.js').Options} */
 const opts = {
 	recordType: `event`,
 	compress: false,

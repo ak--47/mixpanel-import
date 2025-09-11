@@ -30,7 +30,7 @@ async function getDeviceIdMap(secret) {
 
 	if (creds.secret === "your-secret") throw new Error('you need to set your secret in this file');
 
-	/** @type {import('mixpanel-import').Options} */
+	/** @type {import('../index.js').Options} */
 	const opts = {
 		recordType: 'profile-export',
 		verbose: false,

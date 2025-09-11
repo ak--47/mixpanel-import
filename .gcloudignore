@@ -1,0 +1,70 @@
+# Git files
+.git/
+.gitignore
+
+# Dependencies (will be installed in container)
+node_modules/
+
+# Test and development files
+test/
+tests/
+testData/
+benchmarks/
+coverage/
+.nyc_output/
+
+# Development configuration
+.eslintrc*
+.prettierrc*
+.editorconfig
+nodemon.json
+
+# Environment files
+.env*
+!.env.example
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+logs/
+tmp/
+temp/
+*.log
+*.pid
+*.seed
+
+# Build artifacts
+*.tgz
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Documentation (not needed for runtime)
+README.md
+docs/
+*.md
+!CLAUDE.md
+
+# Development scripts
+scratch.js
+
+# Output directories
+mixpanel-exports/
+
+# Docker files (not needed inside container)
+Dockerfile
+.dockerignore
+
+# Cloud deployment files (not needed inside container)
+.gcloudignore
+cloudbuild.yaml
+deploy.sh

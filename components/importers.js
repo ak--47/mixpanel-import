@@ -234,7 +234,7 @@ async function flushToMixpanelWithUndici(batch, job) {
 			strict: Number(job.strict).toString()
 		});
 		if (job.project) {
-			searchParams.set('project_id', job.project);
+			searchParams.set('project_id', String(job.project));
 		}
 
 		// Build headers

@@ -9,6 +9,7 @@ const { gaEventsToMp, gaUserToMp, gaGroupsToMp } = require('../vendor/ga4.js');
 const { mParticleEventsToMixpanel, mParticleUserToMixpanel, mParticleGroupToMixpanel } = require('../vendor/mparticle.js');
 const { postHogEventsToMp, postHogPersonToMpProfile } = require('../vendor/posthog.js');
 const { mixpanelEventsToMixpanel } = require('../vendor/mixpanel.js');
+const { juneEventsToMp, juneUserToMp, juneGroupToMp } = require('../vendor/june.js');
 const { buildMapFromPath } = require('./parsers.js');
 
 
@@ -32,42 +33,114 @@ class Job {
 	 */
 	constructor(creds, opts = {}) {
 		// ? credentials
-		if (!creds) throw new Error('no credentials provided!');
-		this.acct = creds.acct || ``; //service acct username
-		this.pass = creds.pass || ``; //service acct secret
-		this.project = creds.project || ``; //project id
-		this.workspace = creds.workspace || ``; //workspace id
-		this.org = creds.org || ``; //org id
-		this.secret = creds.secret || ``; //api secret (deprecated auth)
-		this.bearer = creds.bearer || ``;
-		this.token = creds.token || ``; //project token 
-		this.secondToken = creds.secondToken || ``; //second token for export / import
-		this.lookupTableId = creds.lookupTableId || ``; //lookup table id
-		this.groupKey = creds.groupKey || opts.groupKey || ``; //group key id
+		// Allow empty credentials for dry runs and data transformation operations
+		const allowEmptyCredentials = opts.dryRun || opts.writeToFile || opts.fixData;
+		if (!creds && !allowEmptyCredentials) throw new Error('no credentials provided!');
+
+		// Use empty object if creds is null/undefined but operation is allowed without creds
+		const safeCreds = creds || {};
+		
+		/** @type {string} service account username */
+		this.acct = safeCreds.acct || ``;
+		
+		/** @type {string} service account secret */
+		this.pass = safeCreds.pass || ``;
+		
+		/** @type {string} project id */
+		this.project = safeCreds.project || ``;
+		
+		/** @type {string} workspace id */
+		this.workspace = safeCreds.workspace || ``;
+		
+		/** @type {string} org id */
+		this.org = safeCreds.org || ``;
+		
+		/** @type {string} api secret (deprecated auth) */
+		this.secret = safeCreds.secret || ``;
+		
+		/** @type {string} bearer token */
+		this.bearer = safeCreds.bearer || ``;
+		
+		/** @type {string} project token */
+		this.token = safeCreds.token || ``;
+		
+		/** @type {string} second token for export / import */
+		this.secondToken = safeCreds.secondToken || ``;
+		
+		/** @type {string} lookup table id */
+		this.lookupTableId = safeCreds.lookupTableId || ``;
+		
+		/** @type {string} group key id */
+		this.groupKey = safeCreds.groupKey || opts.groupKey || ``;
+		/** @type {string} resolved authentication info */
 		this.auth = this.resolveProjInfo();
+		
+		/** @type {string} start time of the job */
 		this.startTime = new Date().toISOString();
+		
+		/** @type {string|null} end time of the job */
 		this.endTime = null;
-		this.hashTable = new Set(); //used if de-dupe is on
-		this.memorySamples = []; //used to calculate memory usage
-		this.wasStream = null; //was the data loaded into memory or streamed?
-		this.dryRunResults = []; //results of dry run	
+		
+		/** @type {Set} used if de-dupe is on */
+		this.hashTable = new Set();
+		
+		/** @type {Array} used to calculate memory usage */
+		this.memorySamples = [];
+		
+		/** @type {boolean|null} was the data loaded into memory or streamed? */
+		this.wasStream = null;
+		
+		/** @type {Array} results of dry run */
+		this.dryRunResults = [];
+		
+		/** @type {Object} storage for invalid records */
 		this.badRecords = {};
-		this.insertIdTuple = opts.insertIdTuple || []; //tuple of keys for insert_id	
-		this.scdLabel = opts.scdLabel || ''; //scd label
-		this.scdKey = opts.scdKey || ''; //scd key
-		this.scdType = opts.scdType || 'string'; //scd type
-		this.scdId = opts.scdId || ''; //scd id
-		this.scdPropId = opts.scdPropId || ''; //scd prop id
-		this.transport = opts.transport || 'got'; // transport mechanism to use for sending data (default: got)
-		this.gcpProjectId = opts.gcpProjectId || creds.gcpProjectId || 'mixpanel-gtm-training'; // Google Cloud project ID for GCS operations
+		
+		/** @type {Array} tuple of keys for insert_id */
+		this.insertIdTuple = opts.insertIdTuple || [];
+		
+		/** @type {string} scd label */
+		this.scdLabel = opts.scdLabel || '';
+		
+		/** @type {string} scd key */
+		this.scdKey = opts.scdKey || '';
+		
+		/** @type {string} scd type */
+		this.scdType = opts.scdType || 'string';
+		
+		/** @type {string} scd id */
+		this.scdId = opts.scdId || '';
+		
+		/** @type {string} scd prop id */
+		this.scdPropId = opts.scdPropId || '';
+		/** @type {string} transport mechanism to use for sending data (default: got) */
+		this.transport = opts.transport || 'got';
+		
+		/** @type {string} Google Cloud project ID for GCS operations */
+		this.gcpProjectId = opts.gcpProjectId || safeCreds.gcpProjectId || 'mixpanel-gtm-training';
+		
+		/** @type {string} Path to GCS service account credentials JSON file (optional, defaults to ADC) */
+		this.gcsCredentials = opts.gcsCredentials || safeCreds.gcsCredentials || '';
+		
+		/** @type {string} AWS S3 access key ID for S3 operations */
+		this.s3Key = opts.s3Key || safeCreds.s3Key || '';
+		
+		/** @type {string} AWS S3 secret access key for S3 operations */
+		this.s3Secret = opts.s3Secret || safeCreds.s3Secret || '';
+		
+		/** @type {string} AWS S3 region for S3 operations */
+		this.s3Region = opts.s3Region || safeCreds.s3Region || '';
 
 		this.dimensionMaps = opts.dimensionMaps || []; //dimension map for scd
-		this.heavyObjects = {}; //used to store heavy objects
+		this.maxRecords = opts.maxRecords !== undefined ? opts.maxRecords : null; //maximum records to process before stopping stream
+		this.heavyObjects = opts.heavyObjects || {}; //used to store heavy objects
 		this.insertHeavyObjects = async function (arrayOfKeysAndFilesPaths = this.dimensionMaps) {
-			for (const keyFilePath of arrayOfKeysAndFilesPaths) {
-				const { filePath, keyOne, keyTwo, label = u.makeName(3, '-') } = keyFilePath;
-				const result = await buildMapFromPath(filePath, keyOne, keyTwo);
-				this.heavyObjects[label] = result;
+			if (Object.keys(this.heavyObjects).length === 0) {
+				for (const keyFilePath of arrayOfKeysAndFilesPaths) {
+					const { filePath, keyOne, keyTwo, label = u.makeName(3, '-') } = keyFilePath;
+					const result = await buildMapFromPath(filePath, keyOne, keyTwo, this);
+					this.heavyObjects[label] = result;
+				}
 			}
 		};
 
@@ -80,6 +153,9 @@ class Job {
 		if (opts.whereClause) {
 			this.whereClause = opts.whereClause;
 		}
+		
+		// ? arbitrary export params
+		this.params = opts.params || {};
 
 		//? dates
 		if (opts.start) {
@@ -122,9 +198,11 @@ class Job {
 
 		// ? string options
 		this.recordType = opts.recordType || `event`; // event, user, group or table		
-		this.streamFormat = opts.streamFormat || ''; // json or jsonl ... only relevant for streams
+		this.streamFormat = opts.streamFormat || ""; 
 		this.region = opts.region || `US`; // US or EU or IN
+		/** @type {import('../index.d.ts').Regions | ''} */
 		this.secondRegion = opts.secondRegion || ''; // US or EU or IN; used for exports => import
+		/** @type {import('../index.d.ts').Vendors} */
 		this.vendor = opts.vendor || ''; // heap or amplitude
 
 		// ? number options
@@ -150,9 +228,10 @@ class Job {
 		this.compress = u.isNil(opts.compress) ? true : opts.compress; //gzip data (events only)
 		this.strict = u.isNil(opts.strict) ? true : opts.strict; // use strict mode?
 		this.logs = u.isNil(opts.logs) ? false : opts.logs; //create log file
-		this.where = u.isNil(opts.logs) ? '' : opts.where; // where to put logs
+		this.where = u.isNil(opts.where) ? './' : opts.where; // where to put logs
 		this.verbose = u.isNil(opts.verbose) ? false : opts.verbose;  // print to stdout?
 		this.showProgress = u.isNil(opts.showProgress) ? false : opts.showProgress; // show progress bar
+		this.progressCallback = opts.progressCallback || null; // optional callback for progress updates (used by UI WebSocket)
 		this.fixData = u.isNil(opts.fixData) ? false : opts.fixData; //apply transforms on the data
 		this.fixTime = u.isNil(opts.fixTime) ? false : opts.fixTime; //fix time to utc
 		this.fixJson = u.isNil(opts.fixJson) ? false : opts.fixJson; //fix json
@@ -165,6 +244,7 @@ class Job {
 		this.dryRun = u.isNil(opts.dryRun) ? false : opts.dryRun; //don't actually send data
 		this.http2 = u.isNil(opts.http2) ? false : opts.http2; //use http2
 		this.addToken = u.isNil(opts.addToken) ? false : opts.addToken; //add token to each record
+		this.isGzip = u.isNil(opts.isGzip) ? false : opts.isGzip; //force treat input as gzipped (overrides extension detection)
 		this.shouldWhiteBlackList = false;
 		this.shouldEpochFilter = false;
 		this.shouldAddTags = false;
@@ -224,7 +304,7 @@ class Job {
 		if (this.flattenData) this.flattener = transforms.flattenProperties(".");
 		if (this.addToken) this.tokenAdder = transforms.addToken(this);
 		if (this.recordType === 'scd') this.scdTransform = transforms.scdTransform(this);
-		if (this.recordType === 'event' && this.fixTime) this.timeTransform = transforms.fixTime(this);
+		if (this.recordType === 'event' && this.fixTime) this.timeTransform = transforms.fixTime();
 
 		if (this.insertIdTuple.length > 0 && this.recordType === 'event') {
 			this.shouldCreateInsertId = true;
@@ -340,11 +420,16 @@ class Job {
 
 	// ? props
 	version = this.getVersion();
-	lineByLineFileExt = ['.txt', '.jsonl', '.ndjson'];
-	objectModeFileExt = ['.json'];
+	lineByLineFileExt = ['.txt', '.jsonl', '.ndjson', '.json'];
+	objectModeFileExt = [];
 	tableFileExt = ['.csv', '.tsv'];
 	otherFormats = ['.parquet'];
-	supportedFileExt = [...this.lineByLineFileExt, ...this.objectModeFileExt, ...this.tableFileExt, ...this.otherFormats];
+	// Add gzipped variants for local file support
+	gzippedLineByLineFileExt = ['.txt.gz', '.jsonl.gz', '.ndjson.gz', '.json.gz'];
+	gzippedObjectModeFileExt = [];
+	gzippedTableFileExt = ['.csv.gz', '.tsv.gz'];
+	gzippedOtherFormats = ['.parquet.gz'];
+	supportedFileExt = [...this.lineByLineFileExt, ...this.objectModeFileExt, ...this.tableFileExt, ...this.otherFormats, ...this.gzippedLineByLineFileExt, ...this.gzippedObjectModeFileExt, ...this.gzippedTableFileExt, ...this.gzippedOtherFormats];
 	endpoints = {
 		us: {
 			event: `https://api.mixpanel.com/import`,
@@ -383,14 +468,28 @@ class Job {
 	};
 
 	// ? get/set	
+	/** 
+	 * Get the record type
+	 * @returns {string} The record type
+	 */
 	get type() {
 		return this.recordType;
 	}
+	
+	/** 
+	 * Get the Mixpanel API URL for the current record type and region
+	 * @returns {string} The API endpoint URL
+	 */
 	get url() {
 		let url = this.endpoints[this.region.toLowerCase()][this.recordType.toLowerCase()];
 		if (this.recordType === "table") url += this.lookupTableId;
 		return url;
 	}
+	
+	/** 
+	 * Get the current job options as an object
+	 * @returns {Object} Current job configuration options
+	 */
 	get opts() {
 		const { recordType, compress, streamSize, workers, region, recordsPerBatch, bytesPerBatch, strict, logs, fixData, streamFormat, transformFunc } = this;
 		return { recordType, compress, streamSize, workers, region, recordsPerBatch, bytesPerBatch, strict, logs, fixData, streamFormat, transformFunc };
@@ -424,7 +523,7 @@ class Job {
 					switch (recordType) {
 						case 'event':
 							vendorTransformFunc = mixpanelEventsToMixpanel(this.vendorOpts);
-							break;						
+							break;
 						default:
 							vendorTransformFunc = mixpanelEventsToMixpanel(this.vendorOpts);
 							break;
@@ -522,6 +621,24 @@ class Job {
 							break;
 					}
 					break;
+				case 'june':
+					switch (recordType) {
+						case 'event':
+							vendorTransformFunc = juneEventsToMp(this.vendorOpts);
+							break;
+						case 'user':
+							this.dedupe = true;
+							this.deduper = transforms.dedupeRecords(this);
+							vendorTransformFunc = juneUserToMp(this.vendorOpts);
+							break;
+						case 'group':
+							vendorTransformFunc = juneGroupToMp(this.vendorOpts);
+							break;
+						default:
+							vendorTransformFunc = juneEventsToMp(this.vendorOpts);
+							break;
+					}
+					break;
 				default:
 					vendorTransformFunc = noop;
 					break;
@@ -598,6 +715,10 @@ class Job {
 		}
 
 		else {
+			// Allow empty auth for dry runs and data transformation operations
+			if (this.dryRun || this.writeToFile || this.fixData) {
+				return '';
+			}
 			console.error('no secret or service account + project provided!', { config: this.report() });
 			throw new Error('no secret or service account provided!');
 			// process.exit(0);
@@ -766,7 +887,7 @@ class Job {
 		// stats
 		if (summary.total && summary.duration && summary.requests && summary.bytes) {
 			summary.eps = Math.floor(summary.total / summary.duration * 1000);
-			summary.rps = u.round(summary.requests / summary.duration * 1000, 3);
+			summary.rps = summary.duration > 0 ? u.round(summary.requests / summary.duration * 1000, 3) : 0;
 			summary.mbps = u.round((summary.bytes / 1e+6) / summary.duration * 1000, 3);
 
 			// OLD QUOTA

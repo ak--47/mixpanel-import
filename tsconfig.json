@@ -15,6 +15,8 @@
     "esModuleInterop": true,           // Better CommonJS/ESM interop
     "allowSyntheticDefaultImports": true, // Allow default imports from modules without defaults
     "forceConsistentCasingInFileNames": true, // Force consistent file naming
+    "noUnusedLocals": false,           // Allow unused local variables
+    "noUnusedParameters": false,       // Allow unused function parameters
     
     // JSDoc specific options
     "resolveJsonModule": true,          // Allow importing JSON files

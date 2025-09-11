@@ -8,7 +8,7 @@ const u = require('ak-tools');
 
 function cliParams() {
 	// @ts-ignore
-	const args = yargs(process.argv.splice(2))
+	const args = yargs(process.argv.slice(2))
 		.scriptName("mixpanel-import")
 		.usage(`${welcome}\n\nusage:\nnpx $0 --yes [file or folder] [options]
 
@@ -314,7 +314,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 		.options('vendor', {
 			demandOption: false,
 			default: '',
-			describe: 'transform amplitude, heap, ga4 data',
+			describe: 'transform amplitude, heap, ga4, june, posthog, mparticle, mixpanel data',
 			type: 'string'
 		})
 		.options('vendor-opts', {
@@ -357,11 +357,17 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			type: 'number',
 			describe: 'data group id for group profile exports'
 		})
+		.option('ui', {
+			demandOption: false,
+			default: false,
+			describe: 'start the web UI for interactive imports',
+			type: 'boolean'
+		})
 		.help()
 		.wrap(null)
 		.argv;
 	// @ts-ignore
-	if (args._.length === 0 && !args.type?.toLowerCase()?.includes('export')) {
+	if (args._.length === 0 && !args.type?.toLowerCase()?.includes('export') && !args.ui) {
 		// @ts-ignore
 		yargs.showHelp();
 		process.exit();
@@ -385,8 +391,11 @@ cliParams.welcome = welcome;
  * @param  {string} record
  * @param  {number} processed
  * @param  {number} requests
+ * @param  {string} eps
+ * @param  {number} amountSent
+ * @param  {Function} [callback] - optional callback for progress updates (used by UI WebSocket)
  */
-function showProgress(record = "", processed = 0, requests = 0, eps = "", amountSent = 0) {
+function showProgress(record = "", processed = 0, requests = 0, eps = "", amountSent = 0, callback = null) {
 	const { heapUsed } = process.memoryUsage();
 	// const { rss, heapTotal, heapUsed } = process.memoryUsage();
 	// const percentHeap = (heapUsed / heapTotal) * 100;
@@ -411,11 +420,19 @@ function showProgress(record = "", processed = 0, requests = 0, eps = "", amount
 	if (line.length < terminalWidth) {
 		line = line.padEnd(terminalWidth, ' ');
 	}
-	// @ts-ignore
-	readline.cursorTo(process.stdout, 0);
-	// @ts-ignore
-	readline.clearLine(process.stdout, 0);
-	process.stdout.write(line);
+	// If callback is provided (for UI WebSocket), call it with progress data
+	if (callback && typeof callback === 'function') {
+		callback(record, processed, requests, eps, amountSent);
+	}
+	
+	// Only show CLI progress if no callback (to avoid duplicate progress display)
+	if (!callback) {
+		// @ts-ignore
+		readline.cursorTo(process.stdout, 0);
+		// @ts-ignore
+		readline.clearLine(process.stdout, 0);
+		process.stdout.write(line);
+	}
 }
 
 cliParams.showProgress = showProgress;

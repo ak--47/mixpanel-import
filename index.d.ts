@@ -36,6 +36,8 @@ declare namespace main {
     | "export"
     | "profile-export"
     | "profile-delete"
+    | "group-export"
+    | "group-delete"
     | "events"
     | "users"
     | "groups"
@@ -45,7 +47,8 @@ declare namespace main {
     | "get-annotations"
 	| "delete-annotations"
 	| "export-import-events"
-	| "export-import-profiles";
+	| "export-import-profiles"
+	| "export-import-groups";
 	
   /**
    * - a path to a file/folder, objects in memory, or a readable object/file stream that contains data you wish to import
@@ -107,6 +110,26 @@ declare namespace main {
 	 * - Google Cloud project ID for GCS operations (defaults to 'mixpanel-gtm-training')
 	 */
 	gcpProjectId?: string;
+	/**
+	 * - AWS S3 access key ID for S3 operations
+	 */
+	s3Key?: string;
+	/**
+	 * - AWS S3 secret access key for S3 operations
+	 */
+	s3Secret?: string;
+	/**
+	 * - AWS S3 region for S3 operations (required for S3 access)
+	 */
+	s3Region?: string;
+	/**
+	 * - Path to GCS service account credentials JSON file (optional, defaults to ADC)
+	 */
+	gcsCredentials?: string;
+	/**
+	 * - a data_group_id to use for exporting group profiles
+	 */
+	dataGroupId?: string;
   };
 
   /**
@@ -117,12 +140,12 @@ declare namespace main {
     | "heap"
     | "mixpanel"
     | "ga4"
+    | "june"
     | "adobe"
     | "pendo"
     | "mparticle"
     | ""
-	| "posthog"
-    | void;
+	| "posthog";
 
   type WhiteAndBlackListParams = {
     eventWhitelist: string[];
@@ -136,7 +159,7 @@ declare namespace main {
   };
 
   type Regions = "US" | "EU" | "IN";
-  type SupportedFormats = "json" | "jsonl" | "csv" | "parquet";
+  type SupportedFormats = "strict_json" | "jsonl" | "csv" | "parquet";
   type transports = 'got' | 'undici';
 
   type dependentTables = {
@@ -144,6 +167,20 @@ declare namespace main {
 	keyOne: string;
 	keyTwo: string;
 	label?: string;
+  }
+
+  /**
+   * Job class interface - extends Options with runtime properties
+   */
+  interface Job extends Options {
+    bytesCache?: WeakMap<any, number>;
+    lineByLineFileExt: string[];
+    objectModeFileExt: string[];
+    tableFileExt: string[];
+    gzippedLineByLineFileExt: string[];
+    gzippedObjectModeFileExt: string[];
+    gzippedTableFileExt: string[];
+    streamFormat: SupportedFormats;
   }
 
   /**
@@ -178,6 +215,11 @@ declare namespace main {
      */
     compressionLevel?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
     /**
+     * - force treat input files as gzipped (overrides extension detection)
+     * - default `false`
+     */
+    isGzip?: boolean;
+    /**
      * - validate data on send (events only) ...
      * - default `true`
      */
@@ -197,6 +239,12 @@ declare namespace main {
      * - default `false`
      */
     showProgress?: boolean;
+    /**
+     * - optional callback function for progress updates (used by UI WebSocket)
+     * - signature: (recordType, processed, requests, eps, bytesProcessed) => void
+     * - default `null`
+     */
+    progressCallback?: (recordType: string, processed: number, requests: number, eps: string, bytesProcessed: number) => void;
     /**
      * - apply various transformations to ensure data is properly ingested
      * - default `true`
@@ -358,7 +406,7 @@ declare namespace main {
     /**
      * options for built in transform functions
      */
-    vendorOpts?: amplitudeOpts | heapOpts | ga4Opts | postHogOpts | {};
+    vendorOpts?: amplitudeOpts | heapOpts | ga4Opts | juneOpts | postHogOpts | {};
     /**
      * whether or not to use http2; default `false` and http2 seems slower...
      */
@@ -448,6 +496,13 @@ declare namespace main {
 	whereClause?: string; 
 
 	/**
+	 * arbitrary query parameters for export endpoints
+	 * gets merged into the export URL as search parameters
+	 * example: { event: ['event_name'], limit: 1000 }
+	 */
+	params?: Record<string, any>;
+
+	/**
 	 * allowing arbitrary lookups which get turned into maps() in heavyObject
 	 * this will be provided to the transformer function and lets you do on-the-fly lookups
 	 * 
@@ -455,9 +510,15 @@ declare namespace main {
 	dimensionMaps?: dependentTables[]; 
 
 	/**
+	 * A cache for heavy objects used in data transformation and lookups.
+	 * it's better to use dimensionMaps if possible
+	 */
+	heavyObjects?: Object
+
+	/**
 	 * - for export/import (the destination project)
 	 */
-	secondRegion?: "US" | "EU" | "IN";
+	secondRegion?: "US" | "EU" | "IN" | "";
 
 	/**
 	 * - keep bad records in the results
@@ -472,9 +533,33 @@ declare namespace main {
 	 */
 	gcpProjectId?: string;
 	/**
+	 * AWS S3 access key ID for S3 operations
+	 */
+	s3Key?: string;
+	/**
+	 * AWS S3 secret access key for S3 operations
+	 */
+	s3Secret?: string;
+	/**
+	 * AWS S3 region for S3 operations (required for S3 access)
+	 */
+	s3Region?: string;
+	/**
 	 * a function to handle responses from the API; mostly used for debugging
 	 */
 	responseHandler?: (response: any, record: any) => void;
+	/**
+	 * maximum number of records to process before stopping the stream early; useful for testing and dry runs
+	 */
+	maxRecords?: number;
+	/**
+	 * - cache for byte calculations to improve performance
+	 */
+	bytesCache?: WeakMap<any, number>;
+	/**
+	 * Path to GCS service account credentials JSON file (optional, defaults to ADC)
+	 */
+	gcsCredentials?: string;
   };
 
   /**
@@ -814,7 +899,7 @@ declare namespace main {
   };
 
   /**
-   * amplitude transform opts
+   * mparticle transform opts
    */
   type mparticleOpts = {
     user_id?: string[];
@@ -825,7 +910,7 @@ declare namespace main {
     identities?: boolean;
     application_info?: boolean;
     device_info?: boolean;
-    source_info: ?boolean;
+    source_info?: boolean;
   };
 
   /**
@@ -850,6 +935,16 @@ declare namespace main {
     device_id_map?: Map<string, string>;
     device_id_file?: string;
   };
+
+  /**
+   * June.so transform opts
+   */
+  type juneOpts = {
+    user_id?: string;
+    anonymous_id?: string;
+    group_key?: string;
+    v2compat?: boolean;
+  };
 }
 
 /**
@@ -870,4 +965,96 @@ declare function main(
   opts?: main.Options,
   isCLI?: boolean
 ): Promise<main.ImportResults>;
+
+// Additional type definitions for external libraries and custom extensions
+
+declare module 'got' {
+  interface GotResponse {
+    body: any;
+    statusCode: number;
+    ip?: string;
+    requestUrl?: string;
+    headers: any;
+    json(): any;
+  }
+  
+  interface GotPromise extends Promise<GotResponse> {
+    json(): Promise<any>;
+  }
+  
+  interface Got {
+    (options: any): GotPromise;
+    (url: string, options?: any): GotPromise;
+    stream(options: any): import('stream').Readable;
+    stream(url: string, options?: any): import('stream').Readable;
+  }
+  const got: Got;
+  export = got;
+}
+
+// Extend Node.js stream types with custom properties
+declare module 'stream' {
+  interface Transform {
+    _buf?: string;
+  }
+  
+  interface Readable {
+    _page?: number;
+    _session_id?: string | null;
+    _buffer?: any[];
+  }
+}
+
+declare module 'fs' {
+  interface ReadStream {
+    path?: string | Buffer;
+    pending?: boolean;
+  }
+}
+
+// Extend Node.js zlib types
+declare module 'zlib' {
+  interface Gunzip extends import('stream').Transform {
+    path?: string | Buffer;
+    pending?: boolean;
+  }
+}
+
+// Extend Express Request type for multer file uploads
+declare global {
+  namespace Express {
+    interface Request {
+      files?: Array<{
+        buffer: Buffer;
+        fieldname: string;
+        originalname: string;
+        encoding: string;
+        mimetype: string;
+        size: number;
+        path?: string;
+      }>;
+    }
+  }
+  
+  namespace Express.Multer {
+    interface File {
+      buffer: Buffer;
+      fieldname: string;
+      originalname: string;
+      encoding: string;
+      mimetype: string;
+      size: number;
+      path?: string;
+    }
+  }
+  
+  // Extend Error type with got-specific properties
+  interface Error {
+    statusCode?: number;
+    ip?: string;
+    requestUrl?: string;
+    headers?: any;
+  }
+}
+
 export = main;

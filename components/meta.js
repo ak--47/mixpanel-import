@@ -102,8 +102,9 @@ async function deleteAnnotations(job) {
 	const { project = "", bearer = "" } = job.creds;
 	if (!project || !bearer) throw new Error("missing project or bearer ");
 	const annotations = await getAnnotations(job);
+	const { results = [] } = annotations;
 	const responses = [];
-	for (const annotation of annotations?.results) {
+	for (const annotation of results) {
 		const url = `https://mixpanel.com/api/app/projects/${project}/annotations/${annotation.id}`;
 
 		try {
