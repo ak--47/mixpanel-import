@@ -928,8 +928,68 @@ class MixpanelImportUI {
 			const transport = transportEl ? transportEl.value : '';
 			if (transport && transport !== 'got') command += ` --transport ${transport}`;
 
-			// Additional boolean flags that might be missing
+			// Legacy and additional authentication
+			const secretElement = document.getElementById('secret');
+			if (secretElement && secretElement.value) command += ` --secret ${secretElement.value}`;
+
+			const bearerElement = document.getElementById('bearer');
+			if (bearerElement && bearerElement.value) command += ` --bearer ${bearerElement.value}`;
+
+			const tableElement = document.getElementById('lookupTableId');
+			if (tableElement && tableElement.closest('.form-group').style.display !== 'none' && tableElement.value) {
+				command += ` --table ${tableElement.value}`;
+			}
+
+			const secondTokenElement = document.getElementById('secondToken');
+			if (secondTokenElement && secondTokenElement.closest('.form-group').style.display !== 'none' && secondTokenElement.value) {
+				command += ` --second-token ${secondTokenElement.value}`;
+			}
+
+			// Export-specific options
+			const startElement = document.getElementById('start');
+			if (startElement && startElement.value) command += ` --start ${startElement.value}`;
+
+			const endElement = document.getElementById('end');
+			if (endElement && endElement.value) command += ` --end ${endElement.value}`;
+
+			const whereElement = document.getElementById('where');
+			if (whereElement && whereElement.value) command += ` --where "${whereElement.value}"`;
+
+			const whereClauseElement = document.getElementById('whereClause');
+			if (whereClauseElement && whereClauseElement.value) command += ` --where-clause "${whereClauseElement.value}"`;
+
+			// Stream and processing options
+			const waterElement = document.getElementById('water');
+			if (waterElement && waterElement.value && waterElement.value !== '27') {
+				command += ` --water ${waterElement.value}`;
+			}
+
+			// SCD options
+			const scdTypeElement = document.getElementById('scdType');
+			if (scdTypeElement && scdTypeElement.value && scdTypeElement.value !== 'string') {
+				command += ` --scd-type ${scdTypeElement.value}`;
+			}
+
+			const scdKeyElement = document.getElementById('scdKey');
+			if (scdKeyElement && scdKeyElement.value) command += ` --scd-key ${scdKeyElement.value}`;
+
+			const scdLabelElement = document.getElementById('scdLabel');
+			if (scdLabelElement && scdLabelElement.value) command += ` --scd-label ${scdLabelElement.value}`;
+
+			// Cohort and data group options
+			const cohortIdElement = document.getElementById('cohortId');
+			if (cohortIdElement && cohortIdElement.value) command += ` --cohort-id ${cohortIdElement.value}`;
+
+			const dataGroupIdElement = document.getElementById('dataGroupId');
+			if (dataGroupIdElement && dataGroupIdElement.closest('.form-group').style.display !== 'none' && dataGroupIdElement.value) {
+				command += ` --data-group-id ${dataGroupIdElement.value}`;
+			}
+
+			// Additional boolean flags
 			const additionalBooleanFlags = [
+				['writeToFile', 'write-to-file'],
+				['createProfiles', 'create-profiles'],
+				['addToken', 'add-token'],
 				['abridged', 'abridged'],
 				['http2', 'http2'],
 				['keepBadRecords', 'keep-bad-records']
@@ -1498,6 +1558,9 @@ function transform(row) {
 			currentPage: 0,
 			recordsPerPage: 10
 		};
+		
+		// Initialize scroll sync state (default: locked/synchronized)
+		this.scrollSyncEnabled = true;
 
 		// Create side-by-side container
 		resultsData.innerHTML = `
@@ -1520,6 +1583,12 @@ function transform(row) {
 					<button type="button" id="next-records-btn" class="btn btn-secondary">
 						Next 10 →
 					</button>
+					<div class="scroll-sync-control">
+						<button type="button" id="scroll-sync-toggle" class="btn btn-ghost btn-sm scroll-sync-locked" title="Toggle synchronized scrolling">
+							<span class="btn-icon">🔒</span>
+							<span class="sync-label">Sync Scroll</span>
+						</button>
+					</div>
 				</div>
 				<div class="comparison-panels">
 					<div class="comparison-panel" id="raw-panel">
@@ -1534,6 +1603,7 @@ function transform(row) {
 
 		this.renderComparisonPage();
 		this.setupComparisonControls();
+		this.setupScrollSyncToggle();
 	}
 
 	renderComparisonPage() {
@@ -1598,21 +1668,60 @@ function transform(row) {
 	}
 
 	setupSynchronizedScrolling() {
-		const rawPanel = document.getElementById('raw-panel');
-		const transformedPanel = document.getElementById('transformed-panel');
+		const rawContent = document.getElementById('raw-content');
+		const transformedContent = document.getElementById('transformed-content');
+		
+		// Remove existing listeners to prevent duplicates
+		if (rawContent) rawContent.replaceWith(rawContent.cloneNode(true));
+		if (transformedContent) transformedContent.replaceWith(transformedContent.cloneNode(true));
+		
+		// Get fresh references after cloning
+		const rawPanel = document.getElementById('raw-content');
+		const transformedPanel = document.getElementById('transformed-content');
+		
+		if (!rawPanel || !transformedPanel) return;
 		
 		let isScrolling = false;
 		
 		const syncScroll = (source, target) => {
-			if (!isScrolling) {
-				isScrolling = true;
-				target.scrollTop = source.scrollTop;
-				setTimeout(() => { isScrolling = false; }, 10);
-			}
+			// Only sync if scroll sync is enabled
+			if (!this.scrollSyncEnabled || isScrolling) return;
+			isScrolling = true;
+			target.scrollTop = source.scrollTop;
+			setTimeout(() => { isScrolling = false; }, 10);
 		};
 		
 		rawPanel.addEventListener('scroll', () => syncScroll(rawPanel, transformedPanel));
 		transformedPanel.addEventListener('scroll', () => syncScroll(transformedPanel, rawPanel));
+	}
+
+	setupScrollSyncToggle() {
+		const toggleBtn = document.getElementById('scroll-sync-toggle');
+		if (!toggleBtn) return;
+
+		toggleBtn.addEventListener('click', () => {
+			this.scrollSyncEnabled = !this.scrollSyncEnabled;
+			this.updateScrollSyncButton();
+		});
+	}
+
+	updateScrollSyncButton() {
+		const toggleBtn = document.getElementById('scroll-sync-toggle');
+		const icon = toggleBtn.querySelector('.btn-icon');
+		
+		if (this.scrollSyncEnabled) {
+			// Locked state
+			toggleBtn.classList.add('scroll-sync-locked');
+			toggleBtn.classList.remove('scroll-sync-unlocked');
+			icon.textContent = '🔒';
+			toggleBtn.title = 'Click to unlock independent scrolling';
+		} else {
+			// Unlocked state  
+			toggleBtn.classList.add('scroll-sync-unlocked');
+			toggleBtn.classList.remove('scroll-sync-locked');
+			icon.textContent = '🔓';
+			toggleBtn.title = 'Click to lock synchronized scrolling';
+		}
 	}
 
 	showError(message) {

@@ -970,6 +970,54 @@ input[type="radio"] {
     cursor: not-allowed;
 }
 
+/* Scroll Sync Control */
+.scroll-sync-control {
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+}
+
+.scroll-sync-control .btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    padding: 6px 12px;
+    border-radius: var(--radius-md);
+    transition: all 0.2s ease;
+    border: 1px solid var(--border-secondary);
+}
+
+.scroll-sync-locked {
+    background: var(--success-bg);
+    border-color: var(--success);
+    color: var(--success);
+}
+
+.scroll-sync-locked:hover {
+    background: rgba(0, 212, 170, 0.2);
+    transform: translateY(-1px);
+}
+
+.scroll-sync-unlocked {
+    background: var(--warning-bg);
+    border-color: var(--warning);
+    color: var(--warning);
+}
+
+.scroll-sync-unlocked:hover {
+    background: rgba(255, 170, 0, 0.2);
+    transform: translateY(-1px);
+}
+
+.scroll-sync-control .btn-icon {
+    font-size: 14px;
+}
+
+.sync-label {
+    font-weight: 500;
+}
+
 /* Responsive design for side-by-side */
 @media (max-width: 1024px) {
     .comparison-panels {
