@@ -1449,8 +1449,8 @@ _  _ _ _  _ ___  ____ _  _ ____ _       _ _  _ ___  ____ ____ ___
 				if (NODE_ENV !== "production") {
 					console.log(hero);
 					console.log(banner);
-					console.log(`\n🚀 UI running at http://localhost:${serverPort}`);
-					console.log(`📡 WebSocket server alive\n\n`);
+					console.log(`\n🚀 UI running at http://localhost:${serverPort}\n\n`);
+					// console.log(`\t-webSocket server alive\n\n`);
 				}
 				logger.info({ port: serverPort }, "Mixpanel Import UI server started");
 				resolve(server);

@@ -273,6 +273,7 @@ class Job {
 
 		// @ts-ignore backwards compatibility
 		if (opts?.scrubProperties) this.scrubProps = parse(opts.scrubProperties) || [];
+		this.dropColumns = parse(opts.dropColumns) || [];
 
 		// ? transform options
 		this.transformFunc = opts.transformFunc || null;
@@ -344,6 +345,9 @@ class Job {
 
 		if (this.scrubProps.length > 0) {
 			this.propertyScrubber = transforms.scrubProperties(this.scrubProps);
+		}
+		if (this.dropColumns.length > 0) {
+			this.columnDropper = transforms.dropColumns(this.dropColumns);
 		}
 
 		this.vendor = opts.vendor || '';

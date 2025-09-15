@@ -749,6 +749,41 @@ function scrubProperties(keysToScrub = []) {
 	};
 }
 
+/**
+ * remove specific columns/properties from records in the pipeline
+ * @param  {string[]} columnsToDrop - array of property keys to remove
+ */
+function dropColumns(columnsToDrop = []) {
+	return function dropColumnTransform(record) {
+		if (!record || columnsToDrop.length === 0) return record;
+		
+		// Handle event records - remove from properties
+		if (record.properties && typeof record.properties === 'object') {
+			for (const key of columnsToDrop) {
+				delete record.properties[key];
+			}
+		}
+		
+		// Handle profile records - remove from operation buckets ($set, $add, etc.)
+		for (const op of validOperations) {
+			if (record[op] && typeof record[op] === 'object') {
+				for (const key of columnsToDrop) {
+					delete record[op][key];
+				}
+			}
+		}
+		
+		// Also remove from root level (for malformed records or direct properties)
+		for (const key of columnsToDrop) {
+			if (key !== 'event' && key !== 'properties' && !key.startsWith('$')) {
+				delete record[key];
+			}
+		}
+		
+		return record;
+	};
+}
+
 
 // performance optimized recursive function to scrub properties from an object
 // https://chat.openai.com/share/98f40372-2a3a-413c-a42c-c8cf28f6d074
@@ -861,6 +896,7 @@ module.exports = {
 	fixJson,
 	resolveFallback,
 	scrubProperties,
+	dropColumns,
 	addToken,
 	scdTransform,
 	fixTime

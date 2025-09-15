@@ -177,6 +177,7 @@ function corePipeline(stream, job, toNodeStream = false) {
 			if (job.shouldWhiteBlackList) data = job.whiteAndBlackLister(data);
 			if (job.shouldEpochFilter) data = job.epochFilter(data);
 			if (job.propertyScrubber) job.propertyScrubber(data);
+			if (job.columnDropper) job.columnDropper(data);
 			if (job.flattenData) job.flattener(data);
 			if (job.fixJson) job.jsonFixer(data);
 			if (job.shouldCreateInsertId) job.insertIdAdder(data);

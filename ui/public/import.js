@@ -532,6 +532,7 @@ class MixpanelImportUI {
 		// Record type change - show/hide relevant fields
 		const recordTypeSelect = document.getElementById('recordType');
 		recordTypeSelect.addEventListener('change', this.updateFieldVisibility.bind(this));
+		recordTypeSelect.addEventListener('change', this.refreshColumnMapper.bind(this));
 		this.updateFieldVisibility(); // Initial call
 
 		// CLI command copy button
@@ -871,6 +872,75 @@ class MixpanelImportUI {
 			const timeOffsetEl = document.getElementById('timeOffset');
 			const timeOffset = timeOffsetEl ? timeOffsetEl.value : '';
 			if (timeOffset && timeOffset !== '0') command += ` --offset ${timeOffset}`;
+
+			// Aliases from column mapper and text input
+			const aliases = this.getCurrentAliases();
+			if (Object.keys(aliases).length > 0) {
+				command += ` --aliases '${JSON.stringify(aliases)}'`;
+			}
+
+			// Other text options
+			const textOptions = [
+				['scrubProps', 'scrub'],
+				['eventWhitelist', 'event-whitelist'],
+				['eventBlacklist', 'event-blacklist'],
+				['propKeyWhitelist', 'prop-whitelist'],
+				['propKeyBlacklist', 'prop-blacklist'],
+				['propValWhitelist', 'val-whitelist'],
+				['propValBlacklist', 'val-blacklist'],
+				['insertIdTuple', 'insert-tuple'],
+				['tags', 'tags'],
+				['vendorOpts', 'vendor-opts']
+			];
+
+			textOptions.forEach(([elementId, cliFlag]) => {
+				const element = document.getElementById(elementId);
+				if (element && element.value.trim()) {
+					if (cliFlag === 'tags' || cliFlag === 'vendor-opts') {
+						command += ` --${cliFlag} '${element.value}'`;
+					} else {
+						command += ` --${cliFlag} ${element.value}`;
+					}
+				}
+			});
+
+			// Additional numeric options
+			const numericOptions = [
+				['bytesPerBatch', 'bytes'],
+				['maxRetries', 'retries'],
+				['compressionLevel', 'compression-level']
+			];
+
+			numericOptions.forEach(([elementId, cliFlag]) => {
+				const element = document.getElementById(elementId);
+				if (element && element.value && element.value !== element.defaultValue) {
+					command += ` --${cliFlag} ${element.value}`;
+				}
+			});
+
+			// Stream format option
+			const streamFormatEl = document.getElementById('streamFormat');
+			const streamFormat = streamFormatEl ? streamFormatEl.value : '';
+			if (streamFormat) command += ` --stream-format ${streamFormat}`;
+
+			// Transport option
+			const transportEl = document.getElementById('transport');
+			const transport = transportEl ? transportEl.value : '';
+			if (transport && transport !== 'got') command += ` --transport ${transport}`;
+
+			// Additional boolean flags that might be missing
+			const additionalBooleanFlags = [
+				['abridged', 'abridged'],
+				['http2', 'http2'],
+				['keepBadRecords', 'keep-bad-records']
+			];
+
+			additionalBooleanFlags.forEach(([elementId, cliFlag]) => {
+				const element = document.getElementById(elementId);
+				if (element && element.checked) {
+					command += ` --${cliFlag}`;
+				}
+			});
 
 			cliElement.textContent = command;
 			cliElement.classList.remove('empty');
@@ -1686,15 +1756,48 @@ function transform(row) {
 		const mapperContent = document.getElementById('column-mapper-content');
 		const mapperGrid = mapperContent.querySelector('.column-mapper-grid');
 
-		// Define Mixpanel target fields with icons and descriptions
-		const mixpanelFields = [
-			{ key: 'event', icon: '🎯', label: 'Event Name', description: 'The name of the event' },
-			{ key: 'time', icon: '⏰', label: 'Timestamp', description: 'Event timestamp (Unix milliseconds)' },
-			{ key: 'distinct_id', icon: '👤', label: 'Distinct ID (orig)', description: 'Unique identifier for the user' },
-			{ key: 'insert_id', icon: '🔑', label: 'Insert ID', description: 'Unique identifier for deduplication' },
-			{ key: 'user_id', icon: '🆔', label: 'User ID (simp)', description: '$user_id for simplified id merge' },
-			{ key: 'device_id', icon: '📱', label: 'Device ID (simp)', description: '$device_id for simplified id merge' }
-		];
+		// Get current record type to show appropriate fields
+		const recordType = document.getElementById('recordType').value;
+		
+		// Define Mixpanel target fields based on record type
+		let mixpanelFields = [];
+		
+		if (recordType === 'event') {
+			mixpanelFields = [
+				{ key: 'event', icon: '🎯', label: 'Event Name', description: 'The name of the event' },
+				{ key: 'time', icon: '⏰', label: 'Timestamp', description: 'Event timestamp (Unix milliseconds)' },
+				{ key: 'distinct_id', icon: '👤', label: 'Distinct ID (orig)', description: 'Unique identifier for the user' },
+				{ key: 'insert_id', icon: '🔑', label: 'Insert ID', description: 'Unique identifier for deduplication' },
+				{ key: 'user_id', icon: '🆔', label: 'User ID (simp)', description: '$user_id for simplified id merge' },
+				{ key: 'device_id', icon: '📱', label: 'Device ID (simp)', description: '$device_id for simplified id merge' }
+			];
+		} else if (recordType === 'user') {
+			mixpanelFields = [
+				{ key: 'distinct_id', icon: '👤', label: 'Distinct ID', description: 'Unique identifier for the user profile' },
+				{ key: 'name', icon: '📝', label: 'Full Name', description: 'User\'s full name' },
+				{ key: 'first_name', icon: '👤', label: 'First Name', description: 'User\'s first name' },
+				{ key: 'last_name', icon: '👤', label: 'Last Name', description: 'User\'s last name' },
+				{ key: 'email', icon: '📧', label: 'Email', description: 'User\'s email address' },
+				{ key: 'phone', icon: '📞', label: 'Phone', description: 'User\'s phone number' },
+				{ key: 'created', icon: '📅', label: 'Created Date', description: 'When the user was created' },
+				{ key: 'avatar', icon: '🖼️', label: 'Avatar URL', description: 'URL to user\'s profile picture' }
+			];
+		} else if (recordType === 'group') {
+			mixpanelFields = [
+				{ key: 'group_id', icon: '👥', label: 'Group ID', description: 'Unique identifier for the group' },
+				{ key: 'name', icon: '📝', label: 'Group Name', description: 'Name of the group/organization' },
+				{ key: 'created', icon: '📅', label: 'Created Date', description: 'When the group was created' },
+				{ key: 'plan', icon: '💼', label: 'Plan/Tier', description: 'Subscription plan or tier' },
+				{ key: 'industry', icon: '🏢', label: 'Industry', description: 'Industry category' },
+				{ key: 'employees', icon: '👨‍💼', label: 'Employee Count', description: 'Number of employees' }
+			];
+		} else {
+			// Fallback for unknown record types
+			mixpanelFields = [
+				{ key: 'distinct_id', icon: '👤', label: 'Distinct ID', description: 'Unique identifier' },
+				{ key: 'name', icon: '📝', label: 'Name', description: 'Display name' }
+			];
+		}
 
 		// Render mapping rows
 		mapperGrid.innerHTML = mixpanelFields.map(field => `
@@ -1745,6 +1848,13 @@ function transform(row) {
 		// Show the mapper content and update status
 		mapperContent.style.display = 'block';
 		this.updateMapperStatus();
+	}
+
+	refreshColumnMapper() {
+		// Re-render the column mapper when record type changes
+		if (this.detectedColumns.length > 0) {
+			this.renderColumnMapper();
+		}
 	}
 
 	updateMapperStatus() {

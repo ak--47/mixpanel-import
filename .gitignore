@@ -29,3 +29,4 @@ CLAUDE-foo.md
 benchmarks/results/*
 !benchmarks/results/.gitkeep
 credentials.json
+customers/*

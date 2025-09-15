@@ -368,7 +368,7 @@
 						onclick="toggleSection('performance-section')"
 						title="Configure request batching, compression, HTTP transport, and other performance settings">
 						<span class="section-icon">📈</span>
-						<h3>Performance & Processing</h3>
+						<h3>Performance</h3><span class="subtext">usually don't touch these</span>
 						<span class="toggle-icon">▼</span>
 					</div>
 					<div id="performance-section"
@@ -382,7 +382,7 @@
 								<input type="number"
 									id="workers"
 									name="workers"
-									value="10"
+									value="20"
 									min="1"
 									max="50"
 									autocomplete="off">
@@ -444,7 +444,7 @@
 								<select id="transport"
 									name="transport">
 									<option value="got">Got (default)</option>
-									<option value="undici">Undici</option>
+									<option value="undici">Undici (experimental)</option>
 								</select>
 								<small>HTTP client for sending requests</small>
 							</div>
@@ -455,7 +455,9 @@
 								<label class="checkbox-label">
 									<input type="checkbox"
 										id="compress"
-										name="compress">
+										name="compress"
+										checked
+										>
 									Enable Compression
 								</label>
 								<small>Gzip compress requests (events only)</small>
@@ -481,7 +483,7 @@
 						onclick="toggleSection('data-processing-section')"
 						title="Enable data cleaning, validation, timestamp conversion, and other data transformations">
 						<span class="section-icon">🔄</span>
-						<h3>Data Processing</h3>
+						<h3>Processing</h3><span class="subtext">macros + transforms for fixing data</span>
 						<span class="toggle-icon">▼</span>
 					</div>
 					<div id="data-processing-section"
@@ -614,7 +616,7 @@
 						onclick="toggleSection('filtering-section')"
 						title="Filter events and properties using whitelists, blacklists, and property removal rules">
 						<span class="section-icon">🔍</span>
-						<h3>Filtering & Lists</h3>
+						<h3>Filtering</h3><span class="subtext">row-level include and exclude</span>
 						<span class="toggle-icon">▼</span>
 					</div>
 					<div id="filtering-section"
@@ -709,7 +711,7 @@
 						onclick="toggleSection('time-section')"
 						title="Filter data by timestamp ranges for imports and exports">
 						<span class="section-icon">📅</span>
-						<h3>Time & Date Filters</h3>
+						<h3>Time & Date</h3><span class="subtext">filter by timestamp ranges</span>
 						<span class="toggle-icon">▼</span>
 					</div>
 					<div id="time-section"
@@ -739,65 +741,6 @@
 					</div>
 				</div>
 
-				<!-- Output & File Options -->
-				<div class="collapsible-section">
-					<div class="section-header"
-						onclick="toggleSection('output-section')"
-						title="Control logging, file output, progress display, and result storage options">
-						<span class="section-icon">💾</span>
-						<h3>Output & File Options</h3>
-						<span class="toggle-icon">▼</span>
-					</div>
-					<div id="output-section"
-						class="collapsible-content"
-						style="display: none;">
-						<div class="checkbox-grid">
-							<label class="checkbox-label">
-								<input type="checkbox"
-									id="logs"
-									name="logs">
-								Save Import Logs
-							</label>
-							<label class="checkbox-label">
-								<input type="checkbox"
-									id="verbose"
-									name="verbose">
-								Verbose Console Output
-							</label>
-							<label class="checkbox-label">
-								<input type="checkbox"
-									id="showProgress"
-									name="showProgress" checked>
-								Show Progress Bar
-							</label>
-							<label class="checkbox-label">
-								<input type="checkbox"
-									id="writeToFile"
-									name="writeToFile">
-								Write to Local File
-							</label>
-						</div>
-
-						<div class="form-row">
-							<div class="form-group">
-								<label for="where">Output Directory</label>
-								<input type="text"
-									id="where"
-									name="where"
-									placeholder="./logs">
-								<small>Directory for logs and exported files</small>
-							</div>
-							<div class="form-group">
-								<label for="outputFilePath">Output File Path</label>
-								<input type="text"
-									id="outputFilePath"
-									name="outputFilePath"
-									placeholder="./output.json">
-								<small>Path for transformed data output</small>
-							</div>
-						</div>
-					</div>
-				</div>
 
 				<!-- Advanced Expert Settings -->
 				<div class="collapsible-section">
@@ -805,7 +748,7 @@
 						onclick="toggleSection('expert-section')"
 						title="Advanced options for power users including tags, vendor options, and low-level settings">
 						<span class="section-icon">🔬</span>
-						<h3>Expert Settings</h3>
+						<h3>Meta</h3><span class="subtext">odds and ends</span>
 						<span class="toggle-icon">▼</span>
 					</div>
 					<div id="expert-section"
