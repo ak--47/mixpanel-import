@@ -395,7 +395,7 @@ cliParams.welcome = welcome;
  * @param  {number} amountSent
  * @param  {Function} [callback] - optional callback for progress updates (used by UI WebSocket)
  */
-function showProgress(record = "", processed = 0, requests = 0, eps = "", amountSent = 0, callback = null) {
+function showProgress(record = "", processed = 0, requests = 0, eps = "", success = 0, failed = 0, amountSent = 0, callback = null) {
 	const { heapUsed } = process.memoryUsage();
 	// const { rss, heapTotal, heapUsed } = process.memoryUsage();
 	// const percentHeap = (heapUsed / heapTotal) * 100;
@@ -406,6 +406,12 @@ function showProgress(record = "", processed = 0, requests = 0, eps = "", amount
 	}
 	if (eps) {
 		line += ` | eps: ${u.comma(eps)} `;
+	}
+	if (success) {
+		line += ` | success: ${u.comma(success)}`;
+	}
+	if (failed) {
+		line += ` | failed: ${u.comma(failed)}`;
 	}
 	if (heapUsed) {
 		line += ` | mem: ${u.bytesHuman(heapUsed)}`;

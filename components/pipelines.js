@@ -262,7 +262,7 @@ function corePipeline(stream, job, toNodeStream = false) {
 			else {
 				const now = Date.now();
 				if ((job.verbose || job.showProgress) && (now - lastLogUpdate >= LOG_INTERVAL)) {
-					counter(job.recordType, job.recordsProcessed, job.requests, job.getEps(), job.bytesProcessed, job.progressCallback);
+					counter(job.recordType, job.recordsProcessed, job.requests, job.getEps(), job.success, job.failed, job.bytesProcessed, job.progressCallback);
 					lastLogUpdate = now;
 				}
 
