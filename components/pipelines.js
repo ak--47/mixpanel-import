@@ -226,7 +226,7 @@ function corePipeline(stream, job, toNodeStream = false) {
 			job.batches++;
 			job.addBatchLength(batch.length); // Use bounded collection method
 
-			if (job.dryRun) return _(Promise.resolve(batch));
+			if (job.dryRun) return _(Promise.resolve([null, batch]));
 
 			if (job.writeToFile) {
 				batch.forEach(item => {
@@ -246,9 +246,10 @@ function corePipeline(stream, job, toNodeStream = false) {
 
 		// * verbose
 		// @ts-ignore
-		_.doto(function VERBOSE(batch) {
+		_.doto(function VERBOSE(result) {
+			const [response, batch] = result;
 			if (job.responseHandler && typeof job.responseHandler === 'function') {
-				job.responseHandler(batch);
+				job.responseHandler(response, batch);
 
 			}
 

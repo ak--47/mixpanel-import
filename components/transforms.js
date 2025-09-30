@@ -8,6 +8,7 @@ const validOperations = ["$set", "$set_once", "$add", "$union", "$append", "$rem
 // ? https://docs.mixpanel.com/docs/data-structure/user-profiles#reserved-profile-properties
 const specialProps = ["name", "first_name", "last_name", "email", "phone", "avatar", "created", "insert_id", "city", "region", "lib_version", "os", "os_version", "browser", "browser_version", "app_build_number", "app_version_string", "device", "screen_height", "screen_width", "screen_dpi", "current_url", "initial_referrer", "initial_referring_domain", "referrer", "referring_domain", "search_engine", "manufacturer", "brand", "model", "watch_model", "carrier", "radio", "wifi", "bluetooth_enabled", "bluetooth_version", "has_nfc", "has_telephone", "google_play_services", "duration", "country", "country_code"];
 const outsideProps = ["distinct_id", "group_id", "token", "group_key", "ip"]; //these are the props that are outside of the $set
+const badUserIds = ["-1", "0", "00000000-0000-0000-0000-000000000000", "<nil>", "[]", "anon", "anonymous", "false", "lmy47d", "n/a", "na", "nil", "none", "null", "true", "undefined", "unknown", "{}", null, undefined]
 const MAX_STR_LEN = 255;
 
 /** @typedef {import('./job')} JobConfig */
@@ -92,6 +93,13 @@ function ezTransforms(job) {
 			["distinct_id", "$user_id", "$device_id"].forEach((k) => {
 				if (record.properties[k] != null) {
 					record.properties[k] = String(record.properties[k]);
+				}
+			});
+
+			// 6a. Remove bad distinct_ids
+			["distinct_id", "$user_id", "$device_id"].forEach((k) => {
+				if (badUserIds.includes(record.properties[k])) {
+					delete record.properties[k];
 				}
 			});
 
