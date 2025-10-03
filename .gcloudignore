@@ -12,6 +12,7 @@ testData/
 benchmarks/
 coverage/
 .nyc_output/
+customers/*
 
 # Development configuration
 .eslintrc*

@@ -1,6 +1,6 @@
 {
   "name": "mixpanel-import",
-  "version": "3.0.16",
+  "version": "3.0.3",
   "description": "stream and import data to mixpanel from node.js",
   "main": "index.js",
   "types": "index.d.ts",
@@ -13,7 +13,7 @@
     "CLI"
   ],
   "scripts": {
-	"start": "node index.js --ui",
+    "start": "node index.js --ui",
     "dev": "npm run prune && nodemon --inspect scratch.js --ignore ./testData --ignore ./mixpanel-exports --ignore ./logs",
     "post": "npm publish",
     "generate": "NUMEVENTS=3000 SINCEDAYS=7 node ./components/fakeData.js",
@@ -26,7 +26,7 @@
     "lint": "eslint . --ext .js",
     "lint:fix": "eslint . --ext .js --fix",
     "validate": "npm run typecheck && npm run lint",
-    
+    "deploy": "gcloud builds submit --config cloudbuild.yaml --region us-central1",
     "ui:dev": "nodemon --inspect ui/server.js"
   },
   "bin": {
@@ -61,6 +61,7 @@
     "ak-fetch": "^2.0.0",
     "ak-tools": "^1.1.0",
     "chance": "^1.1.7",
+    "cookie-parser": "^1.4.7",
     "dayjs": "^1.11.7",
     "dotenv": "^10.0.0",
     "express": "^5.1.0",

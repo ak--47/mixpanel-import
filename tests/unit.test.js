@@ -25,6 +25,7 @@ const { UTCoffset,
 	fixJson,
 	resolveFallback,
 	scrubProperties,
+	dropColumns,
 	addToken
 } = require("../components/transforms.js");
 
@@ -934,6 +935,131 @@ describe("transforms", () => {
 
 		expect(scrubbed).toEqual(expected);
 
+	});
+
+	// dropColumns tests
+	test("dropColumns: removes properties from event records", () => {
+		const record = {
+			event: "Test Event",
+			properties: {
+				keep: "value1",
+				remove_me: "value2",
+				also_remove: "value3",
+				distinct_id: "user123"
+			}
+		};
+		const columnDropper = dropColumns(["remove_me", "also_remove"]);
+		const result = columnDropper(record);
+		
+		expect(result.properties.keep).toBe("value1");
+		expect(result.properties.distinct_id).toBe("user123");
+		expect(result.properties.remove_me).toBeUndefined();
+		expect(result.properties.also_remove).toBeUndefined();
+		expect(result.event).toBe("Test Event");
+	});
+
+	test("dropColumns: removes properties from user profile records", () => {
+		const record = {
+			$distinct_id: "user123",
+			$token: "token123",
+			$set: {
+				name: "John Doe",
+				email: "john@example.com",
+				sensitive_data: "remove_this",
+				pii_field: "also_remove"
+			}
+		};
+		const columnDropper = dropColumns(["sensitive_data", "pii_field"]);
+		const result = columnDropper(record);
+		
+		expect(result.$set.name).toBe("John Doe");
+		expect(result.$set.email).toBe("john@example.com");
+		expect(result.$set.sensitive_data).toBeUndefined();
+		expect(result.$set.pii_field).toBeUndefined();
+		expect(result.$distinct_id).toBe("user123");
+		expect(result.$token).toBe("token123");
+	});
+
+	test("dropColumns: works with multiple operation buckets", () => {
+		const record = {
+			$distinct_id: "user123",
+			$set: {
+				name: "John",
+				remove_from_set: "value1"
+			},
+			$add: {
+				score: 10,
+				remove_from_add: 5
+			},
+			$union: {
+				tags: ["tag1"],
+				remove_from_union: ["bad_tag"]
+			}
+		};
+		const columnDropper = dropColumns(["remove_from_set", "remove_from_add", "remove_from_union"]);
+		const result = columnDropper(record);
+		
+		expect(result.$set.name).toBe("John");
+		expect(result.$set.remove_from_set).toBeUndefined();
+		expect(result.$add.score).toBe(10);
+		expect(result.$add.remove_from_add).toBeUndefined();
+		expect(result.$union.tags).toEqual(["tag1"]);
+		expect(result.$union.remove_from_union).toBeUndefined();
+	});
+
+	test("dropColumns: removes from root level but preserves system fields", () => {
+		const record = {
+			event: "Test Event",
+			properties: { distinct_id: "user123" },
+			custom_field: "remove_me",
+			another_field: "also_remove",
+			$user_id: "preserve_me"
+		};
+		const columnDropper = dropColumns(["custom_field", "another_field", "event", "properties", "$user_id"]);
+		const result = columnDropper(record);
+		
+		// System fields should be preserved
+		expect(result.event).toBe("Test Event");
+		expect(result.properties).toBeDefined();
+		expect(result.$user_id).toBe("preserve_me");
+		
+		// Custom fields should be removed
+		expect(result.custom_field).toBeUndefined();
+		expect(result.another_field).toBeUndefined();
+	});
+
+	test("dropColumns: handles empty columns array", () => {
+		const record = {
+			event: "Test Event",
+			properties: {
+				keep: "value1",
+				also_keep: "value2"
+			}
+		};
+		const columnDropper = dropColumns([]);
+		const result = columnDropper(record);
+		
+		expect(result).toEqual(record);
+	});
+
+	test("dropColumns: handles null/undefined record", () => {
+		const columnDropper = dropColumns(["remove_me"]);
+		
+		expect(columnDropper(null)).toBeNull();
+		expect(columnDropper(undefined)).toBeUndefined();
+		expect(columnDropper({})).toEqual({});
+	});
+
+	test("dropColumns: handles record without properties", () => {
+		const record = {
+			event: "Test Event",
+			custom_field: "remove_me"
+		};
+		const columnDropper = dropColumns(["custom_field", "nonexistent"]);
+		const result = columnDropper(record);
+		
+		expect(result.event).toBe("Test Event");
+		expect(result.custom_field).toBeUndefined();
 	});
 
 

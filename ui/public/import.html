@@ -26,7 +26,33 @@
 				<span id="cute-description">Extract Transform Load</span>
 			</h1>
 			<p class="subtitle">stream data to mixpanel with powerful transforms</p>
-			<button type="button" id="dev-key-btn" class="dev-key-btn" title="Fill form with dev values">🔑</button>
+			<div class="header-buttons">
+				<button type="button"
+					id="dev-key-btn"
+					class="dev-key-btn"
+					title="Fill form with dev values">🔑</button>
+				<button type="button"
+					id="reset-btn"
+					class="reset-btn"
+					title="Reset form to initial state">🔄</button>
+			</div>
+			<div class="header-artifact-links">
+				<a href="https://www.notion.so/mxpnl/mixpanel-import-24be0ba9256280dfbd9fecaf040d3c2a?v=c8754a694d9644c494f3eea284fc4dc0&source=copy_link"
+					target="_blank"
+					rel="noopener">📚 docs</a>
+				<a href="https://storage.googleapis.com/mp-customer-upload/rickroll.mp4"
+					target="_blank"
+					rel="noopener">🎥 demo</a>
+				<a href="https://github.com/ak--47/mixpanel-import"
+					target="_blank"
+					rel="noopener">💻 code</a>
+				<a href="https://mixpanel.com/p/QJuv9bcK8Re7rq4vu5rfv1"
+					target="_blank"
+					rel="noopener">📊 metrics</a>
+				<a href=""
+					target="_blank"
+					rel="noopener">📋 logs</a>
+			</div>
 		</header>
 
 		<!-- Main Form -->
@@ -87,7 +113,8 @@
 							rows="4"
 							placeholder="gs://your-bucket/path/to/file.json&#10;gs://your-bucket/path/to/another-file.jsonl&#10;gs://your-bucket/data/events.parquet.gz"
 							autocomplete="off"></textarea>
-						<small>Enter Google Cloud Storage paths (one per line or comma-separated). Must start with gs://</small>
+						<small>Enter Google Cloud Storage paths (one per line or comma-separated). Must start with
+							gs://</small>
 					</div>
 					<div id="gcs-file-list"
 						class="cloud-file-preview"></div>
@@ -111,25 +138,38 @@
 				</div>
 
 				<!-- Preview Data Section -->
-				<div class="preview-actions" style="margin-top: 20px; text-align: center;">
-					<button type="button" id="preview-data-btn" class="btn btn-ghost">
+				<div class="preview-actions"
+					style="margin-top: 20px; text-align: center;">
+					<button type="button"
+						id="preview-data-btn"
+						class="btn btn-ghost">
 						<span class="btn-icon">👁️</span>
 						Preview Data (Raw)
 					</button>
 				</div>
 
 				<!-- Data Preview Display -->
-				<div id="data-preview" class="preview-section collapsible-section" style="display: none; margin-top: 20px;">
-					<div class="section-header" onclick="toggleSection('preview-content-wrapper')">
+				<div id="data-preview"
+					class="preview-section collapsible-section"
+					style="display: none; margin-top: 20px;">
+					<div class="section-header"
+						onclick="toggleSection('preview-content-wrapper')"
+						aria-expanded="true">
 						<span class="section-icon">👁️</span>
 						<h3>Raw Data Preview</h3>
-						<span class="toggle-icon">▲</span>
+						<span class="toggle-icon">▼</span>
 					</div>
-					<div id="preview-content-wrapper" class="collapsible-content">
-						<p class="section-description">This shows your data as it appears before any transforms or processing.</p>
-						<div id="preview-content" class="results-data"></div>
-						<div class="preview-actions" style="margin-top: 16px; text-align: center;">
-							<button type="button" id="see-more-btn" class="btn btn-secondary btn-sm">
+					<div id="preview-content-wrapper"
+						class="collapsible-content">
+						<p class="section-description">This shows your data as it appears before any transforms or
+							processing.</p>
+						<div id="preview-content"
+							class="results-data"></div>
+						<div class="preview-actions"
+							style="margin-top: 16px; text-align: center;">
+							<button type="button"
+								id="see-more-btn"
+								class="btn btn-secondary btn-sm">
 								<span class="btn-icon">🔄</span>
 								See More Records
 							</button>
@@ -139,59 +179,61 @@
 			</section>
 
 			<!-- Column Mapper Section -->
-			<section class="card collapsible-section" id="column-mapper-section" style="display: none;">
-				<div class="section-header" onclick="toggleSection('column-mapper-wrapper')">
+			<section class="card collapsible-section"
+				id="column-mapper-section"
+				style="display: none;">
+				<div class="section-header"
+					onclick="toggleSection('column-mapper-wrapper')"
+					aria-expanded="true">
 					<span class="section-icon">🔗</span>
 					<h2>Column Mapping (Optional)</h2>
-					<span class="toggle-icon">▲</span>
+					<span class="toggle-icon">▼</span>
 				</div>
-				<div id="column-mapper-wrapper" class="collapsible-content">
-					<p class="section-description">Map your data columns to common Mixpanel fields. This creates simple column renaming aliases for you.</p>
-					
+				<div id="column-mapper-wrapper"
+					class="collapsible-content">
+					<p class="section-description">Map your data columns to common Mixpanel fields. This creates simple
+						column renaming aliases for you.</p>
+
 					<div class="column-mapper-actions">
-						<button type="button" id="detect-columns-btn" class="btn btn-secondary">
+						<button type="button"
+							id="detect-columns-btn"
+							class="btn btn-secondary">
 							<span class="btn-icon">🔍</span>
 							Detect Columns from Data
 						</button>
 					</div>
 
-					<div id="column-mapper-content" style="display: none;">
+					<div id="column-mapper-content"
+						style="display: none;">
 						<div class="column-mapper-grid">
 							<!-- Mixpanel field mappings will be populated here -->
 						</div>
-						
+
 						<div class="column-mapper-status">
-							<p id="mapper-status" class="section-description"></p>
+							<p id="mapper-status"
+								class="section-description"></p>
 						</div>
 					</div>
 				</div>
 			</section>
 
-			<!-- Record Type Selection -->
+			<!-- Credentials Section -->
 			<section class="card">
-				<h2 class="section-title">📋 Type of Import</h2>
-				<p class="section-description">Select your data type to show the correct authentication options.</p>
+				<h2 class="section-title">🔑 Credentials</h2>
+				<p class="section-description">Select your import type and provide authentication credentials.</p>
 
 				<div class="form-group">
 					<label for="recordType">Import Type*</label>
 					<select id="recordType"
 						name="recordType"
 						required>
-						<option value="">Select import type...</option>
-						<option value="event">🎯 Events</option>
+						<option value="event"
+							selected>🎯 Events</option>
 						<option value="user">👤 User Profiles</option>
 						<option value="group">👥 Group Profiles</option>
 					</select>
 					<small>Authentication requirements vary by type</small>
 				</div>
-			</section>
-
-			<!-- Credentials Section -->
-			<section class="card"
-				id="credentials-section"
-				style="display: none;">
-				<h2 class="section-title">🔑 Credentials</h2>
-				<p class="section-description" id="credentials-description">Authentication requirements depend on your import type.</p>
 
 				<div class="form-group"
 					id="project-group"
@@ -304,7 +346,8 @@
 							name="gcsCredentials"
 							accept=".json"
 							autocomplete="off">
-						<small>Upload service account JSON file, or leave empty to use Application Default Credentials</small>
+						<small>Upload service account JSON file, or leave empty to use Application Default
+							Credentials</small>
 					</div>
 				</div>
 
@@ -314,591 +357,553 @@
 
 			<!-- Configuration Section -->
 			<section class="card">
-				<div class="section-header" onclick="toggleSection('import-config-content')">
+				<div class="section-header"
+					onclick="toggleSection('import-config-content')"
+					aria-expanded="true">
 					<h2 class="section-title">⚙️ Import Configuration</h2>
-					<span class="toggle-icon">▲</span>
+					<span class="toggle-icon">▼</span>
 				</div>
-				<div id="import-config-content" class="collapsible-content" style="display: block;">
+				<div id="import-config-content"
+					class="collapsible-content"
+					style="display: block;">
 					<p class="section-description">Fine-tune settings for optimal performance and data quality.</p>
 
-				<!-- Core Settings -->
-				<div class="config-section">
-					<div class="form-row">
-						<div class="form-group">
-							<label for="region">Data Residency</label>
-							<select id="region"
-								name="region">
-								<option value="US">🇺🇸 United States</option>
-								<option value="EU">🇪🇺 European Union</option>
-								<option value="IN">🇮🇳 India</option>
-							</select>
-							<small>Your data residency region</small>
-						</div>
-						<div class="form-group">
-							<label for="vendor">Vendor Transform</label>
-							<select id="vendor"
-								name="vendor">
-								<option value="">None (Native format)</option>
-								<option value="mixpanel">Mixpanel</option>
-								<option value="amplitude">Amplitude</option>
-								<option value="heap">Heap Analytics</option>
-								<option value="ga4">Google Analytics 4</option>
-								<option value="june">June.so</option>
-								<option value="adobe">Adobe Analytics</option>
-								<option value="pendo">Pendo</option>
-								<option value="mparticle">mParticle</option>
-								<option value="posthog">PostHog</option>
-							</select>
-							<small>Transform from other platforms</small>
+					<!-- Core Settings -->
+					<div class="config-section">
+						<div class="form-row">
+							<div class="form-group">
+								<label for="region">Data Residency</label>
+								<select id="region"
+									name="region">
+									<option value="US">🇺🇸 United States</option>
+									<option value="EU">🇪🇺 European Union</option>
+									<option value="IN">🇮🇳 India</option>
+								</select>
+								<small>Your data residency region</small>
+							</div>
+							<div class="form-group">
+								<label for="vendor">Vendor Transform</label>
+								<select id="vendor"
+									name="vendor">
+									<option value="">None (Native format)</option>
+									<option value="mixpanel">Mixpanel</option>
+									<option value="amplitude">Amplitude</option>
+									<option value="heap">Heap Analytics</option>
+									<option value="ga4">Google Analytics 4</option>
+									<option value="june">June.so</option>
+									<option value="adobe">Adobe Analytics</option>
+									<option value="pendo">Pendo</option>
+									<option value="mparticle">mParticle</option>
+									<option value="posthog">PostHog</option>
+								</select>
+								<small>Transform from other platforms</small>
+							</div>
 						</div>
 					</div>
-				</div>
 
-				<!-- Expand/Collapse All Button -->
-				<div class="section-controls">
-					<button type="button" id="toggle-all-btn" class="btn btn-ghost btn-sm" onclick="toggleAllSections()">
-						<span class="btn-icon">📂</span>
-						<span id="toggle-all-text">Expand All</span>
-					</button>
-				</div>
-
-				<!-- Performance & Processing -->
-				<div class="collapsible-section">
-					<div class="section-header"
-						onclick="toggleSection('performance-section')"
-						title="Configure request batching, compression, HTTP transport, and other performance settings">
-						<span class="section-icon">📈</span>
-						<h3>Performance & Processing</h3>
-						<span class="toggle-icon">▼</span>
+					<!-- Expand/Collapse All Button -->
+					<div class="section-controls">
+						<button type="button"
+							id="toggle-all-btn"
+							class="btn btn-ghost btn-sm"
+							onclick="toggleAllSections()">
+							<span class="btn-icon">📂</span>
+							<span id="toggle-all-text">Expand All</span>
+						</button>
 					</div>
-					<div id="performance-section"
-						class="collapsible-content"
-						style="display: none;">
-						<div class="form-row">
-							<div class="form-group">
-								<label for="workers"
-									title="Higher values import faster but may hit rate limits. Start with 10 and increase if your network can handle more concurrent requests">Concurrency
-									Workers</label>
-								<input type="number"
-									id="workers"
-									name="workers"
-									value="10"
-									min="1"
-									max="50"
-									autocomplete="off">
-								<small>Number of concurrent HTTP requests (default: 10)</small>
+
+					<!-- Performance & Processing -->
+					<div class="collapsible-section">
+						<div class="section-header"
+							onclick="toggleSection('performance-section')"
+							aria-expanded="false"
+							title="Configure request batching, compression, HTTP transport, and other performance settings">
+							<span class="section-icon">📈</span>
+							<h3>Performance</h3><span class="subtext">usually don't touch these</span>
+							<span class="toggle-icon">▼</span>
+						</div>
+						<div id="performance-section"
+							class="collapsible-content"
+							style="display: none;">
+							<div class="form-row">
+								<div class="form-group">
+									<label for="workers"
+										title="Higher values import faster but may hit rate limits. Start with 10 and increase if your network can handle more concurrent requests">Concurrency
+										Workers</label>
+									<input type="number"
+										id="workers"
+										name="workers"
+										value="20"
+										min="1"
+										max="50"
+										autocomplete="off">
+									<small>Number of concurrent HTTP requests (default: 10)</small>
+								</div>
+								<div class="form-group">
+									<label for="recordsPerBatch">Records per Batch</label>
+									<input type="number"
+										id="recordsPerBatch"
+										name="recordsPerBatch"
+										value="2000"
+										min="1"
+										max="5000"
+										autocomplete="off">
+									<small>Records per API request (default: 2000)</small>
+								</div>
 							</div>
-							<div class="form-group">
-								<label for="recordsPerBatch">Records per Batch</label>
-								<input type="number"
-									id="recordsPerBatch"
-									name="recordsPerBatch"
-									value="2000"
-									min="1"
-									max="5000"
-									autocomplete="off">
-								<small>Records per API request (default: 2000)</small>
+
+							<div class="form-row">
+								<div class="form-group">
+									<label for="bytesPerBatch">Bytes per Batch</label>
+									<input type="number"
+										id="bytesPerBatch"
+										name="bytesPerBatch"
+										value="2000000"
+										min="1000"
+										max="2000000"
+										autocomplete="off">
+									<small>Max bytes per API request (default: 2MB)</small>
+								</div>
+								<div class="form-group">
+									<label for="maxRetries">Max Retries</label>
+									<input type="number"
+										id="maxRetries"
+										name="maxRetries"
+										value="10"
+										min="0"
+										max="50"
+										autocomplete="off">
+									<small>Maximum retry attempts on failures (default: 10)</small>
+								</div>
+							</div>
+
+							<div class="form-row">
+								<div class="form-group">
+									<label for="streamFormat">File Format</label>
+									<select id="streamFormat"
+										name="streamFormat">
+										<option value="">Auto-detect from file extension</option>
+										<option value="jsonl">JSONL (recommended)</option>
+										<option value="json">JSON</option>
+										<option value="csv">CSV</option>
+										<option value="parquet">Parquet</option>
+									</select>
+									<small>Format of underlying data stream</small>
+								</div>
+								<div class="form-group">
+									<label for="transport">HTTP Transport</label>
+									<select id="transport"
+										name="transport">
+										<option value="got">Got (default)</option>
+										<option value="undici">Undici (experimental)</option>
+									</select>
+									<small>HTTP client for sending requests</small>
+								</div>
+							</div>
+
+							<div class="form-row">
+								<div class="form-group checkbox-group">
+									<label class="checkbox-label">
+										<input type="checkbox"
+											id="compress"
+											name="compress"
+											checked>
+										Enable Compression
+									</label>
+									<small>Gzip compress requests (events only)</small>
+								</div>
+								<div class="form-group">
+									<label for="compressionLevel">Compression Level</label>
+									<input type="range"
+										id="compressionLevel"
+										name="compressionLevel"
+										min="0"
+										max="9"
+										value="6"
+										autocomplete="off">
+									<small>0 = none, 9 = max compression (default: 6)</small>
+								</div>
 							</div>
 						</div>
+					</div>
 
-						<div class="form-row">
-							<div class="form-group">
-								<label for="bytesPerBatch">Bytes per Batch</label>
-								<input type="number"
-									id="bytesPerBatch"
-									name="bytesPerBatch"
-									value="2000000"
-									min="1000"
-									max="2000000"
-									autocomplete="off">
-								<small>Max bytes per API request (default: 2MB)</small>
+					<!-- Data Processing -->
+					<div class="collapsible-section">
+						<div class="section-header"
+							onclick="toggleSection('data-processing-section')"
+							aria-expanded="false"
+							title="Enable data cleaning, validation, timestamp conversion, and other data transformations">
+							<span class="section-icon">🔄</span>
+							<h3>Processing</h3><span class="subtext">macros + transforms for fixing data</span>
+							<span class="toggle-icon">▼</span>
+						</div>
+						<div id="data-processing-section"
+							class="collapsible-content"
+							style="display: none;">
+							<div class="processing-options">
+								<div class="processing-option">
+									<label class="checkbox-label">
+										<input type="checkbox"
+											id="fixData"
+											name="fixData"
+											checked>
+										Auto-Fix Data Shape & Issues
+									</label>
+									<div class="example">
+										<code>{"name": "John", "age": 30}</code> →
+										<code>{"event": "...", "properties": {"name": "John", "age": 30}}</code>
+										<small>Ensures proper event structure, converts IDs, adds $insert_id</small>
+									</div>
+								</div>
+
+								<div class="processing-option">
+									<label class="checkbox-label">
+										<input type="checkbox"
+											id="fixTime"
+											name="fixTime">
+										Convert Timestamps to Unix
+									</label>
+									<div class="example">
+										<code>{"time": "2025-08-09T15:25:00Z"}</code> →
+										<code>{"time": 1754767500}</code>
+										<small>Converts timestamps to Unix milliseconds</small>
+									</div>
+								</div>
+
+								<div class="processing-option">
+									<label class="checkbox-label">
+										<input type="checkbox"
+											id="strict"
+											name="strict">
+										Strict Validation
+									</label>
+									<div class="example">
+										<code>{"event": ""}</code> → <span class="error-text">❌ Rejected</span>
+										<small>Fail fast on validation errors</small>
+									</div>
+								</div>
+
+								<div class="processing-option">
+									<label class="checkbox-label">
+										<input type="checkbox"
+											id="removeNulls"
+											name="removeNulls">
+										Remove Empty Values
+									</label>
+									<div class="example">
+										<code>{"name": "John", "email": null, "tags": []}</code> →
+										<code>{"name": "John"}</code>
+										<small>Removes null values, empty strings, empty arrays/objects</small>
+									</div>
+								</div>
+
+								<div class="processing-option">
+									<label class="checkbox-label">
+										<input type="checkbox"
+											id="flattenData"
+											name="flattenData">
+										Flatten Nested Properties
+									</label>
+									<div class="example">
+										<code>{"user": {"plan": "pro"}}</code> → <code>{"user.plan": "pro"}</code>
+										<small>Flattens nested objects using dot notation</small>
+									</div>
+								</div>
+
+								<div class="processing-option">
+									<label class="checkbox-label">
+										<input type="checkbox"
+											id="fixJson"
+											name="fixJson">
+										Parse Stringified JSON
+									</label>
+									<div class="example">
+										<code>{"meta": "{\"plan\":\"pro\"}"}</code> →
+										<code>{"meta": {"plan": "pro"}}</code>
+										<small>Detects and parses JSON strings within properties</small>
+									</div>
+								</div>
+
+								<div class="processing-option">
+									<label class="checkbox-label">
+										<input type="checkbox"
+											id="dedupe"
+											name="dedupe">
+										Deduplicate Records
+									</label>
+									<div class="example">
+										<span class="muted-text">Same record × 3</span> → <span class="success-text">✓ 1
+											unique record</span>
+										<small>Uses MurmurHash v3 to detect and skip identical records</small>
+									</div>
+								</div>
 							</div>
-							<div class="form-group">
-								<label for="maxRetries">Max Retries</label>
-								<input type="number"
-									id="maxRetries"
-									name="maxRetries"
-									value="10"
-									min="0"
-									max="50"
-									autocomplete="off">
-								<small>Maximum retry attempts on failures (default: 10)</small>
+
+							<div class="form-row">
+								<div class="form-group">
+									<label for="timeOffset">Time Offset (hours)</label>
+									<input type="number"
+										id="timeOffset"
+										name="timeOffset"
+										value="0"
+										step="0.5"
+										autocomplete="off">
+									<small>Add/subtract hours from timestamps (e.g., -8 for PST to UTC)</small>
+								</div>
+								<div class="form-group">
+									<label for="insertIdTuple">Insert ID Columns</label>
+									<input type="text"
+										id="insertIdTuple"
+										name="insertIdTuple"
+										placeholder="user_id,event"
+										autocomplete="off">
+									<small>Generate $insert_id from these columns (prevents duplicates)</small>
+								</div>
 							</div>
 						</div>
+					</div>
 
-						<div class="form-row">
-							<div class="form-group">
-								<label for="streamFormat">File Format</label>
-								<select id="streamFormat"
-									name="streamFormat">
-									<option value="">Auto-detect from file extension</option>
-									<option value="jsonl">JSONL (recommended)</option>
-									<option value="json">JSON</option>
-									<option value="csv">CSV</option>
-									<option value="parquet">Parquet</option>
-								</select>
-								<small>Format of underlying data stream</small>
+					<!-- Filtering & Lists -->
+					<div class="collapsible-section">
+						<div class="section-header"
+							onclick="toggleSection('filtering-section')"
+							aria-expanded="false"
+							title="Filter events and properties using whitelists, blacklists, and property removal rules">
+							<span class="section-icon">🔍</span>
+							<h3>Filtering</h3><span class="subtext">row-level include and exclude</span>
+							<span class="toggle-icon">▼</span>
+						</div>
+						<div id="filtering-section"
+							class="collapsible-content"
+							style="display: none;">
+							<div class="form-row">
+								<div class="form-group">
+									<label for="eventWhitelist">Event Whitelist</label>
+									<input type="text"
+										id="eventWhitelist"
+										name="eventWhitelist"
+										placeholder="event1,event2"
+										autocomplete="off">
+									<small>Only import these events (comma-separated)</small>
+								</div>
+								<div class="form-group">
+									<label for="eventBlacklist">Event Blacklist</label>
+									<input type="text"
+										id="eventBlacklist"
+										name="eventBlacklist"
+										placeholder="spam_event,test_event"
+										autocomplete="off">
+									<small>Skip these events (comma-separated)</small>
+								</div>
 							</div>
-							<div class="form-group">
-								<label for="transport">HTTP Transport</label>
-								<select id="transport"
-									name="transport">
-									<option value="got">Got (default)</option>
-									<option value="undici">Undici</option>
-								</select>
-								<small>HTTP client for sending requests</small>
+
+							<div class="form-row">
+								<div class="form-group">
+									<label for="propKeyWhitelist">Property Key Whitelist</label>
+									<input type="text"
+										id="propKeyWhitelist"
+										name="propKeyWhitelist"
+										placeholder="user_id,plan"
+										autocomplete="off">
+									<small>Only events with these property keys</small>
+								</div>
+								<div class="form-group">
+									<label for="propKeyBlacklist">Property Key Blacklist</label>
+									<input type="text"
+										id="propKeyBlacklist"
+										name="propKeyBlacklist"
+										placeholder="pii_field,secret"
+										autocomplete="off">
+									<small>Skip events with these property keys</small>
+								</div>
+							</div>
+
+							<div class="form-row">
+								<div class="form-group">
+									<label for="propValWhitelist">Property Value Whitelist</label>
+									<input type="text"
+										id="propValWhitelist"
+										name="propValWhitelist"
+										placeholder="premium,enterprise">
+									<small>Only events with these property values</small>
+								</div>
+								<div class="form-group">
+									<label for="propValBlacklist">Property Value Blacklist</label>
+									<input type="text"
+										id="propValBlacklist"
+										name="propValBlacklist"
+										placeholder="test,internal">
+									<small>Skip events with these property values</small>
+								</div>
+							</div>
+
+							<div class="form-row">
+								<div class="form-group">
+									<label for="scrubProps">Properties to Remove</label>
+									<input type="text"
+										id="scrubProps"
+										name="scrubProps"
+										placeholder="password,ssn,email"
+										autocomplete="off">
+									<small>Remove these properties from all records</small>
+								</div>
+								<div class="form-group">
+									<label for="aliases">Property Aliases (JSON)</label>
+									<input type="text"
+										id="aliases"
+										name="aliases"
+										placeholder='{"old_name":"new_name"}'>
+									<small>Rename properties: {"oldKey":"newKey"}</small>
+								</div>
 							</div>
 						</div>
+					</div>
 
-						<div class="form-row">
-							<div class="form-group checkbox-group">
+					<!-- Time & Date Filters -->
+					<div class="collapsible-section">
+						<div class="section-header"
+							onclick="toggleSection('time-section')"
+							aria-expanded="false"
+							title="Filter data by timestamp ranges for imports and exports">
+							<span class="section-icon">📅</span>
+							<h3>Time & Date</h3><span class="subtext">filter by timestamp ranges</span>
+							<span class="toggle-icon">▼</span>
+						</div>
+						<div id="time-section"
+							class="collapsible-content"
+							style="display: none;">
+							<div class="form-row">
+								<div class="form-group">
+									<label for="epochStart">Start Timestamp (Unix)</label>
+									<input type="number"
+										id="epochStart"
+										name="epochStart"
+										placeholder="1609459200"
+										autocomplete="off">
+									<small>Skip data before this Unix timestamp</small>
+								</div>
+								<div class="form-group">
+									<label for="epochEnd">End Timestamp (Unix)</label>
+									<input type="number"
+										id="epochEnd"
+										name="epochEnd"
+										placeholder="1609459200"
+										autocomplete="off">
+									<small>Skip data after this Unix timestamp</small>
+								</div>
+							</div>
+
+						</div>
+					</div>
+
+
+					<!-- Advanced Expert Settings -->
+					<div class="collapsible-section">
+						<div class="section-header"
+							onclick="toggleSection('expert-section')"
+							aria-expanded="false"
+							title="Advanced options for power users including tags, vendor options, and low-level settings">
+							<span class="section-icon">🔬</span>
+							<h3>Meta</h3><span class="subtext">odds and ends</span>
+							<span class="toggle-icon">▼</span>
+						</div>
+						<div id="expert-section"
+							class="collapsible-content"
+							style="display: none;">
+							<div class="form-row">
+								<div class="form-group">
+									<label for="tags">Global Tags (JSON)</label>
+									<input type="text"
+										id="tags"
+										name="tags"
+										placeholder='{"source":"import","version":"1.0"}'>
+									<small>Tags added to all records: {"key":"value"}</small>
+								</div>
+								<div class="form-group">
+									<label for="vendorOpts">Vendor Options (JSON)</label>
+									<input type="text"
+										id="vendorOpts"
+										name="vendorOpts"
+										placeholder='{"user_id":"uuid"}'>
+									<small>Vendor-specific transform options</small>
+								</div>
+							</div>
+
+
+							<div class="checkbox-grid">
 								<label class="checkbox-label">
 									<input type="checkbox"
-										id="compress"
-										name="compress">
-									Enable Compression
-								</label>
-								<small>Gzip compress requests (events only)</small>
-							</div>
-							<div class="form-group">
-								<label for="compressionLevel">Compression Level</label>
-								<input type="range"
-									id="compressionLevel"
-									name="compressionLevel"
-									min="0"
-									max="9"
-									value="6"
-									autocomplete="off">
-								<small>0 = none, 9 = max compression (default: 6)</small>
-							</div>
-						</div>
-					</div>
-				</div>
-
-				<!-- Data Processing -->
-				<div class="collapsible-section">
-					<div class="section-header"
-						onclick="toggleSection('data-processing-section')"
-						title="Enable data cleaning, validation, timestamp conversion, and other data transformations">
-						<span class="section-icon">🔄</span>
-						<h3>Data Processing</h3>
-						<span class="toggle-icon">▼</span>
-					</div>
-					<div id="data-processing-section"
-						class="collapsible-content"
-						style="display: none;">
-						<div class="processing-options">
-							<div class="processing-option">
-								<label class="checkbox-label">
-									<input type="checkbox"
-										id="fixData"
-										name="fixData"
+										id="forceStream"
+										name="forceStream"
 										checked>
-									Auto-Fix Data Shape & Issues
+									Force Stream Mode
 								</label>
-								<div class="example">
-									<code>{"name": "John", "age": 30}</code> →
-									<code>{"event": "...", "properties": {"name": "John", "age": 30}}</code>
-									<small>Ensures proper event structure, converts IDs, adds $insert_id</small>
-								</div>
-							</div>
-
-							<div class="processing-option">
 								<label class="checkbox-label">
 									<input type="checkbox"
-										id="fixTime"
-										name="fixTime">
-									Convert Timestamps to Unix
+										id="abridged"
+										name="abridged">
+									Abridged Responses
 								</label>
-								<div class="example">
-									<code>{"time": "2025-08-09T15:25:00Z"}</code> → <code>{"time": 1754767500}</code>
-									<small>Converts timestamps to Unix milliseconds</small>
-								</div>
-							</div>
-
-							<div class="processing-option">
 								<label class="checkbox-label">
 									<input type="checkbox"
-										id="strict"
-										name="strict">
-									Strict Validation
+										id="http2"
+										name="http2">
+									Use HTTP/2
 								</label>
-								<div class="example">
-									<code>{"event": ""}</code> → <span class="error-text">❌ Rejected</span>
-									<small>Fail fast on validation errors</small>
-								</div>
-							</div>
-
-							<div class="processing-option">
 								<label class="checkbox-label">
 									<input type="checkbox"
-										id="removeNulls"
-										name="removeNulls">
-									Remove Empty Values
+										id="keepBadRecords"
+										name="keepBadRecords">
+									Keep Bad Records
 								</label>
-								<div class="example">
-									<code>{"name": "John", "email": null, "tags": []}</code> →
-									<code>{"name": "John"}</code>
-									<small>Removes null values, empty strings, empty arrays/objects</small>
-								</div>
-							</div>
-
-							<div class="processing-option">
-								<label class="checkbox-label">
-									<input type="checkbox"
-										id="flattenData"
-										name="flattenData">
-									Flatten Nested Properties
-								</label>
-								<div class="example">
-									<code>{"user": {"plan": "pro"}}</code> → <code>{"user.plan": "pro"}</code>
-									<small>Flattens nested objects using dot notation</small>
-								</div>
-							</div>
-
-							<div class="processing-option">
-								<label class="checkbox-label">
-									<input type="checkbox"
-										id="fixJson"
-										name="fixJson">
-									Parse Stringified JSON
-								</label>
-								<div class="example">
-									<code>{"meta": "{\"plan\":\"pro\"}"}</code> → <code>{"meta": {"plan": "pro"}}</code>
-									<small>Detects and parses JSON strings within properties</small>
-								</div>
-							</div>
-
-							<div class="processing-option">
-								<label class="checkbox-label">
-									<input type="checkbox"
-										id="dedupe"
-										name="dedupe">
-									Deduplicate Records
-								</label>
-								<div class="example">
-									<span class="muted-text">Same record × 3</span> → <span class="success-text">✓ 1
-										unique record</span>
-									<small>Uses MurmurHash v3 to detect and skip identical records</small>
-								</div>
-							</div>
-						</div>
-
-						<div class="form-row">
-							<div class="form-group">
-								<label for="timeOffset">Time Offset (hours)</label>
-								<input type="number"
-									id="timeOffset"
-									name="timeOffset"
-									value="0"
-									step="0.5"
-									autocomplete="off">
-								<small>Add/subtract hours from timestamps (e.g., -8 for PST to UTC)</small>
-							</div>
-							<div class="form-group">
-								<label for="insertIdTuple">Insert ID Columns</label>
-								<input type="text"
-									id="insertIdTuple"
-									name="insertIdTuple"
-									placeholder="user_id,event"
-									autocomplete="off">
-								<small>Generate $insert_id from these columns (prevents duplicates)</small>
 							</div>
 						</div>
 					</div>
-				</div>
-
-				<!-- Filtering & Lists -->
-				<div class="collapsible-section">
-					<div class="section-header"
-						onclick="toggleSection('filtering-section')"
-						title="Filter events and properties using whitelists, blacklists, and property removal rules">
-						<span class="section-icon">🔍</span>
-						<h3>Filtering & Lists</h3>
-						<span class="toggle-icon">▼</span>
-					</div>
-					<div id="filtering-section"
-						class="collapsible-content"
-						style="display: none;">
-						<div class="form-row">
-							<div class="form-group">
-								<label for="eventWhitelist">Event Whitelist</label>
-								<input type="text"
-									id="eventWhitelist"
-									name="eventWhitelist"
-									placeholder="event1,event2"
-									autocomplete="off">
-								<small>Only import these events (comma-separated)</small>
-							</div>
-							<div class="form-group">
-								<label for="eventBlacklist">Event Blacklist</label>
-								<input type="text"
-									id="eventBlacklist"
-									name="eventBlacklist"
-									placeholder="spam_event,test_event"
-									autocomplete="off">
-								<small>Skip these events (comma-separated)</small>
-							</div>
-						</div>
-
-						<div class="form-row">
-							<div class="form-group">
-								<label for="propKeyWhitelist">Property Key Whitelist</label>
-								<input type="text"
-									id="propKeyWhitelist"
-									name="propKeyWhitelist"
-									placeholder="user_id,plan"
-									autocomplete="off">
-								<small>Only events with these property keys</small>
-							</div>
-							<div class="form-group">
-								<label for="propKeyBlacklist">Property Key Blacklist</label>
-								<input type="text"
-									id="propKeyBlacklist"
-									name="propKeyBlacklist"
-									placeholder="pii_field,secret"
-									autocomplete="off">
-								<small>Skip events with these property keys</small>
-							</div>
-						</div>
-
-						<div class="form-row">
-							<div class="form-group">
-								<label for="propValWhitelist">Property Value Whitelist</label>
-								<input type="text"
-									id="propValWhitelist"
-									name="propValWhitelist"
-									placeholder="premium,enterprise">
-								<small>Only events with these property values</small>
-							</div>
-							<div class="form-group">
-								<label for="propValBlacklist">Property Value Blacklist</label>
-								<input type="text"
-									id="propValBlacklist"
-									name="propValBlacklist"
-									placeholder="test,internal">
-								<small>Skip events with these property values</small>
-							</div>
-						</div>
-
-						<div class="form-row">
-							<div class="form-group">
-								<label for="scrubProps">Properties to Remove</label>
-								<input type="text"
-									id="scrubProps"
-									name="scrubProps"
-									placeholder="password,ssn,email"
-									autocomplete="off">
-								<small>Remove these properties from all records</small>
-							</div>
-							<div class="form-group">
-								<label for="aliases">Property Aliases (JSON)</label>
-								<input type="text"
-									id="aliases"
-									name="aliases"
-									placeholder='{"old_name":"new_name"}'>
-								<small>Rename properties: {"oldKey":"newKey"}</small>
-							</div>
-						</div>
-					</div>
-				</div>
-
-				<!-- Time & Date Filters -->
-				<div class="collapsible-section">
-					<div class="section-header"
-						onclick="toggleSection('time-section')"
-						title="Filter data by timestamp ranges for imports and exports">
-						<span class="section-icon">📅</span>
-						<h3>Time & Date Filters</h3>
-						<span class="toggle-icon">▼</span>
-					</div>
-					<div id="time-section"
-						class="collapsible-content"
-						style="display: none;">
-						<div class="form-row">
-							<div class="form-group">
-								<label for="epochStart">Start Timestamp (Unix)</label>
-								<input type="number"
-									id="epochStart"
-									name="epochStart"
-									placeholder="1609459200"
-									autocomplete="off">
-								<small>Skip data before this Unix timestamp</small>
-							</div>
-							<div class="form-group">
-								<label for="epochEnd">End Timestamp (Unix)</label>
-								<input type="number"
-									id="epochEnd"
-									name="epochEnd"
-									placeholder="1609459200"
-									autocomplete="off">
-								<small>Skip data after this Unix timestamp</small>
-							</div>
-						</div>
-
-					</div>
-				</div>
-
-				<!-- Output & File Options -->
-				<div class="collapsible-section">
-					<div class="section-header"
-						onclick="toggleSection('output-section')"
-						title="Control logging, file output, progress display, and result storage options">
-						<span class="section-icon">💾</span>
-						<h3>Output & File Options</h3>
-						<span class="toggle-icon">▼</span>
-					</div>
-					<div id="output-section"
-						class="collapsible-content"
-						style="display: none;">
-						<div class="checkbox-grid">
-							<label class="checkbox-label">
-								<input type="checkbox"
-									id="logs"
-									name="logs">
-								Save Import Logs
-							</label>
-							<label class="checkbox-label">
-								<input type="checkbox"
-									id="verbose"
-									name="verbose">
-								Verbose Console Output
-							</label>
-							<label class="checkbox-label">
-								<input type="checkbox"
-									id="showProgress"
-									name="showProgress" checked>
-								Show Progress Bar
-							</label>
-							<label class="checkbox-label">
-								<input type="checkbox"
-									id="writeToFile"
-									name="writeToFile">
-								Write to Local File
-							</label>
-						</div>
-
-						<div class="form-row">
-							<div class="form-group">
-								<label for="where">Output Directory</label>
-								<input type="text"
-									id="where"
-									name="where"
-									placeholder="./logs">
-								<small>Directory for logs and exported files</small>
-							</div>
-							<div class="form-group">
-								<label for="outputFilePath">Output File Path</label>
-								<input type="text"
-									id="outputFilePath"
-									name="outputFilePath"
-									placeholder="./output.json">
-								<small>Path for transformed data output</small>
-							</div>
-						</div>
-					</div>
-				</div>
-
-				<!-- Advanced Expert Settings -->
-				<div class="collapsible-section">
-					<div class="section-header"
-						onclick="toggleSection('expert-section')"
-						title="Advanced options for power users including tags, vendor options, and low-level settings">
-						<span class="section-icon">🔬</span>
-						<h3>Expert Settings</h3>
-						<span class="toggle-icon">▼</span>
-					</div>
-					<div id="expert-section"
-						class="collapsible-content"
-						style="display: none;">
-						<div class="form-row">
-							<div class="form-group">
-								<label for="tags">Global Tags (JSON)</label>
-								<input type="text"
-									id="tags"
-									name="tags"
-									placeholder='{"source":"import","version":"1.0"}'>
-								<small>Tags added to all records: {"key":"value"}</small>
-							</div>
-							<div class="form-group">
-								<label for="vendorOpts">Vendor Options (JSON)</label>
-								<input type="text"
-									id="vendorOpts"
-									name="vendorOpts"
-									placeholder='{"user_id":"uuid"}'>
-								<small>Vendor-specific transform options</small>
-							</div>
-						</div>
-
-
-						<div class="checkbox-grid">
-							<label class="checkbox-label">
-								<input type="checkbox"
-									id="forceStream"
-									name="forceStream"
-									checked>
-								Force Stream Mode
-							</label>
-							<label class="checkbox-label">
-								<input type="checkbox"
-									id="abridged"
-									name="abridged">
-								Abridged Responses
-							</label>
-							<label class="checkbox-label">
-								<input type="checkbox"
-									id="http2"
-									name="http2">
-								Use HTTP/2
-							</label>
-							<label class="checkbox-label">
-								<input type="checkbox"
-									id="keepBadRecords"
-									name="keepBadRecords">
-								Keep Bad Records
-							</label>
-						</div>
-					</div>
-				</div>
 				</div>
 			</section>
 
 			<!-- Transform Section -->
 			<section class="card">
-				<div class="section-header" onclick="toggleSection('transform-content')">
+				<div class="section-header"
+					onclick="toggleSection('transform-content')"
+					aria-expanded="false">
 					<h2 class="section-title">🔧 Data Transform (Optional)</h2>
 					<span class="toggle-icon">▼</span>
 				</div>
-				<div id="transform-content" class="collapsible-content" style="display: none;">
-					<p class="section-description">Write custom JavaScript to transform data before importing. Use preview to test changes.</p>
+				<div id="transform-content"
+					class="collapsible-content"
+					style="display: none;">
+					<p class="section-description">Write custom JavaScript to transform data before importing. Use
+						preview to test changes.</p>
 
-				<div class="transform-editor">
-					<div id="monaco-editor"
-						class="code-editor"></div>
-					<div class="editor-help">
-						<p><strong>Available parameters:</strong></p>
-						<ul>
-							<li><code>row</code> - The current record object to transform</li>
-						</ul>
-						<p><strong>Examples:</strong> Add properties, rename fields, skip records (return {}), or split records (return array)</p>
+					<div class="transform-editor">
+						<div id="monaco-editor"
+							class="code-editor"></div>
+						<div class="editor-help">
+							<p><strong>Available parameters:</strong></p>
+							<ul>
+								<li><code>row</code> - The current record object to transform</li>
+							</ul>
+							<p><strong>Examples:</strong> Add properties, rename fields, skip records (return {}), or
+								split records (return array)</p>
+						</div>
+					</div>
+
+					<div class="transform-actions">
+						<button type="button"
+							id="clear-transform"
+							class="btn btn-ghost">Reset to Default</button>
+					</div>
+
+					<div id="preview-results"
+						class="preview-section"
+						style="display: none;">
+						<h3>Transform Preview</h3>
+						<div id="preview-content"
+							class="preview-content"></div>
 					</div>
 				</div>
-
-				<div class="transform-actions">
-					<button type="button"
-						id="clear-transform"
-						class="btn btn-ghost">Reset to Default</button>
-				</div>
-
-				<div id="preview-results"
-					class="preview-section"
-					style="display: none;">
-					<h3>Transform Preview</h3>
-					<div id="preview-content"
-						class="preview-content"></div>
-				</div>
-			</div>
-		</section>
+			</section>
 
 			<!-- CLI Command Preview -->
 			<section class="card">
@@ -915,7 +920,8 @@
 							Copy
 						</button>
 					</div>
-					<pre id="cli-command" class="cli-command">Select options above to generate CLI command...</pre>
+					<pre id="cli-command"
+						class="cli-command">Select options above to generate CLI command...</pre>
 				</div>
 			</section>
 
@@ -942,7 +948,8 @@
 				<div class="loading-content">
 					<div class="loading-spinner"></div>
 					<h3 id="loading-title">Processing...</h3>
-					<p id="loading-message">Importing your data to Mixpanel. Check your terminal for detailed progress updates.</p>
+					<p id="loading-message">Importing your data to Mixpanel. Check your terminal for detailed progress
+						updates.</p>
 					<div class="loading-details"></div>
 				</div>
 			</div>
@@ -952,7 +959,16 @@
 				class="results-section"
 				style="display: none;">
 				<div class="results-content">
-					<h3 id="results-title">Import Complete!</h3>
+					<div class="results-header">
+						<button type="button"
+							id="download-results-btn"
+							class="btn btn-ghost btn-sm"
+							title="Download results as JSON">
+							<span class="btn-icon">💾</span>
+							Download JSON
+						</button>
+						<h3 id="results-title">Import Complete!</h3>
+					</div>
 					<div id="results-data"
 						class="results-data"></div>
 				</div>
@@ -961,6 +977,7 @@
 	</div>
 
 	<script src="import.js"></script>
+	<script src="analytics.js"></script>
 </body>
 
 </html>

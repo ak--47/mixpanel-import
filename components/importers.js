@@ -197,7 +197,7 @@ async function flushToMixpanel(batch, job) {
 		}
 
 		job.store(res, success);
-		return res;
+		return [res, batch];
 	}
 
 	catch (e) {
@@ -411,7 +411,7 @@ async function flushToMixpanelWithUndici(batch, job) {
 		}
 
 		job.store(res, success);
-		return res;
+		return [res, batch];
 	}
 
 	catch (e) {

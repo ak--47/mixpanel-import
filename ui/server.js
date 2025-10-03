@@ -7,8 +7,10 @@ const { createServer } = require("http");
 const mixpanelImport = require("../index.js");
 const pino = require("pino");
 const { createGcpLoggingPinoConfig } = require("@google-cloud/pino-logging-gcp-config");
+const cookieParser = require('cookie-parser');
+
 let { NODE_ENV = "" } = process.env;
-if (!NODE_ENV) NODE_ENV = "local"; 
+if (!NODE_ENV) NODE_ENV = "local";
 if (!NODE_ENV) throw new Error("NODE_ENV not set");
 
 // Configure Pino logger with environment-appropriate configuration
@@ -280,7 +282,7 @@ app.use(express.urlencoded({ extended: true, limit: "100mb" }));
 // Helper function to safely serve files
 function serveFile(res, filename) {
 	const filePath = path.join(__dirname, "public", filename);
-	
+
 	try {
 		if (fs.existsSync(filePath)) {
 			const content = fs.readFileSync(filePath, 'utf8');
@@ -296,6 +298,30 @@ function serveFile(res, filename) {
 
 // Static files middleware - this serves index.html at / automatically
 app.use(express.static(path.join(__dirname, "public")));
+app.use(cookieParser());
+app.use((req, res, next) => {
+	//for idmgmt: https://cloud.google.com/iap/docs/identity-howto
+	const rawUser = req.headers['x-goog-authenticated-user-email'];
+	if (rawUser) {
+		let user;
+		try {
+			// URL decode first, then extract email from accounts.google.com:user@domain.com format
+			const decodedUser = decodeURIComponent(rawUser);
+			user = decodedUser.includes(':') ? decodedUser.split(':').pop() : decodedUser;
+		} catch (error) {
+			user = 'anonymous';
+		}
+		res.cookie('user', user, {
+			maxAge: 900000,
+			httpOnly: false
+			//sameSite: 'none'
+		});
+	}
+	next();
+});
+
+
+
 
 // Explicit routes for import and export (since static middleware doesn't handle these paths)
 app.get("/import", (req, res) => {
@@ -907,7 +933,7 @@ app.post("/export", async (req, res) => {
 			writeToFile: exportData.writeToFile !== false, // Default to true for exports that create files
 			where: jobTmpDir, // Save files to job-specific temp directory (local default)
 			outputFilePath: exportData.outputFilePath,
-			
+
 			// Cloud destination options
 			gcpProjectId: exportData.gcpProjectId,
 			gcsCredentials: exportData.gcsCredentials,
@@ -926,7 +952,7 @@ app.post("/export", async (req, res) => {
 					gcpProjectId: opts.gcpProjectId,
 					gcsCredentials: opts.gcsCredentials
 				});
-				
+
 				// Set GCS path as export destination
 				opts.where = exportData.gcsPath;
 				logger.info({ jobId, gcsPath: exportData.gcsPath }, "Validated GCS write access for export");
@@ -946,7 +972,7 @@ app.post("/export", async (req, res) => {
 					s3Key: opts.s3Key,
 					s3Secret: opts.s3Secret
 				});
-				
+
 				// Set S3 path as export destination
 				opts.where = exportData.s3Path;
 				logger.info({ jobId, s3Path: exportData.s3Path }, "Validated S3 write access for export");
@@ -1449,8 +1475,8 @@ _  _ _ _  _ ___  ____ _  _ ____ _       _ _  _ ___  ____ ____ ___
 				if (NODE_ENV !== "production") {
 					console.log(hero);
 					console.log(banner);
-					console.log(`\n🚀 UI running at http://localhost:${serverPort}`);
-					console.log(`📡 WebSocket server alive\n\n`);
+					console.log(`\n🚀 UI running at http://localhost:${serverPort}\n\n`);
+					// console.log(`\t-webSocket server alive\n\n`);
 				}
 				logger.info({ port: serverPort }, "Mixpanel Import UI server started");
 				resolve(server);

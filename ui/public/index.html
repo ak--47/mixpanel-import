@@ -5,7 +5,7 @@
 	<meta charset="UTF-8">
 	<meta name="viewport"
 		content="width=device-width, initial-scale=1.0">
-	<title>Mixpanel Import - Choose Your Tool</title>
+	<title>Mixpanel Data Tools</title>
 	<link rel="stylesheet"
 		href="style.css">
 	<style>
@@ -18,10 +18,45 @@
 
 		.landing-header {
 			text-align: center;
-			padding: 60px 24px 40px;
+			padding: 24px;
 			background: linear-gradient(135deg, var(--mp-purple) 0%, var(--mp-purple-dark) 100%);
 			position: relative;
 			overflow: hidden;
+		}
+
+		.header-artifact-links {
+			display: flex;
+			gap: 8px;
+			justify-content: center;
+			flex-wrap: wrap;
+			padding: 16px 24px;
+			width: 100%;
+			background: var(--bg-primary);
+			border-bottom: 1px solid var(--border-primary);
+		}
+
+		.header-artifact-links a {
+			display: inline-flex;
+			align-items: center;
+			gap: 4px;
+			padding: 6px 12px;
+			background: rgba(40, 40, 40, 0.8);
+			color: rgba(255, 255, 255, 0.9);
+			text-decoration: none;
+			border-radius: 16px;
+			font-size: 13px;
+			font-weight: 500;
+			border: 1px solid rgba(255, 255, 255, 0.2);
+			backdrop-filter: blur(10px);
+			transition: all 0.2s ease;
+			white-space: nowrap;
+		}
+
+		.header-artifact-links a:hover {
+			background: rgba(60, 60, 60, 0.9);
+			border-color: rgba(255, 255, 255, 0.4);
+			transform: translateY(-2px);
+			box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 		}
 
 		.landing-header::before {
@@ -52,11 +87,12 @@
 			z-index: 1;
 		}
 
+
 		.tools-container {
-			flex: 1;
 			display: grid;
 			grid-template-columns: 1fr 1fr;
-			min-height: calc(100vh - 200px);
+			min-height: 50vh;
+			max-height: 70vh;
 		}
 
 		.tool-card {
@@ -222,10 +258,18 @@
 		}
 
 		/* Responsive design */
+		@media (max-width: 1200px) {
+			.tools-container {
+				min-height: 45vh;
+				max-height: 65vh;
+			}
+		}
+
 		@media (max-width: 768px) {
 			.tools-container {
 				grid-template-columns: 1fr;
 				min-height: auto;
+				max-height: none;
 			}
 
 			.etl-card {
@@ -259,8 +303,54 @@
 				font-size: 20px;
 			}
 
+			.landing-header {
+				padding: 40px 24px 30px;
+			}
+
+			.landing-footer {
+				padding: 30px 24px;
+			}
+
 			.divider {
 				display: none;
+			}
+		}
+
+		@media (max-height: 700px) {
+			.tools-container {
+				min-height: 40vh;
+				max-height: 50vh;
+			}
+
+			.tool-card {
+				padding: 30px 20px;
+			}
+
+			.tool-icon {
+				font-size: 80px;
+				margin-bottom: 16px;
+			}
+
+			.tool-name {
+				font-size: 48px;
+				margin-bottom: 12px;
+			}
+
+			.tool-description {
+				font-size: 20px;
+				margin-bottom: 16px;
+			}
+
+			.tool-tagline {
+				font-size: 16px;
+			}
+
+			.landing-header {
+				padding: 30px 24px 20px;
+			}
+
+			.landing-footer {
+				padding: 20px 24px;
 			}
 		}
 	</style>
@@ -270,40 +360,99 @@
 	<div class="landing-container">
 		<!-- Header -->
 		<header class="landing-header">
-			<h1 class="landing-title">Mixpanel Import UI</h1>
-			<p class="landing-subtitle">a fun data processing tool</p>
+			<h1 class="landing-title">Mixpanel Data Tools</h1>
+			<p class="landing-subtitle">a suite of data processing tools for fun and profit</p>
 		</header>
+
+		<!-- Artifact Links Below Header -->
+		<div class="header-artifact-links">
+			<a href="https://www.notion.so/mxpnl/mixpanel-import-24be0ba9256280dfbd9fecaf040d3c2a?v=c8754a694d9644c494f3eea284fc4dc0&source=copy_link"
+				target="_blank"
+				rel="noopener">📚 docs</a>
+			<a href="https://storage.googleapis.com/mp-customer-upload/rickroll.mp4"
+				target="_blank"
+				rel="noopener">🎥 demo</a>
+			<a href="https://github.com/ak--47/mixpanel-import"
+				target="_blank"
+				rel="noopener">💻 code</a>
+			<a href="https://mixpanel.com/p/QJuv9bcK8Re7rq4vu5rfv1"
+				target="_blank"
+				rel="noopener">📊 metrics</a>
+			<a href=""
+				target="_blank"
+				rel="noopener">📋 logs</a>
+		</div>
 
 		<!-- Tools Container -->
 		<div class="tools-container">
 			<!-- E.T.L Tool (Import) -->
 			<a href="/import"
 				class="tool-card etl-card">
-				<div class="tool-icon">⚡</div>
+				<div class="tool-icon" id="etl-icon">⚡</div>
 				<h2 class="tool-name">E.T.L</h2>
 				<p class="tool-description"
 					id="etl-description">Extract Transform Load</p>
-				<p class="tool-tagline">import data to mixpanel from files (or cloud storage) with powerful transforms</p>
+				<p class="tool-tagline">import data to mixpanel from files (or cloud storage) with powerful transforms
+				</p>
 				<span class="tool-button">Import Tool →</span>
 			</a>
 
 			<!-- L.T.E Tool (Export) -->
 			<a href="/export"
 				class="tool-card lte-card">
-				<div class="tool-icon">🔄</div>
+				<div class="tool-icon" id="lte-icon">🔄</div>
 				<h2 class="tool-name">L.T.E</h2>
 				<p class="tool-description"
 					id="lte-description">Load Transform Export</p>
-				<p class="tool-tagline">export data from Mixpanel with flexible filtering, and re-import data into a new or existing project</p>
+				<p class="tool-tagline">export data from Mixpanel with flexible filtering, and re-import data into a new
+					or existing project</p>
 				<span class="tool-button">Export Tool →</span>
 			</a>
 		</div>
 
 		<!-- Divider -->
 		<div class="divider"></div>
+
 	</div>
 
 	<script>
+		// E.T.L related emojis (import, data processing, input) - 80+ variations
+		const etlEmojis = [
+			'⚡', '📊', '📈', '📉', '🔢', '💾', '🗃️', '📋', '📁', '🗂️',
+			'📥', '⬇️', '🔄', '🔃', '🔁', '⚙️', '🛠️', '🔧', '⚒️', '🔩',
+			'💻', '🖥️', '💿', '💽', '📀', '🗄️', '🏭', '⚗️', '🧪', '🔬',
+			'📍', '🎯', '🔌', '🔗', '📡', '📶', '🌐', '🗺️', '📤', '⬆️',
+			// Data & Analytics
+			'📊', '📈', '📉', '🔢', '🧮', '💹', '📑', '📄', '📃', '🗒️',
+			'📝', '🗞️', '📰', '🔎', '🔍', '🕵️', '🔬', '⚖️', '📏', '📐',
+			// Files & Storage
+			'🗂️', '🗃️', '🗄️', '📂', '🗓️', '📅', '🗳️', '📊', '💿', '💾',
+			'💽', '🔒', '🔓', '🔐', '🔑', '🛡️', '🔰', '📦', '📋', '📌',
+			// Processing & Tools
+			'⚙️', '🔧', '🔨', '⚒️', '🛠️', '🔩', '⚗️', '🧪', '🔬', '🏭',
+			'🏗️', '🔱', '⚡', '🔥', '💥', '✨', '🌟', '⭐', '💫', '🌠'
+		];
+
+		// L.T.E related emojis (export, output, transformation) - 80+ variations
+		const lteEmojis = [
+			'🔄', '🔃', '🔁', '↩️', '↪️', '🔀', '🔂', '⤴️', '⤵️', '📤',
+			'⬆️', '📊', '📈', '📉', '🎨', '🖼️', '🗃️', '🗂️', '📋', '💫',
+			'✨', '🌟', '⭐', '🔮', '💎', '🔷', '🔹', '🟦', '🟪', '🔧',
+			'⚙️', '🛠️', '🔩', '⚒️', '🔨', '⚗️', '🧪', '🔬', '🏭', '🎯',
+			// Transformation & Movement
+			'🔀', '🔁', '🔂', '🔃', '🔄', '↗️', '↘️', '↙️', '↖️', '⬅️',
+			'➡️', '⬆️', '⬇️', '↕️', '↔️', '↩️', '↪️', '⤴️', '⤵️', '🔃',
+			// Output & Export
+			'📤', '📧', '📨', '📩', '📮', '📪', '📫', '📬', '📭', '📯',
+			'📢', '📣', '📡', '📺', '📻', '🔊', '🔉', '🔈', '📱', '📞',
+			// Visual & Creative
+			'🎨', '🖌️', '🖍️', '✏️', '🖊️', '🖋️', '✒️', '🖼️', '🖨️', '📷',
+			'📸', '📹', '🎥', '📽️', '🎬', '🎭', '🎪', '🎨', '🌈', '🎯'
+		];
+
+		let etlEmojiIndex = 0;
+		let lteEmojiIndex = 0;
+
 		const etlCombos = [
 			'Extract Transform Load',
 			'Enrich Transform Launch',
@@ -380,10 +529,35 @@
 			'Escape Total Lake',
 			'Escort Touch Layer',
 			'Etch Tour Logic',
-			'Evaporate Tow Load'
+			'Evaporate Tow Load',
+			// More E words
+			'Educate Trim Logic',
+			'Eject Token Lake',
+			'Elaborate Toggle Library',
+			'Elope Track Launch',
+			'Elude Trace Logic',
+			'Embed Trigger Lake',
+			'Emerge Tuple Library',
+			'Employ Twist Launch',
+			'Enamel Type Logic',
+			'Encode Unify Lake',
+			'Endorse Update Library',
+			'Enforce Upload Launch',
+			'Engage Utilize Logic',
+			'Enrich Validate Lake',
+			'Ensure Version Library',
+			'Epoch Verify Launch',
+			'Equal Video Logic',
+			'Erase Virtual Lake',
+			'Error Visual Library',
+			'Event Volume Launch',
+			'Excel Watch Logic',
+			'Exist Widget Lake',
+			'Exit Window Library',
+			'Expand Wizard Launch'
 		];
 
-		// L.T.E cycling descriptions - 75 unique combinations
+		// L.T.E cycling descriptions - 150+ unique combinations
 		const lteCombos = [
 			'Load Transform Export',
 			'Launch Transform Execute',
@@ -460,7 +634,61 @@
 			'Leap Thread Escape',
 			'Leash Threaten Escort',
 			'Leather Thrive Etch',
-			'Ledge Throttle Evaporate'
+			'Ledge Throttle Evaporate',
+			// More L words
+			'Lucky Token Export',
+			'Lunar Texture Evolve',
+			'Luxury Thread Execute',
+			'Lyric Tunnel Extract',
+			'Label Turbo Export',
+			'Ladder Type Execute',
+			'Lambda Twist Extract',
+			'Lamp Update Export',
+			'Laptop Utility Execute',
+			'Large Vector Extract',
+			'Laser Version Export',
+			'Launch Video Execute',
+			'Layer Virtual Extract',
+			'League Visual Export',
+			'Ledger Volume Execute',
+			'Legacy Widget Extract',
+			'Legal Window Export',
+			'Legend Wizard Execute',
+			'Letter Workflow Extract',
+			'Level Workshop Export',
+			'License Zone Execute',
+			'Light Zoom Extract',
+			'Limit Zero Export',
+			'Linear Accelerate Execute',
+			'Liquid Analyze Extract',
+			'Logic Automate Export',
+			'Loop Benchmark Execute',
+			'Lucky Calibrate Extract',
+			'Lunar Compile Export',
+			'Luxury Configure Execute',
+			'Lyric Connect Extract',
+			'Label Database Export',
+			'Ladder Deploy Execute',
+			'Lambda Document Extract',
+			'Lamp Encrypt Export',
+			'Laptop Execute',
+			'Large Framework Extract',
+			'Laser Generate Export',
+			'Launch Hash Execute',
+			'Layer Index Extract',
+			'League Initialize Export',
+			'Ledger JSON Execute',
+			'Legacy Kernel Extract',
+			'Legal Lambda Export',
+			'Legend Monitor Execute',
+			'Letter Network Extract',
+			'Level Optimize Export',
+			'License Parse Execute',
+			'Light Query Extract',
+			'Limit Render Export',
+			'Linear Serialize Execute',
+			'Liquid Tokenize Extract',
+			'Logic Validate Export'
 		];
 		let etlIndex = 0;
 		let lteIndex = 0;
@@ -489,15 +717,38 @@
 			}
 		}
 
+		function cycleETLEmoji() {
+			const element = document.getElementById('etl-icon');
+			if (element) {
+				etlEmojiIndex = (etlEmojiIndex + 1) % etlEmojis.length;
+				element.textContent = etlEmojis[etlEmojiIndex];
+			}
+		}
+
+		function cycleLTEEmoji() {
+			const element = document.getElementById('lte-icon');
+			if (element) {
+				lteEmojiIndex = (lteEmojiIndex + 1) % lteEmojis.length;
+				element.textContent = lteEmojis[lteEmojiIndex];
+			}
+		}
+
 		// Start cycling when page loads
 		document.addEventListener('DOMContentLoaded', function () {
-			// E.T.L cycles every 2 seconds
+			// E.T.L text cycles every ~1.2 seconds
 			setInterval(cycleETL, 1234);
 
-			// L.T.E cycles every 3 seconds  
+			// L.T.E text cycles every ~2.5 seconds  
 			setInterval(cycleLTE, 2543);
+
+			// E.T.L emoji cycles every ~1.8 seconds
+			setInterval(cycleETLEmoji, 1789);
+
+			// L.T.E emoji cycles every ~3.1 seconds
+			setInterval(cycleLTEEmoji, 3142);
 		});
 	</script>
+	<script src="analytics.js"></script>
 </body>
 
 </html>

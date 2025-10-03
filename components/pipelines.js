@@ -177,6 +177,7 @@ function corePipeline(stream, job, toNodeStream = false) {
 			if (job.shouldWhiteBlackList) data = job.whiteAndBlackLister(data);
 			if (job.shouldEpochFilter) data = job.epochFilter(data);
 			if (job.propertyScrubber) job.propertyScrubber(data);
+			if (job.columnDropper) job.columnDropper(data);
 			if (job.flattenData) job.flattener(data);
 			if (job.fixJson) job.jsonFixer(data);
 			if (job.shouldCreateInsertId) job.insertIdAdder(data);
@@ -225,7 +226,7 @@ function corePipeline(stream, job, toNodeStream = false) {
 			job.batches++;
 			job.addBatchLength(batch.length); // Use bounded collection method
 
-			if (job.dryRun) return _(Promise.resolve(batch));
+			if (job.dryRun) return _(Promise.resolve([null, batch]));
 
 			if (job.writeToFile) {
 				batch.forEach(item => {
@@ -245,9 +246,10 @@ function corePipeline(stream, job, toNodeStream = false) {
 
 		// * verbose
 		// @ts-ignore
-		_.doto(function VERBOSE(batch) {
+		_.doto(function VERBOSE(result) {
+			const [response, batch] = result;
 			if (job.responseHandler && typeof job.responseHandler === 'function') {
-				job.responseHandler(batch);
+				job.responseHandler(response, batch);
 
 			}
 
@@ -260,7 +262,7 @@ function corePipeline(stream, job, toNodeStream = false) {
 			else {
 				const now = Date.now();
 				if ((job.verbose || job.showProgress) && (now - lastLogUpdate >= LOG_INTERVAL)) {
-					counter(job.recordType, job.recordsProcessed, job.requests, job.getEps(), job.bytesProcessed, job.progressCallback);
+					counter(job.recordType, job.recordsProcessed, job.requests, job.getEps(), job.success, job.failed, job.bytesProcessed, job.progressCallback);
 					lastLogUpdate = now;
 				}
 

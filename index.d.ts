@@ -552,7 +552,7 @@ declare namespace main {
 	 * maximum number of records to process before stopping the stream early; useful for testing and dry runs
 	 */
 	maxRecords?: number;
-	/**
+	/**`
 	 * - cache for byte calculations to improve performance
 	 */
 	bytesCache?: WeakMap<any, number>;

@@ -8,6 +8,7 @@ const validOperations = ["$set", "$set_once", "$add", "$union", "$append", "$rem
 // ? https://docs.mixpanel.com/docs/data-structure/user-profiles#reserved-profile-properties
 const specialProps = ["name", "first_name", "last_name", "email", "phone", "avatar", "created", "insert_id", "city", "region", "lib_version", "os", "os_version", "browser", "browser_version", "app_build_number", "app_version_string", "device", "screen_height", "screen_width", "screen_dpi", "current_url", "initial_referrer", "initial_referring_domain", "referrer", "referring_domain", "search_engine", "manufacturer", "brand", "model", "watch_model", "carrier", "radio", "wifi", "bluetooth_enabled", "bluetooth_version", "has_nfc", "has_telephone", "google_play_services", "duration", "country", "country_code"];
 const outsideProps = ["distinct_id", "group_id", "token", "group_key", "ip"]; //these are the props that are outside of the $set
+const badUserIds = ["-1", "0", "00000000-0000-0000-0000-000000000000", "<nil>", "[]", "anon", "anonymous", "false", "lmy47d", "n/a", "na", "nil", "none", "null", "true", "undefined", "unknown", "{}", null, undefined]
 const MAX_STR_LEN = 255;
 
 /** @typedef {import('./job')} JobConfig */
@@ -92,6 +93,13 @@ function ezTransforms(job) {
 			["distinct_id", "$user_id", "$device_id"].forEach((k) => {
 				if (record.properties[k] != null) {
 					record.properties[k] = String(record.properties[k]);
+				}
+			});
+
+			// 6a. Remove bad distinct_ids
+			["distinct_id", "$user_id", "$device_id"].forEach((k) => {
+				if (badUserIds.includes(record.properties[k])) {
+					delete record.properties[k];
 				}
 			});
 
@@ -749,6 +757,41 @@ function scrubProperties(keysToScrub = []) {
 	};
 }
 
+/**
+ * remove specific columns/properties from records in the pipeline
+ * @param  {string[]} columnsToDrop - array of property keys to remove
+ */
+function dropColumns(columnsToDrop = []) {
+	return function dropColumnTransform(record) {
+		if (!record || columnsToDrop.length === 0) return record;
+		
+		// Handle event records - remove from properties
+		if (record.properties && typeof record.properties === 'object') {
+			for (const key of columnsToDrop) {
+				delete record.properties[key];
+			}
+		}
+		
+		// Handle profile records - remove from operation buckets ($set, $add, etc.)
+		for (const op of validOperations) {
+			if (record[op] && typeof record[op] === 'object') {
+				for (const key of columnsToDrop) {
+					delete record[op][key];
+				}
+			}
+		}
+		
+		// Also remove from root level (for malformed records or direct properties)
+		for (const key of columnsToDrop) {
+			if (key !== 'event' && key !== 'properties' && !key.startsWith('$')) {
+				delete record[key];
+			}
+		}
+		
+		return record;
+	};
+}
+
 
 // performance optimized recursive function to scrub properties from an object
 // https://chat.openai.com/share/98f40372-2a3a-413c-a42c-c8cf28f6d074
@@ -861,6 +904,7 @@ module.exports = {
 	fixJson,
 	resolveFallback,
 	scrubProperties,
+	dropColumns,
 	addToken,
 	scdTransform,
 	fixTime

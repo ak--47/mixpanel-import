@@ -13,6 +13,7 @@ class MixpanelImportUI {
 		this.columnMappings = {}; // Store user-defined column mappings
 		this.websocket = null; // WebSocket connection for real-time progress
 		this.currentJobId = null; // Track current job ID
+		this.lastResults = null; // Store last results for download
 		this.initializeUI();
 		this.setupEventListeners();
 		this.initializeMonacoEditor();
@@ -208,6 +209,67 @@ class MixpanelImportUI {
 			console.log('Dev values filled successfully');
 		} catch (error) {
 			console.error('Failed to fill dev values:', error);
+		}
+	}
+
+	resetForm() {
+		try {
+			// Reset the entire form
+			const form = document.getElementById('importForm');
+			if (form) {
+				form.reset();
+			}
+
+			// Reset file source to local
+			const localRadio = document.querySelector('input[name="fileSource"][value="local"]');
+			if (localRadio) {
+				localRadio.checked = true;
+				localRadio.dispatchEvent(new Event('change'));
+			}
+
+			// Clear dropzone files
+			if (this.dropzone) {
+				this.dropzone.removeAllFiles();
+			}
+
+			// Clear sample data
+			this.sampleData = [];
+			this.currentSampleIndex = 0;
+
+			// Reset record type to event (default)
+			const recordTypeSelect = document.getElementById('recordType');
+			if (recordTypeSelect) {
+				recordTypeSelect.value = 'event';
+				recordTypeSelect.dispatchEvent(new Event('change'));
+			}
+
+			// Clear Monaco editor if it exists
+			if (this.editor) {
+				this.editor.setValue(this.getDefaultTransformFunction());
+			}
+
+			// Hide preview and results sections
+			const dataPreview = document.getElementById('data-preview');
+			if (dataPreview) dataPreview.style.display = 'none';
+
+			const results = document.getElementById('results');
+			if (results) results.style.display = 'none';
+
+			const loading = document.getElementById('loading');
+			if (loading) loading.style.display = 'none';
+
+			// Clear column mapper
+			this.detectedColumns = [];
+			this.columnMappings = {};
+			const columnMapperSection = document.getElementById('column-mapper-section');
+			if (columnMapperSection) columnMapperSection.style.display = 'none';
+
+			// Update CLI command
+			this.updateCLICommand();
+
+			console.log('Form reset successfully');
+		} catch (error) {
+			console.error('Failed to reset form:', error);
 		}
 	}
 
@@ -532,11 +594,18 @@ class MixpanelImportUI {
 		// Record type change - show/hide relevant fields
 		const recordTypeSelect = document.getElementById('recordType');
 		recordTypeSelect.addEventListener('change', this.updateFieldVisibility.bind(this));
+		recordTypeSelect.addEventListener('change', this.refreshColumnMapper.bind(this));
 		this.updateFieldVisibility(); // Initial call
 
 		// CLI command copy button
 		const copyCliBtn = document.getElementById('copy-cli');
 		copyCliBtn.addEventListener('click', this.copyCLICommand.bind(this));
+
+		// Download results button
+		const downloadResultsBtn = document.getElementById('download-results-btn');
+		if (downloadResultsBtn) {
+			downloadResultsBtn.addEventListener('click', this.downloadResults.bind(this));
+		}
 
 		// Update CLI command when form changes
 		form.addEventListener('input', this.updateCLICommand.bind(this));
@@ -551,6 +620,12 @@ class MixpanelImportUI {
 		const devKeyBtn = document.getElementById('dev-key-btn');
 		if (devKeyBtn) {
 			devKeyBtn.addEventListener('click', this.fillDevValues.bind(this));
+		}
+
+		// Reset button to clear form
+		const resetBtn = document.getElementById('reset-btn');
+		if (resetBtn) {
+			resetBtn.addEventListener('click', this.resetForm.bind(this));
 		}
 	}
 
@@ -664,8 +739,6 @@ class MixpanelImportUI {
 
 	updateFieldVisibility() {
 		const recordType = document.getElementById('recordType').value;
-		const credentialsSection = document.getElementById('credentials-section');
-		const credentialsDescription = document.getElementById('credentials-description');
 
 		// Hide all groups initially
 		const allGroups = [
@@ -677,33 +750,19 @@ class MixpanelImportUI {
 			if (element) element.style.display = 'none';
 		});
 
-		// Show credentials section if a record type is selected
-		if (!recordType) {
-			credentialsSection.style.display = 'none';
-			this.updateCLICommand(); // Update CLI when record type changes
-			return;
-		}
-
-		credentialsSection.style.display = 'block';
-
 		// Define authentication requirements based on RecordType
 		switch (recordType) {
 			case 'event':
 			case 'user':
 				// Only project token is required
-				credentialsDescription.textContent = 'Events and User profiles only require a project token.';
 				document.getElementById('token-group').style.display = 'block';
 				break;
 
 			case 'group':
 				// Project token + groupKey is required
-				credentialsDescription.textContent = 'Group profiles require a project token and group key.';
 				document.getElementById('token-group').style.display = 'block';
 				document.getElementById('groupKey-group').style.display = 'block';
 				break;
-
-			default:
-				credentialsDescription.textContent = 'Select an import type to see required authentication settings.';
 		}
 
 		// Update CLI command after field visibility changes
@@ -872,6 +931,135 @@ class MixpanelImportUI {
 			const timeOffset = timeOffsetEl ? timeOffsetEl.value : '';
 			if (timeOffset && timeOffset !== '0') command += ` --offset ${timeOffset}`;
 
+			// Aliases from column mapper and text input
+			const aliases = this.getCurrentAliases();
+			if (Object.keys(aliases).length > 0) {
+				command += ` --aliases '${JSON.stringify(aliases)}'`;
+			}
+
+			// Other text options
+			const textOptions = [
+				['scrubProps', 'scrub'],
+				['eventWhitelist', 'event-whitelist'],
+				['eventBlacklist', 'event-blacklist'],
+				['propKeyWhitelist', 'prop-whitelist'],
+				['propKeyBlacklist', 'prop-blacklist'],
+				['propValWhitelist', 'val-whitelist'],
+				['propValBlacklist', 'val-blacklist'],
+				['insertIdTuple', 'insert-tuple'],
+				['tags', 'tags'],
+				['vendorOpts', 'vendor-opts']
+			];
+
+			textOptions.forEach(([elementId, cliFlag]) => {
+				const element = document.getElementById(elementId);
+				if (element && element.value.trim()) {
+					if (cliFlag === 'tags' || cliFlag === 'vendor-opts') {
+						command += ` --${cliFlag} '${element.value}'`;
+					} else {
+						command += ` --${cliFlag} ${element.value}`;
+					}
+				}
+			});
+
+			// Additional numeric options
+			const numericOptions = [
+				['bytesPerBatch', 'bytes'],
+				['maxRetries', 'retries'],
+				['compressionLevel', 'compression-level']
+			];
+
+			numericOptions.forEach(([elementId, cliFlag]) => {
+				const element = document.getElementById(elementId);
+				if (element && element.value && element.value !== element.defaultValue) {
+					command += ` --${cliFlag} ${element.value}`;
+				}
+			});
+
+			// Stream format option
+			const streamFormatEl = document.getElementById('streamFormat');
+			const streamFormat = streamFormatEl ? streamFormatEl.value : '';
+			if (streamFormat) command += ` --stream-format ${streamFormat}`;
+
+			// Transport option
+			const transportEl = document.getElementById('transport');
+			const transport = transportEl ? transportEl.value : '';
+			if (transport && transport !== 'got') command += ` --transport ${transport}`;
+
+			// Legacy and additional authentication
+			const secretElement = document.getElementById('secret');
+			if (secretElement && secretElement.value) command += ` --secret ${secretElement.value}`;
+
+			const bearerElement = document.getElementById('bearer');
+			if (bearerElement && bearerElement.value) command += ` --bearer ${bearerElement.value}`;
+
+			const tableElement = document.getElementById('lookupTableId');
+			if (tableElement && tableElement.closest('.form-group').style.display !== 'none' && tableElement.value) {
+				command += ` --table ${tableElement.value}`;
+			}
+
+			const secondTokenElement = document.getElementById('secondToken');
+			if (secondTokenElement && secondTokenElement.closest('.form-group').style.display !== 'none' && secondTokenElement.value) {
+				command += ` --second-token ${secondTokenElement.value}`;
+			}
+
+			// Export-specific options
+			const startElement = document.getElementById('start');
+			if (startElement && startElement.value) command += ` --start ${startElement.value}`;
+
+			const endElement = document.getElementById('end');
+			if (endElement && endElement.value) command += ` --end ${endElement.value}`;
+
+			const whereElement = document.getElementById('where');
+			if (whereElement && whereElement.value) command += ` --where "${whereElement.value}"`;
+
+			const whereClauseElement = document.getElementById('whereClause');
+			if (whereClauseElement && whereClauseElement.value) command += ` --where-clause "${whereClauseElement.value}"`;
+
+			// Stream and processing options
+			const waterElement = document.getElementById('water');
+			if (waterElement && waterElement.value && waterElement.value !== '27') {
+				command += ` --water ${waterElement.value}`;
+			}
+
+			// SCD options
+			const scdTypeElement = document.getElementById('scdType');
+			if (scdTypeElement && scdTypeElement.value && scdTypeElement.value !== 'string') {
+				command += ` --scd-type ${scdTypeElement.value}`;
+			}
+
+			const scdKeyElement = document.getElementById('scdKey');
+			if (scdKeyElement && scdKeyElement.value) command += ` --scd-key ${scdKeyElement.value}`;
+
+			const scdLabelElement = document.getElementById('scdLabel');
+			if (scdLabelElement && scdLabelElement.value) command += ` --scd-label ${scdLabelElement.value}`;
+
+			// Cohort and data group options
+			const cohortIdElement = document.getElementById('cohortId');
+			if (cohortIdElement && cohortIdElement.value) command += ` --cohort-id ${cohortIdElement.value}`;
+
+			const dataGroupIdElement = document.getElementById('dataGroupId');
+			if (dataGroupIdElement && dataGroupIdElement.closest('.form-group').style.display !== 'none' && dataGroupIdElement.value) {
+				command += ` --data-group-id ${dataGroupIdElement.value}`;
+			}
+
+			// Additional boolean flags
+			const additionalBooleanFlags = [
+				['writeToFile', 'write-to-file'],
+				['createProfiles', 'create-profiles'],
+				['addToken', 'add-token'],
+				['abridged', 'abridged'],
+				['http2', 'http2'],
+				['keepBadRecords', 'keep-bad-records']
+			];
+
+			additionalBooleanFlags.forEach(([elementId, cliFlag]) => {
+				const element = document.getElementById(elementId);
+				if (element && element.checked) {
+					command += ` --${cliFlag}`;
+				}
+			});
+
 			cliElement.textContent = command;
 			cliElement.classList.remove('empty');
 
@@ -906,6 +1094,40 @@ class MixpanelImportUI {
 		}).catch(_err => {
 			this.showError('Could not copy to clipboard. Please select and copy manually.');
 		});
+	}
+
+	downloadResults() {
+		if (!this.lastResults) {
+			this.showError('No results available to download.');
+			return;
+		}
+
+		// Create a blob with the JSON data
+		const jsonString = JSON.stringify(this.lastResults, null, 2);
+		const blob = new Blob([jsonString], { type: 'application/json' });
+
+		// Create a temporary download link
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `mixpanel-import-results-${Date.now()}.json`;
+
+		// Trigger download
+		document.body.appendChild(a);
+		a.click();
+
+		// Cleanup
+		document.body.removeChild(a);
+		URL.revokeObjectURL(url);
+
+		// Show success feedback
+		const downloadBtn = document.getElementById('download-results-btn');
+		const originalText = downloadBtn.innerHTML;
+		downloadBtn.innerHTML = '<span class="btn-icon">✓</span> Downloaded!';
+
+		setTimeout(() => {
+			downloadBtn.innerHTML = originalText;
+		}, 2000);
 	}
 
 	async initializeMonacoEditor() {
@@ -1399,6 +1621,9 @@ function transform(row) {
 
 		resultsTitle.textContent = isDryRun ? 'Preview Results' : 'Import Complete!';
 
+		// Store results for download
+		this.lastResults = result;
+
 		// For dry runs with both raw and transformed data, show side-by-side comparison
 		if (isDryRun && result.rawData && result.previewData) {
 			this.showSideBySideComparison(result.rawData, result.previewData);
@@ -1406,14 +1631,14 @@ function transform(row) {
 			// Regular single display for non-dry runs or legacy dry runs
 			// Handle both WebSocket results (direct result object) and HTTP results (wrapped in .result)
 			let displayData = result.result || result;
-			
+
 			if (isDryRun && result.previewData && result.previewData.length > 0) {
 				displayData = [...result.previewData.slice(0, 100)];
 			}
 
 			resultsData.innerHTML = `<pre><code class="json">${this.highlightJSON(JSON.stringify(displayData, null, 2))}</code></pre>`;
 		}
-		
+
 		resultsSection.style.display = 'block';
 		resultsSection.scrollIntoView({ behavior: 'smooth' });
 	}
@@ -1428,6 +1653,9 @@ function transform(row) {
 			currentPage: 0,
 			recordsPerPage: 10
 		};
+		
+		// Initialize scroll sync state (default: locked/synchronized)
+		this.scrollSyncEnabled = true;
 
 		// Create side-by-side container
 		resultsData.innerHTML = `
@@ -1450,6 +1678,12 @@ function transform(row) {
 					<button type="button" id="next-records-btn" class="btn btn-secondary">
 						Next 10 →
 					</button>
+					<div class="scroll-sync-control">
+						<button type="button" id="scroll-sync-toggle" class="btn btn-ghost btn-sm scroll-sync-locked" title="Toggle synchronized scrolling">
+							<span class="btn-icon">🔒</span>
+							<span class="sync-label">Sync Scroll</span>
+						</button>
+					</div>
 				</div>
 				<div class="comparison-panels">
 					<div class="comparison-panel" id="raw-panel">
@@ -1464,6 +1698,7 @@ function transform(row) {
 
 		this.renderComparisonPage();
 		this.setupComparisonControls();
+		this.setupScrollSyncToggle();
 	}
 
 	renderComparisonPage() {
@@ -1528,21 +1763,60 @@ function transform(row) {
 	}
 
 	setupSynchronizedScrolling() {
-		const rawPanel = document.getElementById('raw-panel');
-		const transformedPanel = document.getElementById('transformed-panel');
+		const rawContent = document.getElementById('raw-content');
+		const transformedContent = document.getElementById('transformed-content');
+		
+		// Remove existing listeners to prevent duplicates
+		if (rawContent) rawContent.replaceWith(rawContent.cloneNode(true));
+		if (transformedContent) transformedContent.replaceWith(transformedContent.cloneNode(true));
+		
+		// Get fresh references after cloning
+		const rawPanel = document.getElementById('raw-content');
+		const transformedPanel = document.getElementById('transformed-content');
+		
+		if (!rawPanel || !transformedPanel) return;
 		
 		let isScrolling = false;
 		
 		const syncScroll = (source, target) => {
-			if (!isScrolling) {
-				isScrolling = true;
-				target.scrollTop = source.scrollTop;
-				setTimeout(() => { isScrolling = false; }, 10);
-			}
+			// Only sync if scroll sync is enabled
+			if (!this.scrollSyncEnabled || isScrolling) return;
+			isScrolling = true;
+			target.scrollTop = source.scrollTop;
+			setTimeout(() => { isScrolling = false; }, 10);
 		};
 		
 		rawPanel.addEventListener('scroll', () => syncScroll(rawPanel, transformedPanel));
 		transformedPanel.addEventListener('scroll', () => syncScroll(transformedPanel, rawPanel));
+	}
+
+	setupScrollSyncToggle() {
+		const toggleBtn = document.getElementById('scroll-sync-toggle');
+		if (!toggleBtn) return;
+
+		toggleBtn.addEventListener('click', () => {
+			this.scrollSyncEnabled = !this.scrollSyncEnabled;
+			this.updateScrollSyncButton();
+		});
+	}
+
+	updateScrollSyncButton() {
+		const toggleBtn = document.getElementById('scroll-sync-toggle');
+		const icon = toggleBtn.querySelector('.btn-icon');
+		
+		if (this.scrollSyncEnabled) {
+			// Locked state
+			toggleBtn.classList.add('scroll-sync-locked');
+			toggleBtn.classList.remove('scroll-sync-unlocked');
+			icon.textContent = '🔒';
+			toggleBtn.title = 'Click to unlock independent scrolling';
+		} else {
+			// Unlocked state  
+			toggleBtn.classList.add('scroll-sync-unlocked');
+			toggleBtn.classList.remove('scroll-sync-locked');
+			icon.textContent = '🔓';
+			toggleBtn.title = 'Click to lock synchronized scrolling';
+		}
 	}
 
 	showError(message) {
@@ -1686,15 +1960,48 @@ function transform(row) {
 		const mapperContent = document.getElementById('column-mapper-content');
 		const mapperGrid = mapperContent.querySelector('.column-mapper-grid');
 
-		// Define Mixpanel target fields with icons and descriptions
-		const mixpanelFields = [
-			{ key: 'event', icon: '🎯', label: 'Event Name', description: 'The name of the event' },
-			{ key: 'time', icon: '⏰', label: 'Timestamp', description: 'Event timestamp (Unix milliseconds)' },
-			{ key: 'distinct_id', icon: '👤', label: 'Distinct ID (orig)', description: 'Unique identifier for the user' },
-			{ key: 'insert_id', icon: '🔑', label: 'Insert ID', description: 'Unique identifier for deduplication' },
-			{ key: 'user_id', icon: '🆔', label: 'User ID (simp)', description: '$user_id for simplified id merge' },
-			{ key: 'device_id', icon: '📱', label: 'Device ID (simp)', description: '$device_id for simplified id merge' }
-		];
+		// Get current record type to show appropriate fields
+		const recordType = document.getElementById('recordType').value;
+		
+		// Define Mixpanel target fields based on record type
+		let mixpanelFields = [];
+		
+		if (recordType === 'event') {
+			mixpanelFields = [
+				{ key: 'event', icon: '🎯', label: 'Event Name', description: 'The name of the event' },
+				{ key: 'time', icon: '⏰', label: 'Timestamp', description: 'Event timestamp (Unix milliseconds)' },
+				{ key: 'distinct_id', icon: '👤', label: 'Distinct ID (orig)', description: 'Unique identifier for the user' },
+				{ key: 'insert_id', icon: '🔑', label: 'Insert ID', description: 'Unique identifier for deduplication' },
+				{ key: 'user_id', icon: '🆔', label: 'User ID (simp)', description: '$user_id for simplified id merge' },
+				{ key: 'device_id', icon: '📱', label: 'Device ID (simp)', description: '$device_id for simplified id merge' }
+			];
+		} else if (recordType === 'user') {
+			mixpanelFields = [
+				{ key: 'distinct_id', icon: '👤', label: 'Distinct ID', description: 'Unique identifier for the user profile' },
+				{ key: 'name', icon: '📝', label: 'Full Name', description: 'User\'s full name' },
+				{ key: 'first_name', icon: '👤', label: 'First Name', description: 'User\'s first name' },
+				{ key: 'last_name', icon: '👤', label: 'Last Name', description: 'User\'s last name' },
+				{ key: 'email', icon: '📧', label: 'Email', description: 'User\'s email address' },
+				{ key: 'phone', icon: '📞', label: 'Phone', description: 'User\'s phone number' },
+				{ key: 'created', icon: '📅', label: 'Created Date', description: 'When the user was created' },
+				{ key: 'avatar', icon: '🖼️', label: 'Avatar URL', description: 'URL to user\'s profile picture' }
+			];
+		} else if (recordType === 'group') {
+			mixpanelFields = [
+				{ key: 'group_id', icon: '👥', label: 'Group ID', description: 'Unique identifier for the group' },
+				{ key: 'name', icon: '📝', label: 'Group Name', description: 'Name of the group/organization' },
+				{ key: 'created', icon: '📅', label: 'Created Date', description: 'When the group was created' },
+				{ key: 'plan', icon: '💼', label: 'Plan/Tier', description: 'Subscription plan or tier' },
+				{ key: 'industry', icon: '🏢', label: 'Industry', description: 'Industry category' },
+				{ key: 'employees', icon: '👨‍💼', label: 'Employee Count', description: 'Number of employees' }
+			];
+		} else {
+			// Fallback for unknown record types
+			mixpanelFields = [
+				{ key: 'distinct_id', icon: '👤', label: 'Distinct ID', description: 'Unique identifier' },
+				{ key: 'name', icon: '📝', label: 'Name', description: 'Display name' }
+			];
+		}
 
 		// Render mapping rows
 		mapperGrid.innerHTML = mixpanelFields.map(field => `
@@ -1747,6 +2054,13 @@ function transform(row) {
 		this.updateMapperStatus();
 	}
 
+	refreshColumnMapper() {
+		// Re-render the column mapper when record type changes
+		if (this.detectedColumns.length > 0) {
+			this.renderColumnMapper();
+		}
+	}
+
 	updateMapperStatus() {
 		const statusEl = document.getElementById('mapper-status');
 		const statusContainer = statusEl.parentElement;
@@ -1789,17 +2103,12 @@ function transform(row) {
 function toggleSection(sectionId) {
 	const section = document.getElementById(sectionId);
 	const header = section?.previousElementSibling || section?.parentElement?.querySelector('.section-header');
-	const toggleIcon = header?.querySelector('.toggle-icon');
-	
+
 	if (!section) return;
-	
+
 	const isVisible = section.style.display !== 'none';
 	section.style.display = isVisible ? 'none' : 'block';
-	
-	if (toggleIcon) {
-		toggleIcon.textContent = isVisible ? '▼' : '▲';
-	}
-	
+
 	if (header) {
 		header.setAttribute('aria-expanded', !isVisible);
 	}
@@ -1817,10 +2126,6 @@ function toggleAllSections() {
 	collapsibleSections.forEach(section => {
 		section.style.display = isExpanding ? 'block' : 'none';
 		const header = section.previousElementSibling || section.parentElement?.querySelector('.section-header');
-		const toggleIcon = header?.querySelector('.toggle-icon');
-		if (toggleIcon) {
-			toggleIcon.textContent = isExpanding ? '▲' : '▼';
-		}
 		if (header) {
 			header.setAttribute('aria-expanded', isExpanding);
 		}
