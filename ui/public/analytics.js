@@ -54,3 +54,15 @@ if (window.mixpanel) {
 
 	});
 }
+
+function qsToObj(queryString) {
+	try {
+		const parsedQs = new URLSearchParams(queryString);
+		const params = Object.fromEntries(parsedQs);
+		return params;
+	}
+
+	catch (e) {
+		return {};
+	}
+}

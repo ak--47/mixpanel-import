@@ -61,11 +61,5 @@ scratch.js
 # Output directories
 mixpanel-exports/
 
-# Docker files (not needed inside container)
-Dockerfile
-.dockerignore
-
 # Cloud deployment files (not needed inside container)
 .gcloudignore
-cloudbuild.yaml
-deploy.sh
