@@ -3,11 +3,14 @@
 
 <head>
 	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="viewport"
+		content="width=device-width, initial-scale=1.0">
 	<title>L.T.E - Load Transform Export</title>
-	<link rel="stylesheet" href="style.css">
+	<link rel="stylesheet"
+		href="style.css">
 	<!-- Dropzone -->
-	<link rel="stylesheet" href="https://unpkg.com/dropzone@5/dist/min/dropzone.min.css" />
+	<link rel="stylesheet"
+		href="https://unpkg.com/dropzone@5/dist/min/dropzone.min.css" />
 	<script src="https://unpkg.com/dropzone@5/dist/min/dropzone.min.js"></script>
 </head>
 
@@ -16,16 +19,34 @@
 		<!-- Header -->
 		<header class="header">
 			<h1 class="logo">
-				<span class="logo-icon" id="lte-icon">📦</span>
+				<span class="logo-icon"
+					id="lte-icon">📦</span>
 				<span id="lte-acro">L.T.E</span>
 				<span id="lte-description">Load Transform Export</span>
 			</h1>
 			<p class="subtitle">export data from mixpanel with powerful filtering</p>
-			<button type="button" id="dev-key-btn" class="dev-key-btn" title="Fill form with dev values">🔑</button>
+			<div class="header-artifact-links">
+				<a href="https://www.notion.so/mxpnl/mixpanel-import-24be0ba9256280dfbd9fecaf040d3c2a?v=c8754a694d9644c494f3eea284fc4dc0&source=copy_link"
+					target="_blank"
+					rel="noopener">📚 docs</a>
+				<a href="https://storage.googleapis.com/mp-customer-upload/rickroll.mp4"
+					target="_blank"
+					rel="noopener">🎥 demo</a>
+				<a href="https://github.com/ak--47/mixpanel-import"
+					target="_blank"
+					rel="noopener">💻 code</a>
+				<a href="https://mixpanel.com/p/QJuv9bcK8Re7rq4vu5rfv1"
+					target="_blank"
+					rel="noopener">📊 metrics</a>
+				<a href=""
+					target="_blank"
+					rel="noopener">📋 logs</a>
+			</div>
 		</header>
 
 		<!-- Main Form -->
-		<form id="exportForm" class="import-form">
+		<form id="exportForm"
+			class="import-form">
 			<!-- Export Type Section -->
 			<section class="card">
 				<h2 class="section-title">📋 Type of Export</h2>
@@ -33,17 +54,19 @@
 
 				<div class="form-group">
 					<label for="recordType">Export Type*</label>
-					<select id="recordType" name="recordType" required>
+					<select id="recordType"
+						name="recordType"
+						required>
 						<option value="">Select export type...</option>
 						<option value="export">🛃 Export Events</option>
 						<option value="profile-export">👤📤 Export User Profiles</option>
-						<option value="profile-delete">👤🗑️ Delete User Profiles</option>
+						<!-- <option value="profile-delete">👤🗑️ Delete User Profiles</option> -->
 						<option value="group-export">👥📤 Export Group Profiles</option>
-						<option value="group-delete">👥🗑️ Delete Group Profiles</option>
-						<option value="scd">🪁 SCD (Slowly Changing Dimensions)</option>
-						<option value="annotations">📝 Create Annotations</option>
-						<option value="get-annotations">📝📥 Get Annotations</option>
-						<option value="delete-annotations">📝🗑️ Delete Annotations</option>
+						<!-- <option value="group-delete">👥🗑️ Delete Group Profiles</option> -->
+						<!-- <option value="scd">🪁 SCD (Slowly Changing Dimensions)</option> -->
+						<!-- <option value="annotations">📝 Create Annotations</option> -->
+						<!-- <option value="get-annotations">📝📥 Get Annotations</option> -->
+						<!-- <option value="delete-annotations">📝🗑️ Delete Annotations</option> -->
 						<option value="export-import-events">🔄 Export → Import (events)</option>
 						<option value="export-import-profiles">🔃 Export → Import (user profiles)</option>
 						<option value="export-import-groups">🔃 Export → Import (group profiles)</option>
@@ -53,89 +76,156 @@
 			</section>
 
 			<!-- Credentials Section -->
-			<section class="card" id="credentials-section" style="display: none;">
+			<section class="card"
+				id="credentials-section"
+				style="display: none;">
 				<h2 class="section-title">🔑 Mixpanel Credentials</h2>
-				<p class="section-description" id="credentials-description">All types require project token/secret OR service account. Group operations need groupKey + dataGroupId.</p>
+				<p class="section-description"
+					id="credentials-description">All types require project token/secret OR service account. Group
+					operations need groupKey + dataGroupId.</p>
 
-				<div class="form-group" id="project-group" style="display: none;">
+				<div class="form-group"
+					id="project-group"
+					style="display: none;">
 					<label for="project">Project ID*</label>
-					<input type="text" id="project" name="project" placeholder="Your project ID" autocomplete="off">
+					<input type="text"
+						id="project"
+						name="project"
+						placeholder="Your project ID"
+						autocomplete="off">
 					<small>Found in your Mixpanel project settings</small>
 				</div>
 
-				<div class="form-group" id="lookupTableId-group" style="display: none;">
+				<div class="form-group"
+					id="lookupTableId-group"
+					style="display: none;">
 					<label for="lookupTableId">Lookup Table ID*</label>
-					<input type="text" id="lookupTableId" name="lookupTableId" placeholder="Your lookup table ID" autocomplete="off">
+					<input type="text"
+						id="lookupTableId"
+						name="lookupTableId"
+						placeholder="Your lookup table ID"
+						autocomplete="off">
 					<small>ID of the lookup table to work with</small>
 				</div>
 
 				<!-- Auth Method Toggle -->
-				<div class="auth-toggle" id="auth-toggle" style="display: none;">
+				<div class="auth-toggle"
+					id="auth-toggle"
+					style="display: none;">
 					<label class="toggle-label">
-						<input type="radio" name="authMethod" value="service" checked>
+						<input type="radio"
+							name="authMethod"
+							value="service"
+							checked>
 						Service Account (Recommended)
 					</label>
 					<label class="toggle-label">
-						<input type="radio" name="authMethod" value="secret">
+						<input type="radio"
+							name="authMethod"
+							value="secret">
 						API Secret (Legacy)
 					</label>
 				</div>
 
 				<!-- Service Account Fields -->
-				<div id="service-auth" class="auth-section" style="display: none;">
+				<div id="service-auth"
+					class="auth-section"
+					style="display: none;">
 					<div class="form-row">
 						<div class="form-group">
 							<label for="acct">Account Username*</label>
-							<input type="text" id="acct" name="acct" placeholder="service-account@yourorg.com">
+							<input type="text"
+								id="acct"
+								name="acct"
+								placeholder="service-account@yourorg.com">
 						</div>
 						<div class="form-group">
 							<label for="pass">Account Password*</label>
-							<input type="password" id="pass" name="pass" placeholder="Your service account password">
+							<input type="password"
+								id="pass"
+								name="pass"
+								placeholder="Your service account password">
 						</div>
 					</div>
 				</div>
 
 				<!-- API Secret Fields -->
-				<div id="secret-auth" class="auth-section" style="display: none;">
+				<div id="secret-auth"
+					class="auth-section"
+					style="display: none;">
 					<div class="form-group">
 						<label for="secret">API Secret*</label>
-						<input type="password" id="secret" name="secret" placeholder="Your project's API secret">
+						<input type="password"
+							id="secret"
+							name="secret"
+							placeholder="Your project's API secret">
 						<small>Legacy authentication method</small>
 					</div>
 				</div>
 
 				<!-- Additional Tokens -->
-				<div class="form-group" id="token-group" style="display: none;">
+				<div class="form-group"
+					id="token-group"
+					style="display: none;">
 					<label for="token">Project Token*</label>
-					<input type="text" id="token" name="token" placeholder="Your project token" autocomplete="off">
+					<input type="text"
+						id="token"
+						name="token"
+						placeholder="Your project token"
+						autocomplete="off">
 					<small>Required for user/group profiles</small>
 				</div>
 
-				<div class="form-group" id="groupKey-group" style="display: none;">
+				<div class="form-group"
+					id="groupKey-group"
+					style="display: none;">
 					<label for="groupKey">Group Key*</label>
-					<input type="text" id="groupKey" name="groupKey" placeholder="Your group analytics key" autocomplete="off">
+					<input type="text"
+						id="groupKey"
+						name="groupKey"
+						placeholder="Your group analytics key"
+						autocomplete="off">
 					<small>Required for group profile operations</small>
 				</div>
 
-				<div class="form-group" id="dataGroupId-group" style="display: none;">
+				<div class="form-group"
+					id="dataGroupId-group"
+					style="display: none;">
 					<label for="dataGroupId">Data Group ID*</label>
-					<input type="text" id="dataGroupId" name="dataGroupId" placeholder="Your data group ID" autocomplete="off">
+					<input type="text"
+						id="dataGroupId"
+						name="dataGroupId"
+						placeholder="Your data group ID"
+						autocomplete="off">
 					<small>Required for group profile operations</small>
 				</div>
 
 				<!-- Export-Import Destination Fields -->
-				<h3 class="subsection-title" id="destination-title" style="display: none;">Destination Project (Optional)</h3>
-				<p class="section-description" id="destination-description" style="display: none;">Leave empty to reimport into the same project.</p>
-				
-				<div class="form-group" id="secondToken-group" style="display: none;">
+				<h3 class="subsection-title"
+					id="destination-title"
+					style="display: none;">Destination Project (Optional)</h3>
+				<p class="section-description"
+					id="destination-description"
+					style="display: none;">Leave empty to reimport into the same project.</p>
+
+				<div class="form-group"
+					id="secondToken-group"
+					style="display: none;">
 					<label for="secondToken">Destination Project Token</label>
-					<input type="text" id="secondToken" name="secondToken" placeholder="Destination project token (optional)" autocomplete="off">
+					<input type="text"
+						id="secondToken"
+						name="secondToken"
+						placeholder="Destination project token (optional)"
+						autocomplete="off">
 					<small>If different from source project</small>
 				</div>
-				
-				<div class="form-group" id="secondRegion-group" style="display: none;">
+
+				<div class="form-group"
+					id="secondRegion-group"
+					style="display: none;">
 					<label for="secondRegion">Destination Data Residency</label>
-					<select id="secondRegion" name="secondRegion">
+					<select id="secondRegion"
+						name="secondRegion">
 						<option value="US">🇺🇸 United States</option>
 						<option value="EU">🇪🇺 European Union</option>
 						<option value="IN">🇮🇳 India</option>
@@ -147,20 +237,30 @@
 			<!-- Configuration Section -->
 			<section class="card">
 				<h2 class="section-title">⚙️ Export Configuration</h2>
-				<p class="section-description">Configure your export settings for optimal performance and data quality.</p>
+				<p class="section-description">Configure your export settings for optimal performance and data quality.
+				</p>
 
 				<!-- Core Settings -->
 				<div class="config-section">
 					<h3 class="subsection-title">Core Settings</h3>
 					<div class="form-row">
 						<div class="form-group">
-							<label for="workers" title="Higher values export faster but may hit rate limits. Start with 10 and increase if your network can handle more concurrent requests">Concurrency Workers</label>
-							<input type="number" id="workers" name="workers" value="10" min="1" max="50" autocomplete="off">
+							<label for="workers"
+								title="Higher values export faster but may hit rate limits. Start with 10 and increase if your network can handle more concurrent requests">Concurrency
+								Workers</label>
+							<input type="number"
+								id="workers"
+								name="workers"
+								value="10"
+								min="1"
+								max="50"
+								autocomplete="off">
 							<small>Number of concurrent HTTP requests (default: 10)</small>
 						</div>
 						<div class="form-group">
 							<label for="region">Data Residency</label>
-							<select id="region" name="region">
+							<select id="region"
+								name="region">
 								<option value="US">🇺🇸 United States</option>
 								<option value="EU">🇪🇺 European Union</option>
 								<option value="IN">🇮🇳 India</option>
@@ -172,7 +272,10 @@
 
 				<!-- Expand/Collapse All Button -->
 				<div class="section-controls">
-					<button type="button" id="toggle-all-btn" class="btn btn-ghost btn-sm" onclick="toggleAllSections()">
+					<button type="button"
+						id="toggle-all-btn"
+						class="btn btn-ghost btn-sm"
+						onclick="toggleAllSections()">
 						<span class="btn-icon">📂</span>
 						<span id="toggle-all-text">Expand All</span>
 					</button>
@@ -180,21 +283,29 @@
 
 				<!-- Time & Date Filters -->
 				<div class="collapsible-section">
-					<div class="section-header" onclick="toggleSection('time-section')" title="Filter data by timestamp ranges for exports">
+					<div class="section-header"
+						onclick="toggleSection('time-section')"
+						title="Filter data by timestamp ranges for exports">
 						<span class="section-icon">📅</span>
 						<h3>Time & Date Filters</h3>
 						<span class="toggle-icon">▼</span>
 					</div>
-					<div id="time-section" class="collapsible-content" style="display: none;">
+					<div id="time-section"
+						class="collapsible-content"
+						style="display: none;">
 						<div class="form-row">
 							<div class="form-group">
 								<label for="start">Start Date (Export)*</label>
-								<input type="date" id="start" name="start">
+								<input type="date"
+									id="start"
+									name="start">
 								<small>Required for event exports</small>
 							</div>
 							<div class="form-group">
 								<label for="end">End Date (Export)*</label>
-								<input type="date" id="end" name="end">
+								<input type="date"
+									id="end"
+									name="end">
 								<small>Required for event exports</small>
 							</div>
 						</div>
@@ -202,12 +313,20 @@
 						<div class="form-row">
 							<div class="form-group">
 								<label for="epochStart">Start Timestamp (Unix)</label>
-								<input type="number" id="epochStart" name="epochStart" placeholder="1609459200" autocomplete="off">
+								<input type="number"
+									id="epochStart"
+									name="epochStart"
+									placeholder="1609459200"
+									autocomplete="off">
 								<small>Skip data before this Unix timestamp</small>
 							</div>
 							<div class="form-group">
 								<label for="epochEnd">End Timestamp (Unix)</label>
-								<input type="number" id="epochEnd" name="epochEnd" placeholder="1609459200" autocomplete="off">
+								<input type="number"
+									id="epochEnd"
+									name="epochEnd"
+									placeholder="1609459200"
+									autocomplete="off">
 								<small>Skip data after this Unix timestamp</small>
 							</div>
 						</div>
@@ -216,21 +335,33 @@
 
 				<!-- Advanced Filtering -->
 				<div class="collapsible-section">
-					<div class="section-header" onclick="toggleSection('filtering-section')" title="Advanced filtering options for data exports">
+					<div class="section-header"
+						onclick="toggleSection('filtering-section')"
+						title="Advanced filtering options for data exports">
 						<span class="section-icon">🔬</span>
 						<h3>Advanced Filtering</h3>
 						<span class="toggle-icon">▼</span>
 					</div>
-					<div id="filtering-section" class="collapsible-content" style="display: none;">
+					<div id="filtering-section"
+						class="collapsible-content"
+						style="display: none;">
 						<div class="form-row">
 							<div class="form-group">
 								<label for="whereClause">Where Clause (Export)</label>
-								<input type="text" id="whereClause" name="whereClause" placeholder='properties["plan"] == "premium"'>
-								<small>Optional filter using <a href="https://developer.mixpanel.com/reference/segmentation-expressions" target="_blank">segmentation expressions</a></small>
+								<input type="text"
+									id="whereClause"
+									name="whereClause"
+									placeholder='properties["plan"] == "premium"'>
+								<small>Optional filter using <a
+										href="https://developer.mixpanel.com/reference/segmentation-expressions"
+										target="_blank">segmentation expressions</a></small>
 							</div>
 							<div class="form-group">
 								<label for="limit">Export Limit</label>
-								<input type="number" id="limit" name="limit" placeholder="1000000">
+								<input type="number"
+									id="limit"
+									name="limit"
+									placeholder="1000000">
 								<small>Maximum records to export</small>
 							</div>
 						</div>
@@ -239,27 +370,41 @@
 
 				<!-- Output Options -->
 				<div class="collapsible-section">
-					<div class="section-header" onclick="toggleSection('output-section')" title="Control file output and result storage options">
+					<div class="section-header"
+						onclick="toggleSection('output-section')"
+						title="Control file output and result storage options">
 						<span class="section-icon">💾</span>
 						<h3>Output Options</h3>
 						<span class="toggle-icon">▼</span>
 					</div>
-					<div id="output-section" class="collapsible-content" style="display: none;">
+					<div id="output-section"
+						class="collapsible-content"
+						style="display: none;">
 						<div class="checkbox-grid">
 							<label class="checkbox-label">
-								<input type="checkbox" id="logs" name="logs">
+								<input type="checkbox"
+									id="logs"
+									name="logs">
 								Save Export Logs
 							</label>
 							<label class="checkbox-label">
-								<input type="checkbox" id="verbose" name="verbose">
+								<input type="checkbox"
+									id="verbose"
+									name="verbose">
 								Verbose Console Output
 							</label>
 							<label class="checkbox-label">
-								<input type="checkbox" id="showProgress" name="showProgress" checked>
+								<input type="checkbox"
+									id="showProgress"
+									name="showProgress"
+									checked>
 								Show Progress Bar
 							</label>
 							<label class="checkbox-label">
-								<input type="checkbox" id="writeToFile" name="writeToFile" checked>
+								<input type="checkbox"
+									id="writeToFile"
+									name="writeToFile"
+									checked>
 								Write to Local File
 							</label>
 						</div>
@@ -269,15 +414,22 @@
 							<label>Export Destination</label>
 							<div class="auth-toggle">
 								<label class="toggle-label">
-									<input type="radio" name="destinationType" value="local" checked>
+									<input type="radio"
+										name="destinationType"
+										value="local"
+										checked>
 									💻 Local Download
 								</label>
 								<label class="toggle-label">
-									<input type="radio" name="destinationType" value="gcs">
+									<input type="radio"
+										name="destinationType"
+										value="gcs">
 									☁️ Google Cloud Storage
 								</label>
 								<label class="toggle-label">
-									<input type="radio" name="destinationType" value="s3">
+									<input type="radio"
+										name="destinationType"
+										value="s3">
 									🪣 Amazon S3
 								</label>
 							</div>
@@ -285,65 +437,97 @@
 						</div>
 
 						<!-- Local Destination Fields -->
-						<div id="local-destination" class="destination-section">
+						<div id="local-destination"
+							class="destination-section">
 							<div class="form-row">
 								<div class="form-group">
 									<label for="where">Output Directory</label>
-									<input type="text" id="where" name="where" placeholder="./exports">
+									<input type="text"
+										id="where"
+										name="where"
+										placeholder="./exports">
 									<small>Directory for exported files and logs</small>
 								</div>
 								<div class="form-group">
 									<label for="outputFilePath">Output File Path</label>
-									<input type="text" id="outputFilePath" name="outputFilePath" placeholder="./export-data.json">
+									<input type="text"
+										id="outputFilePath"
+										name="outputFilePath"
+										placeholder="./export-data.json">
 									<small>Path for exported data file</small>
 								</div>
 							</div>
 						</div>
 
 						<!-- GCS Destination Fields -->
-						<div id="gcs-destination" class="destination-section" style="display: none;">
+						<div id="gcs-destination"
+							class="destination-section"
+							style="display: none;">
 							<div class="form-row">
 								<div class="form-group">
 									<label for="gcsPath">GCS Path*</label>
-									<input type="text" id="gcsPath" name="gcsPath" placeholder="gs://your-bucket/exports/data.jsonl">
+									<input type="text"
+										id="gcsPath"
+										name="gcsPath"
+										placeholder="gs://your-bucket/exports/data.jsonl">
 									<small>Google Cloud Storage path (gs://bucket/path/file.jsonl)</small>
 								</div>
 								<div class="form-group">
 									<label for="gcpProjectId">GCP Project ID</label>
-									<input type="text" id="gcpProjectId" name="gcpProjectId" placeholder="your-gcp-project">
+									<input type="text"
+										id="gcpProjectId"
+										name="gcpProjectId"
+										placeholder="your-gcp-project">
 									<small>Google Cloud Project ID (optional if using ADC)</small>
 								</div>
 							</div>
 							<div class="form-group">
 								<label for="gcsCredentials">GCS Credentials Path</label>
-								<input type="text" id="gcsCredentials" name="gcsCredentials" placeholder="/path/to/service-account.json">
+								<input type="text"
+									id="gcsCredentials"
+									name="gcsCredentials"
+									placeholder="/path/to/service-account.json">
 								<small>Path to GCS service account key file (optional if using ADC)</small>
 							</div>
 						</div>
 
 						<!-- S3 Destination Fields -->
-						<div id="s3-destination" class="destination-section" style="display: none;">
+						<div id="s3-destination"
+							class="destination-section"
+							style="display: none;">
 							<div class="form-row">
 								<div class="form-group">
 									<label for="s3Path">S3 Path*</label>
-									<input type="text" id="s3Path" name="s3Path" placeholder="s3://your-bucket/exports/data.jsonl">
+									<input type="text"
+										id="s3Path"
+										name="s3Path"
+										placeholder="s3://your-bucket/exports/data.jsonl">
 									<small>Amazon S3 path (s3://bucket/path/file.jsonl)</small>
 								</div>
 								<div class="form-group">
 									<label for="s3Region">S3 Region*</label>
-									<input type="text" id="s3Region" name="s3Region" placeholder="us-east-1">
+									<input type="text"
+										id="s3Region"
+										name="s3Region"
+										placeholder="us-east-1">
 									<small>AWS region where your S3 bucket is located</small>
 								</div>
 							</div>
 							<div class="form-row">
 								<div class="form-group">
 									<label for="s3Key">AWS Access Key ID</label>
-									<input type="text" id="s3Key" name="s3Key" placeholder="AKIA...">
+									<input type="text"
+										id="s3Key"
+										name="s3Key"
+										placeholder="AKIA...">
 									<small>AWS Access Key (optional if using IAM roles)</small>
 								</div>
 								<div class="form-group">
 									<label for="s3Secret">AWS Secret Access Key</label>
-									<input type="password" id="s3Secret" name="s3Secret" placeholder="...">
+									<input type="password"
+										id="s3Secret"
+										name="s3Secret"
+										placeholder="...">
 									<small>AWS Secret Key (optional if using IAM roles)</small>
 								</div>
 							</div>
@@ -360,33 +544,44 @@
 				<div class="cli-preview">
 					<div class="cli-header">
 						<span class="cli-label">Terminal Command:</span>
-						<button type="button" id="copy-cli" class="btn btn-ghost btn-sm">
+						<button type="button"
+							id="copy-cli"
+							class="btn btn-ghost btn-sm">
 							<span class="btn-icon">📋</span>
 							Copy
 						</button>
 					</div>
-					<pre id="cli-command" class="cli-command">Select options above to generate CLI command...</pre>
+					<pre id="cli-command"
+						class="cli-command">Select options above to generate CLI command...</pre>
 				</div>
 			</section>
 
 			<!-- Actions -->
 			<section class="actions">
-				<button type="button" id="dry-run-btn" class="btn btn-secondary">
+				<button type="button"
+					id="dry-run-btn"
+					class="btn btn-secondary">
 					<span class="btn-icon">🧪</span>
 					Test Export (Dry Run)
 				</button>
-				<button type="button" id="test-run-btn" class="btn btn-secondary">
+				<button type="button"
+					id="test-run-btn"
+					class="btn btn-secondary">
 					<span class="btn-icon">🔬</span>
 					Test Run (1000 records)
 				</button>
-				<button type="submit" id="export-btn" class="btn btn-primary">
+				<button type="submit"
+					id="export-btn"
+					class="btn btn-primary">
 					<span class="btn-icon">📦</span>
 					Start Export
 				</button>
 			</section>
 
 			<!-- Loading State -->
-			<div id="loading" class="loading-overlay" style="display: none;">
+			<div id="loading"
+				class="loading-overlay"
+				style="display: none;">
 				<div class="loading-content">
 					<div class="loading-spinner"></div>
 					<h3 id="loading-title">Processing...</h3>
@@ -396,16 +591,20 @@
 			</div>
 
 			<!-- Results -->
-			<div id="results" class="results-section" style="display: none;">
+			<div id="results"
+				class="results-section"
+				style="display: none;">
 				<div class="results-content">
 					<h3 id="results-title">Export Complete!</h3>
-					<div id="results-data" class="results-data"></div>
+					<div id="results-data"
+						class="results-data"></div>
 				</div>
 			</div>
 		</form>
 	</div>
 
 	<script src="export.js"></script>
+	<script src="analytics.js"></script>
 </body>
 
 </html>

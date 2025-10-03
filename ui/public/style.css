@@ -380,6 +380,8 @@ input[type="radio"] {
     border-radius: 4px;
     background: transparent;
     border: 1px solid var(--border-secondary);
+    position: relative;
+    top: -1px;
 }
 
 .toggle-icon:hover {
@@ -491,6 +493,11 @@ input[type="radio"] {
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    pointer-events: none;
+}
+
+.dropzone-message * {
+    pointer-events: none;
 }
 
 .dropzone-icon {
@@ -790,10 +797,24 @@ input[type="radio"] {
     box-shadow: var(--shadow-md);
 }
 
+.results-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 20px;
+    position: relative;
+}
+
+.results-header #download-results-btn {
+    position: absolute;
+    left: 0;
+}
+
 #results-title {
     color: var(--success);
     font-size: 29px;
-    margin-bottom: 20px;
+    margin: 0;
     text-align: center;
     font-weight: 600;
 }
@@ -1394,11 +1415,18 @@ input[type="range"]::-moz-range-thumb {
     }
 }
 
-/* Dev Key Button */
-.dev-key-btn {
+/* Header Buttons */
+.header-buttons {
     position: absolute;
     top: 1rem;
     left: 1rem;
+    display: flex;
+    gap: 0.5rem;
+    z-index: 1000;
+}
+
+.dev-key-btn,
+.reset-btn {
     background: var(--bg-tertiary);
     border: 1px solid var(--border-color);
     border-radius: 8px;
@@ -1406,7 +1434,6 @@ input[type="range"]::-moz-range-thumb {
     font-size: 1rem;
     cursor: pointer;
     transition: all 0.2s ease;
-    z-index: 1000;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1414,12 +1441,50 @@ input[type="range"]::-moz-range-thumb {
     height: 2.5rem;
 }
 
-.dev-key-btn:hover {
+.dev-key-btn:hover,
+.reset-btn:hover {
     background: var(--bg-elevated);
     border-color: var(--mp-purple-light);
     transform: scale(1.05);
 }
 
-.dev-key-btn:active {
+.dev-key-btn:active,
+.reset-btn:active {
     transform: scale(0.95);
+}
+
+/* Header Artifact Links */
+.header-artifact-links {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 16px;
+    padding-top: 16px;
+    position: relative;
+    z-index: 1;
+}
+
+.header-artifact-links a {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.9);
+    text-decoration: none;
+    border-radius: 16px;
+    font-size: 13px;
+    font-weight: 500;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(10px);
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.header-artifact-links a:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.4);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }

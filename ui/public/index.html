@@ -24,6 +24,41 @@
 			overflow: hidden;
 		}
 
+		.header-artifact-links {
+			display: flex;
+			gap: 8px;
+			justify-content: center;
+			flex-wrap: wrap;
+			padding: 16px 24px;
+			width: 100%;
+			background: var(--bg-primary);
+			border-bottom: 1px solid var(--border-primary);
+		}
+
+		.header-artifact-links a {
+			display: inline-flex;
+			align-items: center;
+			gap: 4px;
+			padding: 6px 12px;
+			background: rgba(40, 40, 40, 0.8);
+			color: rgba(255, 255, 255, 0.9);
+			text-decoration: none;
+			border-radius: 16px;
+			font-size: 13px;
+			font-weight: 500;
+			border: 1px solid rgba(255, 255, 255, 0.2);
+			backdrop-filter: blur(10px);
+			transition: all 0.2s ease;
+			white-space: nowrap;
+		}
+
+		.header-artifact-links a:hover {
+			background: rgba(60, 60, 60, 0.9);
+			border-color: rgba(255, 255, 255, 0.4);
+			transform: translateY(-2px);
+			box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+		}
+
 		.landing-header::before {
 			content: '';
 			position: absolute;
@@ -52,41 +87,6 @@
 			z-index: 1;
 		}
 
-		.landing-footer {
-			padding: 40px 24px;
-			background: var(--bg-secondary);
-			border-top: 1px solid var(--border-primary);
-		}
-
-		.artifact-links {
-			display: flex;
-			gap: 12px;
-			justify-content: center;
-			flex-wrap: wrap;
-		}
-
-		.artifact-links a {
-			display: inline-flex;
-			align-items: center;
-			gap: 6px;
-			padding: 8px 16px;
-			background: rgba(40, 40, 40, 0.8);
-			color: rgba(255, 255, 255, 0.9);
-			text-decoration: none;
-			border-radius: 20px;
-			font-size: 14px;
-			font-weight: 500;
-			border: 1px solid rgba(255, 255, 255, 0.2);
-			backdrop-filter: blur(10px);
-			transition: all 0.2s ease;
-		}
-
-		.artifact-links a:hover {
-			background: rgba(60, 60, 60, 0.9);
-			border-color: rgba(255, 255, 255, 0.4);
-			transform: translateY(-2px);
-			box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-		}
 
 		.tools-container {
 			display: grid;
@@ -364,6 +364,25 @@
 			<p class="landing-subtitle">a suite of data processing tools for fun and profit</p>
 		</header>
 
+		<!-- Artifact Links Below Header -->
+		<div class="header-artifact-links">
+			<a href="https://www.notion.so/mxpnl/mixpanel-import-24be0ba9256280dfbd9fecaf040d3c2a?v=c8754a694d9644c494f3eea284fc4dc0&source=copy_link"
+				target="_blank"
+				rel="noopener">📚 docs</a>
+			<a href="https://storage.googleapis.com/mp-customer-upload/rickroll.mp4"
+				target="_blank"
+				rel="noopener">🎥 demo</a>
+			<a href="https://github.com/ak--47/mixpanel-import"
+				target="_blank"
+				rel="noopener">💻 code</a>
+			<a href="https://mixpanel.com/p/QJuv9bcK8Re7rq4vu5rfv1"
+				target="_blank"
+				rel="noopener">📊 metrics</a>
+			<a href=""
+				target="_blank"
+				rel="noopener">📋 logs</a>
+		</div>
+
 		<!-- Tools Container -->
 		<div class="tools-container">
 			<!-- E.T.L Tool (Import) -->
@@ -394,26 +413,6 @@
 		<!-- Divider -->
 		<div class="divider"></div>
 
-		<!-- Footer with artifact links -->
-		<footer class="landing-footer">
-			<div class="artifact-links">
-				<a href="https://www.notion.so/mxpnl/Meeple-Replay-Heatmap-Generator-229e0ba9256280d8a885e625fa376161"
-					target="_blank"
-					rel="noopener">📚 docs</a>
-				<a href="https://www.loom.com/share/decdf3ebec32460a9ba21a39444b2b30?sid=44b908a7-5d3c-434e-a273-a6b3e5abf51e"
-					target="_blank"
-					rel="noopener">🎥 demo</a>
-				<a href="https://github.com/ak--47/npc-mixpanel"
-					target="_blank"
-					rel="noopener">💻 code</a>
-				<a href="https://mixpanel.com/s/VEE5s"
-					target="_blank"
-					rel="noopener">📊 metrics</a>
-				<a href="https://cloudlogging.app.goo.gl/Xa9TsaEK8SxKdw2w5"
-					target="_blank"
-					rel="noopener">📋 logs</a>
-			</div>
-		</footer>
 	</div>
 
 	<script>
@@ -749,6 +748,7 @@
 			setInterval(cycleLTEEmoji, 3142);
 		});
 	</script>
+	<script src="analytics.js"></script>
 </body>
 
 </html>

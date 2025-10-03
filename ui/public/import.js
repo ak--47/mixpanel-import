@@ -13,6 +13,7 @@ class MixpanelImportUI {
 		this.columnMappings = {}; // Store user-defined column mappings
 		this.websocket = null; // WebSocket connection for real-time progress
 		this.currentJobId = null; // Track current job ID
+		this.lastResults = null; // Store last results for download
 		this.initializeUI();
 		this.setupEventListeners();
 		this.initializeMonacoEditor();
@@ -208,6 +209,67 @@ class MixpanelImportUI {
 			console.log('Dev values filled successfully');
 		} catch (error) {
 			console.error('Failed to fill dev values:', error);
+		}
+	}
+
+	resetForm() {
+		try {
+			// Reset the entire form
+			const form = document.getElementById('importForm');
+			if (form) {
+				form.reset();
+			}
+
+			// Reset file source to local
+			const localRadio = document.querySelector('input[name="fileSource"][value="local"]');
+			if (localRadio) {
+				localRadio.checked = true;
+				localRadio.dispatchEvent(new Event('change'));
+			}
+
+			// Clear dropzone files
+			if (this.dropzone) {
+				this.dropzone.removeAllFiles();
+			}
+
+			// Clear sample data
+			this.sampleData = [];
+			this.currentSampleIndex = 0;
+
+			// Reset record type to event (default)
+			const recordTypeSelect = document.getElementById('recordType');
+			if (recordTypeSelect) {
+				recordTypeSelect.value = 'event';
+				recordTypeSelect.dispatchEvent(new Event('change'));
+			}
+
+			// Clear Monaco editor if it exists
+			if (this.editor) {
+				this.editor.setValue(this.getDefaultTransformFunction());
+			}
+
+			// Hide preview and results sections
+			const dataPreview = document.getElementById('data-preview');
+			if (dataPreview) dataPreview.style.display = 'none';
+
+			const results = document.getElementById('results');
+			if (results) results.style.display = 'none';
+
+			const loading = document.getElementById('loading');
+			if (loading) loading.style.display = 'none';
+
+			// Clear column mapper
+			this.detectedColumns = [];
+			this.columnMappings = {};
+			const columnMapperSection = document.getElementById('column-mapper-section');
+			if (columnMapperSection) columnMapperSection.style.display = 'none';
+
+			// Update CLI command
+			this.updateCLICommand();
+
+			console.log('Form reset successfully');
+		} catch (error) {
+			console.error('Failed to reset form:', error);
 		}
 	}
 
@@ -539,6 +601,12 @@ class MixpanelImportUI {
 		const copyCliBtn = document.getElementById('copy-cli');
 		copyCliBtn.addEventListener('click', this.copyCLICommand.bind(this));
 
+		// Download results button
+		const downloadResultsBtn = document.getElementById('download-results-btn');
+		if (downloadResultsBtn) {
+			downloadResultsBtn.addEventListener('click', this.downloadResults.bind(this));
+		}
+
 		// Update CLI command when form changes
 		form.addEventListener('input', this.updateCLICommand.bind(this));
 		form.addEventListener('change', this.updateCLICommand.bind(this));
@@ -552,6 +620,12 @@ class MixpanelImportUI {
 		const devKeyBtn = document.getElementById('dev-key-btn');
 		if (devKeyBtn) {
 			devKeyBtn.addEventListener('click', this.fillDevValues.bind(this));
+		}
+
+		// Reset button to clear form
+		const resetBtn = document.getElementById('reset-btn');
+		if (resetBtn) {
+			resetBtn.addEventListener('click', this.resetForm.bind(this));
 		}
 	}
 
@@ -665,8 +739,6 @@ class MixpanelImportUI {
 
 	updateFieldVisibility() {
 		const recordType = document.getElementById('recordType').value;
-		const credentialsSection = document.getElementById('credentials-section');
-		const credentialsDescription = document.getElementById('credentials-description');
 
 		// Hide all groups initially
 		const allGroups = [
@@ -678,33 +750,19 @@ class MixpanelImportUI {
 			if (element) element.style.display = 'none';
 		});
 
-		// Show credentials section if a record type is selected
-		if (!recordType) {
-			credentialsSection.style.display = 'none';
-			this.updateCLICommand(); // Update CLI when record type changes
-			return;
-		}
-
-		credentialsSection.style.display = 'block';
-
 		// Define authentication requirements based on RecordType
 		switch (recordType) {
 			case 'event':
 			case 'user':
 				// Only project token is required
-				credentialsDescription.textContent = 'Events and User profiles only require a project token.';
 				document.getElementById('token-group').style.display = 'block';
 				break;
 
 			case 'group':
 				// Project token + groupKey is required
-				credentialsDescription.textContent = 'Group profiles require a project token and group key.';
 				document.getElementById('token-group').style.display = 'block';
 				document.getElementById('groupKey-group').style.display = 'block';
 				break;
-
-			default:
-				credentialsDescription.textContent = 'Select an import type to see required authentication settings.';
 		}
 
 		// Update CLI command after field visibility changes
@@ -1036,6 +1094,40 @@ class MixpanelImportUI {
 		}).catch(_err => {
 			this.showError('Could not copy to clipboard. Please select and copy manually.');
 		});
+	}
+
+	downloadResults() {
+		if (!this.lastResults) {
+			this.showError('No results available to download.');
+			return;
+		}
+
+		// Create a blob with the JSON data
+		const jsonString = JSON.stringify(this.lastResults, null, 2);
+		const blob = new Blob([jsonString], { type: 'application/json' });
+
+		// Create a temporary download link
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `mixpanel-import-results-${Date.now()}.json`;
+
+		// Trigger download
+		document.body.appendChild(a);
+		a.click();
+
+		// Cleanup
+		document.body.removeChild(a);
+		URL.revokeObjectURL(url);
+
+		// Show success feedback
+		const downloadBtn = document.getElementById('download-results-btn');
+		const originalText = downloadBtn.innerHTML;
+		downloadBtn.innerHTML = '<span class="btn-icon">✓</span> Downloaded!';
+
+		setTimeout(() => {
+			downloadBtn.innerHTML = originalText;
+		}, 2000);
 	}
 
 	async initializeMonacoEditor() {
@@ -1529,6 +1621,9 @@ function transform(row) {
 
 		resultsTitle.textContent = isDryRun ? 'Preview Results' : 'Import Complete!';
 
+		// Store results for download
+		this.lastResults = result;
+
 		// For dry runs with both raw and transformed data, show side-by-side comparison
 		if (isDryRun && result.rawData && result.previewData) {
 			this.showSideBySideComparison(result.rawData, result.previewData);
@@ -1536,14 +1631,14 @@ function transform(row) {
 			// Regular single display for non-dry runs or legacy dry runs
 			// Handle both WebSocket results (direct result object) and HTTP results (wrapped in .result)
 			let displayData = result.result || result;
-			
+
 			if (isDryRun && result.previewData && result.previewData.length > 0) {
 				displayData = [...result.previewData.slice(0, 100)];
 			}
 
 			resultsData.innerHTML = `<pre><code class="json">${this.highlightJSON(JSON.stringify(displayData, null, 2))}</code></pre>`;
 		}
-		
+
 		resultsSection.style.display = 'block';
 		resultsSection.scrollIntoView({ behavior: 'smooth' });
 	}
@@ -2008,17 +2103,12 @@ function transform(row) {
 function toggleSection(sectionId) {
 	const section = document.getElementById(sectionId);
 	const header = section?.previousElementSibling || section?.parentElement?.querySelector('.section-header');
-	const toggleIcon = header?.querySelector('.toggle-icon');
-	
+
 	if (!section) return;
-	
+
 	const isVisible = section.style.display !== 'none';
 	section.style.display = isVisible ? 'none' : 'block';
-	
-	if (toggleIcon) {
-		toggleIcon.textContent = isVisible ? '▼' : '▲';
-	}
-	
+
 	if (header) {
 		header.setAttribute('aria-expanded', !isVisible);
 	}
@@ -2036,10 +2126,6 @@ function toggleAllSections() {
 	collapsibleSections.forEach(section => {
 		section.style.display = isExpanding ? 'block' : 'none';
 		const header = section.previousElementSibling || section.parentElement?.querySelector('.section-header');
-		const toggleIcon = header?.querySelector('.toggle-icon');
-		if (toggleIcon) {
-			toggleIcon.textContent = isExpanding ? '▲' : '▼';
-		}
 		if (header) {
 			header.setAttribute('aria-expanded', isExpanding);
 		}
