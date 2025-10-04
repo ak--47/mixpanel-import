@@ -190,7 +190,8 @@ class MixpanelImportUI {
 			// Fill GCS path
 			const gcsPathsInput = document.getElementById('gcsPaths');
 			if (gcsPathsInput) {
-				gcsPathsInput.value = 'gs://mixpanel-import-public-data/example-dnd-events.json';
+				// gcsPathsInput.value = 'gs://mixpanel-import-public-data/example-dnd-events.json';
+				gcsPathsInput.value = 'gs://mixpanel-import-public-data/twofifty-k-events.json.gz';
 				gcsPathsInput.dispatchEvent(new Event('input'));
 			}
 

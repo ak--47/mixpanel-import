@@ -129,11 +129,11 @@
 		}
 
 		.etl-card .tool-icon {
-			color: var(--mp-teal);
+			color: var(--mp-purple-dark);
 			text-shadow:
-				0 0 20px var(--mp-teal),
-				0 0 40px var(--mp-teal),
-				0 0 60px var(--mp-teal);
+				0 0 20px var(--mp-purple-dark),
+				0 0 40px var(--mp-purple-dark),
+				0 0 60px var(--mp-purple-dark);
 			animation: etlGlow 2s ease-in-out infinite alternate, etlFloat 3s ease-in-out infinite alternate;
 		}
 
@@ -149,16 +149,16 @@
 		@keyframes etlGlow {
 			0% {
 				text-shadow:
-					0 0 20px var(--mp-teal),
-					0 0 40px var(--mp-teal),
-					0 0 60px var(--mp-teal);
+					0 0 20px var(--mp-purple-dark),
+					0 0 40px var(--mp-purple-dark),
+					0 0 60px var(--mp-purple-dark);
 			}
 
 			100% {
 				text-shadow:
-					0 0 30px var(--mp-teal),
-					0 0 60px var(--mp-teal),
-					0 0 90px var(--mp-teal);
+					0 0 30px var(--mp-purple-dark),
+					0 0 60px var(--mp-purple-dark),
+					0 0 90px var(--mp-purple-dark);
 			}
 		}
 
@@ -255,6 +255,11 @@
 			height: 80px;
 			background: linear-gradient(to bottom, transparent, var(--mp-purple), transparent);
 			z-index: 10;
+		}
+
+		.highlight {
+			color: var(--mp-teal);
+			font-weight: 600;
 		}
 
 		/* Responsive design */
@@ -378,7 +383,7 @@
 			<a href="https://mixpanel.com/p/QJuv9bcK8Re7rq4vu5rfv1"
 				target="_blank"
 				rel="noopener">📊 metrics</a>
-			<a href=""
+			<a href="https://cloudlogging.app.goo.gl/m9GRzZxyhSSUAmxr6"
 				target="_blank"
 				rel="noopener">📋 logs</a>
 		</div>
@@ -392,7 +397,7 @@
 				<h2 class="tool-name">E.T.L</h2>
 				<p class="tool-description"
 					id="etl-description">Extract Transform Load</p>
-				<p class="tool-tagline">import data to mixpanel from files (or cloud storage) with powerful transforms
+				<p class="tool-tagline">import data to mixpanel with<br/><span class="highlight">powerful transforms</span>
 				</p>
 				<span class="tool-button">Import Tool →</span>
 			</a>
@@ -404,8 +409,7 @@
 				<h2 class="tool-name">L.T.E</h2>
 				<p class="tool-description"
 					id="lte-description">Load Transform Export</p>
-				<p class="tool-tagline">export data from Mixpanel with flexible filtering, and re-import data into a new
-					or existing project</p>
+				<p class="tool-tagline">export data from mixpanel and<br/> <span class="highlight">re-import data</span></p>
 				<span class="tool-button">Export Tool →</span>
 			</a>
 		</div>
