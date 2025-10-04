@@ -46,6 +46,7 @@ const { callbackify } = require('util');
  */
 function corePipeline(stream, job, toNodeStream = false) {
 	const l = logger(job);
+	// @ts-ignore
 	if (job.recordType === 'table') return flushLookupTable(stream, job);
 	// @ts-ignore
 	if (job.recordType === 'export' && typeof stream === 'string') return exportEvents(stream, job);

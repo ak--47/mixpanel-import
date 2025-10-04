@@ -228,7 +228,7 @@ class Job {
 		this.compress = u.isNil(opts.compress) ? true : opts.compress; //gzip data (events only)
 		this.strict = u.isNil(opts.strict) ? true : opts.strict; // use strict mode?
 		this.logs = u.isNil(opts.logs) ? false : opts.logs; //create log file
-		this.where = u.isNil(opts.where) ? './' : opts.where; // where to put logs
+		this.where = u.isNil(opts.where) ? undefined : opts.where; // where to put logs
 		this.verbose = u.isNil(opts.verbose) ? false : opts.verbose;  // print to stdout?
 		this.showProgress = u.isNil(opts.showProgress) ? false : opts.showProgress; // show progress bar
 		this.progressCallback = opts.progressCallback || null; // optional callback for progress updates (used by UI WebSocket)

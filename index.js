@@ -291,6 +291,7 @@ if (require.main === module) {
 	// Check if --ui flag is present
 	const args = cliParams();
 
+	// @ts-ignore
 	if (args.ui) {
 		// Start the web UI
 		const { startUI } = require('./ui/server.js');

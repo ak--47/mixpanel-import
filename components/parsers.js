@@ -23,6 +23,32 @@ const zlib = require('zlib');
 const { NODE_ENV = "unknown" } = process.env;
 
 /**
+ * Helper function to safely check if a path exists and get its type
+ * @param {string} filePath - Path to check
+ * @returns {{exists: boolean, isFile: boolean, isDirectory: boolean, path: string}}
+ */
+function checkPath(filePath) {
+	try {
+		const resolvedPath = path.resolve(filePath);
+		if (!fs.existsSync(resolvedPath)) {
+			return { exists: false, isFile: false, isDirectory: false, path: resolvedPath };
+		}
+
+		const stats = fs.lstatSync(resolvedPath);
+		return {
+			exists: true,
+			isFile: stats.isFile(),
+			isDirectory: stats.isDirectory(),
+			path: resolvedPath
+		};
+	} catch (error) {
+		// Log error but return safe defaults
+		console.warn(`Error checking path ${filePath}:`, error.message);
+		return { exists: false, isFile: false, isDirectory: false, path: filePath };
+	}
+}
+
+/**
  * Determine if file is gzipped and extract base format
  * @param {string} filePath - Path to file
  * @param {JobConfig} job - Job configuration
@@ -246,6 +272,11 @@ async function determineDataType(data, job) {
 			if (job.where.startsWith('gs://') || job.where.startsWith('s3://')) {
 				return job.where;
 			}
+
+			// if "where" is a folder, return a file path to events.json
+			if (checkPath(job.where).isDirectory) {
+				return path.join(job.where, 'events.json');
+			}
 			return path.resolve(job.where);
 		}
 		const folder = u.mkdir('./mixpanel-exports');
@@ -305,7 +336,8 @@ async function determineDataType(data, job) {
 	// lookup tables are not streamed
 	if (job.recordType === 'table') {
 		job.wasStream = false;
-		if (fs.existsSync(path.resolve(data))) return await u.load(data);
+		const pathInfo = checkPath(data);
+		if (pathInfo.exists) return await u.load(pathInfo.path);
 		return data;
 	}
 
@@ -367,17 +399,18 @@ async function determineDataType(data, job) {
 		let isArrayOfFileNames = false; // !ugh ... so disorganized 
 		//data might be an array of filenames
 		if (Array.isArray(data) && data.every(item => typeof item === 'string')) {
-			if (data.every(filePath => fs.existsSync(path.resolve(filePath)))) {
+			if (data.every(filePath => checkPath(filePath).exists)) {
 				isArrayOfFileNames = true;
 			}
 		}
 		// data refers to file/folder on disk
 		if (typeof data === 'string' && !isArrayOfFileNames) {
-			if (fs.existsSync(path.resolve(data))) {
-				if (fs.lstatSync(path.resolve(data)).isFile()) {
-					const fileInfo = fs.lstatSync(path.resolve(data));
+			const pathInfo = checkPath(data);
+			if (pathInfo.exists) {
+				if (pathInfo.isFile) {
+					const fileInfo = fs.lstatSync(pathInfo.path);
 					//it's a file
-					const { isGzipped, baseFormat, parsingCase: detectedCase } = analyzeFileFormat(data, job);
+					const { isGzipped, baseFormat, parsingCase: detectedCase } = analyzeFileFormat(pathInfo.path, job);
 					let parsingCase = detectedCase;
 
 					// Allow streamFormat to override detected format
@@ -393,7 +426,7 @@ async function determineDataType(data, job) {
 						if (loadIntoMemory) {
 							job.wasStream = false;
 							try {
-								const file = /** @type {string} */ (await u.load(path.resolve(data)));
+								const file = /** @type {string} */ (await u.load(pathInfo.path));
 								const parsed = file.trim().split('\n').map(line => JSON.parse(line));
 								return stream.Readable.from(parsed, { objectMode: true, highWaterMark: highWater });
 							}
@@ -402,14 +435,14 @@ async function determineDataType(data, job) {
 							}
 						}
 						job.wasStream = true;
-						return itemStream(path.resolve(data), "jsonl", job, isGzipped);
+						return itemStream(pathInfo.path, "jsonl", job, isGzipped);
 					}
 
 					if (parsingCase === 'strict_json') {
 						if (loadIntoMemory) {
 							try {
 								job.wasStream = false;
-								const file = await u.load(path.resolve(data), true);
+								const file = await u.load(pathInfo.path, true);
 								let fileContents;
 								if (Array.isArray(file)) fileContents = file;
 								else fileContents = [file];
@@ -424,7 +457,7 @@ async function determineDataType(data, job) {
 						//otherwise, stream it
 						job.wasStream = true;
 						// @ts-ignore
-						return itemStream(path.resolve(data), "json", job, isGzipped);
+						return itemStream(pathInfo.path, "json", job, isGzipped);
 					}
 
 					//csv case
@@ -432,7 +465,7 @@ async function determineDataType(data, job) {
 						if (loadIntoMemory) {
 							try {
 								job.wasStream = false;
-								return await csvMemory(path.resolve(data), job);
+								return await csvMemory(pathInfo.path, job);
 							}
 							catch (e) {
 								// probably a memory crash, so we'll try to stream it
@@ -440,20 +473,23 @@ async function determineDataType(data, job) {
 
 						}
 						job.wasStream = true;
-						return csvStreamer(path.resolve(data), job, isGzipped);
+						return csvStreamer(pathInfo.path, job, isGzipped);
 					}
 
 					//parquet case
 					if (parsingCase === 'parquet') {
-						return await parquetStream(path.resolve(data), job, isGzipped);
+						return await parquetStream(pathInfo.path, job, isGzipped);
 					}
 				}
-
+			} else if (typeof data === 'string') {
+				// Path doesn't exist - provide helpful error message
+				// throw new Error(`File or directory not found: ${pathInfo.path}`);
 			}
 		}
 
 		//folder or array of files case
-		if (isArrayOfFileNames || (fs.existsSync(path.resolve(data)) && fs.lstatSync(path.resolve(data)).isDirectory())) {
+		const dataPathInfo = typeof data === 'string' ? checkPath(data) : null;
+		if (isArrayOfFileNames || (dataPathInfo && dataPathInfo.exists && dataPathInfo.isDirectory)) {
 			job.wasStream = true;
 			let files;
 			let exampleFile;
@@ -462,12 +498,12 @@ async function determineDataType(data, job) {
 
 			if (isArrayOfFileNames && Array.isArray(data)) {
 				//array of files case
-				files = data.map(filePath => path.resolve(filePath));
+				files = data.map(filePath => checkPath(filePath).path);
 				exampleFile = files[0];
 			}
 			else {
 				//directory case
-				const enumDir = await u.ls(path.resolve(data));
+				const enumDir = await u.ls(dataPathInfo.path);
 				files = Array.isArray(enumDir) ? enumDir.filter(filePath => supportedFileExt.includes(path.extname(filePath))) : [];
 				exampleFile = files[0] || '';
 			}
@@ -522,7 +558,7 @@ async function determineDataType(data, job) {
 		if (data.endsWith('.parquet.gz')) {
 			throw new Error(`Gzipped parquet files (${data}) are not yet supported for local files. Please decompress the file first or use cloud storage which supports .parquet.gz files.`);
 		}
-		
+
 		// If we have a parsing error from file processing and the data looks like a file path, 
 		// throw the error instead of trying to parse the path as data
 		if (parsingError && (data.includes('/') || data.includes('\\') || data.includes('.'))) {
@@ -559,7 +595,18 @@ async function determineDataType(data, job) {
 		}
 	}
 
-	console.error(`ERROR:\n\t${data} is not a file, a folder, an array, a stream, or a string... (i could not determine it's type)`);
+	// Provide more specific error messages
+	if (typeof data === 'string') {
+		const pathInfo = checkPath(data);
+		if (!pathInfo.exists) {
+			console.error(`ERROR: File or directory does not exist: ${pathInfo.path}`);
+		} else {
+			console.error(`ERROR: Unable to process file/directory: ${pathInfo.path}`);
+		}
+	} else {
+		console.error(`ERROR:\n\t${data} is not a file, a folder, an array, a stream, or a string... (could not determine its type)`);
+		throw new Error('data must be a file path, folder path, array of objects, stream, or string');
+	}
 	if (parsingError) {
 		throw parsingError;
 	}
@@ -2142,24 +2189,24 @@ async function testGCSWriteAccess(gcsPath, projectId = 'mixpanel-gtm-training', 
 
 	const bucketName = matches[1];
 	const filePath = matches[2];
-	
+
 	// Create test file path in same directory
 	const testFileName = `${path.dirname(filePath)}/.write-test-${Date.now()}-${Math.random().toString(36).substring(2)}`;
 
 	try {
 		const bucket = storage.bucket(bucketName);
 		const testFile = bucket.file(testFileName);
-		
+
 		// Try to create a small test file
 		await testFile.save('test-write-access', {
 			metadata: {
 				contentType: 'text/plain'
 			}
 		});
-		
+
 		// Clean up test file
 		await testFile.delete();
-		
+
 		return true;
 	} catch (error) {
 		throw new Error(`Cannot write to GCS path ${gcsPath}: ${error.message}`);
@@ -2181,7 +2228,7 @@ async function testS3WriteAccess(s3Path, s3Config = {}) {
 
 	const bucketName = matches[1];
 	const key = matches[2];
-	
+
 	// Create test key in same directory
 	const testKey = `${path.dirname(key)}/.write-test-${Date.now()}-${Math.random().toString(36).substring(2)}`;
 
@@ -2201,13 +2248,13 @@ async function testS3WriteAccess(s3Path, s3Config = {}) {
 			Body: 'test-write-access',
 			ContentType: 'text/plain'
 		}));
-		
+
 		// Clean up test file
 		await s3Client.send(new DeleteObjectCommand({
 			Bucket: bucketName,
 			Key: testKey
 		}));
-		
+
 		return true;
 	} catch (error) {
 		throw new Error(`Cannot write to S3 path ${s3Path}: ${error.message}`);

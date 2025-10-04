@@ -243,7 +243,12 @@ async function exportEvents(filename, job) {
 	}
 
 	// Use the chosen stream in the pipeline
-	await pipeline(request, outputStream);
+	try {
+		await pipeline(request, outputStream);
+	}
+	catch (e) {
+		if (job.verbose) console.warn(`Pipeline error: ${e.message}`);
+	}
 	if (job.verbose) console.log('\n\ndownload finished\n\n');
 	if (skipWriteToDisk) {
 		job.recordsProcessed += allResults.length;
@@ -317,9 +322,9 @@ async function exportProfiles(folder, job) {
 
 	// Build form data for POST body
 	const encodedParams = new URLSearchParams();
-	
+
 	if (job.cohortId) {
-		encodedParams.set('filter_by_cohort', JSON.stringify({id: job.cohortId}));
+		encodedParams.set('filter_by_cohort', JSON.stringify({ id: job.cohortId }));
 		encodedParams.set('include_all_users', 'false');
 	}
 
@@ -702,16 +707,16 @@ function applyTransformToRecords(records, job) {
 async function writeLocalJSONL(filePath, data) {
 	// Convert to JSONL format (newline-delimited JSON)
 	const jsonlData = data.map(item => JSON.stringify(item)).join('\n') + '\n';
-	
+
 	// Ensure directory exists
 	const dir = path.dirname(filePath);
 	if (!fs.existsSync(dir)) {
 		fs.mkdirSync(dir, { recursive: true });
 	}
-	
+
 	// Write file
 	await fs.promises.writeFile(filePath, jsonlData, 'utf8');
-	
+
 	return filePath;
 }
 

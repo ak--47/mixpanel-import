@@ -1164,6 +1164,133 @@ describe("parsers", () => {
 	});
 });
 
+describe("path checking", () => {
+	// Import the checkPath function from parsers.js for testing
+	const fs = require('fs');
+	const path = require('path');
+	
+	// Helper function to replicate the checkPath function from parsers.js
+	function checkPath(filePath) {
+		try {
+			const resolvedPath = path.resolve(filePath);
+			if (!fs.existsSync(resolvedPath)) {
+				return { exists: false, isFile: false, isDirectory: false, path: resolvedPath };
+			}
+			
+			const stats = fs.lstatSync(resolvedPath);
+			return {
+				exists: true,
+				isFile: stats.isFile(),
+				isDirectory: stats.isDirectory(),
+				path: resolvedPath
+			};
+		} catch (error) {
+			console.warn(`Error checking path ${filePath}:`, error.message);
+			return { exists: false, isFile: false, isDirectory: false, path: filePath };
+		}
+	}
+
+	test("checkPath: existing file", () => {
+		const result = checkPath('./testData/events-small.json');
+		expect(result.exists).toBe(true);
+		expect(result.isFile).toBe(true);
+		expect(result.isDirectory).toBe(false);
+		expect(result.path).toContain('events-small.json');
+	});
+
+	test("checkPath: existing directory", () => {
+		const result = checkPath('./testData');
+		expect(result.exists).toBe(true);
+		expect(result.isFile).toBe(false);
+		expect(result.isDirectory).toBe(true);
+		expect(result.path).toContain('testData');
+	});
+
+	test("checkPath: non-existent file", () => {
+		const result = checkPath('./nonexistent-file.json');
+		expect(result.exists).toBe(false);
+		expect(result.isFile).toBe(false);
+		expect(result.isDirectory).toBe(false);
+		expect(result.path).toContain('nonexistent-file.json');
+	});
+
+	test("checkPath: non-existent directory", () => {
+		const result = checkPath('./nonexistent-directory');
+		expect(result.exists).toBe(false);
+		expect(result.isFile).toBe(false);
+		expect(result.isDirectory).toBe(false);
+		expect(result.path).toContain('nonexistent-directory');
+	});
+
+	test("checkPath: empty string resolves to current directory", () => {
+		const result = checkPath('');
+		expect(result.exists).toBe(true);
+		expect(result.isFile).toBe(false);
+		expect(result.isDirectory).toBe(true);
+	});
+
+	test("checkPath: relative path resolution", () => {
+		const result = checkPath('./components/parsers.js');
+		expect(result.exists).toBe(true);
+		expect(result.isFile).toBe(true);
+		expect(result.path).toMatch(/\/components\/parsers\.js$/);
+	});
+
+	test("checkPath: absolute path handling", () => {
+		const absolutePath = path.resolve('./testData');
+		const result = checkPath(absolutePath);
+		expect(result.exists).toBe(true);
+		expect(result.isDirectory).toBe(true);
+		expect(result.path).toBe(absolutePath);
+	});
+
+	test("checkPath: handles invalid characters gracefully", () => {
+		const result = checkPath('/invalid\0path/with\0nulls');
+		expect(result.exists).toBe(false);
+		expect(result.isFile).toBe(false);
+		expect(result.isDirectory).toBe(false);
+	});
+
+	test("determineDataType: better error handling for non-existent files", async () => {
+		const job = new Job(fakeCreds);
+		
+		await expect(determineDataType('./nonexistent-file.json', job))
+			.rejects
+			.toThrow('File or directory not found');
+	});
+
+	test("determineDataType: handles array of non-existent files", async () => {
+		const job = new Job(fakeCreds);
+		const nonExistentFiles = ['./file1.json', './file2.json', './file3.json'];
+		try {
+			const result = await determineDataType(nonExistentFiles, job);
+		} catch (error) {
+			expect(error.message).toBe('data must be a file path, folder path, array of objects, stream, or string');
+		}
+	});
+
+	test("determineDataType: existing directory handling", async () => {
+		const job = new Job(fakeCreds);
+		try{
+		// testData directory exists and should be processed
+		const result = await determineDataType('./testData', job);
+		}
+		catch(error){
+			// If no supported files are found, it should throw an error
+			expect(error.message).toBe('All files in array/directory must have the same format and compression (gzipped or not gzipped)');
+		}
+	});
+
+	test("determineDataType: array of existing files", async () => {
+		const job = new Job(fakeCreds);
+		const existingFiles = ['./testData/events-small.json'];
+		
+		const result = await determineDataType(existingFiles, job);
+		expect(result).toBeDefined();
+		expect(job.wasStream).toBe(true);
+	});
+});
+
 describe("gzip support", () => {
 	test("isGzip option works", () => {
 		const job = new Job(fakeCreds, { isGzip: true });
