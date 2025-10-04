@@ -27,6 +27,9 @@
 			</h1>
 			<p class="subtitle">stream data to mixpanel with powerful transforms</p>
 			<div class="header-buttons">
+				<a href="/"
+					class="dev-key-btn"
+					title="Back to home">🏠</a>
 				<button type="button"
 					id="dev-key-btn"
 					class="dev-key-btn"
@@ -173,45 +176,6 @@
 								<span class="btn-icon">🔄</span>
 								See More Records
 							</button>
-						</div>
-					</div>
-				</div>
-			</section>
-
-			<!-- Column Mapper Section -->
-			<section class="card collapsible-section"
-				id="column-mapper-section"
-				style="display: none;">
-				<div class="section-header"
-					onclick="toggleSection('column-mapper-wrapper')"
-					aria-expanded="true">
-					<span class="section-icon">🔗</span>
-					<h2>Column Mapping (Optional)</h2>
-					<span class="toggle-icon">▼</span>
-				</div>
-				<div id="column-mapper-wrapper"
-					class="collapsible-content">
-					<p class="section-description">Map your data columns to common Mixpanel fields. This creates simple
-						column renaming aliases for you.</p>
-
-					<div class="column-mapper-actions">
-						<button type="button"
-							id="detect-columns-btn"
-							class="btn btn-secondary">
-							<span class="btn-icon">🔍</span>
-							Detect Columns from Data
-						</button>
-					</div>
-
-					<div id="column-mapper-content"
-						style="display: none;">
-						<div class="column-mapper-grid">
-							<!-- Mixpanel field mappings will be populated here -->
-						</div>
-
-						<div class="column-mapper-status">
-							<p id="mapper-status"
-								class="section-description"></p>
 						</div>
 					</div>
 				</div>
@@ -412,116 +376,44 @@
 						</button>
 					</div>
 
-					<!-- Performance & Processing -->
-					<div class="collapsible-section">
+					<!-- Column Mapping -->
+					<div class="collapsible-section"
+						id="column-mapper-section">
 						<div class="section-header"
-							onclick="toggleSection('performance-section')"
-							aria-expanded="false"
-							title="Configure request batching, compression, HTTP transport, and other performance settings">
-							<span class="section-icon">📈</span>
-							<h3>Performance</h3><span class="subtext">usually don't touch these</span>
+							onclick="toggleSection('column-mapper-wrapper')"
+							aria-expanded="false">
+							<span class="section-icon">🔗</span>
+							<h3>Column Mapping</h3><span class="subtext">map columns to mixpanel fields</span>
 							<span class="toggle-icon">▼</span>
 						</div>
-						<div id="performance-section"
+						<div id="column-mapper-wrapper"
 							class="collapsible-content"
 							style="display: none;">
-							<div class="form-row">
-								<div class="form-group">
-									<label for="workers"
-										title="Higher values import faster but may hit rate limits. Start with 10 and increase if your network can handle more concurrent requests">Concurrency
-										Workers</label>
-									<input type="number"
-										id="workers"
-										name="workers"
-										value="20"
-										min="1"
-										max="50"
-										autocomplete="off">
-									<small>Number of concurrent HTTP requests (default: 10)</small>
-								</div>
-								<div class="form-group">
-									<label for="recordsPerBatch">Records per Batch</label>
-									<input type="number"
-										id="recordsPerBatch"
-										name="recordsPerBatch"
-										value="2000"
-										min="1"
-										max="5000"
-										autocomplete="off">
-									<small>Records per API request (default: 2000)</small>
-								</div>
+							<div class="column-mapper-actions">
+								<button type="button"
+									id="detect-columns-btn"
+									class="btn btn-secondary">
+									<span class="btn-icon">🔍</span>
+									Detect Columns from Data
+								</button>
+								<button type="button"
+									id="preview-data-from-mapper-btn"
+									class="btn btn-ghost"
+									style="display: none;">
+									<span class="btn-icon">👁️</span>
+									Preview Data First
+								</button>
 							</div>
 
-							<div class="form-row">
-								<div class="form-group">
-									<label for="bytesPerBatch">Bytes per Batch</label>
-									<input type="number"
-										id="bytesPerBatch"
-										name="bytesPerBatch"
-										value="2000000"
-										min="1000"
-										max="2000000"
-										autocomplete="off">
-									<small>Max bytes per API request (default: 2MB)</small>
+							<div id="column-mapper-content"
+								style="display: none;">
+								<div class="column-mapper-grid">
+									<!-- Mixpanel field mappings will be populated here -->
 								</div>
-								<div class="form-group">
-									<label for="maxRetries">Max Retries</label>
-									<input type="number"
-										id="maxRetries"
-										name="maxRetries"
-										value="10"
-										min="0"
-										max="50"
-										autocomplete="off">
-									<small>Maximum retry attempts on failures (default: 10)</small>
-								</div>
-							</div>
 
-							<div class="form-row">
-								<div class="form-group">
-									<label for="streamFormat">File Format</label>
-									<select id="streamFormat"
-										name="streamFormat">
-										<option value="">Auto-detect from file extension</option>
-										<option value="jsonl">JSONL (recommended)</option>
-										<option value="json">JSON</option>
-										<option value="csv">CSV</option>
-										<option value="parquet">Parquet</option>
-									</select>
-									<small>Format of underlying data stream</small>
-								</div>
-								<div class="form-group">
-									<label for="transport">HTTP Transport</label>
-									<select id="transport"
-										name="transport">
-										<option value="got">Got (default)</option>
-										<option value="undici">Undici (experimental)</option>
-									</select>
-									<small>HTTP client for sending requests</small>
-								</div>
-							</div>
-
-							<div class="form-row">
-								<div class="form-group checkbox-group">
-									<label class="checkbox-label">
-										<input type="checkbox"
-											id="compress"
-											name="compress"
-											checked>
-										Enable Compression
-									</label>
-									<small>Gzip compress requests (events only)</small>
-								</div>
-								<div class="form-group">
-									<label for="compressionLevel">Compression Level</label>
-									<input type="range"
-										id="compressionLevel"
-										name="compressionLevel"
-										min="0"
-										max="9"
-										value="6"
-										autocomplete="off">
-									<small>0 = none, 9 = max compression (default: 6)</small>
+								<div class="column-mapper-status">
+									<p id="mapper-status"
+										class="section-description"></p>
 								</div>
 							</div>
 						</div>
@@ -796,6 +688,120 @@
 						</div>
 					</div>
 
+					<!-- Performance & Processing -->
+					<div class="collapsible-section">
+						<div class="section-header"
+							onclick="toggleSection('performance-section')"
+							aria-expanded="false"
+							title="Configure request batching, compression, HTTP transport, and other performance settings">
+							<span class="section-icon">📈</span>
+							<h3>Performance</h3><span class="subtext">usually don't touch these</span>
+							<span class="toggle-icon">▼</span>
+						</div>
+						<div id="performance-section"
+							class="collapsible-content"
+							style="display: none;">
+							<div class="form-row">
+								<div class="form-group">
+									<label for="workers"
+										title="Higher values import faster but may hit rate limits. Start with 10 and increase if your network can handle more concurrent requests">Concurrency
+										Workers</label>
+									<input type="number"
+										id="workers"
+										name="workers"
+										value="20"
+										min="1"
+										max="50"
+										autocomplete="off">
+									<small>Number of concurrent HTTP requests (default: 10)</small>
+								</div>
+								<div class="form-group">
+									<label for="recordsPerBatch">Records per Batch</label>
+									<input type="number"
+										id="recordsPerBatch"
+										name="recordsPerBatch"
+										value="2000"
+										min="1"
+										max="5000"
+										autocomplete="off">
+									<small>Records per API request (default: 2000)</small>
+								</div>
+							</div>
+
+							<div class="form-row">
+								<div class="form-group">
+									<label for="bytesPerBatch">Bytes per Batch</label>
+									<input type="number"
+										id="bytesPerBatch"
+										name="bytesPerBatch"
+										value="2000000"
+										min="1000"
+										max="2000000"
+										autocomplete="off">
+									<small>Max bytes per API request (default: 2MB)</small>
+								</div>
+								<div class="form-group">
+									<label for="maxRetries">Max Retries</label>
+									<input type="number"
+										id="maxRetries"
+										name="maxRetries"
+										value="10"
+										min="0"
+										max="50"
+										autocomplete="off">
+									<small>Maximum retry attempts on failures (default: 10)</small>
+								</div>
+							</div>
+
+							<div class="form-row">
+								<div class="form-group">
+									<label for="streamFormat">File Format</label>
+									<select id="streamFormat"
+										name="streamFormat">
+										<option value="">Auto-detect from file extension</option>
+										<option value="jsonl">JSONL (recommended)</option>
+										<option value="json">JSON</option>
+										<option value="csv">CSV</option>
+										<option value="parquet">Parquet</option>
+									</select>
+									<small>Format of underlying data stream</small>
+								</div>
+								<div class="form-group">
+									<label for="transport">HTTP Transport</label>
+									<select id="transport"
+										name="transport">
+										<option value="got">Got (default)</option>
+										<option value="undici">Undici (experimental)</option>
+									</select>
+									<small>HTTP client for sending requests</small>
+								</div>
+							</div>
+
+							<div class="form-row">
+								<div class="form-group checkbox-group">
+									<label class="checkbox-label">
+										<input type="checkbox"
+											id="compress"
+											name="compress"
+											checked>
+										Enable Compression
+									</label>
+									<small>Gzip compress requests (events only)</small>
+								</div>
+								<div class="form-group">
+									<label for="compressionLevel">Compression Level</label>
+									<input type="range"
+										id="compressionLevel"
+										name="compressionLevel"
+										min="0"
+										max="9"
+										value="6"
+										autocomplete="off">
+									<small>0 = none, 9 = max compression (default: 6)</small>
+								</div>
+							</div>
+						</div>
+					</div>
 
 					<!-- Advanced Expert Settings -->
 					<div class="collapsible-section">

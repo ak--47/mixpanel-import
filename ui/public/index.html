@@ -740,16 +740,16 @@
 		// Start cycling when page loads
 		document.addEventListener('DOMContentLoaded', function () {
 			// E.T.L text cycles every ~1.2 seconds
-			setInterval(cycleETL, 1234);
+			setInterval(cycleETL, 1234/1.25);
 
 			// L.T.E text cycles every ~2.5 seconds  
-			setInterval(cycleLTE, 2543);
+			setInterval(cycleLTE, 2543/1.25);
 
 			// E.T.L emoji cycles every ~1.8 seconds
-			setInterval(cycleETLEmoji, 1789);
+			setInterval(cycleETLEmoji, 1789/1.25);
 
 			// L.T.E emoji cycles every ~3.1 seconds
-			setInterval(cycleLTEEmoji, 3142);
+			setInterval(cycleLTEEmoji, 3142/1.25);
 		});
 	</script>
 	<script src="analytics.js"></script>

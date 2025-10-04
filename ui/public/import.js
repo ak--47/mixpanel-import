@@ -16,6 +16,7 @@ class MixpanelImportUI {
 		this.lastResults = null; // Store last results for download
 		this.initializeUI();
 		this.setupEventListeners();
+		this.updateColumnMapperButtons(); // Set initial button state
 		this.initializeMonacoEditor();
 		this.initializeETLCycling();
 	}
@@ -262,8 +263,7 @@ class MixpanelImportUI {
 			// Clear column mapper
 			this.detectedColumns = [];
 			this.columnMappings = {};
-			const columnMapperSection = document.getElementById('column-mapper-section');
-			if (columnMapperSection) columnMapperSection.style.display = 'none';
+			this.updateColumnMapperButtons();
 
 			// Update CLI command
 			this.updateCLICommand();
@@ -581,6 +581,18 @@ class MixpanelImportUI {
 		if (detectColumnsBtn) {
 			detectColumnsBtn.addEventListener('click', () => {
 				this.detectColumns();
+			});
+		}
+
+		// Column mapper - preview data first button
+		const previewDataFromMapperBtn = document.getElementById('preview-data-from-mapper-btn');
+		if (previewDataFromMapperBtn) {
+			previewDataFromMapperBtn.addEventListener('click', () => {
+				// Trigger the main preview button
+				const mainPreviewBtn = document.getElementById('preview-data-btn');
+				if (mainPreviewBtn) {
+					mainPreviewBtn.click();
+				}
 			});
 		}
 
@@ -1420,6 +1432,9 @@ function transform(row) {
 			this.sampleData = result.sampleData || [];
 			this.displayPreviewRecords();
 
+			// Toggle column mapper buttons visibility
+			this.updateColumnMapperButtons();
+
 			// Reset button
 			previewBtn.innerHTML = originalText;
 			previewBtn.disabled = false;
@@ -2074,9 +2089,23 @@ function transform(row) {
 			const mappings = Object.entries(this.columnMappings)
 				.map(([target, source]) => `${source} → ${target}`)
 				.join(', ');
-			
+
 			statusEl.innerHTML = `<span class="mapping-count">${mappingCount} mapping${mappingCount === 1 ? '' : 's'}</span> created: ${mappings}`;
 			statusContainer.classList.add('has-mappings');
+		}
+	}
+
+	updateColumnMapperButtons() {
+		const detectBtn = document.getElementById('detect-columns-btn');
+		const previewFirstBtn = document.getElementById('preview-data-from-mapper-btn');
+
+		// Show "Detect Columns" if we have preview data, otherwise show "Preview Data First"
+		if (this.sampleData && this.sampleData.length > 0) {
+			if (detectBtn) detectBtn.style.display = 'inline-block';
+			if (previewFirstBtn) previewFirstBtn.style.display = 'none';
+		} else {
+			if (detectBtn) detectBtn.style.display = 'none';
+			if (previewFirstBtn) previewFirstBtn.style.display = 'inline-block';
 		}
 	}
 
