@@ -316,7 +316,7 @@ async function determineDataType(data, job) {
 	}
 
 	// Handle cloud storage (GCS and S3)
-	const cloudResult = handleCloudStorage(data, job);
+	const cloudResult = await handleCloudStorage(data, job);
 	if (cloudResult !== undefined) {
 		return cloudResult;
 	}
@@ -547,31 +547,31 @@ async function determineDataType(data, job) {
  * Handle cloud storage data sources (GCS and S3)
  * @param {any} data
  * @param {JobConfig} job
- * @returns {any|undefined} Returns stream if handled, undefined if should continue to local file parsing
+ * @returns {Promise<any|undefined>} Returns stream if handled, undefined if should continue to local file parsing
  */
-function handleCloudStorage(data, job) {
+async function handleCloudStorage(data, job) {
 	// Handle Google Cloud Storage URLs (gs://)
 	if (typeof data === 'string' && data.startsWith('gs://')) {
 		job.wasStream = true;
-		return createGCSStream(data, job);
+		return await createGCSStream(data, job);
 	}
 
 	// Handle array of Google Cloud Storage URLs
 	if (Array.isArray(data) && data.every(item => typeof item === 'string' && item.startsWith('gs://'))) {
 		job.wasStream = true;
-		return createMultiGCSStream(data, job);
+		return await createMultiGCSStream(data, job);
 	}
 
 	// Handle Amazon S3 URLs (s3://)
 	if (typeof data === 'string' && data.startsWith('s3://')) {
 		job.wasStream = true;
-		return createS3Stream(data, job);
+		return await createS3Stream(data, job);
 	}
 
 	// Handle array of Amazon S3 URLs
 	if (Array.isArray(data) && data.every(item => typeof item === 'string' && item.startsWith('s3://'))) {
 		job.wasStream = true;
-		return createMultiS3Stream(data, job);
+		return await createMultiS3Stream(data, job);
 	}
 
 	// Not cloud storage - continue to local file parsing
