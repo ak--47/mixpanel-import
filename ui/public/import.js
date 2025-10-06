@@ -23,23 +23,52 @@ class MixpanelImportUI {
 		this.initializeETLCycling();
 	}
 
-	// WebSocket connection methods
-	connectWebSocket(jobId) {
+	// Execute job via WebSocket (keeps Cloud Run alive!)
+	executeJobViaWebSocket(jobId, fileSource) {
 		try {
 			const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 			const wsUrl = `${protocol}//${window.location.host}`;
-			
+
 			this.websocket = new WebSocket(wsUrl);
+
+			// Generate jobId if not provided (cloud storage case)
+			if (!jobId) {
+				jobId = `job-${Date.now()}-${Math.random().toString(36).substring(2)}`;
+			}
+
 			this.currentJobId = jobId;
-			
+
 			this.websocket.onopen = () => {
-				// Register this connection with the job
+				console.log('WebSocket connected, starting job...');
+
+				// Collect job data
+				const credentials = JSON.stringify(this.collectCredentials());
+				const options = JSON.stringify(this.collectOptions());
+				const transformCode = this.editor ? this.editor.getValue() : null;
+
+				// Get cloud paths if applicable
+				let cloudPaths = null;
+				if (fileSource === 'gcs') {
+					const gcsPaths = document.getElementById('gcsPaths').value;
+					const paths = gcsPaths.split(/[,\n]/).map(p => p.trim()).filter(p => p);
+					cloudPaths = JSON.stringify(paths);
+				} else if (fileSource === 's3') {
+					const s3Paths = document.getElementById('s3Paths').value;
+					const paths = s3Paths.split(/[,\n]/).map(p => p.trim()).filter(p => p);
+					cloudPaths = JSON.stringify(paths);
+				}
+
+				// Send start_job message
 				this.websocket.send(JSON.stringify({
-					type: 'register-job',
-					jobId: jobId
+					type: 'start_job',
+					jobId: jobId,
+					credentials: credentials,
+					options: options,
+					cloudPaths: cloudPaths,
+					transformCode: transformCode
 				}));
 			};
-			
+
 			this.websocket.onmessage = (event) => {
 				try {
 					const data = JSON.parse(event.data);
@@ -48,16 +77,61 @@ class MixpanelImportUI {
 					console.error('Failed to parse WebSocket message:', error);
 				}
 			};
-			
+
+			this.websocket.onerror = (error) => {
+				console.error('WebSocket error:', error);
+				this.hideLoading();
+				this.showError('WebSocket connection error');
+			};
+
+			this.websocket.onclose = () => {
+				console.log('WebSocket disconnected');
+				this.websocket = null;
+				this.currentJobId = null;
+			};
+
+		} catch (error) {
+			console.error('Failed to connect WebSocket:', error);
+			this.hideLoading();
+			this.showError(`Connection failed: ${error.message}`);
+		}
+	}
+
+	// WebSocket connection methods (legacy - kept for backward compat)
+	connectWebSocket(jobId) {
+		try {
+			const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+			const wsUrl = `${protocol}//${window.location.host}`;
+
+			this.websocket = new WebSocket(wsUrl);
+			this.currentJobId = jobId;
+
+			this.websocket.onopen = () => {
+				// Register this connection with the job
+				this.websocket.send(JSON.stringify({
+					type: 'register-job',
+					jobId: jobId
+				}));
+			};
+
+			this.websocket.onmessage = (event) => {
+				try {
+					const data = JSON.parse(event.data);
+					this.handleWebSocketMessage(data);
+				} catch (error) {
+					console.error('Failed to parse WebSocket message:', error);
+				}
+			};
+
 			this.websocket.onerror = (error) => {
 				console.error('WebSocket error:', error);
 			};
-			
+
 			this.websocket.onclose = () => {
 				this.websocket = null;
 				this.currentJobId = null;
 			};
-			
+
 		} catch (error) {
 			console.error('Failed to connect WebSocket:', error);
 		}
@@ -238,6 +312,9 @@ class MixpanelImportUI {
 
 	resetForm() {
 		try {
+			// Clear session storage
+			sessionStorage.removeItem('import-form-state');
+
 			// Reset the entire form
 			const form = document.getElementById('importForm');
 			if (form) {
@@ -293,6 +370,103 @@ class MixpanelImportUI {
 			console.log('Form reset successfully');
 		} catch (error) {
 			console.error('Failed to reset form:', error);
+		}
+	}
+
+	// Save form state to session storage
+	saveFormState() {
+		try {
+			const formState = {};
+
+			// Save all text inputs, selects, and textareas
+			const inputs = document.querySelectorAll('#importForm input[type="text"], #importForm input[type="password"], #importForm input[type="date"], #importForm input[type="number"], #importForm select, #importForm textarea');
+			inputs.forEach(input => {
+				if (input.id && input.value) {
+					formState[input.id] = input.value;
+				}
+			});
+
+			// Save radio buttons
+			const radios = document.querySelectorAll('#importForm input[type="radio"]:checked');
+			radios.forEach(radio => {
+				if (radio.name) {
+					formState[`radio-${radio.name}`] = radio.value;
+				}
+			});
+
+			// Save checkboxes
+			const checkboxes = document.querySelectorAll('#importForm input[type="checkbox"]');
+			checkboxes.forEach(checkbox => {
+				if (checkbox.id) {
+					formState[`checkbox-${checkbox.id}`] = checkbox.checked;
+				}
+			});
+
+			// Save Monaco editor content
+			if (this.editor) {
+				const editorContent = this.editor.getValue();
+				if (editorContent && editorContent !== this.getDefaultTransformFunction()) {
+					formState['monaco-editor'] = editorContent;
+				}
+			}
+
+			sessionStorage.setItem('import-form-state', JSON.stringify(formState));
+		} catch (error) {
+			// Silently fail - don't break the user experience
+			console.debug('Could not save form state:', error);
+		}
+	}
+
+	// Load form state from session storage
+	loadFormState() {
+		try {
+			const savedState = sessionStorage.getItem('import-form-state');
+			if (!savedState) return;
+
+			const formState = JSON.parse(savedState);
+
+			// Restore text inputs, selects, and textareas
+			Object.keys(formState).forEach(key => {
+				if (key.startsWith('radio-')) {
+					// Restore radio button
+					const radioName = key.replace('radio-', '');
+					const radio = document.querySelector(`input[name="${radioName}"][value="${formState[key]}"]`);
+					if (radio) {
+						radio.checked = true;
+						radio.dispatchEvent(new Event('change'));
+					}
+				} else if (key.startsWith('checkbox-')) {
+					// Restore checkbox
+					const checkboxId = key.replace('checkbox-', '');
+					const checkbox = document.getElementById(checkboxId);
+					if (checkbox) {
+						checkbox.checked = formState[key];
+					}
+				} else if (key === 'monaco-editor') {
+					// Restore Monaco editor content after it's initialized
+					if (this.editor) {
+						this.editor.setValue(formState[key]);
+					} else {
+						// If editor not ready yet, wait for it
+						setTimeout(() => {
+							if (this.editor) {
+								this.editor.setValue(formState[key]);
+							}
+						}, 500);
+					}
+				} else {
+					// Restore regular input
+					const input = document.getElementById(key);
+					if (input) {
+						input.value = formState[key];
+					}
+				}
+			});
+
+			console.log('Import form state restored from session storage');
+		} catch (error) {
+			// Silently fail - just load initial state
+			console.debug('Could not load form state:', error);
 		}
 	}
 
@@ -662,6 +836,13 @@ class MixpanelImportUI {
 		if (resetBtn) {
 			resetBtn.addEventListener('click', this.resetForm.bind(this));
 		}
+
+		// Session storage persistence - save form state on input/change
+		form.addEventListener('input', this.saveFormState.bind(this));
+		form.addEventListener('change', this.saveFormState.bind(this));
+
+		// Load saved form state on page load
+		this.loadFormState();
 	}
 
 
@@ -1265,6 +1446,100 @@ function transform(row) {
 		};
 	}
 
+	// Helper: Collect just credentials (for WebSocket)
+	collectCredentials() {
+		const credentials = {};
+		const fileSource = document.querySelector('input[name="fileSource"]:checked')?.value;
+
+		// Add project ID if visible
+		const projectElement = document.getElementById('project');
+		if (projectElement && projectElement.closest('.form-group').style.display !== 'none' && projectElement.value) {
+			credentials.project = projectElement.value;
+		}
+
+		// Add service account authentication
+		const acctElement = document.getElementById('acct');
+		const passElement = document.getElementById('pass');
+		if (acctElement && acctElement.value) credentials.acct = acctElement.value;
+		if (passElement && passElement.value) credentials.pass = passElement.value;
+
+		// Add optional fields if visible and have values
+		const tokenElement = document.getElementById('token');
+		if (tokenElement && tokenElement.closest('.form-group').style.display !== 'none' && tokenElement.value) {
+			credentials.token = tokenElement.value;
+		}
+
+		const groupKeyElement = document.getElementById('groupKey');
+		if (groupKeyElement && groupKeyElement.closest('.form-group').style.display !== 'none' && groupKeyElement.value) {
+			credentials.groupKey = groupKeyElement.value;
+		}
+
+		// Add S3 credentials if S3 is selected
+		if (fileSource === 's3') {
+			const s3KeyElement = document.getElementById('s3Key');
+			const s3SecretElement = document.getElementById('s3Secret');
+			const s3RegionElement = document.getElementById('s3Region');
+
+			if (s3KeyElement && s3KeyElement.value) credentials.s3Key = s3KeyElement.value;
+			if (s3SecretElement && s3SecretElement.value) credentials.s3Secret = s3SecretElement.value;
+			if (s3RegionElement && s3RegionElement.value) credentials.s3Region = s3RegionElement.value;
+		}
+
+		// Add GCS credentials if GCS is selected
+		if (fileSource === 'gcs') {
+			const gcpProjectIdElement = document.getElementById('gcpProjectId');
+			if (gcpProjectIdElement && gcpProjectIdElement.value) {
+				credentials.gcpProjectId = gcpProjectIdElement.value;
+			}
+		}
+
+		const dataGroupIdElement = document.getElementById('dataGroupId');
+		if (dataGroupIdElement && dataGroupIdElement.closest('.form-group').style.display !== 'none' && dataGroupIdElement.value) {
+			credentials.dataGroupId = dataGroupIdElement.value;
+		}
+
+		const secondTokenElement = document.getElementById('secondToken');
+		if (secondTokenElement && secondTokenElement.closest('.form-group').style.display !== 'none' && secondTokenElement.value) {
+			credentials.secondToken = secondTokenElement.value;
+		}
+
+		return credentials;
+	}
+
+	// Helper: Collect just options (for WebSocket)
+	collectOptions() {
+		const recordTypeEl = document.getElementById('recordType');
+		const workersEl = document.getElementById('workers');
+		const recordsPerBatchEl = document.getElementById('recordsPerBatch');
+		const regionEl = document.getElementById('region');
+		const compressEl = document.getElementById('compress');
+		const fixDataEl = document.getElementById('fixData');
+		const strictEl = document.getElementById('strict');
+		const verboseEl = document.getElementById('verbose');
+
+		const options = {
+			recordType: recordTypeEl ? recordTypeEl.value : '',
+			workers: workersEl ? parseInt(workersEl.value) || 25 : 25,
+			recordsPerBatch: recordsPerBatchEl ? parseInt(recordsPerBatchEl.value) || 2000 : 2000,
+			region: regionEl ? regionEl.value || 'US' : 'US',
+			compress: compressEl ? compressEl.checked : false,
+			fixData: fixDataEl ? fixDataEl.checked : false,
+			strict: strictEl ? strictEl.checked : false,
+			verbose: verboseEl ? verboseEl.checked : false
+		};
+
+		const vendor = document.getElementById('vendor').value;
+		if (vendor) options.vendor = vendor;
+
+		// Add aliases from column mapper (merged with text input, text takes precedence)
+		const currentAliases = this.getCurrentAliases();
+		if (Object.keys(currentAliases).length > 0) {
+			options.aliases = currentAliases;
+		}
+
+		return options;
+	}
+
 	collectFormData() {
 		const formData = new FormData();
 
@@ -1584,39 +1859,47 @@ function transform(row) {
 			this.showLoading(isDryRun ? 'Running Test...' : 'Importing Data...',
 				isDryRun ? 'Processing sample data to preview results' : 'Importing your data to Mixpanel');
 
-			// Collect form data
-			const formData = this.collectFormData();
-
-			// Submit to appropriate endpoint
-			const endpoint = isDryRun ? '/dry-run' : '/job';
-			const response = await fetch(endpoint, {
-				method: 'POST',
-				body: formData
-			});
-
-			const result = await response.json();
-
-			// Handle different responses for dry runs vs real jobs
+			// Handle dry runs using old endpoint
 			if (isDryRun) {
+				const formData = this.collectFormData();
+				const response = await fetch('/dry-run', {
+					method: 'POST',
+					body: formData
+				});
+
+				const result = await response.json();
 				this.hideLoading();
+
 				if (result.success) {
 					this.showResults(result, isDryRun);
 				} else {
 					this.showError(`Test failed: ${result.error}`);
 				}
+				return;
+			}
+
+			// For real jobs, use hybrid approach (fileSource already declared above)
+			if (fileSource === 'gcs' || fileSource === 's3') {
+				// Cloud storage mode - no file upload, direct to WebSocket
+				this.executeJobViaWebSocket(null, fileSource);
 			} else {
-				// For real jobs, the server returns a jobId and runs asynchronously
+				// Local file mode - upload files first, then WebSocket
+				const formData = this.collectFormData();
+
+				// Upload files and get jobId
+				const response = await fetch('/job/prepare', {
+					method: 'POST',
+					body: formData
+				});
+
+				const result = await response.json();
+
 				if (result.success && result.jobId) {
-					// Connect WebSocket for real-time progress updates
-					this.connectWebSocket(result.jobId);
-					// Update loading message to show that job has started
-					const loadingMessage = document.querySelector('.loading-details');
-					if (loadingMessage) {
-						loadingMessage.innerHTML = 'connecting to websocket; initiating streaming';
-					}
+					// Now execute job via WebSocket
+					this.executeJobViaWebSocket(result.jobId, fileSource);
 				} else {
 					this.hideLoading();
-					this.showError(`Import failed: ${result.error}`);
+					this.showError(`File upload failed: ${result.error}`);
 				}
 			}
 

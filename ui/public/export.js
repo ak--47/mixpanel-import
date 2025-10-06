@@ -171,38 +171,47 @@ class MixpanelExportUI {
 	// Fill form with development values for quick testing
 	fillDevValues() {
 		try {
-			// Set record type to event first (to show credentials section)
+			// Set record type to export events
 			const recordTypeSelect = document.getElementById('recordType');
 			if (recordTypeSelect) {
-				recordTypeSelect.value = 'event';
+				recordTypeSelect.value = 'export';
 				recordTypeSelect.dispatchEvent(new Event('change'));
 			}
 
-			// Set auth method to secret
-			const secretRadio = document.querySelector('input[name="authMethod"][value="secret"]');
-			if (secretRadio) {
-				secretRadio.checked = true;
-				secretRadio.dispatchEvent(new Event('change'));
+			// Set auth method to service account
+			const serviceAccountRadio = document.querySelector('input[name="authMethod"][value="serviceAccount"]');
+			if (serviceAccountRadio) {
+				serviceAccountRadio.checked = true;
+				serviceAccountRadio.dispatchEvent(new Event('change'));
 			}
-			
-			// Fill project token after a brief delay to ensure visibility
+
+			// Fill credentials after a brief delay to ensure visibility
 			setTimeout(() => {
-				const tokenInput = document.getElementById('token');
-				if (tokenInput) {
-					tokenInput.value = '921270447fc5f98015b04a1b95d23572';
+				// Project ID
+				const projectInput = document.getElementById('project');
+				if (projectInput) {
+					projectInput.value = '3730336';
+				}
+
+				// Service account
+				const acctInput = document.getElementById('acct');
+				if (acctInput) {
+					acctInput.value = 'quicktest.0a627b.mp-service-account';
+				}
+
+				// Service account password
+				const passInput = document.getElementById('pass');
+				if (passInput) {
+					passInput.value = 'QwZbu3l4dGXIuiSMHE0cHhIlXK4aGzhq';
 				}
 			}, 100);
 
-			// Set some default date range (last 7 days)
+			// Set date range to 2025-10-01 to 2025-10-01
 			const startInput = document.getElementById('start');
 			const endInput = document.getElementById('end');
 			if (startInput && endInput) {
-				const end = new Date();
-				const start = new Date();
-				start.setDate(end.getDate() - 7);
-				
-				startInput.value = start.toISOString().split('T')[0];
-				endInput.value = end.toISOString().split('T')[0];
+				startInput.value = '2025-10-01';
+				endInput.value = '2025-10-01';
 			}
 
 			// Enable show progress
@@ -214,6 +223,122 @@ class MixpanelExportUI {
 			console.log('Export dev values filled successfully');
 		} catch (error) {
 			console.error('Failed to fill export dev values:', error);
+		}
+	}
+
+	// Reset form to initial state
+	resetForm() {
+		try {
+			// Clear session storage
+			sessionStorage.removeItem('export-form-state');
+
+			// Reset the entire form
+			const form = document.getElementById('exportForm');
+			if (form) {
+				form.reset();
+			}
+
+			// Reset record type to empty (to hide credential fields)
+			const recordTypeSelect = document.getElementById('recordType');
+			if (recordTypeSelect) {
+				recordTypeSelect.value = '';
+				recordTypeSelect.dispatchEvent(new Event('change'));
+			}
+
+			// Reset auth method to service account
+			const serviceAccountRadio = document.querySelector('input[name="authMethod"][value="serviceAccount"]');
+			if (serviceAccountRadio) {
+				serviceAccountRadio.checked = true;
+				serviceAccountRadio.dispatchEvent(new Event('change'));
+			}
+
+			// Hide results section
+			const results = document.getElementById('results');
+			if (results) results.style.display = 'none';
+
+			const loading = document.getElementById('loading');
+			if (loading) loading.style.display = 'none';
+
+			console.log('Export form reset successfully');
+		} catch (error) {
+			console.error('Failed to reset export form:', error);
+		}
+	}
+
+	// Save form state to session storage
+	saveFormState() {
+		try {
+			const formState = {};
+
+			// Save all text inputs, selects, and textareas
+			const inputs = document.querySelectorAll('#exportForm input[type="text"], #exportForm input[type="password"], #exportForm input[type="date"], #exportForm input[type="number"], #exportForm select, #exportForm textarea');
+			inputs.forEach(input => {
+				if (input.id && input.value) {
+					formState[input.id] = input.value;
+				}
+			});
+
+			// Save radio buttons
+			const radios = document.querySelectorAll('#exportForm input[type="radio"]:checked');
+			radios.forEach(radio => {
+				if (radio.name) {
+					formState[`radio-${radio.name}`] = radio.value;
+				}
+			});
+
+			// Save checkboxes
+			const checkboxes = document.querySelectorAll('#exportForm input[type="checkbox"]');
+			checkboxes.forEach(checkbox => {
+				if (checkbox.id) {
+					formState[`checkbox-${checkbox.id}`] = checkbox.checked;
+				}
+			});
+
+			sessionStorage.setItem('export-form-state', JSON.stringify(formState));
+		} catch (error) {
+			// Silently fail - don't break the user experience
+			console.debug('Could not save form state:', error);
+		}
+	}
+
+	// Load form state from session storage
+	loadFormState() {
+		try {
+			const savedState = sessionStorage.getItem('export-form-state');
+			if (!savedState) return;
+
+			const formState = JSON.parse(savedState);
+
+			// Restore text inputs, selects, and textareas
+			Object.keys(formState).forEach(key => {
+				if (key.startsWith('radio-')) {
+					// Restore radio button
+					const radioName = key.replace('radio-', '');
+					const radio = document.querySelector(`input[name="${radioName}"][value="${formState[key]}"]`);
+					if (radio) {
+						radio.checked = true;
+						radio.dispatchEvent(new Event('change'));
+					}
+				} else if (key.startsWith('checkbox-')) {
+					// Restore checkbox
+					const checkboxId = key.replace('checkbox-', '');
+					const checkbox = document.getElementById(checkboxId);
+					if (checkbox) {
+						checkbox.checked = formState[key];
+					}
+				} else {
+					// Restore regular input
+					const input = document.getElementById(key);
+					if (input) {
+						input.value = formState[key];
+					}
+				}
+			});
+
+			console.log('Export form state restored from session storage');
+		} catch (error) {
+			// Silently fail - just load initial state
+			console.debug('Could not load form state:', error);
 		}
 	}
 
@@ -411,6 +536,19 @@ class MixpanelExportUI {
 		if (devKeyBtn) {
 			devKeyBtn.addEventListener('click', this.fillDevValues.bind(this));
 		}
+
+		// Reset button to clear form
+		const resetBtn = document.getElementById('reset-btn');
+		if (resetBtn) {
+			resetBtn.addEventListener('click', this.resetForm.bind(this));
+		}
+
+		// Session storage persistence - save form state on input/change
+		form.addEventListener('input', this.saveFormState.bind(this));
+		form.addEventListener('change', this.saveFormState.bind(this));
+
+		// Load saved form state on page load
+		this.loadFormState();
 	}
 
 	toggleAuthMethod() {

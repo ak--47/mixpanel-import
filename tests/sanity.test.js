@@ -703,3 +703,152 @@ function badDataTrans(badData) {
 	};
 	return mixpanelProfile;
 }
+
+describe("sanity: formats", () => {
+	const baseDir = "./testData/formats";
+	const expectedRecords = 6000; // 3000 per file * 2 files
+
+	// JSON format tests
+	describe("json", () => {
+		test("single file", async () => {
+			const data = await mp({}, `${baseDir}/json/someTestData-1.json`, { ...opts });
+			expect(data.success).toBe(3000);
+			expect(data.failed).toBe(0);
+		}, longTimeout);
+
+		test("file array", async () => {
+			const data = await mp({}, [
+				`${baseDir}/json/someTestData-1.json`,
+				`${baseDir}/json/someTestData-2.json`
+			], { ...opts });
+			expect(data.success).toBe(expectedRecords);
+			expect(data.failed).toBe(0);
+		}, longTimeout);
+
+		test("directory", async () => {
+			const data = await mp({}, `${baseDir}/json`, { ...opts });
+			expect(data.success).toBe(expectedRecords);
+			expect(data.failed).toBe(0);
+		}, longTimeout);
+	});
+
+	// JSON.gz format tests
+	describe("jsongz", () => {
+		test("single file", async () => {
+			const data = await mp({}, `${baseDir}/jsongz/someTestData-1.json.gz`, { ...opts });
+			expect(data.success).toBe(3000);
+			expect(data.failed).toBe(0);
+		}, longTimeout);
+
+		test("file array", async () => {
+			const data = await mp({}, [
+				`${baseDir}/jsongz/someTestData-1.json.gz`,
+				`${baseDir}/jsongz/someTestData-2.json.gz`
+			], { ...opts });
+			expect(data.success).toBe(expectedRecords);
+			expect(data.failed).toBe(0);
+		}, longTimeout);
+
+		test("directory", async () => {
+			const data = await mp({}, `${baseDir}/jsongz`, { ...opts });
+			expect(data.success).toBe(expectedRecords);
+			expect(data.failed).toBe(0);
+		}, longTimeout);
+	});
+
+	// CSV format tests
+	describe("csv", () => {
+		test("single file", async () => {
+			const data = await mp({}, `${baseDir}/csv/someTestData-1.csv`, { ...opts, streamFormat: "csv" });
+			expect(data.success).toBe(3000);
+			expect(data.failed).toBe(0);
+		}, longTimeout);
+
+		test("file array", async () => {
+			const data = await mp({}, [
+				`${baseDir}/csv/someTestData-1.csv`,
+				`${baseDir}/csv/someTestData-2.csv`
+			], { ...opts, streamFormat: "csv" });
+			expect(data.success).toBe(expectedRecords);
+			expect(data.failed).toBe(0);
+		}, longTimeout);
+
+		test("directory", async () => {
+			const data = await mp({}, `${baseDir}/csv`, { ...opts, streamFormat: "csv" });
+			expect(data.success).toBe(expectedRecords);
+			expect(data.failed).toBe(0);
+		}, longTimeout);
+	});
+
+	// CSV.gz format tests
+	describe("csvgz", () => {
+		test("single file", async () => {
+			const data = await mp({}, `${baseDir}/csvgz/someTestData-1.csv.gz`, { ...opts, streamFormat: "csv" });
+			expect(data.success).toBe(3000);
+			expect(data.failed).toBe(0);
+		}, longTimeout);
+
+		test("file array", async () => {
+			const data = await mp({}, [
+				`${baseDir}/csvgz/someTestData-1.csv.gz`,
+				`${baseDir}/csvgz/someTestData-2.csv.gz`
+			], { ...opts, streamFormat: "csv" });
+			expect(data.success).toBe(expectedRecords);
+			expect(data.failed).toBe(0);
+		}, longTimeout);
+
+		test("directory", async () => {
+			const data = await mp({}, `${baseDir}/csvgz`, { ...opts, streamFormat: "csv" });
+			expect(data.success).toBe(expectedRecords);
+			expect(data.failed).toBe(0);
+		}, longTimeout);
+	});
+
+	// Parquet format tests
+	describe("parquet", () => {
+		test("single file", async () => {
+			const data = await mp({}, `${baseDir}/parquet/someTestData-1.parquet`, { ...opts });
+			expect(data.success).toBe(3000);
+			expect(data.failed).toBe(0);
+		}, longTimeout);
+
+		test("file array", async () => {
+			const data = await mp({}, [
+				`${baseDir}/parquet/someTestData-1.parquet`,
+				`${baseDir}/parquet/someTestData-2.parquet`
+			], { ...opts });
+			expect(data.success).toBe(expectedRecords);
+			expect(data.failed).toBe(0);
+		}, longTimeout);
+
+		test("directory", async () => {
+			const data = await mp({}, `${baseDir}/parquet`, { ...opts });
+			expect(data.success).toBe(expectedRecords);
+			expect(data.failed).toBe(0);
+		}, longTimeout);
+	});
+
+	// Parquet.gz format tests
+	describe("parquetgz", () => {
+		test("single file", async () => {
+			const data = await mp({}, `${baseDir}/parquetgz/someTestData-1.parquet.gz`, { ...opts });
+			expect(data.success).toBe(3000);
+			expect(data.failed).toBe(0);
+		}, longTimeout);
+
+		test("file array", async () => {
+			const data = await mp({}, [
+				`${baseDir}/parquetgz/someTestData-1.parquet.gz`,
+				`${baseDir}/parquetgz/someTestData-2.parquet.gz`
+			], { ...opts });
+			expect(data.success).toBe(expectedRecords);
+			expect(data.failed).toBe(0);
+		}, longTimeout);
+
+		test("directory", async () => {
+			const data = await mp({}, `${baseDir}/parquetgz`, { ...opts });
+			expect(data.success).toBe(expectedRecords);
+			expect(data.failed).toBe(0);
+		}, longTimeout);
+	});
+});

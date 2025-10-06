@@ -73,11 +73,122 @@ const activeJobs = new Map(); // jobId -> { ws, startTime, lastUpdate }
 // TODO: Replace with external job queue and status store for true serverless deployment
 const jobStatuses = new Map(); // jobId -> { status, progress, result, startTime, lastUpdate }
 
+// Execute job over WebSocket (keeps Cloud Run container alive!)
+async function executeJobOverWebSocket(ws, jobId, credentials, options, cloudPaths, transformCode, jobLogger) {
+	let data;
+	let filesToCleanup = [];
+
+	try {
+		// Parse credentials and options
+		const creds = JSON.parse(credentials);
+		const opts = JSON.parse(options);
+
+		// Add progress callback for WebSocket updates
+		opts.progressCallback = createProgressCallback(jobId);
+
+		// Handle transform function if provided
+		if (transformCode) {
+			try {
+				// Create transform function from code
+				const transformFunc = new Function('record', transformCode);
+				opts.transformFunc = transformFunc;
+			} catch (transformError) {
+				throw new Error(`Transform function error: ${transformError.message}`);
+			}
+		}
+
+		// Determine data source: cloud paths OR local files from /job/prepare
+		if (cloudPaths) {
+			// Cloud storage mode - parse paths (no file upload needed!)
+			data = JSON.parse(cloudPaths);
+			jobLogger.debug({ cloudPaths: data }, "cloud storage mode");
+		} else {
+			// Local file mode - get files from prepared job
+			const jobStatus = jobStatuses.get(jobId);
+			if (!jobStatus || !jobStatus.filePaths) {
+				throw new Error("No files found for job - did you call /job/prepare first?");
+			}
+
+			data = jobStatus.filePaths;
+			filesToCleanup = jobStatus.files || [];
+			jobLogger.debug({ fileCount: Array.isArray(data) ? data.length : 1 }, "local file mode");
+		}
+
+		// Update status to running
+		updateJobStatus(jobId, "running");
+
+		// Run the import (this keeps the WebSocket connection active!)
+		const result = await mixpanelImport(creds, data, opts);
+		const { total, success, failed, empty } = result;
+		jobLogger.info({ total, success, failed, empty }, "import complete");
+
+		// Filter result for client
+		const filteredResult = filterResultForClient(result);
+
+		// Update job status
+		updateJobStatus(jobId, "completed", null, filteredResult);
+
+		// Send completion via WebSocket
+		ws.send(JSON.stringify({
+			type: "job-complete",
+			jobId: jobId,
+			result: filteredResult,
+			timestamp: Date.now()
+		}));
+
+	} catch (jobError) {
+		jobLogger.error({ err: jobError }, "job execution failed");
+
+		// Update job status
+		updateJobStatus(jobId, "failed", null, { error: jobError.message });
+
+		// Send error via WebSocket
+		ws.send(JSON.stringify({
+			type: "job-error",
+			jobId: jobId,
+			error: jobError.message,
+			timestamp: Date.now()
+		}));
+
+	} finally {
+		// Clean up temporary files if any
+		if (filesToCleanup.length > 0) {
+			for (const file of filesToCleanup) {
+				try {
+					if (file.fieldname !== "gcsCredentials") {
+						fs.unlinkSync(file.path);
+						jobLogger.debug({ filePath: file.path }, "temp file cleaned");
+					}
+				} catch (cleanupError) {
+					jobLogger.warn({ err: cleanupError, filePath: file.path }, "temp cleanup failed");
+				}
+			}
+
+			// Clean up GCS credentials after delay
+			setTimeout(() => {
+				for (const file of filesToCleanup) {
+					if (file.fieldname === "gcsCredentials") {
+						try {
+							fs.unlinkSync(file.path);
+							jobLogger.debug({ filePath: file.path }, "gcs creds cleaned");
+						} catch (cleanupError) {
+							jobLogger.warn({ err: cleanupError, filePath: file.path }, "gcs creds cleanup failed");
+						}
+					}
+				}
+			}, 5000);
+		}
+
+		// Clean up job status
+		activeJobs.delete(jobId);
+	}
+}
+
 // WebSocket connection handler
 wss.on("connection", ws => {
 	// WebSocket connections are ephemeral - no logging needed
 
-	ws.on("message", message => {
+	ws.on("message", async message => {
 		try {
 			// @ts-ignore
 			const data = JSON.parse(message);
@@ -98,6 +209,38 @@ wss.on("connection", ws => {
 						jobId: jobId
 					})
 				);
+			} else if (data.type === "start_job") {
+				// Handle job execution over WebSocket (keeps connection alive!)
+				const { jobId, credentials, options, cloudPaths, transformCode } = data;
+
+				// Create child logger for correlation
+				const jobLogger = logger.child({ jobId });
+				jobLogger.info("job started via websocket");
+
+				// Register this WebSocket for progress updates
+				activeJobs.set(jobId, {
+					ws: ws,
+					startTime: Date.now(),
+					lastUpdate: Date.now()
+				});
+
+				// Send acknowledgment
+				ws.send(JSON.stringify({
+					type: "job-started",
+					jobId: jobId
+				}));
+
+				// Run the job asynchronously
+				try {
+					await executeJobOverWebSocket(ws, jobId, credentials, options, cloudPaths, transformCode, jobLogger);
+				} catch (error) {
+					jobLogger.error({ err: error }, "websocket job failed");
+					ws.send(JSON.stringify({
+						type: "job-error",
+						jobId: jobId,
+						error: error.message
+					}));
+				}
 			}
 		} catch (error) {
 			logger.error({ err: error }, "websocket message error");
@@ -360,7 +503,56 @@ app.get("/export", (req, res) => {
 	serveFile(res, "export.html");
 });
 
-// Handle job submission
+// Handle file upload preparation (returns jobId for WebSocket execution)
+// @ts-ignore
+app.post("/job/prepare", upload.array("files"), async (req, res) => {
+	try {
+		const { options } = req.body;
+
+		// Parse options to get file source info
+		const opts = JSON.parse(options || "{}");
+
+		// Generate unique job ID
+		const jobId = `job-${Date.now()}-${Math.random().toString(36).substring(2)}`;
+
+		// For local files, store file paths temporarily
+		let filePaths = null;
+		if (req.files && req.files.length > 0) {
+			const dataFiles = req.files.filter(file => file.fieldname === "files");
+			if (dataFiles.length === 1) {
+				filePaths = dataFiles[0].path;
+			} else if (dataFiles.length > 0) {
+				filePaths = dataFiles.map(file => file.path);
+			}
+
+			// Store file info for this job (will be used when WebSocket starts job)
+			jobStatuses.set(jobId, {
+				status: "prepared",
+				filePaths: filePaths,
+				files: req.files,
+				startTime: Date.now(),
+				lastUpdate: Date.now()
+			});
+
+			logger.debug({ jobId, fileCount: dataFiles.length }, "files uploaded and prepared");
+		}
+
+		// Return jobId so client can connect WebSocket
+		res.json({
+			success: true,
+			jobId: jobId,
+			message: "Files uploaded - connect WebSocket to start job"
+		});
+	} catch (error) {
+		logger.error({ err: error }, "file upload error");
+		res.status(500).json({
+			success: false,
+			error: error.message
+		});
+	}
+});
+
+// Legacy endpoint - keep for backward compatibility but recommend using WebSocket flow
 // @ts-ignore
 app.post("/job", upload.array("files"), async (req, res) => {
 	// Extract key parameters for logging without file contents
@@ -373,7 +565,7 @@ app.post("/job", upload.array("files"), async (req, res) => {
 		fileNames: req.files ? req.files.map(f => ({ fieldname: f.fieldname, originalname: f.originalname, size: f.size })) : []
 	};
 	
-	logger.debug(logParams, "job request");
+	logger.info(logParams, "job request");
 	try {
 		const { credentials, options, transformCode } = req.body;
 
@@ -432,7 +624,7 @@ app.post("/job", upload.array("files"), async (req, res) => {
 		if (req.body.cloudPaths) {
 			try {
 				const cloudPaths = JSON.parse(req.body.cloudPaths);
-				logger.debug({ cloudPaths }, "cloud paths");
+				logger.info({ cloudPaths }, "cloud paths");
 				data = cloudPaths; // Pass cloud paths directly to mixpanel-import
 			} catch (err) {
 				return res.status(400).json({

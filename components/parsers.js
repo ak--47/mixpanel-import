@@ -49,6 +49,17 @@ function checkPath(filePath) {
 }
 
 /**
+ * Check if a file has a supported extension (including compound extensions like .json.gz)
+ * @param {string} filePath - Path to file
+ * @param {string[]} supportedExtensions - Array of supported extensions
+ * @returns {boolean}
+ */
+function hasSupportedExtension(filePath, supportedExtensions) {
+	// Check for exact match with any supported extension
+	return supportedExtensions.some(ext => filePath.endsWith(ext));
+}
+
+/**
  * Determine if file is gzipped and extract base format
  * @param {string} filePath - Path to file
  * @param {JobConfig} job - Job configuration
@@ -84,7 +95,7 @@ function analyzeFileFormat(filePath, job) {
 		return { isGzipped: true, baseFormat, parsingCase: 'json' };
 	}
 	if (gzippedTableFileExt.some(ext => filePath.endsWith(ext))) {
-		// Extract the base format from the gzipped filename  
+		// Extract the base format from the gzipped filename
 		const baseFormat = filePath.endsWith('.gz') ? path.extname(filePath.slice(0, -3)) : path.extname(filePath);
 		return { isGzipped: true, baseFormat, parsingCase: 'csv' };
 	}
@@ -504,7 +515,7 @@ async function determineDataType(data, job) {
 			else {
 				//directory case
 				const enumDir = await u.ls(dataPathInfo.path);
-				files = Array.isArray(enumDir) ? enumDir.filter(filePath => supportedFileExt.includes(path.extname(filePath))) : [];
+				files = Array.isArray(enumDir) ? enumDir.filter(filePath => hasSupportedExtension(filePath, supportedFileExt)) : [];
 				exampleFile = files[0] || '';
 			}
 
@@ -554,12 +565,7 @@ async function determineDataType(data, job) {
 
 	// data is a string, and we have to guess what it is
 	if (typeof data === 'string') {
-		// Special check for gzipped parquet files - they should not be processed as regular strings
-		if (data.endsWith('.parquet.gz')) {
-			throw new Error(`Gzipped parquet files (${data}) are not yet supported for local files. Please decompress the file first or use cloud storage which supports .parquet.gz files.`);
-		}
-
-		// If we have a parsing error from file processing and the data looks like a file path, 
+		// If we have a parsing error from file processing and the data looks like a file path,
 		// throw the error instead of trying to parse the path as data
 		if (parsingError && (data.includes('/') || data.includes('\\') || data.includes('.'))) {
 			throw parsingError;
@@ -761,9 +767,9 @@ function createParquetFactory(filePaths, job) {
  * @param {JobConfig} job
  */
 function parquetStreamArray(filePaths, job, isGzipped = false) {
-	// Check for gzipped parquet files in the array
-	if (isGzipped) {
-		throw new Error(`Gzipped parquet files are not yet supported for local files. Please decompress the files first or use cloud storage which supports .parquet.gz files.`);
+	// Auto-detect gzipped parquet files if not already specified
+	if (!isGzipped && filePaths.some(p => p.endsWith('.parquet.gz'))) {
+		isGzipped = true;
 	}
 
 	// @ts-ignore
@@ -783,11 +789,6 @@ function parquetStreamArray(filePaths, job, isGzipped = false) {
 async function parquetStream(filename, job = {}, isGzipped = false) {
 	const filePath = path.resolve(filename);
 
-	// Check if gzipped parquet files are supported
-	if (isGzipped) {
-		throw new Error(`Gzipped parquet files (${filePath}) are not yet supported for local files. Please decompress the file first or use cloud storage which supports .parquet.gz files.`);
-	}
-
 	// Handlers
 	const fileErrorHandler = job.fileErrorHandler || (err => {
 		console.error(`Error reading ${filePath}:`, err.message || err);
@@ -805,7 +806,12 @@ async function parquetStream(filename, job = {}, isGzipped = false) {
 		}
 
 		// Read the parquet file into buffer
-		const buffer = fs.readFileSync(filePath);
+		let buffer = fs.readFileSync(filePath);
+
+		// Decompress if gzipped
+		if (isGzipped) {
+			buffer = zlib.gunzipSync(buffer);
+		}
 
 		// Create async buffer interface for hyparquet (convert Buffer to ArrayBuffer)
 		const asyncBuffer = {
