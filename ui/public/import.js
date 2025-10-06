@@ -14,6 +14,8 @@ class MixpanelImportUI {
 		this.websocket = null; // WebSocket connection for real-time progress
 		this.currentJobId = null; // Track current job ID
 		this.lastResults = null; // Store last results for download
+		this.timerInterval = null; // Timer interval for job duration
+		this.timerStartTime = null; // Start time for timer
 		this.initializeUI();
 		this.setupEventListeners();
 		this.updateColumnMapperButtons(); // Set initial button state
@@ -107,14 +109,14 @@ class MixpanelImportUI {
 		const loadingMessage = document.querySelector('.loading-details');
 		if (loadingMessage) {
 			const { recordType, processed, requests, eps, memory, bytesProcessed } = progressData;
-			
+
 			const formatNumber = (num) => {
 				if (typeof num === 'number') {
 					return num.toLocaleString();
 				}
 				return num || '0';
 			};
-			
+
 			const formatBytes = (bytes) => {
 				if (!bytes || bytes === 0) return '0 B';
 				const k = 1024;
@@ -122,9 +124,29 @@ class MixpanelImportUI {
 				const i = Math.floor(Math.log(bytes) / Math.log(k));
 				return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 			};
-			
+
+			const formatDuration = () => {
+				if (!this.timerStartTime) return '0s';
+				const elapsed = Math.floor((Date.now() - this.timerStartTime) / 1000);
+				const hours = Math.floor(elapsed / 3600);
+				const minutes = Math.floor((elapsed % 3600) / 60);
+				const seconds = elapsed % 60;
+
+				if (hours > 0) {
+					return `${hours}h ${minutes}m ${seconds}s`;
+				} else if (minutes > 0) {
+					return `${minutes}m ${seconds}s`;
+				} else {
+					return `${seconds}s`;
+				}
+			};
+
 			loadingMessage.innerHTML = `
 				<div class="progress-stats">
+					<div class="stat-item">
+						<span class="stat-label">Duration:</span>
+						<span class="stat-value">${formatDuration()}</span>
+					</div>
 					<div class="stat-item">
 						<span class="stat-label">${recordType || 'Records'}:</span>
 						<span class="stat-value">${formatNumber(processed)}</span>
@@ -895,7 +917,7 @@ class MixpanelImportUI {
 			// Common options
 			const workersEl = document.getElementById('workers');
 			const workers = workersEl ? workersEl.value : '';
-			if (workers && workers !== '10') command += ` --workers ${workers}`;
+			if (workers && workers !== '25') command += ` --workers ${workers}`;
 
 			const recordsPerBatchEl = document.getElementById('recordsPerBatch');
 			const recordsPerBatch = recordsPerBatchEl ? recordsPerBatchEl.value : '';
@@ -1344,7 +1366,7 @@ function transform(row) {
 
 		const options = {
 			recordType: recordTypeEl ? recordTypeEl.value : '',
-			workers: workersEl ? parseInt(workersEl.value) || 10 : 10,
+			workers: workersEl ? parseInt(workersEl.value) || 25 : 25,
 			recordsPerBatch: recordsPerBatchEl ? parseInt(recordsPerBatchEl.value) || 2000 : 2000,
 			region: regionEl ? regionEl.value || 'US' : 'US',
 			compress: compressEl ? compressEl.checked : false,
@@ -1609,10 +1631,57 @@ function transform(row) {
 		document.getElementById('loading-title').textContent = title;
 		document.getElementById('loading-message').textContent = message;
 		document.getElementById('loading').style.display = 'flex';
+
+		// Start the timer
+		this.timerStartTime = Date.now();
+		this.startTimer();
 	}
 
 	hideLoading() {
 		document.getElementById('loading').style.display = 'none';
+
+		// Stop the timer
+		this.stopTimer();
+	}
+
+	startTimer() {
+		// Clear any existing timer first
+		this.stopTimer();
+
+		// Update timer every second
+		this.timerInterval = setInterval(() => {
+			// Trigger a progress display update to refresh the timer
+			// We'll just update the display even if there's no new progress data
+			const loadingMessage = document.querySelector('.loading-details');
+			if (loadingMessage && this.timerStartTime) {
+				// Get current content to preserve other stats
+				const currentStats = loadingMessage.querySelector('.progress-stats');
+				if (currentStats) {
+					const durationStat = currentStats.querySelector('.stat-item:first-child .stat-value');
+					if (durationStat) {
+						const elapsed = Math.floor((Date.now() - this.timerStartTime) / 1000);
+						const hours = Math.floor(elapsed / 3600);
+						const minutes = Math.floor((elapsed % 3600) / 60);
+						const seconds = elapsed % 60;
+
+						if (hours > 0) {
+							durationStat.textContent = `${hours}h ${minutes}m ${seconds}s`;
+						} else if (minutes > 0) {
+							durationStat.textContent = `${minutes}m ${seconds}s`;
+						} else {
+							durationStat.textContent = `${seconds}s`;
+						}
+					}
+				}
+			}
+		}, 1000);
+	}
+
+	stopTimer() {
+		if (this.timerInterval) {
+			clearInterval(this.timerInterval);
+			this.timerInterval = null;
+		}
 	}
 
 	clearResults() {

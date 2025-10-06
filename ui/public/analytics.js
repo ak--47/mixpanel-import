@@ -15,9 +15,20 @@ if (window.mixpanel) {
 				if (userFromCookie) user = userFromCookie;
 				if (user) mp.identify(user);
 				if (user) mp.people.set({ $name: user, $email: user });
-				console.log(`\n\nMIXPANEL IDENTIFIED USER: ${user}\n\n`);
+				if (user) console.log(`\n\nMIXPANEL IDENTIFIED USER: ${user}\n\n`);
 			} catch (e) {
 				console.error('Error identifying user:', e);
+			}
+
+			const isLocal = window.location.origin.includes("local");
+			if (isLocal) {
+				mp.opt_out_tracking();
+				console.log('\n\nMIXPANEL OPTED OUT OF TRACKING\n\n');
+
+			}
+			else {
+				mp.opt_in_tracking();
+				mp.start_session_recording();
 			}
 
 		},
@@ -33,7 +44,7 @@ if (window.mixpanel) {
 		},
 
 		//session replay
-		record_sessions_percent: 100,
+		// record_sessions_percent: 100,
 		record_inline_images: true,
 		record_collect_fonts: true,
 		record_mask_text_selector: 'nope',
