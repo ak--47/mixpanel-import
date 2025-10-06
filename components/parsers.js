@@ -800,11 +800,12 @@ function itemStream(filePath, type = "jsonl", job, isGzipped = false) {
 
 /**
  * Creates a factory function for MultiStream that lazily creates parquet streams
- * @param {string[]} filePaths 
+ * @param {string[]} filePaths
  * @param {JobConfig} job
+ * @param {boolean} isGzipped
  * @returns {(callback: (error: Error | null, stream: Readable | null) => void) => void}
  */
-function createParquetFactory(filePaths, job) {
+function createParquetFactory(filePaths, job, isGzipped = false) {
 	let currentIndex = 0;
 
 	return function factory(callback) {
@@ -816,7 +817,7 @@ function createParquetFactory(filePaths, job) {
 		const currentPath = filePaths[currentIndex];
 		currentIndex++;
 		// console.log(`Processing parquet file: ${currentPath}`);
-		parquetStream(currentPath, job)
+		parquetStream(currentPath, job, isGzipped)
 			.then(stream => {
 				// Add error handler to prevent stream from breaking
 				stream.on('error', (err) => {
@@ -845,7 +846,7 @@ function parquetStreamArray(filePaths, job, isGzipped = false) {
 	}
 
 	// @ts-ignore
-	const lazyStreamGen = createParquetFactory(filePaths, job);
+	const lazyStreamGen = createParquetFactory(filePaths, job, isGzipped);
 	// @ts-ignore
 	return MultiStream.obj(lazyStreamGen);
 }
