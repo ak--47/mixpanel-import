@@ -87,11 +87,10 @@ async function executeJobOverWebSocket(ws, jobId, credentials, options, cloudPat
 		opts.progressCallback = createProgressCallback(jobId);
 
 		// Handle transform function if provided
-		if (transformCode) {
+		if (transformCode && transformCode.trim()) {
 			try {
-				// Create transform function from code
-				const transformFunc = new Function('record', transformCode);
-				opts.transformFunc = transformFunc;
+				// Create transform function from code (eval to support arrow functions)
+				opts.transformFunc = eval(`(${transformCode})`);
 			} catch (transformError) {
 				throw new Error(`Transform function error: ${transformError.message}`);
 			}
