@@ -10,9 +10,13 @@ dayjs.extend(utc);
 const { Readable } = require("stream");
 const murmurhash = require("murmurhash");
 const stringify = require("json-stable-stringify");
+const fs = require("fs");
+const path = require("path");
+const zlib = require("zlib");
 
 // ! MODULES
 const Job = require("../components/job.js");
+const mpImport = require("../index.js");
 const { UTCoffset,
 	addTags,
 	applyAliases,
@@ -34,7 +38,8 @@ const { getEnvVars,
 	chunkForSize,
 	determineDataType,
 	existingStreamInterface,
-	itemStream
+	itemStream,
+	analyzeFileFormat
 } = require("../components/parsers.js");
 const exp = require("constants");
 const fakeCreds = { acct: "test", pass: "test", project: "test" };
@@ -950,7 +955,7 @@ describe("transforms", () => {
 		};
 		const columnDropper = dropColumns(["remove_me", "also_remove"]);
 		const result = columnDropper(record);
-		
+
 		expect(result.properties.keep).toBe("value1");
 		expect(result.properties.distinct_id).toBe("user123");
 		expect(result.properties.remove_me).toBeUndefined();
@@ -971,7 +976,7 @@ describe("transforms", () => {
 		};
 		const columnDropper = dropColumns(["sensitive_data", "pii_field"]);
 		const result = columnDropper(record);
-		
+
 		expect(result.$set.name).toBe("John Doe");
 		expect(result.$set.email).toBe("john@example.com");
 		expect(result.$set.sensitive_data).toBeUndefined();
@@ -998,7 +1003,7 @@ describe("transforms", () => {
 		};
 		const columnDropper = dropColumns(["remove_from_set", "remove_from_add", "remove_from_union"]);
 		const result = columnDropper(record);
-		
+
 		expect(result.$set.name).toBe("John");
 		expect(result.$set.remove_from_set).toBeUndefined();
 		expect(result.$add.score).toBe(10);
@@ -1017,12 +1022,12 @@ describe("transforms", () => {
 		};
 		const columnDropper = dropColumns(["custom_field", "another_field", "event", "properties", "$user_id"]);
 		const result = columnDropper(record);
-		
+
 		// System fields should be preserved
 		expect(result.event).toBe("Test Event");
 		expect(result.properties).toBeDefined();
 		expect(result.$user_id).toBe("preserve_me");
-		
+
 		// Custom fields should be removed
 		expect(result.custom_field).toBeUndefined();
 		expect(result.another_field).toBeUndefined();
@@ -1038,13 +1043,13 @@ describe("transforms", () => {
 		};
 		const columnDropper = dropColumns([]);
 		const result = columnDropper(record);
-		
+
 		expect(result).toEqual(record);
 	});
 
 	test("dropColumns: handles null/undefined record", () => {
 		const columnDropper = dropColumns(["remove_me"]);
-		
+
 		expect(columnDropper(null)).toBeNull();
 		expect(columnDropper(undefined)).toBeUndefined();
 		expect(columnDropper({})).toEqual({});
@@ -1057,7 +1062,7 @@ describe("transforms", () => {
 		};
 		const columnDropper = dropColumns(["custom_field", "nonexistent"]);
 		const result = columnDropper(record);
-		
+
 		expect(result.event).toBe("Test Event");
 		expect(result.custom_field).toBeUndefined();
 	});
@@ -1166,9 +1171,7 @@ describe("parsers", () => {
 
 describe("path checking", () => {
 	// Import the checkPath function from parsers.js for testing
-	const fs = require('fs');
-	const path = require('path');
-	
+
 	// Helper function to replicate the checkPath function from parsers.js
 	function checkPath(filePath) {
 		try {
@@ -1176,7 +1179,7 @@ describe("path checking", () => {
 			if (!fs.existsSync(resolvedPath)) {
 				return { exists: false, isFile: false, isDirectory: false, path: resolvedPath };
 			}
-			
+
 			const stats = fs.lstatSync(resolvedPath);
 			return {
 				exists: true,
@@ -1253,10 +1256,10 @@ describe("path checking", () => {
 
 	test("determineDataType: better error handling for non-existent files", async () => {
 		const job = new Job(fakeCreds);
-		
+
 		await expect(determineDataType('./nonexistent-file.json', job))
 			.rejects
-			.toThrow('File or directory not found');
+			.toThrow('File or directory does not exist: ./nonexistent-file.json');
 	});
 
 	test("determineDataType: handles array of non-existent files", async () => {
@@ -1271,11 +1274,11 @@ describe("path checking", () => {
 
 	test("determineDataType: existing directory handling", async () => {
 		const job = new Job(fakeCreds);
-		try{
-		// testData directory exists and should be processed
-		const result = await determineDataType('./testData', job);
+		try {
+			// testData directory exists and should be processed
+			const result = await determineDataType('./testData', job);
 		}
-		catch(error){
+		catch (error) {
 			// If no supported files are found, it should throw an error
 			expect(error.message).toBe('All files in array/directory must have the same format and compression (gzipped or not gzipped)');
 		}
@@ -1284,7 +1287,7 @@ describe("path checking", () => {
 	test("determineDataType: array of existing files", async () => {
 		const job = new Job(fakeCreds);
 		const existingFiles = ['./testData/events-small.json'];
-		
+
 		const result = await determineDataType(existingFiles, job);
 		expect(result).toBeDefined();
 		expect(job.wasStream).toBe(true);
@@ -1295,7 +1298,7 @@ describe("gzip support", () => {
 	test("isGzip option works", () => {
 		const job = new Job(fakeCreds, { isGzip: true });
 		expect(job.isGzip).toBe(true);
-		
+
 		const jobDefault = new Job(fakeCreds);
 		expect(jobDefault.isGzip).toBe(false);
 	});
@@ -1312,9 +1315,8 @@ describe("gzip support", () => {
 	});
 
 	test("detects gzip JSON as JSONL by default", () => {
-		const { analyzeFileFormat } = require("../components/parsers.js");
 		const job = new Job(fakeCreds);
-		
+
 		const result = analyzeFileFormat('./testData/gzip-tests/events.json.gz', job);
 		expect(result.isGzipped).toBe(true);
 		expect(result.parsingCase).toBe('jsonl');
@@ -1322,9 +1324,8 @@ describe("gzip support", () => {
 	});
 
 	test("detects gzip JSONL", () => {
-		const { analyzeFileFormat } = require("../components/parsers.js");
 		const job = new Job(fakeCreds);
-		
+
 		const result = analyzeFileFormat('./testData/gzip-tests/bad_data.jsonl.gz', job);
 		expect(result.isGzipped).toBe(true);
 		expect(result.parsingCase).toBe('jsonl');
@@ -1332,9 +1333,8 @@ describe("gzip support", () => {
 	});
 
 	test("detects gzip CSV", () => {
-		const { analyzeFileFormat } = require("../components/parsers.js");
 		const job = new Job(fakeCreds);
-		
+
 		const result = analyzeFileFormat('./testData/gzip-tests/table.csv.gz', job);
 		expect(result.isGzipped).toBe(true);
 		expect(result.parsingCase).toBe('csv');
@@ -1342,9 +1342,8 @@ describe("gzip support", () => {
 	});
 
 	test("detects gzip Parquet", () => {
-		const { analyzeFileFormat } = require("../components/parsers.js");
 		const job = new Job(fakeCreds);
-		
+
 		const result = analyzeFileFormat('./testData/gzip-tests/playtika_sample.parquet.gz', job);
 		expect(result.isGzipped).toBe(true);
 		expect(result.parsingCase).toBe('parquet');
@@ -1352,9 +1351,8 @@ describe("gzip support", () => {
 	});
 
 	test("isGzip overrides detection", () => {
-		const { analyzeFileFormat } = require("../components/parsers.js");
 		const job = new Job(fakeCreds, { isGzip: true });
-		
+
 		// Test with non-gzipped file extension but isGzip=true
 		const result = analyzeFileFormat('./testData/events.json', job);
 		expect(result.isGzipped).toBe(true);
@@ -1362,9 +1360,8 @@ describe("gzip support", () => {
 	});
 
 	test("isGzip works with .gz", () => {
-		const { analyzeFileFormat } = require("../components/parsers.js");
 		const job = new Job(fakeCreds, { isGzip: true });
-		
+
 		// Test with .gz extension - should still work
 		const result = analyzeFileFormat('./testData/events.json.gz', job);
 		expect(result.isGzipped).toBe(true);
@@ -1372,9 +1369,8 @@ describe("gzip support", () => {
 	});
 
 	test("analyzeFileFormat detects .json.gz as jsonl by default", () => {
-		const { analyzeFileFormat } = require("../components/parsers.js");
 		const job = new Job(fakeCreds);
-		
+
 		// analyzeFileFormat only looks at extensions, not streamFormat
 		const result = analyzeFileFormat('./testData/gzip-tests/events.json.gz', job);
 		expect(result.isGzipped).toBe(true);
@@ -1383,9 +1379,8 @@ describe("gzip support", () => {
 	});
 
 	test("streamFormat can override auto-detection in parsing pipeline", async () => {
-		const { determineDataType } = require("../components/parsers.js");
 		const job = new Job(fakeCreds, { streamFormat: 'strict_json', dryRun: true });
-		
+
 		// Test that streamFormat can override the auto-detection
 		// Using events-small.json which is a strict JSON array
 		const stream = await determineDataType('./testData/events-small.json', job);
@@ -1396,19 +1391,19 @@ describe("gzip support", () => {
 	// test("gzipped JSON file can be processed", async () => {
 	// 	const fs = require('fs');
 	// 	const path = require('path');
-		
+
 	// 	// Only run if test file exists
 	// 	if (fs.existsSync('./testData/gzip-tests/big.json.gz')) {
 	// 		const job = new Job(fakeCreds, { dryRun: true });
 	// 		const stream = await determineDataType('./testData/gzip-tests/big.json.gz', job);
-			
+
 	// 		expect(stream).toBeDefined();
 	// 		expect(job.wasStream).toBe(true);
-			
+
 	// 		// Collect data from stream to verify it works
 	// 		const data = [];
 	// 		stream.on('data', chunk => data.push(chunk));
-			
+
 	// 		return new Promise((resolve, reject) => {
 	// 			stream.on('end', () => {
 	// 				expect(data.length).toBeGreaterThan(0);
@@ -1421,20 +1416,18 @@ describe("gzip support", () => {
 	// });
 
 	test("processes gzip JSONL", async () => {
-		const fs = require('fs');
-		
 		// Only run if test file exists
 		if (fs.existsSync('./testData/gzip-tests/bad_data.jsonl.gz')) {
 			const job = new Job(fakeCreds, { dryRun: true });
 			const stream = await determineDataType('./testData/gzip-tests/bad_data.jsonl.gz', job);
-			
+
 			expect(stream).toBeDefined();
 			expect(job.wasStream).toBe(true);
-			
+
 			// Collect data from stream to verify it works
 			const data = [];
 			stream.on('data', chunk => data.push(chunk));
-			
+
 			return new Promise((resolve, reject) => {
 				stream.on('end', () => {
 					expect(data.length).toBeGreaterThan(0);
@@ -1446,23 +1439,21 @@ describe("gzip support", () => {
 	});
 
 	test("processes gzip CSV", async () => {
-		const fs = require('fs');
-		
 		// Only run if test file exists
 		if (fs.existsSync('./testData/gzip-tests/table.csv.gz')) {
-			const job = new Job(fakeCreds, { 
+			const job = new Job(fakeCreds, {
 				dryRun: true,
 				aliases: { unit_id: 'distinct_id' } // CSV has unit_id column, not event
 			});
 			const stream = await determineDataType('./testData/gzip-tests/table.csv.gz', job);
-			
+
 			expect(stream).toBeDefined();
 			expect(job.wasStream).toBe(true);
-			
+
 			// Collect data from stream to verify it works
 			const data = [];
 			stream.on('data', chunk => data.push(chunk));
-			
+
 			return new Promise((resolve, reject) => {
 				stream.on('end', () => {
 					expect(data.length).toBeGreaterThan(0);
@@ -1475,16 +1466,16 @@ describe("gzip support", () => {
 		}
 	}, 20000); // Increase timeout for gzip processing
 
-	test("gzipped parquet file throws", async () => {
-		const fs = require('fs');
-		
+	test("processes gzipped parquet files", async () => {
 		// Only run if test file exists
 		if (fs.existsSync('./testData/gzip-tests/playtika_sample.parquet.gz')) {
-			const job = new Job(fakeCreds, { dryRun: true, streamFormat: "parquet" });
-			
-			await expect(determineDataType('./testData/gzip-tests/playtika_sample.parquet.gz', job))
-				.rejects
-				.toThrow('Gzipped parquet files');
+			const job = new Job(fakeCreds, { dryRun: true });
+			const stream = await determineDataType('./testData/gzip-tests/playtika_sample.parquet.gz', job);
+
+			expect(stream).toBeDefined();
+
+			expect(stream).toBeInstanceOf(require('stream').Stream);
+
 		} else {
 			// Skip test if file doesn't exist
 			expect(true).toBe(true);
@@ -1493,11 +1484,11 @@ describe("gzip support", () => {
 
 	// test("mixed gzip and non-gzip files in array throws error", async () => {
 	// 	const fs = require('fs');
-		
+
 	// 	if (fs.existsSync('./testData/events.json') && fs.existsSync('./testData/gzip-tests/events.json.gz')) {
 	// 		const job = new Job(fakeCreds, { dryRun: true });
 	// 		const files = ['./testData/events.json', './testData/gzip-tests/events.json.gz'];
-			
+
 	// 		await expect(determineDataType(files, job))
 	// 			.rejects
 	// 			.toThrow('All files in array/directory must have the same format and compression');
@@ -1505,28 +1496,25 @@ describe("gzip support", () => {
 	// });
 
 	test("isGzip forces processing", async () => {
-		const fs = require('fs');
-		
 		// Create a temporary gzipped file without .gz extension
 		if (fs.existsSync('./testData/events.json')) {
-			const zlib = require('zlib');
 			const originalData = fs.readFileSync('./testData/events.json');
 			const gzippedData = zlib.gzipSync(originalData);
 			const tempFile = './testData/temp-gzipped-no-ext.json';
-			
+
 			fs.writeFileSync(tempFile, gzippedData);
-			
+
 			try {
 				const job = new Job(fakeCreds, { dryRun: true, isGzip: true, streamFormat: "jsonl" });
 				const stream = await determineDataType(tempFile, job);
-				
+
 				expect(stream).toBeDefined();
 				expect(job.wasStream).toBe(true);
-				
+
 				// Collect data from stream to verify it works
 				const data = [];
 				stream.on('data', chunk => data.push(chunk));
-				
+
 				return new Promise((resolve, reject) => {
 					stream.on('end', () => {
 						expect(data.length).toBeGreaterThan(0);
@@ -1545,13 +1533,10 @@ describe("gzip support", () => {
 		}
 	});
 
-	
+
 });
 
 describe("maxRecords functionality", () => {
-	const fakeCreds = { acct: "test", pass: "test", project: "test" };
-	const mpImport = require('../index.js');
-
 	// Helper function to generate test data
 	function generateTestData(count) {
 		const data = [];
@@ -1598,7 +1583,7 @@ describe("maxRecords functionality", () => {
 
 	test('null processes all records', async () => {
 		const testData = generateTestData(10); // Small dataset
-		
+
 		const result = await mpImport(fakeCreds, testData, {
 			maxRecords: null, // Explicitly null
 			dryRun: true
@@ -1611,7 +1596,7 @@ describe("maxRecords functionality", () => {
 
 	test('undefined processes all', async () => {
 		const testData = generateTestData(15); // Small dataset
-		
+
 		const result = await mpImport(fakeCreds, testData, {
 			// No maxRecords specified
 			dryRun: true
@@ -1675,7 +1660,7 @@ describe("maxRecords functionality", () => {
 
 	test('zero processes none', async () => {
 		const testData = generateTestData(10);
-		
+
 		const result = await mpImport(fakeCreds, testData, {
 			maxRecords: 0,
 			dryRun: true
@@ -1688,7 +1673,7 @@ describe("maxRecords functionality", () => {
 	test('larger than dataset', async () => {
 		const testData = generateTestData(5); // Only 5 records
 		const maxRecords = 100; // Much larger limit
-		
+
 		const result = await mpImport(fakeCreds, testData, {
 			maxRecords,
 			dryRun: true

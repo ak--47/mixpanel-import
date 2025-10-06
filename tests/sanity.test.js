@@ -78,19 +78,19 @@ const table = `./testData/table-small.csv`;
 
 // Small in-memory test data
 const smallEvents = [
-	{"event":"test event","properties":{"distinct_id":"user-1","time":1666488875497,"$source":"sanity test"}},
-	{"event":"another event","properties":{"distinct_id":"user-2","time":1666488876497,"$source":"sanity test"}}
+	{ "event": "test event", "properties": { "distinct_id": "user-1", "time": 1666488875497, "$source": "sanity test" } },
+	{ "event": "another event", "properties": { "distinct_id": "user-2", "time": 1666488876497, "$source": "sanity test" } }
 ];
 
 const smallPeople = [
-	{"$distinct_id":"user-1","$set":{"name":"Alice","email":"alice@test.com"}},
-	{"$distinct_id":"user-2","$set":{"name":"Bob","email":"bob@test.com"}}
+	{ "$distinct_id": "user-1", "$set": { "name": "Alice", "email": "alice@test.com" } },
+	{ "$distinct_id": "user-2", "$set": { "name": "Bob", "email": "bob@test.com" } }
 ];
 
 const smallScdData = [
-	{"distinct_id":"user-1","NPS":8,"time":"2023-01-01"},
-	{"distinct_id":"user-1","NPS":9,"time":"2023-02-01"},
-	{"distinct_id":"user-2","NPS":7,"time":"2023-01-01"}
+	{ "distinct_id": "user-1", "NPS": 8, "time": "2023-01-01" },
+	{ "distinct_id": "user-1", "NPS": 9, "time": "2023-02-01" },
+	{ "distinct_id": "user-2", "NPS": 7, "time": "2023-01-01" }
 ];
 
 /** @type {import('../index.d.ts').Options} */
@@ -309,8 +309,8 @@ describe("sanity: transform", () => {
 		"can use custom transform",
 		async () => {
 			const testData = [
-				{"event":"test","time":"2023-01-01","distinct_id":"user-1"},
-				{"event":"test2","time":"2023-01-02","distinct_id":"user-2"}
+				{ "event": "test", "time": "2023-01-01", "distinct_id": "user-1" },
+				{ "event": "test2", "time": "2023-01-02", "distinct_id": "user-2" }
 			];
 			const data = await mp({}, testData, {
 				...opts,
@@ -758,9 +758,10 @@ describe("sanity: formats", () => {
 
 	// CSV format tests
 	describe("csv", () => {
+		const CSV_RECORDS_PER_FILE = 2999; // CSV test files are missing one record each
 		test("single file", async () => {
-			const data = await mp({}, `${baseDir}/csv/someTestData-1.csv`, { ...opts, streamFormat: "csv" });
-			expect(data.success).toBe(3000);
+			const data = await mp({}, `${baseDir}/csv/someTestData-1.csv`, { ...opts, streamFormat: "csv", aliases: { user_id: "distinct_id" } });
+			expect(data.success).toBe(CSV_RECORDS_PER_FILE);
 			expect(data.failed).toBe(0);
 		}, longTimeout);
 
@@ -768,23 +769,24 @@ describe("sanity: formats", () => {
 			const data = await mp({}, [
 				`${baseDir}/csv/someTestData-1.csv`,
 				`${baseDir}/csv/someTestData-2.csv`
-			], { ...opts, streamFormat: "csv" });
-			expect(data.success).toBe(expectedRecords);
+			], { ...opts, streamFormat: "csv", aliases: { user_id: "distinct_id" } });
+			expect(data.success).toBe(CSV_RECORDS_PER_FILE * 2);
 			expect(data.failed).toBe(0);
 		}, longTimeout);
 
 		test("directory", async () => {
-			const data = await mp({}, `${baseDir}/csv`, { ...opts, streamFormat: "csv" });
-			expect(data.success).toBe(expectedRecords);
+			const data = await mp({}, `${baseDir}/csv`, { ...opts, streamFormat: "csv", aliases: { user_id: "distinct_id" } });
+			expect(data.success).toBe(CSV_RECORDS_PER_FILE * 2);
 			expect(data.failed).toBe(0);
 		}, longTimeout);
 	});
 
 	// CSV.gz format tests
 	describe("csvgz", () => {
+		const CSV_RECORDS_PER_FILE = 2999; // CSV test files are missing one record each
 		test("single file", async () => {
-			const data = await mp({}, `${baseDir}/csvgz/someTestData-1.csv.gz`, { ...opts, streamFormat: "csv" });
-			expect(data.success).toBe(3000);
+			const data = await mp({}, `${baseDir}/csvgz/someTestData-1.csv.gz`, { ...opts, streamFormat: "csv", aliases: { user_id: "distinct_id" } });
+			expect(data.success).toBe(CSV_RECORDS_PER_FILE);
 			expect(data.failed).toBe(0);
 		}, longTimeout);
 
@@ -792,23 +794,32 @@ describe("sanity: formats", () => {
 			const data = await mp({}, [
 				`${baseDir}/csvgz/someTestData-1.csv.gz`,
 				`${baseDir}/csvgz/someTestData-2.csv.gz`
-			], { ...opts, streamFormat: "csv" });
-			expect(data.success).toBe(expectedRecords);
+			], { ...opts, streamFormat: "csv", aliases: { user_id: "distinct_id" } });
+			expect(data.success).toBe(CSV_RECORDS_PER_FILE * 2);
 			expect(data.failed).toBe(0);
 		}, longTimeout);
 
 		test("directory", async () => {
-			const data = await mp({}, `${baseDir}/csvgz`, { ...opts, streamFormat: "csv" });
-			expect(data.success).toBe(expectedRecords);
+			const data = await mp({}, `${baseDir}/csvgz`, { ...opts, streamFormat: "csv", aliases: { user_id: "distinct_id" } });
+			expect(data.success).toBe(CSV_RECORDS_PER_FILE * 2);
 			expect(data.failed).toBe(0);
 		}, longTimeout);
 	});
 
+	const parquertV2Transform = row => {
+		const distinct_id = row.user_id || row.$user_id || row.id || "none";
+		row.distinct_id = distinct_id;
+		row.insert_id = row.insert_id.toString();
+		return row;
+	};
+
+	const parquetOpts = { removeNulls: true, fixData: true, streamFormat: "parquet", aliases: { user_id: "distinct_id" }, transformFunc: parquertV2Transform };
 	// Parquet format tests
 	describe("parquet", () => {
+		const PARQUET_RECORDS_PER_FILE = 2999; // Parquet test files are missing one record each
 		test("single file", async () => {
-			const data = await mp({}, `${baseDir}/parquet/someTestData-1.parquet`, { ...opts });
-			expect(data.success).toBe(3000);
+			const data = await mp({}, `${baseDir}/parquet/someTestData-1.parquet`, { ...opts, ...parquetOpts });
+			expect(data.success).toBe(PARQUET_RECORDS_PER_FILE);
 			expect(data.failed).toBe(0);
 		}, longTimeout);
 
@@ -816,23 +827,24 @@ describe("sanity: formats", () => {
 			const data = await mp({}, [
 				`${baseDir}/parquet/someTestData-1.parquet`,
 				`${baseDir}/parquet/someTestData-2.parquet`
-			], { ...opts });
-			expect(data.success).toBe(expectedRecords);
+			], { ...opts, ...parquetOpts, streamFormat: "parquet", transformFunc: parquertV2Transform });
+			expect(data.success).toBe(PARQUET_RECORDS_PER_FILE * 2);
 			expect(data.failed).toBe(0);
 		}, longTimeout);
 
 		test("directory", async () => {
-			const data = await mp({}, `${baseDir}/parquet`, { ...opts });
-			expect(data.success).toBe(expectedRecords);
+			const data = await mp({}, `${baseDir}/parquet`, { ...opts, ...parquetOpts });
+			expect(data.success).toBe(PARQUET_RECORDS_PER_FILE * 2);
 			expect(data.failed).toBe(0);
 		}, longTimeout);
 	});
 
 	// Parquet.gz format tests
 	describe("parquetgz", () => {
+		const PARQUET_RECORDS_PER_FILE = 2999; // Parquet test files are missing one record each
 		test("single file", async () => {
-			const data = await mp({}, `${baseDir}/parquetgz/someTestData-1.parquet.gz`, { ...opts });
-			expect(data.success).toBe(3000);
+			const data = await mp({}, `${baseDir}/parquetgz/someTestData-1.parquet.gz`, { ...opts, ...parquetOpts });
+			expect(data.success).toBe(PARQUET_RECORDS_PER_FILE);
 			expect(data.failed).toBe(0);
 		}, longTimeout);
 
@@ -840,14 +852,14 @@ describe("sanity: formats", () => {
 			const data = await mp({}, [
 				`${baseDir}/parquetgz/someTestData-1.parquet.gz`,
 				`${baseDir}/parquetgz/someTestData-2.parquet.gz`
-			], { ...opts });
-			expect(data.success).toBe(expectedRecords);
+			], { ...opts, ...parquetOpts });
+			expect(data.success).toBe(PARQUET_RECORDS_PER_FILE * 2);
 			expect(data.failed).toBe(0);
 		}, longTimeout);
 
 		test("directory", async () => {
-			const data = await mp({}, `${baseDir}/parquetgz`, { ...opts });
-			expect(data.success).toBe(expectedRecords);
+			const data = await mp({}, `${baseDir}/parquetgz`, { ...opts, ...parquetOpts });
+			expect(data.success).toBe(PARQUET_RECORDS_PER_FILE * 2);
 			expect(data.failed).toBe(0);
 		}, longTimeout);
 	});

@@ -49,6 +49,41 @@ function checkPath(filePath) {
 }
 
 /**
+ * Check if a string looks like a file path based on supported extensions and common path patterns
+ * @param {string} data - String to check
+ * @param {JobConfig} job - Job configuration containing supported extensions
+ * @returns {boolean} True if the string looks like a file path
+ */
+function looksLikeFilePath(data, job) {
+	// Handle cloud storage URLs
+	if (data.startsWith('gs://') || data.startsWith('s3://')) {
+		return true;
+	}
+
+	// Check for supported file extensions (including gzipped versions)
+	const allSupportedExt = [
+		...job.supportedFileExt,
+		...job.gzippedLineByLineFileExt || [],
+		...job.gzippedObjectModeFileExt || [],
+		...job.gzippedTableFileExt || [],
+		'.parquet', '.parquet.gz'
+	];
+
+	// Check if string ends with any supported extension
+	if (allSupportedExt.some(ext => data.endsWith(ext))) {
+		return true;
+	}
+
+	// Check for common path patterns (but be more conservative)
+	const hasPathSeparator = data.includes('/') || data.includes('\\');
+	const hasFileExtension = /\.[a-zA-Z0-9]{1,10}$/.test(data); // Ends with .ext pattern
+	const looksLikeAbsolutePath = data.startsWith('/') || /^[A-Za-z]:/.test(data); // Unix absolute or Windows drive
+
+	// Only consider it a file path if it has path characteristics AND looks intentional
+	return hasPathSeparator && (hasFileExtension || looksLikeAbsolutePath);
+}
+
+/**
  * Check if a file has a supported extension (including compound extensions like .json.gz)
  * @param {string} filePath - Path to file
  * @param {string[]} supportedExtensions - Array of supported extensions
@@ -269,137 +304,21 @@ const _ERROR_CONFIG = {
 /** @typedef {InstanceType<typeof import('./job')>} JobConfig */
 /** @typedef {import('../index').Data} Data */
 
-
 /**
  * @param  {any} data
  * @param  {JobConfig} job
  */
 async function determineDataType(data, job) {
-	// const l = logger(job);
-	//exports are saved locally or to cloud storage
-	if (job.recordType === 'export') {
-		if (job.where) {
-			// Don't resolve cloud paths - return them as-is
-			if (job.where.startsWith('gs://') || job.where.startsWith('s3://')) {
-				return job.where;
-			}
-
-			// if "where" is a folder, return a file path to events.json
-			if (checkPath(job.where).isDirectory) {
-				return path.join(job.where, 'events.json');
-			}
-			return path.resolve(job.where);
-		}
-		const folder = u.mkdir('./mixpanel-exports');
-		const filename = path.resolve(`${folder}/export-${dayjs().format(dateFormat)}-${u.rand()}.ndjson`);
-		await u.touch(filename);
-		return filename;
+	// Handle special record types and non-file data sources first
+	const specialResult = await handleSpecialRecordTypes(data, job);
+	if (specialResult !== undefined) {
+		return specialResult;
 	}
 
-	if (job.recordType === 'export-import-events') {
-		const exportStream = streamEvents(job);
-		job.recordType = 'event';
-
-		if (job.secondToken) {
-			job.token = job.secondToken;
-			job.secret = "";
-			job.auth = job.resolveProjInfo();
-		}
-
-		// @ts-ignore
-		if (job.secondRegion) job.region = job.secondRegion;
-
-		return exportStream;
-	}
-
-	if (job.recordType === 'export-import-profiles') {
-		const exportStream = streamProfiles(job);
-		if (job.dataGroupId || job.groupKey) job.recordType = 'group';
-		else job.recordType = 'user';
-
-		if (job.secondToken) {
-			job.token = job.secondToken;
-			job.secret = "";
-			job.auth = job.resolveProjInfo();
-		}
-		// @ts-ignore
-		if (job.secondRegion) job.region = job.secondRegion;
-		return exportStream;
-	}
-
-	if (job.recordType === 'profile-export') {
-		if (job.where) {
-			// Don't resolve cloud paths - return them as-is  
-			if (job.where.startsWith('gs://') || job.where.startsWith('s3://')) {
-				return job.where;
-			}
-			return path.resolve(job.where);
-		}
-		const folder = u.mkdir('./mixpanel-exports');
-		return path.resolve(folder);
-	}
-	if (job.recordType === 'profile-delete') return null;
-	if (job.recordType === 'annotations') return data;
-	if (job.recordType === 'get-annotations') return null;
-	if (job.recordType === 'delete-annotations') return null;
-
-
-	// lookup tables are not streamed
-	if (job.recordType === 'table') {
-		job.wasStream = false;
-		const pathInfo = checkPath(data);
-		if (pathInfo.exists) return await u.load(pathInfo.path);
-		return data;
-	}
-
-	// scd props need a whole crazy slew of things
-	if (job.recordType === 'scd') {
-		try {
-			await prepareSCD(job);
-		}
-		catch (e) {
-			throw new Error(`SCD preparation failed: ${e.message}`);
-		}
-
-	}
-
-	// data is already a stream
-	if (data.pipe || data instanceof stream.Stream) {
-		job.wasStream = true;
-		if (data.readableObjectMode) return data;
-		return _(existingStreamInterface(data));
-	}
-
-	// data is an object in memory
-	if (Array.isArray(data) && data.every(item => typeof item === 'object' && item !== null)) {
-		job.wasStream = true;
-		return stream.Readable.from(data, { objectMode: true, highWaterMark: job.highWater });
-	}
-
-	// CLOUD STORAGE PARSING
-
-	// Handle Google Cloud Storage URLs (gs://)
-	if (typeof data === 'string' && data.startsWith('gs://')) {
-		job.wasStream = true;
-		return createGCSStream(data, job);
-	}
-
-	// Handle array of Google Cloud Storage URLs
-	if (Array.isArray(data) && data.every(item => typeof item === 'string' && item.startsWith('gs://'))) {
-		job.wasStream = true;
-		return createMultiGCSStream(data, job);
-	}
-
-	// Handle Amazon S3 URLs (s3://)
-	if (typeof data === 'string' && data.startsWith('s3://')) {
-		job.wasStream = true;
-		return createS3Stream(data, job);
-	}
-
-	// Handle array of Amazon S3 URLs
-	if (Array.isArray(data) && data.every(item => typeof item === 'string' && item.startsWith('s3://'))) {
-		job.wasStream = true;
-		return createMultiS3Stream(data, job);
+	// Handle cloud storage (GCS and S3)
+	const cloudResult = handleCloudStorage(data, job);
+	if (cloudResult !== undefined) {
+		return cloudResult;
 	}
 
 
@@ -493,8 +412,10 @@ async function determineDataType(data, job) {
 					}
 				}
 			} else if (typeof data === 'string') {
-				// Path doesn't exist - provide helpful error message
-				// throw new Error(`File or directory not found: ${pathInfo.path}`);
+				// Only throw file not found error if string looks like a file path
+				if (looksLikeFilePath(data, job)) {
+					throw new Error(`File or directory does not exist: ${data}`);
+				}
 			}
 		}
 
@@ -619,6 +540,157 @@ async function determineDataType(data, job) {
 	else {
 		throw new Error('a very unusual error has occurred');
 	}
+}
+
+
+/**
+ * Handle cloud storage data sources (GCS and S3)
+ * @param {any} data
+ * @param {JobConfig} job
+ * @returns {any|undefined} Returns stream if handled, undefined if should continue to local file parsing
+ */
+function handleCloudStorage(data, job) {
+	// Handle Google Cloud Storage URLs (gs://)
+	if (typeof data === 'string' && data.startsWith('gs://')) {
+		job.wasStream = true;
+		return createGCSStream(data, job);
+	}
+
+	// Handle array of Google Cloud Storage URLs
+	if (Array.isArray(data) && data.every(item => typeof item === 'string' && item.startsWith('gs://'))) {
+		job.wasStream = true;
+		return createMultiGCSStream(data, job);
+	}
+
+	// Handle Amazon S3 URLs (s3://)
+	if (typeof data === 'string' && data.startsWith('s3://')) {
+		job.wasStream = true;
+		return createS3Stream(data, job);
+	}
+
+	// Handle array of Amazon S3 URLs
+	if (Array.isArray(data) && data.every(item => typeof item === 'string' && item.startsWith('s3://'))) {
+		job.wasStream = true;
+		return createMultiS3Stream(data, job);
+	}
+
+	// Not cloud storage - continue to local file parsing
+	return undefined;
+}
+
+
+
+
+/**
+ * Handle special record types and non-file data sources
+ * @param {any} data
+ * @param {JobConfig} job
+ * @returns {Promise<any|undefined>} Returns data/stream if handled, undefined if should continue to file parsing
+ */
+async function handleSpecialRecordTypes(data, job) {
+	// Exports are saved locally or to cloud storage
+	if (job.recordType === 'export') {
+		if (job.where) {
+			// Don't resolve cloud paths - return them as-is
+			if (job.where.startsWith('gs://') || job.where.startsWith('s3://')) {
+				return job.where;
+			}
+
+			// if "where" is a folder, return a file path to events.json
+			if (checkPath(job.where).isDirectory) {
+				return path.join(job.where, 'events.json');
+			}
+			return path.resolve(job.where);
+		}
+		const folder = u.mkdir('./mixpanel-exports');
+		const filename = path.resolve(`${folder}/export-${dayjs().format(dateFormat)}-${u.rand()}.ndjson`);
+		await u.touch(filename);
+		return filename;
+	}
+
+	if (job.recordType === 'export-import-events') {
+		const exportStream = streamEvents(job);
+		job.recordType = 'event';
+
+		if (job.secondToken) {
+			job.token = job.secondToken;
+			job.secret = "";
+			job.auth = job.resolveProjInfo();
+		}
+
+		// @ts-ignore
+		if (job.secondRegion) job.region = job.secondRegion;
+
+		return exportStream;
+	}
+
+	if (job.recordType === 'export-import-profiles') {
+		const exportStream = streamProfiles(job);
+		if (job.dataGroupId || job.groupKey) job.recordType = 'group';
+		else job.recordType = 'user';
+
+		if (job.secondToken) {
+			job.token = job.secondToken;
+			job.secret = "";
+			job.auth = job.resolveProjInfo();
+		}
+		// @ts-ignore
+		if (job.secondRegion) job.region = job.secondRegion;
+		return exportStream;
+	}
+
+	if (job.recordType === 'profile-export') {
+		if (job.where) {
+			// Don't resolve cloud paths - return them as-is
+			if (job.where.startsWith('gs://') || job.where.startsWith('s3://')) {
+				return job.where;
+			}
+			return path.resolve(job.where);
+		}
+		const folder = u.mkdir('./mixpanel-exports');
+		return path.resolve(folder);
+	}
+
+	if (job.recordType === 'profile-delete') return null;
+	if (job.recordType === 'annotations') return data;
+	if (job.recordType === 'get-annotations') return null;
+	if (job.recordType === 'delete-annotations') return null;
+
+	// Lookup tables are not streamed
+	if (job.recordType === 'table') {
+		job.wasStream = false;
+		const pathInfo = checkPath(data);
+		if (pathInfo.exists) return await u.load(pathInfo.path);
+		return data;
+	}
+
+	// SCD props need a whole crazy slew of things
+	if (job.recordType === 'scd') {
+		try {
+			await prepareSCD(job);
+		}
+		catch (e) {
+			throw new Error(`SCD preparation failed: ${e.message}`);
+		}
+		// Continue to file parsing after SCD preparation
+		return undefined;
+	}
+
+	// Data is already a stream
+	if (data.pipe || data instanceof stream.Stream) {
+		job.wasStream = true;
+		if (data.readableObjectMode) return data;
+		return _(existingStreamInterface(data));
+	}
+
+	// Data is an object in memory
+	if (Array.isArray(data) && data.every(item => typeof item === 'object' && item !== null)) {
+		job.wasStream = true;
+		return stream.Readable.from(data, { objectMode: true, highWaterMark: job.highWater });
+	}
+
+	// Not a special case - continue to file/cloud storage parsing
+	return undefined;
 }
 
 /**
