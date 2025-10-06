@@ -1161,7 +1161,7 @@ app.post("/export", async (req, res) => {
 			limit: exportData.limit,
 			logs: exportData.logs || false,
 			verbose: exportData.verbose || false,
-			showProgress: exportData.showProgress || true,
+			showProgress: exportData.showProgress || false,
 			writeToFile: exportData.writeToFile !== false, // Default to true for exports that create files
 			where: jobTmpDir, // Save files to job-specific temp directory (local default)
 			outputFilePath: exportData.outputFilePath,

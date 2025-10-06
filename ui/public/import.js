@@ -1525,7 +1525,8 @@ function transform(row) {
 			compress: compressEl ? compressEl.checked : false,
 			fixData: fixDataEl ? fixDataEl.checked : false,
 			strict: strictEl ? strictEl.checked : false,
-			verbose: verboseEl ? verboseEl.checked : false
+			verbose: verboseEl ? verboseEl.checked : false,
+			showProgress: true  // Enable progress callbacks for WebSocket updates
 		};
 
 		const vendor = document.getElementById('vendor').value;
@@ -1647,7 +1648,8 @@ function transform(row) {
 			compress: compressEl ? compressEl.checked : false,
 			fixData: fixDataEl ? fixDataEl.checked : false,
 			strict: strictEl ? strictEl.checked : false,
-			verbose: verboseEl ? verboseEl.checked : false
+			verbose: verboseEl ? verboseEl.checked : false,
+			showProgress: true  // Enable progress callbacks for WebSocket updates
 		};
 
 		const vendor = document.getElementById('vendor').value;
