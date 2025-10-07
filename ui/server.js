@@ -75,6 +75,7 @@ const jobStatuses = new Map(); // jobId -> { status, progress, result, startTime
 
 // Execute job over WebSocket (keeps Cloud Run container alive!)
 async function executeJobOverWebSocket(ws, jobId, credentials, options, cloudPaths, transformCode, jobLogger) {
+	
 	let data;
 	let filesToCleanup = [];
 
@@ -100,7 +101,7 @@ async function executeJobOverWebSocket(ws, jobId, credentials, options, cloudPat
 		if (cloudPaths) {
 			// Cloud storage mode - parse paths (no file upload needed!)
 			data = JSON.parse(cloudPaths);
-			jobLogger.debug({ cloudPaths: data }, "cloud storage mode");
+			jobLogger.debug({ cloudPaths: data }, "job w/cloud mode");
 		} else {
 			// Local file mode - get files from prepared job
 			const jobStatus = jobStatuses.get(jobId);
@@ -110,7 +111,7 @@ async function executeJobOverWebSocket(ws, jobId, credentials, options, cloudPat
 
 			data = jobStatus.filePaths;
 			filesToCleanup = jobStatus.files || [];
-			jobLogger.debug({ fileCount: Array.isArray(data) ? data.length : 1 }, "local file mode");
+			jobLogger.debug({ fileCount: Array.isArray(data) ? data.length : 1 }, "job w/local mode");
 		}
 
 		// Update status to running
@@ -119,7 +120,7 @@ async function executeJobOverWebSocket(ws, jobId, credentials, options, cloudPat
 		// Run the import (this keeps the WebSocket connection active!)
 		const result = await mixpanelImport(creds, data, opts);
 		const { total, success, failed, empty } = result;
-		jobLogger.info({ total, success, failed, empty }, "import complete");
+		jobLogger.info({ total, success, failed, empty }, "job complete");
 
 		// Filter result for client
 		const filteredResult = filterResultForClient(result);
@@ -150,6 +151,7 @@ async function executeJobOverWebSocket(ws, jobId, credentials, options, cloudPat
 		}));
 
 	} finally {
+		jobLogger.debug("job execution finalized");
 		// Clean up temporary files if any
 		if (filesToCleanup.length > 0) {
 			for (const file of filesToCleanup) {
@@ -199,7 +201,7 @@ wss.on("connection", ws => {
 					startTime: Date.now(),
 					lastUpdate: Date.now()
 				});
-				logger.debug({ jobId }, "websocket registered");
+				logger.debug({ jobId }, "job created via websocket");
 
 				// Send confirmation
 				ws.send(
@@ -232,6 +234,7 @@ wss.on("connection", ws => {
 				// Run the job asynchronously
 				try {
 					await executeJobOverWebSocket(ws, jobId, credentials, options, cloudPaths, transformCode, jobLogger);
+					logger.debug({ jobId }, "job finished websocket");
 				} catch (error) {
 					jobLogger.error({ err: error }, "websocket job failed");
 					ws.send(JSON.stringify({
@@ -355,15 +358,22 @@ function signalJobComplete(jobId, result) {
 
 // Function to create a progress callback for a specific job
 function createProgressCallback(jobId) {
-	return (recordType, processed, requests, eps, bytesProcessed) => {
-		broadcastProgress(jobId, {
+	return (recordType, processed, requests, eps, bytesProcessed, downloadMessage) => {
+		const progressData = {
 			recordType: recordType || "",
 			processed: processed || 0,
 			requests: requests || 0,
 			eps: eps || "",
 			bytesProcessed: bytesProcessed || 0,
 			memory: process.memoryUsage().heapUsed
-		});
+		};
+
+		// Add download message if present (for export progress)
+		if (downloadMessage) {
+			progressData.downloadMessage = downloadMessage;
+		}
+
+		broadcastProgress(jobId, progressData);
 	};
 }
 
@@ -689,12 +699,12 @@ app.post("/job", upload.array("files"), async (req, res) => {
 
 			const result = await mixpanelImport(creds, data, opts);
 			const { total, success, failed, empty } = result;
-			jobLogger.info({ total, success, failed, empty }, "import complete");
+			jobLogger.info({ total, success, failed, empty, jobId }, "job complete");
 
 			// Signal job completion via WebSocket (for real-time UI updates)
 			signalJobComplete(jobId, result);
 		} catch (jobError) {
-			jobLogger.error({ err: jobError }, "import failed");
+			jobLogger.error({ err: jobError }, "job failed");
 
 			// Update job status to failed (persists beyond WebSocket)
 			updateJobStatus(jobId, "failed", null, { error: jobError.message });
@@ -731,19 +741,19 @@ app.post("/job", upload.array("files"), async (req, res) => {
 					}
 				}
 
-				// Clean up GCS credentials file after a delay
-				setTimeout(() => {
-					for (const file of req.files) {
-						if (file.fieldname === "gcsCredentials") {
-							try {
-								fs.unlinkSync(file.path);
-								jobLogger.debug({ filePath: file.path }, "gcs creds cleaned");
-							} catch (cleanupError) {
-								jobLogger.warn({ err: cleanupError, filePath: file.path }, "gcs creds cleanup failed");
-							}
-						}
-					}
-				}, 5000); // 5 second delay
+				// // Clean up GCS credentials file after a delay
+				// setTimeout(() => {
+				// 	for (const file of req.files) {
+				// 		if (file.fieldname === "gcsCredentials") {
+				// 			try {
+				// 				fs.unlinkSync(file.path);
+				// 				jobLogger.debug({ filePath: file.path }, "gcs creds cleaned");
+				// 			} catch (cleanupError) {
+				// 				jobLogger.warn({ err: cleanupError, filePath: file.path }, "gcs creds cleanup failed");
+				// 			}
+				// 		}
+				// 	}
+				// }, 5000); // 5 second delay
 			}
 		}
 	} catch (error) {

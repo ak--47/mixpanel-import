@@ -94,7 +94,7 @@ async function exportEvents(filename, job) {
 	});
 
 	request.on('downloadProgress', (progress) => {
-		downloadProgress(progress.transferred);
+		downloadProgress(progress.transferred, job);
 	});
 
 	// Define streams upfront
@@ -524,8 +524,9 @@ async function deleteProfiles(job) {
 
 /**
  * @param  {number} amount
+ * @param  {jobConfig} [job]
  */
-function downloadProgress(amount) {
+function downloadProgress(amount, job = null) {
 	if (amount < 1000000) {
 		//noop
 	}
@@ -533,6 +534,15 @@ function downloadProgress(amount) {
 		// @ts-ignore
 		readline.cursorTo(process.stdout, 0);
 		process.stdout.write(`\tdownloaded: ${u.bytesHuman(amount, 2, true)}    \t`);
+
+		// Send WebSocket update if progressCallback exists
+		if (job && job.progressCallback && typeof job.progressCallback === 'function') {
+			// Create a download progress message
+			const downloadMessage = `downloaded: ${u.bytesHuman(amount, 2, true)}`;
+			// Don't send processed count during download (we don't have line counts yet)
+			// Pass null for processed to avoid showing misleading numbers
+			job.progressCallback('download', null, 0, 0, amount, downloadMessage);
+		}
 	}
 }
 

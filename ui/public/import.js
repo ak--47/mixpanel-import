@@ -185,8 +185,9 @@ class MixpanelImportUI {
 			const { recordType, processed, requests, eps, memory, bytesProcessed } = progressData;
 
 			const formatNumber = (num) => {
-				if (typeof num === 'number') {
-					return num.toLocaleString();
+				const parsed = typeof num === 'number' ? num : parseFloat(num);
+				if (!isNaN(parsed)) {
+					return Math.round(parsed).toLocaleString();
 				}
 				return num || '0';
 			};
@@ -233,7 +234,7 @@ class MixpanelImportUI {
 					${eps ? `
 					<div class="stat-item">
 						<span class="stat-label">Events/sec:</span>
-						<span class="stat-value">${eps}</span>
+						<span class="stat-value">${formatNumber(eps)}</span>
 					</div>` : ''}
 					${memory ? `
 					<div class="stat-item">
@@ -1516,6 +1517,7 @@ function transform(row) {
 		const fixDataEl = document.getElementById('fixData');
 		const strictEl = document.getElementById('strict');
 		const verboseEl = document.getElementById('verbose');
+		const abridgedEl = document.getElementById('abridged');
 
 		const options = {
 			recordType: recordTypeEl ? recordTypeEl.value : '',
@@ -1526,6 +1528,7 @@ function transform(row) {
 			fixData: fixDataEl ? fixDataEl.checked : false,
 			strict: strictEl ? strictEl.checked : false,
 			verbose: verboseEl ? verboseEl.checked : false,
+			abridged: abridgedEl ? abridgedEl.checked : true,  // Default to true for performance
 			showProgress: true  // Enable progress callbacks for WebSocket updates
 		};
 

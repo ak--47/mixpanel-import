@@ -103,15 +103,16 @@ class MixpanelExportUI {
 		// Update the loading message with real-time progress
 		const loadingMessage = document.querySelector('.loading-details');
 		if (loadingMessage) {
-			const { recordType, processed, requests, eps, memory, bytesProcessed } = progressData;
-			
+			const { recordType, processed, requests, eps, memory, bytesProcessed, downloadMessage } = progressData;
+
 			const formatNumber = (num) => {
-				if (typeof num === 'number') {
-					return num.toLocaleString();
+				const parsed = typeof num === 'number' ? num : parseFloat(num);
+				if (!isNaN(parsed)) {
+					return Math.round(parsed).toLocaleString();
 				}
 				return num || '0';
 			};
-			
+
 			const formatBytes = (bytes) => {
 				if (!bytes || bytes === 0) return '0 B';
 				const k = 1024;
@@ -119,13 +120,19 @@ class MixpanelExportUI {
 				const i = Math.floor(Math.log(bytes) / Math.log(k));
 				return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 			};
-			
+
 			loadingMessage.innerHTML = `
 				<div class="progress-stats">
+					${downloadMessage ? `
+					<div class="stat-item download-progress">
+						<span class="stat-label">📥 Download:</span>
+						<span class="stat-value">${downloadMessage.replace('downloaded: ', '')}</span>
+					</div>` : ''}
+					${(processed !== null && processed !== undefined && processed > 0) ? `
 					<div class="stat-item">
 						<span class="stat-label">${recordType || 'Records'}:</span>
 						<span class="stat-value">${formatNumber(processed)}</span>
-					</div>
+					</div>` : ''}
 					${requests ? `
 					<div class="stat-item">
 						<span class="stat-label">Requests:</span>
@@ -134,7 +141,7 @@ class MixpanelExportUI {
 					${eps ? `
 					<div class="stat-item">
 						<span class="stat-label">Events/sec:</span>
-						<span class="stat-value">${eps}</span>
+						<span class="stat-value">${formatNumber(eps)}</span>
 					</div>` : ''}
 					${memory ? `
 					<div class="stat-item">
