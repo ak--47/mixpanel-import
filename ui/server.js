@@ -84,6 +84,11 @@ async function executeJobOverWebSocket(ws, jobId, credentials, options, cloudPat
 		const creds = JSON.parse(credentials);
 		const opts = JSON.parse(options);
 
+		// Force abridged mode in production if not explicitly set (prevents OOM)
+		if (NODE_ENV === "production" && opts.abridged === undefined) {
+			opts.abridged = true;
+		}
+
 		// Add progress callback for WebSocket updates
 		opts.progressCallback = createProgressCallback(jobId);
 
@@ -270,17 +275,24 @@ function updateJobStatus(jobId, status, progressData = null, result = null) {
 	const timestamp = Date.now();
 
 	// Update persistent job status (survives WebSocket disconnections)
+	// IMPORTANT: Don't store progressData in jobStatuses - it causes memory leaks!
+	// Progress is ephemeral and only needs to be sent via WebSocket
 	const currentStatus = jobStatuses.get(jobId) || {};
-	jobStatuses.set(jobId, {
+	const updatedStatus = {
 		...currentStatus,
 		status: status,
-		progress: progressData || currentStatus.progress,
-		result: result || currentStatus.result,
 		lastUpdate: timestamp,
 		startTime: currentStatus.startTime || timestamp
-	});
+	};
 
-	// Also broadcast via WebSocket if connection exists (optional enhancement)
+	// Only store result if provided (completion/error)
+	if (result) {
+		updatedStatus.result = result;
+	}
+
+	jobStatuses.set(jobId, updatedStatus);
+
+	// Broadcast progress/status via WebSocket if connection exists
 	const jobData = activeJobs.get(jobId);
 	if (jobData && jobData.ws.readyState === WebSocket.OPEN) {
 		try {
@@ -1175,7 +1187,7 @@ app.post("/export", async (req, res) => {
 			writeToFile: exportData.writeToFile !== false, // Default to true for exports that create files
 			where: jobTmpDir, // Save files to job-specific temp directory (local default)
 			outputFilePath: exportData.outputFilePath,
-			abridged: exportData.abridged || false,
+			abridged: exportData.abridged !== undefined ? exportData.abridged : true,  // Default to true for performance
 			compress: true,
 
 			// Cloud destination options
