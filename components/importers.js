@@ -197,7 +197,12 @@ async function flushToMixpanel(batch, job) {
 		}
 
 		job.store(res, success);
-		return [res, batch];
+		// Only return batch if needed (dry run or custom response handler)
+		// This prevents memory accumulation in production imports
+		if (job.dryRun || job.responseHandler) {
+			return [res, batch];
+		}
+		return [res, null];
 	}
 
 	catch (e) {
@@ -411,7 +416,12 @@ async function flushToMixpanelWithUndici(batch, job) {
 		}
 
 		job.store(res, success);
-		return [res, batch];
+		// Only return batch if needed (dry run or custom response handler)
+		// This prevents memory accumulation in production imports
+		if (job.dryRun || job.responseHandler) {
+			return [res, batch];
+		}
+		return [res, null];
 	}
 
 	catch (e) {
