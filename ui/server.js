@@ -87,7 +87,11 @@ async function executeJobOverWebSocket(ws, jobId, credentials, options, cloudPat
 		// Force abridged mode in production if not explicitly set (prevents OOM)
 		if (NODE_ENV === "production" && opts.abridged === undefined) {
 			opts.abridged = true;
+			jobLogger.info("abridged mode forced (production)");
 		}
+
+		// Log abridged mode status for debugging
+		jobLogger.info({ abridged: opts.abridged, workers: opts.workers }, "job options configured");
 
 		// Add progress callback for WebSocket updates
 		opts.progressCallback = createProgressCallback(jobId);

@@ -72,23 +72,25 @@ async function exportEvents(filename, job) {
 
 	request.on('response', (res) => {
 		job.requests++;
-		job.responses.push({
+		// Use job.store() to respect abridged mode
+		job.store({
 			status: res.statusCode,
 			ip: res.ip,
 			url: res.requestUrl,
 			...res.headers
-		});
+		}, true);
 	});
 
 	request.on('error', (e) => {
 		job.failed++;
-		job.responses.push({
+		// Use job.store() to respect abridged mode
+		job.store({
 			status: e.statusCode,
 			ip: e.ip,
 			url: e.requestUrl,
 			...e.headers,
 			message: e.message
-		});
+		}, false);
 		throw e;
 
 	});
@@ -344,13 +346,14 @@ async function exportProfiles(folder, job) {
 	// @ts-ignore
 	let request = await got(options).catch(e => {
 		job.failed++;
-		job.responses.push({
+		// Use job.store() to respect abridged mode
+		job.store({
 			status: e.statusCode,
 			ip: e.ip,
 			url: e.requestUrl,
 			...e.headers,
 			message: e.message
-		});
+		}, false);
 		throw e;
 	});
 	let response = request.body;
@@ -386,12 +389,13 @@ async function exportProfiles(folder, job) {
 	job.recordsProcessed += profiles.length;
 	job.success += profiles.length;
 	job.requests++;
-	job.responses.push({
+	// Use job.store() to respect abridged mode
+	job.store({
 		status: request.statusCode,
 		ip: request.ip,
 		url: request.requestUrl,
 		...request.headers
-	});
+	}, true);
 
 	if (job.verbose || job.showProgress) showProgress("profile", job.success, iterations + 1);
 
@@ -417,24 +421,26 @@ async function exportProfiles(folder, job) {
 		// @ts-ignore
 		request = await got(options).catch(e => {
 			job.failed++;
-			job.responses.push({
+			// Use job.store() to respect abridged mode
+			job.store({
 				status: e.statusCode,
 				ip: e.ip,
 				url: e.requestUrl,
 				...e.headers,
 				message: e.message
-			});
+			}, false);
 		});
 		response = request.body;
 
 		//update config
 		job.requests++;
-		job.responses.push({
+		// Use job.store() to respect abridged mode
+		job.store({
 			status: request.statusCode,
 			ip: request.ip,
 			url: request.requestUrl,
 			...request.headers
-		});
+		}, true);
 		job.success += profiles.length;
 		job.recordsProcessed += profiles.length;
 		if (job.verbose || job.showProgress) showProgress("profile", job.success, iterations + 1);
