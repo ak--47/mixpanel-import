@@ -652,6 +652,17 @@ describe("sanity: options", () => {
 	);
 
 	test(
+		"manual GC mode",
+		async () => {
+			const data = await mp({}, smallEvents, { ...opts, manualGc: true });
+			expect(data.success).toBe(2);
+			expect(data.failed).toBe(0);
+			expect(data.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
+
+	test(
 		"properly removes nulls",
 		async () => {
 			const data = await mp(
