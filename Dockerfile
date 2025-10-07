@@ -17,6 +17,12 @@ COPY . .
 ENV NODE_ENV=production
 ENV PORT=8080
 
+# Set Node.js options for serverless environment
+# --max-old-space-size: Set heap size to match Cloud Run memory (8GB instance)
+# --expose-gc: Allow manual garbage collection for memory-critical operations
+# With 8GB Cloud Run: allocate 7GB to heap (leaving 1GB for native memory, buffers, OS)
+ENV NODE_OPTIONS="--max-old-space-size=7168 --expose-gc"
+
 # Expose port 8080 (required by Cloud Run)
 EXPOSE 8080
 

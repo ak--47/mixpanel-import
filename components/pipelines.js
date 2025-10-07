@@ -241,12 +241,6 @@ function corePipeline(stream, job, toNodeStream = false) {
 			return flush(batch, job);
 		}),
 
-		// * ratelimit to prevent unbounded buffering (critical for serverless!)
-		// Limits how many batches can be queued waiting for workers
-		// This prevents OOM when file reading is faster than HTTP requests
-		// @ts-ignore
-		_.ratelimit(job.workers * 2, 100), // Allow 2x workers buffered, checked every 100ms
-
 		// * concurrency
 		// @ts-ignore
 		_.mergeWithLimit(job.workers),

@@ -90,14 +90,6 @@ async function executeJobOverWebSocket(ws, jobId, credentials, options, cloudPat
 			jobLogger.info("abridged mode forced (production)");
 		}
 
-		// Reduce worker count in serverless to prevent memory accumulation
-		// Highland.js buffers data between fast file reading and slow HTTP requests
-		// Lower concurrency = less buffering = less memory pressure
-		if (NODE_ENV === "production" && opts.workers > 10) {
-			jobLogger.info({ originalWorkers: opts.workers }, "reducing workers for serverless");
-			opts.workers = 10;
-		}
-
 		// Log abridged mode status for debugging
 		jobLogger.info({ abridged: opts.abridged, workers: opts.workers }, "job options configured");
 
