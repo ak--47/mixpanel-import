@@ -248,6 +248,12 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'dedupe records by murmur hash',
 			type: 'boolean'
 		})
+		.options("manualGc", {
+			demandOption: false,
+			default: false,
+			describe: 'enable manual garbage collection when memory usage exceeds 85% of heap limit (requires --expose-gc)',
+			type: 'boolean'
+		})
 		.options('event-whitelist', {
 			demandOption: false,
 			default: '[]',

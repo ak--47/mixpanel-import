@@ -5,6 +5,9 @@ const { chunkForSize } = require("./parsers.js");
 // $ streamers
 const _ = require('highland');
 
+// $ garbage collection
+const v8 = require('v8');
+
 // $ networking + filesystem
 const { exportEvents, exportProfiles, deleteProfiles } = require('./exporters');
 const { flushLookupTable, flushToMixpanel, flushToMixpanelWithUndici } = require('./importers.js');
@@ -63,6 +66,16 @@ function corePipeline(stream, job, toNodeStream = false) {
 
 	const LOG_INTERVAL = 100; // ms
 	let lastLogUpdate = Date.now();
+
+	// Manual GC setup (if enabled)
+	let gcThreshold = null;
+	if (job.manualGc && global.gc) {
+		const heapStats = v8.getHeapStatistics();
+		gcThreshold = heapStats.heap_size_limit * 0.85; // Trigger GC at 85% heap usage
+		l(`Manual GC enabled: will trigger at ${(gcThreshold / 1024 / 1024).toFixed(0)} MB (85% of ${(heapStats.heap_size_limit / 1024 / 1024).toFixed(0)} MB heap)`);
+	} else if (job.manualGc && !global.gc) {
+		l(`Manual GC requested but global.gc not available. Start Node with --expose-gc flag.`);
+	}
 
 	let flush;
 	// Select transport based on job.transport setting
@@ -226,6 +239,11 @@ function corePipeline(stream, job, toNodeStream = false) {
 			job.requests++;
 			job.batches++;
 			job.addBatchLength(batch.length); // Use bounded collection method
+
+			// Trigger manual GC if enabled and threshold exceeded
+			if (gcThreshold && process.memoryUsage().heapUsed > gcThreshold) {
+				global.gc();
+			}
 
 			if (job.dryRun) return _(Promise.resolve([null, batch]));
 

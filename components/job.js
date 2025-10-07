@@ -254,6 +254,7 @@ class Job {
 		this.outputFilePath = opts.outputFilePath || './mixpanel-transform.json'; //where to write the file
 		this.skipWriteToDisk = u.isNil(opts.skipWriteToDisk) ? false : opts.skipWriteToDisk; //don't write to disk
 		this.keepBadRecords = u.isNil(opts.keepBadRecords) ? true : opts.keepBadRecords; //keep bad records
+		this.manualGc = u.isNil(opts.manualGc) ? false : opts.manualGc; //enable manual garbage collection when memory usage is high
 
 		// ? tagging options
 		this.tags = parse(opts.tags) || {}; //tags for the import		

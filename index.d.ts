@@ -560,6 +560,12 @@ declare namespace main {
 	 * Path to GCS service account credentials JSON file (optional, defaults to ADC)
 	 */
 	gcsCredentials?: string;
+	/**
+	 * Enable manual garbage collection when memory usage exceeds 85% of heap limit
+	 * Requires Node.js --expose-gc flag (enabled in Docker container)
+	 * @default false
+	 */
+	manualGc?: boolean;
   };
 
   /**
