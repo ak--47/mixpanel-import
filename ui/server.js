@@ -462,6 +462,13 @@ if (!fs.existsSync(tmpDir)) {
 }
 logger.info({ tmpDir, environment: NODE_ENV }, "temp dir alive");
 
+// File size limits based on environment
+// Production (Cloud Run with IAP): 30MB due to HTTP/1.1 32MB limit
+// Local/Development: 8GB (no IAP restrictions)
+const FILE_SIZE_LIMIT = NODE_ENV === "production"
+	? 30 * 1024 * 1024      // 30MB for Cloud Run
+	: 8 * 1024 * 1024 * 1024; // 8GB for local
+
 const upload = multer({
 	storage: multer.diskStorage({
 		destination: (req, file, cb) => {
@@ -474,12 +481,15 @@ const upload = multer({
 		}
 	}),
 	limits: {
-		// 30MB max file size due to IAP/Cloud Run HTTP/1.1 32MB request limit
-		// For larger files, users must use Google Cloud Storage or Amazon S3 paths
-		fileSize: 30 * 1024 * 1024, // 30MB limit
+		fileSize: FILE_SIZE_LIMIT,
 		files: 10 // Max 10 files per upload
 	}
 });
+
+logger.info({
+	fileSizeLimit: `${(FILE_SIZE_LIMIT / 1024 / 1024).toFixed(0)} MB`,
+	environment: NODE_ENV
+}, "file upload limit configured");
 
 /** @typedef {import('../index.d.ts').Options} Options */
 /** @typedef {import('../index.d.ts').Creds} Creds */
@@ -563,10 +573,23 @@ app.get("/export", (req, res) => {
 function handleMulterError(err, req, res, next) {
 	if (err instanceof multer.MulterError) {
 		if (err.code === 'LIMIT_FILE_SIZE') {
-			logger.warn({ errorCode: err.code }, "file too large");
+			logger.warn({ errorCode: err.code, fileSize: err.field }, "file too large");
+
+			const limitMB = (FILE_SIZE_LIMIT / 1024 / 1024).toFixed(0);
+			let errorMessage = `File too large. Maximum size is ${limitMB}MB.`;
+
+			// In production (Cloud Run), suggest alternatives
+			if (NODE_ENV === "production") {
+				errorMessage += `\n\nFor larger files, you can:\n` +
+					`1. Use Google Cloud Storage (gs://) or Amazon S3 (s3://) paths\n` +
+					`2. Run the app locally: npx mixpanel-import --ui`;
+			} else {
+				errorMessage += ` For files larger than ${limitMB}MB, please use Google Cloud Storage (gs://) or Amazon S3 (s3://) paths.`;
+			}
+
 			return res.status(413).json({
 				success: false,
-				error: `File too large. Maximum size is 30MB. For larger files, please use Google Cloud Storage (gs://) or Amazon S3 (s3://) paths instead.`
+				error: errorMessage
 			});
 		}
 		if (err.code === 'LIMIT_FILE_COUNT') {

@@ -32,7 +32,8 @@
   "include": [
     "**/*.js",                          // Include all JavaScript files
     "**/*.d.ts",                        // Include type definition files
-    "index.d.ts"                        // Include main type definitions
+    "index.d.ts",                       // Include main type definitions
+    "types/**/*.d.ts"                   // Include global type definitions
   ],
   "exclude": [
     "node_modules",                     // Exclude node_modules
@@ -44,7 +45,9 @@
     "tmp",                             // Exclude temp files
     "**/coverage",                     // Exclude coverage reports
     "**/*.test.js",                    // Exclude test files (optional)
-    "benchmarks"                       // Exclude benchmarks (they might have different rules)
+    "benchmarks",                      // Exclude benchmarks (they might have different rules)
+    "ui/public/analytics.js",          // Exclude Mixpanel snippet (vendor code)
+    "customers/**"                     // Exclude customer examples
   ],
   "compileOnSave": false,
   "typeAcquisition": {
