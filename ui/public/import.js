@@ -289,7 +289,8 @@ class MixpanelImportUI {
 			const gcsPathsInput = document.getElementById('gcsPaths');
 			if (gcsPathsInput) {
 				// gcsPathsInput.value = 'gs://mixpanel-import-public-data/example-dnd-events.json';
-				gcsPathsInput.value = 'gs://mixpanel-import-public-data/twofifty-k-events.json.gz';
+				// gcsPathsInput.value = 'gs://mixpanel-import-public-data/twofifty-k-events.json.gz';
+				gcsPathsInput.value = 'gs://mixpanel-import-public-data/demo/1M-events.json.gz';
 				gcsPathsInput.dispatchEvent(new Event('input'));
 			}
 
@@ -1721,7 +1722,8 @@ function transform(row) {
 			// Call sample endpoint
 			const response = await fetch('/sample', {
 				method: 'POST',
-				body: formData
+				body: formData,
+				credentials: 'include' // Required for IAP authentication
 			});
 
 			const result = await response.json();
@@ -1869,7 +1871,8 @@ function transform(row) {
 				const formData = this.collectFormData();
 				const response = await fetch('/dry-run', {
 					method: 'POST',
-					body: formData
+					body: formData,
+				credentials: 'include' // Required for IAP authentication
 				});
 
 				const result = await response.json();
@@ -1894,7 +1897,8 @@ function transform(row) {
 				// Upload files and get jobId
 				const response = await fetch('/job/prepare', {
 					method: 'POST',
-					body: formData
+					body: formData,
+				credentials: 'include' // Required for IAP authentication
 				});
 
 				const result = await response.json();
@@ -2209,12 +2213,12 @@ function transform(row) {
 		// Scroll to error
 		errorDiv.scrollIntoView({ behavior: 'smooth' });
 
-		// Auto-remove after 5 seconds
+		// Auto-remove after 10 seconds
 		setTimeout(() => {
 			if (errorDiv.parentNode) {
 				errorDiv.remove();
 			}
-		}, 5000);
+		}, 30000);
 	}
 
 	showSuccess(message) {
@@ -2229,7 +2233,7 @@ function transform(row) {
 			if (successDiv.parentNode) {
 				successDiv.remove();
 			}
-		}, 3000);
+		}, 6000);
 	}
 
 	highlightJSON(jsonString) {
@@ -2288,7 +2292,8 @@ function transform(row) {
 			// Call columns endpoint
 			const response = await fetch('/columns', {
 				method: 'POST',
-				body: formData
+				body: formData,
+				credentials: 'include' // Required for IAP authentication
 			});
 
 			const responseText = await response.text();

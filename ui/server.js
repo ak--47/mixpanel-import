@@ -73,9 +73,14 @@ const activeJobs = new Map(); // jobId -> { ws, startTime, lastUpdate }
 // TODO: Replace with external job queue and status store for true serverless deployment
 const jobStatuses = new Map(); // jobId -> { status, progress, result, startTime, lastUpdate }
 
+// Memory management configuration
+const MAX_HEAP_PERCENT = 85; // Trigger GC at 85% heap usage
+const JOB_CLEANUP_INTERVAL = 5 * 60 * 1000; // Clean up old jobs every 5 minutes
+const JOB_MAX_AGE = 60 * 60 * 1000; // Delete jobs older than 1 hour
+
 // Execute job over WebSocket (keeps Cloud Run container alive!)
 async function executeJobOverWebSocket(ws, jobId, credentials, options, cloudPaths, transformCode, jobLogger) {
-	
+
 	let data;
 	let filesToCleanup = [];
 
@@ -90,8 +95,20 @@ async function executeJobOverWebSocket(ws, jobId, credentials, options, cloudPat
 			jobLogger.info("abridged mode forced (production)");
 		}
 
+		// Force manual GC in production to prevent OOM
+		if (NODE_ENV === "production" && opts.manualGc === undefined) {
+			opts.manualGc = true;
+			jobLogger.info("manual GC enabled (production)");
+		}
+
+		// Limit dry run results in production
+		if (NODE_ENV === "production" && opts.dryRun && !opts.maxRecords) {
+			opts.maxRecords = 100;
+			jobLogger.info("dryRun maxRecords capped (production)");
+		}
+
 		// Log abridged mode status for debugging
-		jobLogger.info({ abridged: opts.abridged, workers: opts.workers }, "job options configured");
+		jobLogger.info({ abridged: opts.abridged, workers: opts.workers, manualGc: opts.manualGc }, "job options configured");
 
 		// Add progress callback for WebSocket updates
 		opts.progressCallback = createProgressCallback(jobId);
@@ -191,6 +208,16 @@ async function executeJobOverWebSocket(ws, jobId, credentials, options, cloudPat
 
 		// Clean up job status
 		activeJobs.delete(jobId);
+
+		// Trigger GC if memory usage is high
+		if (global.gc) {
+			const memUsage = process.memoryUsage();
+			const heapPercent = (memUsage.heapUsed / memUsage.heapTotal) * 100;
+			if (heapPercent > MAX_HEAP_PERCENT) {
+				global.gc();
+				jobLogger.debug({ heapPercent: heapPercent.toFixed(1) }, "gc triggered (high memory)");
+			}
+		}
 	}
 }
 
@@ -447,7 +474,10 @@ const upload = multer({
 		}
 	}),
 	limits: {
-		fileSize: 1000 * 1024 * 1024 // 1GB limit
+		// 30MB max file size due to IAP/Cloud Run HTTP/1.1 32MB request limit
+		// For larger files, users must use Google Cloud Storage or Amazon S3 paths
+		fileSize: 30 * 1024 * 1024, // 30MB limit
+		files: 10 // Max 10 files per upload
 	}
 });
 
@@ -528,9 +558,35 @@ app.get("/export", (req, res) => {
 	serveFile(res, "export.html");
 });
 
+// Multer error handling middleware
+// eslint-disable-next-line no-unused-vars
+function handleMulterError(err, req, res, next) {
+	if (err instanceof multer.MulterError) {
+		if (err.code === 'LIMIT_FILE_SIZE') {
+			logger.warn({ errorCode: err.code }, "file too large");
+			return res.status(413).json({
+				success: false,
+				error: `File too large. Maximum size is 30MB. For larger files, please use Google Cloud Storage (gs://) or Amazon S3 (s3://) paths instead.`
+			});
+		}
+		if (err.code === 'LIMIT_FILE_COUNT') {
+			return res.status(400).json({
+				success: false,
+				error: `Too many files. Maximum is 10 files per upload.`
+			});
+		}
+		logger.error({ err }, "multer error");
+		return res.status(400).json({
+			success: false,
+			error: `Upload error: ${err.message}`
+		});
+	}
+	next(err);
+}
+
 // Handle file upload preparation (returns jobId for WebSocket execution)
 // @ts-ignore
-app.post("/job/prepare", upload.array("files"), async (req, res) => {
+app.post("/job/prepare", upload.array("files"), handleMulterError, async (req, res) => {
 	try {
 		const { options } = req.body;
 
@@ -579,7 +635,7 @@ app.post("/job/prepare", upload.array("files"), async (req, res) => {
 
 // Legacy endpoint - keep for backward compatibility but recommend using WebSocket flow
 // @ts-ignore
-app.post("/job", upload.array("files"), async (req, res) => {
+app.post("/job", upload.array("files"), handleMulterError, async (req, res) => {
 	// Extract key parameters for logging without file contents
 	const logParams = {
 		credentials: req.body.credentials ? "provided" : "missing",
@@ -796,7 +852,7 @@ app.post("/job", upload.array("files"), async (req, res) => {
 
 // Handle data preview/sample
 // @ts-ignore
-app.post("/sample", upload.array("files"), async (req, res) => {
+app.post("/sample", upload.array("files"), handleMulterError, async (req, res) => {
 	try {
 		const { credentials, options } = req.body;
 
@@ -905,7 +961,7 @@ app.post("/sample", upload.array("files"), async (req, res) => {
 
 // Handle column detection for mapper
 // @ts-ignore
-app.post("/columns", upload.array("files"), async (req, res) => {
+app.post("/columns", upload.array("files"), handleMulterError, async (req, res) => {
 	try {
 		const { credentials, options } = req.body;
 
@@ -1027,7 +1083,7 @@ app.post("/columns", upload.array("files"), async (req, res) => {
 
 // Handle dry run
 // @ts-ignore
-app.post("/dry-run", upload.array("files"), async (req, res) => {
+app.post("/dry-run", upload.array("files"), handleMulterError, async (req, res) => {
 	try {
 		const { credentials, options, transformCode } = req.body;
 
@@ -1645,7 +1701,7 @@ app.delete("/job/:jobId", (req, res) => {
 // Automatic cleanup function for old jobs and temp files
 function cleanupOldJobs() {
 	const now = Date.now();
-	const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+	const maxAge = JOB_MAX_AGE; // Use configurable max age
 	let cleanedJobs = 0;
 	let cleanedFiles = 0;
 
@@ -1667,6 +1723,27 @@ function cleanupOldJobs() {
 				}
 			}
 		}
+	}
+
+	// CRITICAL: Limit map sizes to prevent unbounded growth
+	if (activeJobs.size > 100) {
+		logger.warn({ activeJobsCount: activeJobs.size }, "activeJobs map too large");
+		// Remove oldest jobs
+		const sortedJobs = Array.from(activeJobs.entries())
+			.sort((a, b) => a[1].lastUpdate - b[1].lastUpdate);
+		const toRemove = sortedJobs.slice(0, sortedJobs.length - 50);
+		toRemove.forEach(([jobId]) => activeJobs.delete(jobId));
+		logger.info({ removed: toRemove.length }, "pruned old activeJobs");
+	}
+
+	if (jobStatuses.size > 100) {
+		logger.warn({ jobStatusesCount: jobStatuses.size }, "jobStatuses map too large");
+		// Remove oldest jobs
+		const sortedStatuses = Array.from(jobStatuses.entries())
+			.sort((a, b) => a[1].lastUpdate - b[1].lastUpdate);
+		const toRemove = sortedStatuses.slice(0, sortedStatuses.length - 50);
+		toRemove.forEach(([jobId]) => jobStatuses.delete(jobId));
+		logger.info({ removed: toRemove.length }, "pruned old jobStatuses");
 	}
 
 	// Clean up orphaned temp directories (no corresponding job status)
@@ -1700,17 +1777,82 @@ function cleanupOldJobs() {
 	if (cleanedJobs > 0 || cleanedFiles > 0) {
 		logger.info({ cleanedJobs, cleanedFiles }, "auto cleanup complete");
 	}
+
+	// Trigger GC after cleanup if available
+	if (global.gc) {
+		const memUsage = process.memoryUsage();
+		const heapPercent = (memUsage.heapUsed / memUsage.heapTotal) * 100;
+		if (heapPercent > 70 || cleanedJobs > 0) {
+			global.gc();
+			logger.debug({ heapPercent: heapPercent.toFixed(1), cleanedJobs }, "gc triggered (cleanup)");
+		}
+	}
 }
 
-// Run cleanup every hour
-// setInterval(cleanupOldJobs, 60 * 60 * 1000);
+// Run cleanup every 5 minutes (more aggressive for Cloud Run)
+setInterval(cleanupOldJobs, JOB_CLEANUP_INTERVAL);
 
-// Run initial cleanup after 5 minutes (allow server to stabilize first)
-// setTimeout(cleanupOldJobs, 5 * 60 * 1000);
+// Run initial cleanup after 1 minute (allow server to stabilize first)
+setTimeout(cleanupOldJobs, 60 * 1000);
 
-// Health check
+// Health check with memory monitoring
 app.get("/health", (req, res) => {
-	res.json({ status: "ok", timestamp: new Date().toISOString() });
+	const memUsage = process.memoryUsage();
+	const heapPercent = ((memUsage.heapUsed / memUsage.heapTotal) * 100).toFixed(1);
+
+	res.json({
+		status: "ok",
+		timestamp: new Date().toISOString(),
+		memory: {
+			heapUsed: `${(memUsage.heapUsed / 1024 / 1024).toFixed(1)} MB`,
+			heapTotal: `${(memUsage.heapTotal / 1024 / 1024).toFixed(1)} MB`,
+			heapPercent: `${heapPercent}%`,
+			rss: `${(memUsage.rss / 1024 / 1024).toFixed(1)} MB`
+		},
+		jobs: {
+			active: activeJobs.size,
+			tracked: jobStatuses.size
+		},
+		gc: global.gc ? "enabled" : "disabled"
+	});
+});
+
+// Memory stats endpoint for debugging
+app.get("/memory", (req, res) => {
+	const memUsage = process.memoryUsage();
+	const heapStats = require('v8').getHeapStatistics();
+
+	// Trigger GC if requested and available
+	if (req.query.gc === 'true' && global.gc) {
+		global.gc();
+		logger.info("manual gc triggered (api)");
+	}
+
+	res.json({
+		process: {
+			heapUsed: memUsage.heapUsed,
+			heapTotal: memUsage.heapTotal,
+			heapPercent: ((memUsage.heapUsed / memUsage.heapTotal) * 100).toFixed(1) + '%',
+			rss: memUsage.rss,
+			external: memUsage.external,
+			arrayBuffers: memUsage.arrayBuffers
+		},
+		v8: {
+			heapSizeLimit: heapStats.heap_size_limit,
+			totalAvailableSize: heapStats.total_available_size,
+			usedHeapSize: heapStats.used_heap_size,
+			mallocedMemory: heapStats.malloced_memory,
+			peakMallocedMemory: heapStats.peak_malloced_memory
+		},
+		jobs: {
+			activeJobs: activeJobs.size,
+			jobStatuses: jobStatuses.size
+		},
+		gc: {
+			available: !!global.gc,
+			threshold: `${MAX_HEAP_PERCENT}%`
+		}
+	});
 });
 
 // Start server
