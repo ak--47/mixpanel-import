@@ -23,6 +23,7 @@ steps:
       - '--max-instances=${_MAX_INSTANCES}'
       - '--min-instances=${_MIN_INSTANCES}'
       - '--port=8080'
+      - '--no-use-http2'
       - '--set-env-vars=NODE_ENV=production'
 
 # Substitution variables (defaults, can be overridden by deploy.sh)

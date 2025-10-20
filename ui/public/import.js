@@ -81,6 +81,8 @@ class MixpanelImportUI {
 			this.websocket.onerror = (error) => {
 				console.error('WebSocket error:', error);
 				this.hideLoading();
+			// Track import failed
+			this.trackImportFailed('WebSocket connection error', { source: 'websocket_error' });
 				this.showError('WebSocket connection error');
 			};
 
@@ -94,6 +96,8 @@ class MixpanelImportUI {
 			console.error('Failed to connect WebSocket:', error);
 			this.hideLoading();
 			this.showError(`Connection failed: ${error.message}`);
+			// Track import failed
+			this.trackImportFailed(error.message, { source: 'websocket_connection_failed' });
 		}
 	}
 
@@ -159,6 +163,8 @@ class MixpanelImportUI {
 				break;
 				
 			case 'job-complete':
+				// Track import completed
+				this.trackImportCompleted(data.result);
 				this.hideLoading();
 				// Clear any previous results first
 				this.clearResults();
@@ -169,6 +175,8 @@ class MixpanelImportUI {
 			case 'job-error':
 				console.error('Job failed:', data.error);
 				this.hideLoading();
+			// Track import failed
+			this.trackImportFailed(data.error, { source: 'job_execution' });
 				this.showError(`Import failed: ${data.error}`);
 				this.disconnectWebSocket();
 				break;
@@ -1886,6 +1894,8 @@ function transform(row) {
 				return;
 			}
 
+		// Track import started
+		this.trackImportStarted(fileSource, recordType);
 			// For real jobs, use hybrid approach (fileSource already declared above)
 			if (fileSource === 'gcs' || fileSource === 's3') {
 				// Cloud storage mode - no file upload, direct to WebSocket
@@ -1908,6 +1918,8 @@ function transform(row) {
 					this.executeJobViaWebSocket(result.jobId, fileSource);
 				} else {
 					this.hideLoading();
+				// Track import failed
+				this.trackImportFailed(result.error, { source: 'file_upload' });
 					this.showError(`File upload failed: ${result.error}`);
 				}
 			}
@@ -1915,6 +1927,8 @@ function transform(row) {
 		} catch (error) {
 			this.hideLoading();
 			this.showError(`Network error: ${error.message}`);
+			// Track import failed
+			this.trackImportFailed(error.message, { source: 'network_error' });
 		}
 	}
 
@@ -2487,6 +2501,64 @@ function transform(row) {
 
 		// Merge with column mapper aliases (text input takes precedence)
 		return { ...this.columnMappings, ...textAliases };
+	}
+
+	// Mixpanel tracking for import started
+	trackImportStarted(fileSource, recordType) {
+		if (typeof mixpanel === 'undefined') return;
+
+		const properties = {
+			file_source: fileSource,
+			record_type: recordType,
+			workers: parseInt(this.getElementValue('workers', '10')),
+			records_per_batch: parseInt(this.getElementValue('recordsPerBatch', '2000')),
+			compress: this.getElementChecked('compress'),
+			strict: this.getElementChecked('strict'),
+			verbose: this.getElementChecked('verbose'),
+			show_progress: this.getElementChecked('showProgress'),
+			dedupe: this.getElementChecked('dedupe'),
+			fix_data: this.getElementChecked('fixData'),
+			flatten_data: this.getElementChecked('flattenData'),
+			remove_nulls: this.getElementChecked('removeNulls'),
+			has_transform: !!(this.editor && this.editor.getValue().trim()),
+			file_count: fileSource === 'local' ? this.files.length : null
+		};
+
+		mixpanel.track('import started', properties);
+	}
+
+	// Mixpanel tracking for import completed
+	trackImportCompleted(result) {
+		if (typeof mixpanel === 'undefined') return;
+
+		// Clone result and sanitize large arrays
+		const sanitized = { ...result };
+
+		// Slice responses and errors to first 10 items only
+		if (sanitized.responses && Array.isArray(sanitized.responses)) {
+			sanitized.responses = sanitized.responses.slice(0, 10);
+			sanitized.responses_count = result.responses.length;
+		}
+
+		if (sanitized.errors && Array.isArray(sanitized.errors)) {
+			sanitized.errors = sanitized.errors.slice(0, 10);
+			sanitized.errors_count = result.errors.length;
+		}
+
+		mixpanel.track('import completed', sanitized);
+	}
+
+	// Mixpanel tracking for import failed
+	trackImportFailed(error, context = {}) {
+		if (typeof mixpanel === 'undefined') return;
+
+		const properties = {
+			error: error,
+			error_message: typeof error === 'string' ? error : error.message,
+			...context
+		};
+
+		mixpanel.track('import failed', properties);
 	}
 }
 
