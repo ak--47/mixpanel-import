@@ -1079,7 +1079,7 @@ class MixpanelImportUI {
 
 			const tokenElement = document.getElementById('token');
 			if (tokenElement && tokenElement.closest('.form-group').style.display !== 'none' && tokenElement.value) {
-				command += ` --token ${tokenElement.value}`;
+				command += ` --token [project-token]`;
 			}
 
 			const groupKeyElement = document.getElementById('groupKey');
@@ -1860,11 +1860,14 @@ function transform(row) {
 				return;
 			}
 
-			// Validate required fields based on record type
-			const validationResult = this.validateRequiredFields(recordType);
-			if (!validationResult.isValid) {
-				this.showError(validationResult.message);
-				return;
+			// Skip credential validation for dry runs (dry runs don't require credentials)
+			if (!isDryRun) {
+				// Validate required fields based on record type
+				const validationResult = this.validateRequiredFields(recordType);
+				if (!validationResult.isValid) {
+					this.showError(validationResult.message);
+					return;
+				}
 			}
 
 			// Clear any previous results

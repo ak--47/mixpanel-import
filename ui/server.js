@@ -879,16 +879,17 @@ app.post("/sample", upload.array("files"), handleMulterError, async (req, res) =
 	try {
 		const { credentials, options } = req.body;
 
-		// Parse JSON strings
-		const creds = JSON.parse(credentials[0] || "{}");
-		const opts = JSON.parse(options[0] || "{}");
+		// Parse JSON strings - handle both array (from FormData) and string formats
+		const credentialsStr = Array.isArray(credentials) ? credentials[0] : credentials;
+		const optionsStr = Array.isArray(options) ? options[0] : options;
+
+		const creds = JSON.parse(credentialsStr || "{}");
+		const opts = JSON.parse(optionsStr || "{}");
 		if (NODE_ENV === "production") opts.verbose = false;
 		if (NODE_ENV === "production") opts.logs = false;
 
-		// Override any fixData setting from client - must be false for raw preview
-		opts.fixData = false;
-
 		// Force sample settings - no transforms, maxRecords=500, dryRun=true
+		// IMPORTANT: Preview should never require credentials and should disable ALL transforms
 		opts.dryRun = true;
 		opts.maxRecords = 500;
 		opts.transformFunc = function id(a) {
@@ -988,16 +989,17 @@ app.post("/columns", upload.array("files"), handleMulterError, async (req, res) 
 	try {
 		const { credentials, options } = req.body;
 
-		// Parse JSON strings
-		const creds = JSON.parse(credentials[0] || "{}");
-		const opts = JSON.parse(options[0] || "{}");
+		// Parse JSON strings - handle both array (from FormData) and string formats
+		const credentialsStr = Array.isArray(credentials) ? credentials[0] : credentials;
+		const optionsStr = Array.isArray(options) ? options[0] : options;
+
+		const creds = JSON.parse(credentialsStr || "{}");
+		const opts = JSON.parse(optionsStr || "{}");
 		if (NODE_ENV === "production") opts.verbose = false;
 		if (NODE_ENV === "production") opts.logs = false;
 
-		// Override any fixData setting from client - must be false for column detection
-		opts.fixData = false;
-
 		// Force sample settings - let mixpanel-import handle all parsing
+		// IMPORTANT: Column detection should never require credentials and should disable ALL transforms
 		opts.dryRun = true;
 		opts.maxRecords = 500; // Sample up to 500 records
 		opts.transformFunc = function id(a) {

@@ -668,7 +668,7 @@ class MixpanelExportUI {
 
 			case 'export-import-events':
 				// Export-import events: project ID + token/secret OR service account + start/end dates + optional destination
-				credentialsDescription.textContent = 'Export-import events require project ID and token/secret OR service account, plus start/end dates. Destination project is optional.';
+				credentialsDescription.textContent = 'Export-import events require source project credentials (API secret OR service account with project ID) and source data residency. Optionally specify destination token and residency (leave blank to reimport to same project).';
 				document.getElementById('project-group').style.display = 'block';
 				document.getElementById('token-group').style.display = 'block';
 				document.getElementById('auth-toggle').style.display = 'block';
@@ -681,7 +681,7 @@ class MixpanelExportUI {
 
 			case 'export-import-profiles':
 				// Export-import user profiles: project ID + token/secret OR service account + optional destination
-				credentialsDescription.textContent = 'Export-import user profiles require project ID and token/secret OR service account. Destination project is optional.';
+				credentialsDescription.textContent = 'Export-import profiles require source project credentials (API secret OR service account with project ID) and source data residency. Optionally specify destination token and residency (leave blank to reimport to same project).';
 				document.getElementById('project-group').style.display = 'block';
 				document.getElementById('token-group').style.display = 'block';
 				document.getElementById('auth-toggle').style.display = 'block';
@@ -694,7 +694,7 @@ class MixpanelExportUI {
 
 			case 'export-import-groups':
 				// Export-import group profiles: project ID + token/secret OR service account + groupKey + dataGroupId + optional destination
-				credentialsDescription.textContent = 'Export-import group profiles require project ID and token/secret OR service account, plus groupKey and dataGroupId. Destination project is optional.';
+				credentialsDescription.textContent = 'Export-import groups require source project credentials (API secret OR service account with project ID), source data residency, groupKey, and dataGroupId. Optionally specify destination token and residency (leave blank to reimport to same project).';
 				document.getElementById('project-group').style.display = 'block';
 				document.getElementById('token-group').style.display = 'block';
 				document.getElementById('auth-toggle').style.display = 'block';
@@ -908,21 +908,20 @@ class MixpanelExportUI {
 
 			const tokenElement = document.getElementById('token');
 			if (tokenElement && tokenElement.closest('.form-group').style.display !== 'none' && tokenElement.value) {
-				command += ` --token ${tokenElement.value}`;
+				command += ` --token [project-token]`;
 			}
 
-			// Auth credentials
+			// Auth credentials (redact secrets for security)
 			const authMethod = document.querySelector('input[name="authMethod"]:checked')?.value;
 			if (authMethod === 'service') {
 				const acct = this.getElementValue('acct');
 				const pass = this.getElementValue('pass');
-				if (acct && pass) {
-					command += ` --acct ${acct} --pass ${pass}`;
-				}
+				if (acct) command += ` --acct ${acct}`;
+				if (pass) command += ` --pass [password]`;
 			} else {
 				const secret = this.getElementValue('secret');
 				if (secret) {
-					command += ` --secret ${secret}`;
+					command += ` --secret [api-secret]`;
 				}
 			}
 
@@ -930,7 +929,6 @@ class MixpanelExportUI {
 			const optionsMap = {
 				'groupKey': '--groupKey',
 				'dataGroupId': '--dataGroupId',
-				'secondToken': '--secondToken',
 				'region': '--region',
 				'workers': '--workers',
 				'start': '--start',
@@ -949,6 +947,12 @@ class MixpanelExportUI {
 					command += ` ${flag} "${value}"`;
 				}
 			});
+
+			// Handle secondToken separately (redact for security)
+			const secondToken = this.getElementValue('secondToken');
+			if (secondToken) {
+				command += ` --secondToken [destination-token]`;
+			}
 
 			// Boolean flags
 			const booleanFlags = {
@@ -997,11 +1001,14 @@ class MixpanelExportUI {
 	async submitExport(isDryRun = false, maxRecords = null) {
 		const recordType = document.getElementById('recordType').value;
 
-		// Validate required fields (including cloud destinations)
-		const validation = this.validateRequiredFields(recordType);
-		if (!validation.isValid) {
-			alert(validation.message);
-			return;
+		// Skip credential validation for dry runs (dry runs don't require credentials)
+		if (!isDryRun) {
+			// Validate required fields (including cloud destinations)
+			const validation = this.validateRequiredFields(recordType);
+			if (!validation.isValid) {
+				alert(validation.message);
+				return;
+			}
 		}
 
 		// Set loading message based on operation type
