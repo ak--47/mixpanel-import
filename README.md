@@ -7,16 +7,21 @@ use the UI, the CLI, or include it as a module in your pipeline. we have built-i
 
 don't write your own ETL. use this:
 
-![E.T.L Interface - Extract Transform Load data into Mixpanel](https://aktunes.neocities.org/mp-import.gif)
+<a href="https://www.loom.com/share/a0be7c53779f467f921961ba910a3ce9?sid=57cd29a8-adaa-486b-a9ff-1ce717b51ee5">![E.T.L Interface - Extract Transform Load data into Mixpanel](https://aktunes.neocities.org/mp-import-ui.png)</a>
 **note:** this tool is designed for batch data imports and migrations. for real-time tracking in web applications, you want [the official Mixpanel JavaScript SDK](https://github.com/mixpanel/mixpanel-js).
 
 ## 🎯 Quick Start (Recommended)
 
 **The fastest way to get started is with the web interface:**
 
+if you work at mixpanel, just go here:
+<a href="https://etl.mixpanel.org">https://etl.mixpanel.org</a>
+
+if you do not:
 ```bash
 npx mixpanel-import --ui
 ```
+then open `http://localhost:3000` in your browser.
 
 This opens a browser-based interface where you can:
 - 📁 **Drag & drop files** or connect to **Google Cloud Storage** and **Amazon S3**
