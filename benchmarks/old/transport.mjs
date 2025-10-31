@@ -120,8 +120,7 @@ export default async function transport(config = {}) {
 					avgBatchLength: result.avgBatchLength,
 					workers: result.workers,
 					requests: result.requests,
-					retries: result.retries,
-					percentQuota: result.percentQuota
+					retries: result.retries
 				},
 				actualDuration: endTime - startTime
 			};

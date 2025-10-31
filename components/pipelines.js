@@ -52,12 +52,13 @@ function createExistenceFilter(job) {
 
 			// Check maxRecords limit BEFORE processing
 			if (job.maxRecords !== null && job.recordsProcessed >= job.maxRecords) {
-				// Terminate the stream - don't push null yet
+				// Terminate the stream
 				terminated = true;
-				this.end();
+				// Don't call this.end() - let the stream end naturally when source ends
 				return callback();
 			}
 
+			// Count ALL records we process, including empty ones
 			job.recordsProcessed++;
 
 			// very small chance of mem sampling
