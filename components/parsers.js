@@ -5,7 +5,7 @@ const MultiStream = require('multistream');
 const path = require('path');
 const fs = require('fs');
 const os = require("os");
-const _ = require('highland');
+// Highland.js removed - using native streams
 const { pick } = require('underscore');
 const StreamArray = require('stream-json/streamers/StreamArray');
 const JsonlParser = require('./jsonl');
@@ -680,7 +680,7 @@ async function handleSpecialRecordTypes(data, job) {
 	if (data.pipe || data instanceof stream.Stream) {
 		job.wasStream = true;
 		if (data.readableObjectMode) return data;
-		return _(existingStreamInterface(data));
+		return existingStreamInterface(data);
 	}
 
 	// Data is an object in memory
@@ -694,26 +694,44 @@ async function handleSpecialRecordTypes(data, job) {
 }
 
 /**
- * @param  {import("stream").Readable} stream
+ * Converts a regular stream to an object stream by parsing each line as JSON
+ * @param  {import("stream").Readable} inputStream
+ * @returns {import("stream").Transform}
  */
-function existingStreamInterface(stream) {
+function existingStreamInterface(inputStream) {
+	const { Transform } = require('stream');
 	const rl = readline.createInterface({
-		input: stream,
+		input: inputStream,
 		crlfDelay: Infinity
 	});
 
-	const generator = (push, next) => {
-		rl.on('line', line => {
-			push(null, JSON.parse(line));
-		});
-		rl.on('close', () => {
-			next();
-			push(null, _.nil); //end of stream
+	const transform = new Transform({
+		objectMode: true,
+		highWaterMark: 16,
+		transform(chunk, encoding, callback) {
+			// This will be called by readline events
+			callback();
+		}
+	});
 
-		});
-	};
+	rl.on('line', line => {
+		try {
+			const parsed = JSON.parse(line);
+			transform.push(parsed);
+		} catch (err) {
+			transform.emit('error', err);
+		}
+	});
 
-	return generator;
+	rl.on('close', () => {
+		transform.push(null); // End the stream
+	});
+
+	rl.on('error', err => {
+		transform.emit('error', err);
+	});
+
+	return transform;
 }
 
 // Create a transform stream factory to ensure newline at the end of each file.
@@ -1071,9 +1089,13 @@ async function csvMemory(filePath, jobConfig) {
 }
 
 /**
+ * Highland-compatible chunking function for tests only
+ * Note: The actual pipeline uses native streams and doesn't use this function
  * @param  {import('../index').Job} jobConfig
  */
 function chunkForSize(jobConfig) {
+	// Import Highland only for this test-compatibility function
+	const _ = require('highland');
 	let pending = [];
 	let totalSize = 0; // maintain a running total of size
 
