@@ -243,8 +243,7 @@ export default async function parameterMatrix(config = {}) {
 					bytesHuman: result.bytesHuman,
 					memory: result.memory,
 					avgBatchLength: result.avgBatchLength,
-					retries: result.retries,
-					percentQuota: result.percentQuota
+					retries: result.retries
 				},
 				actualDuration: endTime - startTime,
 				efficiency: calculateEfficiency(result)

@@ -171,7 +171,6 @@ export default async function transportComparison(config = {}) {
 					memory: result.memory,
 					avgBatchLength: result.avgBatchLength,
 					retries: result.retries,
-					percentQuota: result.percentQuota,
 					workers: result.workers
 				},
 				actualDuration: endTime - startTime,

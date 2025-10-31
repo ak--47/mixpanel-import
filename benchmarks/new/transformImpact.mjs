@@ -227,8 +227,7 @@ export default async function transformImpact(config = {}) {
 					bytesHuman: result.bytesHuman,
 					memory: result.memory,
 					avgBatchLength: result.avgBatchLength,
-					retries: result.retries,
-					percentQuota: result.percentQuota
+					retries: result.retries
 				},
 				actualDuration: endTime - startTime,
 				overhead: calculateTransformOverhead(result)

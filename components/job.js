@@ -881,7 +881,6 @@ class Job {
 			eps: 0,
 			rps: 0,
 			mbps: 0,
-			percentQuota: 0,
 			errors: [],
 			responses: [],
 			transport: this.transport,
@@ -897,19 +896,6 @@ class Job {
 			summary.eps = Math.floor(summary.total / summary.duration * 1000);
 			summary.rps = summary.duration > 0 ? u.round(summary.requests / summary.duration * 1000, 3) : 0;
 			summary.mbps = u.round((summary.bytes / 1e+6) / summary.duration * 1000, 3);
-
-			// OLD QUOTA
-			// // 2GB uncompressed per min (rolling)
-			// // ? https://developer.mixpanel.com/reference/import-events#rate-limits
-			// const quota = 2e9; //2GB in bytes
-			// const gbPerMin = (summary.bytes / quota) / (summary.duration / 60000);
-			// summary.percentQuota = u.round(gbPerMin, 5) * 100;
-
-			// NEW QUOTA
-			const quota = 1.8e6; // 1.8M events per min 
-			const eventsPerMin = summary.total / (summary.duration / 60000);
-			summary.percentQuota = u.round(eventsPerMin / quota, 5) * 100;
-
 		}
 
 		summary.errors = this.errors;

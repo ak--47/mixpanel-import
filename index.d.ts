@@ -675,10 +675,6 @@ declare namespace main {
      */
     mbps: number;
     /**
-     * - estimation of consumption of mixpanel's event quota
-     */
-    percentQuota: number;
-    /**
      * - summary of memory usage (averaged over the duration of the job)
      */
     memory: Object;

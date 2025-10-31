@@ -214,16 +214,16 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
  * @param {function(): importJob | void} finish - end of pipelines
  * @returns a transform stream
  */
-function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
+async function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 	const envVar = getEnvVars();
 	const config = new importJob({ ...envVar, ...creds }, { ...envVar, ...opts });
 	config.timer.start();
 
-	const pipeToMe = corePipeline(null, config, true);
+	const pipeToMe = await corePipeline(null, config, true);
 
 	// * handlers
 	// @ts-ignore
-	pipeToMe.on('end', () => {
+	pipeToMe.on('finish', () => {
 		config.timer.end(false);
 
 		// @ts-ignore
@@ -246,8 +246,8 @@ function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 		finish(e, config.summary());
 	});
 
-	// @ts-ignore
-	return pipeToMe.toNodeStream();
+	// Return the native stream directly
+	return pipeToMe;
 }
 
 
