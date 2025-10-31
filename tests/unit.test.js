@@ -1711,3 +1711,178 @@ describe("maxRecords functionality", () => {
 		expect(result.recordType).toBe('group');
 	});
 });
+
+describe('v2_compat', () => {
+	test('sets distinct_id from $user_id', async () => {
+		const testData = [{
+			event: 'Test Event',
+			properties: {
+				$user_id: 'user123',
+				time: Date.now()
+			}
+		}];
+
+		const result = await mpImport(fakeCreds, testData, {
+			recordType: 'event',
+			v2_compat: true,
+			dryRun: true
+		});
+
+		expect(result.dryRun[0].properties.distinct_id).toBe('user123');
+		expect(result.dryRun[0].properties.$user_id).toBe('user123'); // Original preserved
+	});
+
+	test('sets distinct_id from $device_id when no $user_id', async () => {
+		const testData = [{
+			event: 'Test Event',
+			properties: {
+				$device_id: 'device456',
+				time: Date.now()
+			}
+		}];
+
+		const result = await mpImport(fakeCreds, testData, {
+			recordType: 'event',
+			v2_compat: true,
+			dryRun: true
+		});
+
+		expect(result.dryRun[0].properties.distinct_id).toBe('device456');
+		expect(result.dryRun[0].properties.$device_id).toBe('device456'); // Original preserved
+	});
+
+	test('prefers $user_id over $device_id', async () => {
+		const testData = [{
+			event: 'Test Event',
+			properties: {
+				$user_id: 'user123',
+				$device_id: 'device456',
+				time: Date.now()
+			}
+		}];
+
+		const result = await mpImport(fakeCreds, testData, {
+			recordType: 'event',
+			v2_compat: true,
+			dryRun: true
+		});
+
+		expect(result.dryRun[0].properties.distinct_id).toBe('user123'); // Prefers $user_id
+		expect(result.dryRun[0].properties.$user_id).toBe('user123');
+		expect(result.dryRun[0].properties.$device_id).toBe('device456');
+	});
+
+	test('does not overwrite existing distinct_id', async () => {
+		const testData = [{
+			event: 'Test Event',
+			properties: {
+				distinct_id: 'existing123',
+				$user_id: 'user123',
+				$device_id: 'device456',
+				time: Date.now()
+			}
+		}];
+
+		const result = await mpImport(fakeCreds, testData, {
+			recordType: 'event',
+			v2_compat: true,
+			dryRun: true
+		});
+
+		expect(result.dryRun[0].properties.distinct_id).toBe('existing123'); // Unchanged
+	});
+
+	test('does nothing when neither $user_id nor $device_id exists', async () => {
+		const testData = [{
+			event: 'Test Event',
+			properties: {
+				time: Date.now(),
+				some_prop: 'value'
+			}
+		}];
+
+		const result = await mpImport(fakeCreds, testData, {
+			recordType: 'event',
+			v2_compat: true,
+			dryRun: true
+		});
+
+		expect(result.dryRun[0].properties.distinct_id).toBeUndefined();
+	});
+
+	test('only applies to events, not user profiles', async () => {
+		const testData = [{
+			$distinct_id: 'user123',
+			$set: {
+				name: 'Test User'
+			}
+		}];
+
+		const result = await mpImport(fakeCreds, testData, {
+			recordType: 'user',
+			token: 'test-token',
+			v2_compat: true,
+			dryRun: true
+		});
+
+		// User profiles don't have properties.distinct_id, so v2_compat should not apply
+		expect(result.dryRun[0].$distinct_id).toBe('user123');
+		expect(result.dryRun[0].distinct_id).toBeUndefined();
+	});
+
+	test('works with multiple events', async () => {
+		const testData = [
+			{
+				event: 'Event 1',
+				properties: {
+					$user_id: 'user1',
+					time: Date.now()
+				}
+			},
+			{
+				event: 'Event 2',
+				properties: {
+					$device_id: 'device2',
+					time: Date.now()
+				}
+			},
+			{
+				event: 'Event 3',
+				properties: {
+					distinct_id: 'existing3',
+					$user_id: 'user3',
+					time: Date.now()
+				}
+			}
+		];
+
+		const result = await mpImport(fakeCreds, testData, {
+			recordType: 'event',
+			v2_compat: true,
+			dryRun: true
+		});
+
+		expect(result.dryRun[0].properties.distinct_id).toBe('user1');
+		expect(result.dryRun[1].properties.distinct_id).toBe('device2');
+		expect(result.dryRun[2].properties.distinct_id).toBe('existing3');
+	});
+
+	test('disabled by default', async () => {
+		const testData = [{
+			event: 'Test Event',
+			properties: {
+				$user_id: 'user123',
+				time: Date.now()
+			}
+		}];
+
+		const result = await mpImport(fakeCreds, testData, {
+			recordType: 'event',
+			dryRun: true
+			// v2_compat not set (defaults to false)
+		});
+
+		expect(result.dryRun[0].properties.distinct_id).toBeUndefined();
+		expect(result.dryRun[0].properties.$user_id).toBe('user123');
+	});
+});

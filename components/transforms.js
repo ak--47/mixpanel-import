@@ -407,6 +407,30 @@ function addToken(jobConfig) {
 }
 
 /**
+ * set distinct_id from $user_id or $device_id (for v2 compatibility)
+ * only applies to events, only sets if distinct_id doesn't exist
+ * prefers $user_id, falls back to $device_id
+ * @returns {function}
+ */
+function setDistinctIdFromV2Props() {
+	return function (record) {
+		// Only for events with properties
+		if (record?.properties) {
+			// Only set if distinct_id doesn't exist
+			if (!record.properties.distinct_id) {
+				// Prefer $user_id, fallback to $device_id
+				if (record.properties.$user_id) {
+					record.properties.distinct_id = record.properties.$user_id;
+				} else if (record.properties.$device_id) {
+					record.properties.distinct_id = record.properties.$device_id;
+				}
+			}
+		}
+		return record;
+	};
+}
+
+/**
  * offset the time of events by an integer number of hours
  * @param  {number} timeOffset=0
  */
@@ -906,6 +930,7 @@ module.exports = {
 	scrubProperties,
 	dropColumns,
 	addToken,
+	setDistinctIdFromV2Props,
 	scdTransform,
 	fixTime
 };

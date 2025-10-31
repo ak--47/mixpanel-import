@@ -566,6 +566,12 @@ declare namespace main {
 	 * @default false
 	 */
 	manualGc?: boolean;
+	/**
+	 * For events only: automatically set distinct_id from $user_id or $device_id if distinct_id is missing
+	 * Prefers $user_id, falls back to $device_id
+	 * @default false
+	 */
+	v2_compat?: boolean;
   };
 
   /**

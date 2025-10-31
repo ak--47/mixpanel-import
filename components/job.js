@@ -255,6 +255,7 @@ class Job {
 		this.skipWriteToDisk = u.isNil(opts.skipWriteToDisk) ? false : opts.skipWriteToDisk; //don't write to disk
 		this.keepBadRecords = u.isNil(opts.keepBadRecords) ? true : opts.keepBadRecords; //keep bad records
 		this.manualGc = u.isNil(opts.manualGc) ? false : opts.manualGc; //enable manual garbage collection when memory usage is high
+		this.v2_compat = u.isNil(opts.v2_compat) ? false : opts.v2_compat; //automatically set distinct_id from $user_id or $device_id (events only)
 
 		// ? tagging options
 		this.tags = parse(opts.tags) || {}; //tags for the import		
@@ -294,6 +295,7 @@ class Job {
 		this.propertyScrubber = noop;
 		this.parseErrorHandler = opts.parseErrorHandler || returnEmpty(this);
 		this.tokenAdder = noop;
+		this.v2CompatTransform = noop;
 		this.scdTransform = noop;
 		this.timeTransform = noop;
 
@@ -305,6 +307,7 @@ class Job {
 		if (this.dedupe) this.deduper = transforms.dedupeRecords(this);
 		if (this.flattenData) this.flattener = transforms.flattenProperties(".");
 		if (this.addToken) this.tokenAdder = transforms.addToken(this);
+		if (this.v2_compat && this.recordType === 'event') this.v2CompatTransform = transforms.setDistinctIdFromV2Props();
 		if (this.recordType === 'scd') this.scdTransform = transforms.scdTransform(this);
 		if (this.recordType === 'event' && this.fixTime) this.timeTransform = transforms.fixTime();
 

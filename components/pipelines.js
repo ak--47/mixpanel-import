@@ -181,10 +181,11 @@ function corePipeline(stream, job, toNodeStream = false) {
 
 		// * helper transforms
 		// @ts-ignore
-		_.map(function HELPER_TRANSFORMS(data) {
+		_.map(function HELPER_TRANSFORMS(data) {			
 			if (job.shouldApplyAliases) job.applyAliases(data);
 			if (job.recordType === "scd") data = job.scdTransform(data);
 			if (job.fixData) data = job.ezTransform(data);
+			if (job.v2_compat) data = job.v2CompatTransform(data);
 			if (job.removeNulls) job.nullRemover(data);
 			if (job.timeOffset) job.UTCoffset(data);
 			if (job.shouldAddTags) job.addTags(data);

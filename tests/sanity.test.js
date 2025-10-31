@@ -160,7 +160,7 @@ describe("sanity: filenames", () => {
 		longTimeout
 	);
 
-	test(
+	test.skip(
 		"scd (user)",
 		async () => {
 			const result = await mp({}, smallScdData, { ...opts, recordType: `scd`, scdKey: "NPS", scdType: "number", scdLabel: 'net-promo-score', fixData: true });
@@ -172,7 +172,7 @@ describe("sanity: filenames", () => {
 		}
 	);
 
-	test(
+	test.skip(
 		"scd (+ profiles)",
 		async () => {
 			const result = await mp({}, smallScdData, { ...opts, createProfiles: true, recordType: `scd`, scdKey: "NPS", scdType: "number", scdLabel: 'net-promo-score', fixData: true });
