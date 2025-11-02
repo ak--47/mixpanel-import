@@ -43,7 +43,7 @@ function createExistenceFilter(job) {
 	let terminated = false;
 	return new Transform({
 		objectMode: true,
-		highWaterMark: job.highWater || 16,
+		highWaterMark: job.highWater,
 		transform(chunk, encoding, callback) {
 			// If we've already terminated, don't process any more
 			if (terminated) {
@@ -83,7 +83,7 @@ function createExistenceFilter(job) {
 function createVendorTransform(job) {
 	return new Transform({
 		objectMode: true,
-		highWaterMark: job.highWater || 16,
+		highWaterMark: job.highWater,
 		transform(data, encoding, callback) {
 			try {
 				if (job.vendor && job.vendorTransform) {
@@ -105,7 +105,7 @@ function createVendorTransform(job) {
 function createUserTransform(job) {
 	return new Transform({
 		objectMode: true,
-		highWaterMark: job.highWater || 16,
+		highWaterMark: job.highWater,
 		transform(data, encoding, callback) {
 			try {
 				if (job.transformFunc) {
@@ -124,10 +124,10 @@ function createUserTransform(job) {
  * Handles "exploded" transforms [{},{},{}] to emit single events {}
  * @returns {Transform}
  */
-function createFlattenStream() {
+function createFlattenStream(job) {
 	return new Transform({
 		objectMode: true,
-		highWaterMark: 16,
+		highWaterMark: job.highWater,
 		transform(data, encoding, callback) {
 			if (Array.isArray(data)) {
 				for (const item of data) {
@@ -149,7 +149,7 @@ function createFlattenStream() {
 function createDedupeTransform(job) {
 	return new Transform({
 		objectMode: true,
-		highWaterMark: job.highWater || 16,
+		highWaterMark: job.highWater,
 		transform(data, encoding, callback) {
 			try {
 				if (job.dedupe) {
@@ -171,7 +171,7 @@ function createDedupeTransform(job) {
 function createExistenceFilter2(job) {
 	return new Transform({
 		objectMode: true,
-		highWaterMark: job.highWater || 16,
+		highWaterMark: job.highWater,
 		transform(data, encoding, callback) {
 			const exists = isNotEmpty(data);
 			if (exists) {
@@ -192,7 +192,7 @@ function createExistenceFilter2(job) {
 function createHelperTransforms(job) {
 	return new Transform({
 		objectMode: true,
-		highWaterMark: job.highWater || 16,
+		highWaterMark: job.highWater,
 		transform(data, encoding, callback) {
 			try {
 				if (job.shouldApplyAliases) job.applyAliases(data);
@@ -229,7 +229,7 @@ function createHelperTransforms(job) {
 function createStringifyCacher(job, jsonCache, bytesCache) {
 	return new Transform({
 		objectMode: true,
-		highWaterMark: job.highWater || 16,
+		highWaterMark: job.highWater,
 		transform(data, encoding, callback) {
 			const exists = isNotEmpty(data);
 			if (!exists) {
@@ -308,7 +308,7 @@ function createSizeBatcher(job, bytesCache) {
 
 	return new Transform({
 		objectMode: true,
-		highWaterMark: job.highWater || 16,
+		highWaterMark: job.highWater,
 		transform(batch, encoding, callback) {
 			// If it's already a batch from the count batcher
 			if (Array.isArray(batch)) {
@@ -361,7 +361,7 @@ function createHttpSender(job, jsonCache, fileStream, gcThreshold) {
 
 	return new ParallelTransform(job.workers, {
 		objectMode: true,
-		highWaterMark: Math.max(1, Math.floor(job.workers / 2))  // Lower highWaterMark for backpressure
+		highWaterMark: job.workers  // One batch per worker for proper backpressure
 	}, async function(batch, callback) {
 		try {
 			const thisBatchId = ++batchId;
@@ -407,7 +407,7 @@ function createLogger(job, LOG_INTERVAL = 100) {
 
 	return new Transform({
 		objectMode: true,
-		highWaterMark: job.highWater || 16,
+		highWaterMark: job.highWater,
 		transform(result, encoding, callback) {
 			const [response, batch] = result;
 
@@ -485,9 +485,9 @@ async function corePipeline(stream, job, toNodeStream = false) {
 	const stages = [
 		createExistenceFilter(job),
 		createVendorTransform(job),
-		createFlattenStream(),
+		createFlattenStream(job),
 		createUserTransform(job),
-		createFlattenStream(),
+		createFlattenStream(job),
 		createDedupeTransform(job),
 		createExistenceFilter2(job),
 		createHelperTransforms(job),

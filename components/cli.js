@@ -183,6 +183,12 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			type: 'boolean',
 			alias: 'removeNulls'
 		})
+		.option("abridged", {
+			demandOption: false,
+			default: false,
+			describe: 'use less memory by not storing all responses (only error counts)',
+			type: 'boolean'
+		})
 		.option("batch", {
 			demandOption: false,
 			default: 2000,

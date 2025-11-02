@@ -23,7 +23,8 @@ TRANSFORMS
 function postHogEventsToMp(options, heavyObjects) {
 	const {
 		v2_compat = false,
-		ignore_events = ["$feature", "$set", "$webvitals", "$pageleave"],
+		ignore_events = ["$feature", "$set", "$webvitals", "$pageleave", "$groupidentify", "$pageview", "$autocapture", "$screen", "$capture_pageview", "$$merge_dangerously"],
+		identify_events = ["$identify"],
 		ignore_props = ["$feature/", "$feature_flag_", "$replay_", "$sdk_debug", "$session_recording", "$set", "$set_once"]
 	} = options;
 
@@ -37,6 +38,22 @@ function postHogEventsToMp(options, heavyObjects) {
 		personMap = new Map();
 	}
 
+	// PERFORMANCE: Compile regex patterns ONCE outside the transform
+	const deleteKeyPrefixes = [
+		"token",
+		...ignore_props
+	];
+
+	// Build regex pattern for property deletion - compiled ONCE
+	const deletePropPattern = new RegExp(
+		`^(${deleteKeyPrefixes.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`
+	);
+
+	// Build regex pattern for event filtering - compiled ONCE
+	const ignoreEventPattern = new RegExp(
+		`^(${ignore_events.map(e => e.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`
+	);
+
 	return function transform(postHogEvent) {
 		const {
 			event: mpEventName,
@@ -44,6 +61,7 @@ function postHogEventsToMp(options, heavyObjects) {
 			ip: mpIp,
 			timestamp: mpTimestamp,
 			uuid: mpInsertId,
+			person_id: postHogPersonId,	//we want to ignore this as it's a "posthog only" value		
 			properties: postHogProperties,
 			...postHotTopLevelFields
 
@@ -93,8 +111,9 @@ function postHogEventsToMp(options, heavyObjects) {
 		//identities
 		let user_id;
 		let device_id;
+		let distinct_id
 		let foundUserIdInMap = false;
-		if (postHogDistinctId) device_id = postHogDistinctId;
+		if (postHogDistinctId) distinct_id = postHogDistinctId;
 		if (postHogDeviceId) device_id = postHogDeviceId;
 		if (postHogUserId) user_id = postHogUserId;
 
@@ -105,15 +124,23 @@ function postHogEventsToMp(options, heavyObjects) {
 
 		if (user_id) mp_props.$user_id = user_id;
 		if (device_id) mp_props.$device_id = device_id;
-
+		if (distinct_id) mp_props.distinct_id = distinct_id;
 
 		// cleaning
 		const deleteKeyPrefixes = [
 			"token",
-			...ignore_props
+			...ignore_props // ["$feature/", "$feature_flag_", etc.. ] things that won't be useful in mixpanel
 		];
+
+		// Build a single regex pattern that matches all prefixes
+		// Escape special regex characters and join with OR operator
+		const prefixPattern = new RegExp(
+			`^(${deleteKeyPrefixes.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`
+		);
+
+		// Single pass through keys with one regex test per key
 		for (const key in remainingPostHogProperties) {
-			if (deleteKeyPrefixes.some(prefix => key.startsWith(prefix))) {
+			if (prefixPattern.test(key)) {
 				delete remainingPostHogProperties[key];
 			}
 		}
@@ -145,11 +172,41 @@ function postHogEventsToMp(options, heavyObjects) {
 		//idmerge v3
 		if (!v2_compat) {
 			// don't send identify events in simplified mode
-			if (mixpanelEvent.event === "$identify") {
-				return {};
+			if (identify_events.some(evt => mpEventName === evt)) {
+				
+				const { distinct_id } = postHogEvent;
+				const {
+					$anon_distinct_id,
+					$device_id,
+					$session_id
+
+				} = postHogEvent.properties;
+				const mpIdentifyProps =
+				{
+					$user_id: distinct_id,
+					$device_id: $device_id || $anon_distinct_id,
+					$insert_id: mpInsertId,
+					...mp_props
+				};
+
+				addIfDefined(mpIdentifyProps, '$session_id', $session_id);
+
+				return {
+					event: 'identity association',
+					properties: mpIdentifyProps
+				};
 			}
+			// return {};
 		}
 
+		// //quality check... $user_id should not have a "-" char
+		// //device ids always should have "-"
+		// if (mixpanelEvent.properties.$user_id && mixpanelEvent.properties.$user_id.includes("-")) {
+		// 	debugger;
+		// }
+		// if (mixpanelEvent.properties.$device_id && !mixpanelEvent.properties.$device_id.includes("-")) {
+		// 	debugger;
+		// }
 
 		return mixpanelEvent;
 	};

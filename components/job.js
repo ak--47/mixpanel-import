@@ -213,7 +213,9 @@ class Job {
 		this.timeOffset = opts.timeOffset || 0; // utc hours offset
 		this.compressionLevel = opts.compressionLevel || 6; // gzip compression level
 		this.workers = opts.workers || 10; // number of workers to use
-		this.highWater = (this.workers * this.recordsPerBatch) || 2000;
+		// Set consistent highWaterMark based on workers for proper backpressure
+		// Keep small enough to prevent OOM, large enough for good throughput
+		this.highWater = this.workers * 100; // 100 records per worker (was workers * 2000 = 20,000!)
 		this.epochStart = opts.epochStart || 0; // start date for epoch
 		this.epochEnd = opts.epochEnd || 9991427224; // end date for epoch; i will die many years before this is a problem
 

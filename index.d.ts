@@ -895,6 +895,7 @@ declare namespace main {
 	v2_compat?: boolean; // use v2 api
 	ignore_events?: string[]; // ignore these events
 	ignore_props?: string[]; // strip these properties
+	identify_events?: string[];
   }
 
   /**

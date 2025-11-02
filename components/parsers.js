@@ -189,7 +189,7 @@ const getParquetRead = async () => {
 const GCS_STREAMING_CONFIG = {
 	// Buffer sizes for high-performance streaming
 	GCS_BUFFER_MULTIPLIER: 100,      // Multiply job.highWater by this for GCS reads
-	OBJECT_STREAM_MULTIPLIER: 10,    // Multiply job.highWater by this for object stream
+	OBJECT_STREAM_MULTIPLIER: 3,     // 3x multiplier for better throughput (was 10x, caused OOM)
 
 	// Gzip decompression settings
 	GZIP_CHUNK_SIZE: 64 * 1024,      // 64KB chunks for decompression
