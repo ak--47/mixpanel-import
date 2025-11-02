@@ -67,7 +67,8 @@ function postHogEventsToMp(options, heavyObjects) {
 
 		} = postHogEvent;
 
-		if (ignore_events.some(prefix => mpEventName.startsWith(prefix))) return {};
+		// PERFORMANCE: Use pre-compiled regex instead of Array.some()
+		if (ignoreEventPattern.test(mpEventName)) return {};
 
 
 
@@ -117,8 +118,10 @@ function postHogEventsToMp(options, heavyObjects) {
 		if (postHogDeviceId) device_id = postHogDeviceId;
 		if (postHogUserId) user_id = postHogUserId;
 
-		if (personMap.has(postHogDistinctId)) {
-			user_id = personMap.get(postHogDistinctId);
+		// PERFORMANCE: Single Map lookup instead of has() + get()
+		const mappedUserId = personMap.get(postHogDistinctId);
+		if (mappedUserId) {
+			user_id = mappedUserId;
 			foundUserIdInMap = true;
 		}
 
@@ -126,21 +129,9 @@ function postHogEventsToMp(options, heavyObjects) {
 		if (device_id) mp_props.$device_id = device_id;
 		if (distinct_id) mp_props.distinct_id = distinct_id;
 
-		// cleaning
-		const deleteKeyPrefixes = [
-			"token",
-			...ignore_props // ["$feature/", "$feature_flag_", etc.. ] things that won't be useful in mixpanel
-		];
-
-		// Build a single regex pattern that matches all prefixes
-		// Escape special regex characters and join with OR operator
-		const prefixPattern = new RegExp(
-			`^(${deleteKeyPrefixes.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`
-		);
-
-		// Single pass through keys with one regex test per key
+		// PERFORMANCE: Use pre-compiled regex pattern instead of recompiling
 		for (const key in remainingPostHogProperties) {
-			if (prefixPattern.test(key)) {
+			if (deletePropPattern.test(key)) {
 				delete remainingPostHogProperties[key];
 			}
 		}
