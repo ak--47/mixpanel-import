@@ -17,10 +17,13 @@ process.on('uncaughtException', (error) => {
 	process.exit(1);
 });
 
-// Conservative undici pool settings for stability
+// Optimized undici pool settings for high throughput
+// Note: These are shared across all jobs, so we set high defaults
+// Ideal formula: connections = workers * 3-5, pipelining = workers / 2
+// Current settings support up to ~30-50 workers efficiently
 const poolConfig = {
-	connections: 25, // Conservative connection count
-	pipelining: 10,  // Moderate pipelining 
+	connections: 100, // Supports 20-30 workers with 3-5 connections each
+	pipelining: 20,   // HTTP/2 multiplexing - allows 20 requests per connection
 	keepAliveTimeout: 30000,
 	keepAliveMaxTimeout: 60000,
 	headersTimeout: 60000,

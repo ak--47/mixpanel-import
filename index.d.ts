@@ -561,6 +561,25 @@ declare namespace main {
 	 */
 	gcsCredentials?: string;
 	/**
+	 * Enable adaptive scaling to automatically adjust workers and batch size based on event density
+	 * When enabled, samples first 100 events to determine optimal configuration
+	 * Prevents OOM errors and improves performance for dense event data
+	 * @default false
+	 */
+	adaptive?: boolean;
+	/**
+	 * Provide average event size in bytes as a hint for adaptive scaling
+	 * When specified, skips sampling and immediately applies optimal configuration
+	 * Useful when event size is known in advance
+	 */
+	avgEventSize?: number;
+	/**
+	 * Enable adaptive scaling independently of the 'adaptive' flag
+	 * Internal flag set by applySmartDefaults
+	 * @default true (when adaptive system is enabled)
+	 */
+	adaptiveScaling?: boolean;
+	/**
 	 * Enable manual garbage collection when memory usage exceeds 85% of heap limit
 	 * Requires Node.js --expose-gc flag (enabled in Docker container)
 	 * @default false
