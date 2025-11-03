@@ -30,6 +30,7 @@ class BufferQueue extends EventEmitter {
 		this.sinkStream = null;
 		this.objectsQueued = 0;
 		this.objectsDequeued = 0;
+		this.pendingCallbacks = []; // Array of callbacks waiting to be called when buffer drains
 
 		// Memory monitoring
 		this.lastMemCheck = Date.now();
@@ -44,13 +45,14 @@ class BufferQueue extends EventEmitter {
 
 	/**
 	 * Create input stream that adds to queue
+	 * @param {boolean} objectMode - Whether to operate in object mode (default: false for byte streams)
 	 */
-	createInputStream() {
+	createInputStream(objectMode = false) {
 		const self = this;
 
 		const inputStream = new Writable({
-			objectMode: true,
-			highWaterMark: 16,
+			objectMode: objectMode,
+			highWaterMark: objectMode ? 16 : 64 * 1024, // 16 objects or 64KB for bytes
 
 			write(chunk, encoding, callback) {
 				// Add to queue
@@ -95,13 +97,14 @@ class BufferQueue extends EventEmitter {
 
 	/**
 	 * Create output stream that reads from queue
+	 * @param {boolean} objectMode - Whether to operate in object mode (default: false for byte streams)
 	 */
-	createOutputStream() {
+	createOutputStream(objectMode = false) {
 		const self = this;
 
 		const outputStream = new Readable({
-			objectMode: true,
-			highWaterMark: 16,
+			objectMode: objectMode,
+			highWaterMark: objectMode ? 16 : 64 * 1024, // 16 objects or 64KB for bytes
 
 			read() {
 				self._processQueue();
@@ -261,15 +264,20 @@ class BufferQueue extends EventEmitter {
 	}
 
 	/**
-	 * Get approximate size of an object in bytes
+	 * Get approximate size of an object or buffer in bytes
 	 */
-	_getObjectSize(obj) {
-		// Use cached size if available (from stringification)
-		if (obj._cachedSize) return obj._cachedSize;
+	_getObjectSize(chunk) {
+		// If it's a Buffer, use its actual byte length
+		if (Buffer.isBuffer(chunk)) {
+			return chunk.length;
+		}
 
-		// Otherwise estimate
+		// Use cached size if available (from stringification)
+		if (chunk._cachedSize) return chunk._cachedSize;
+
+		// Otherwise estimate for objects
 		try {
-			return JSON.stringify(obj).length;
+			return JSON.stringify(chunk).length;
 		} catch {
 			return 1000; // Default estimate
 		}

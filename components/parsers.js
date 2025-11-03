@@ -1381,10 +1381,44 @@ async function createGCSJSONStream(gcsPath, job) {
 			// Note: highWaterMark is not a valid option for GCS createReadStream
 		});
 
-		// IMPORTANT: Save reference to original stream for throttle control
-		const originalGcsStream = gcsReadStream;
+		// Add buffer queue for memory-based throttling if requested
+		if (job.throttleGCS || job.throttleMemory) {
+			const { BufferQueue } = require('./buffer-queue');
+			const bufferQueue = new BufferQueue({
+				maxSizeMB: job.throttleMaxBufferMB || 2000,     // Max 2GB buffer
+				pauseThresholdMB: job.throttlePauseMB || 1500,  // Pause at 1.5GB
+				resumeThresholdMB: job.throttleResumeMB || 1000, // Resume at 1GB
+				verbose: job.verbose
+			});
 
-		// Create transform pipeline based on compression
+			// CRITICAL: BufferQueue must be the FIRST consumer of GCS stream
+			// to properly control the flow with backpressure
+			bufferQueue.setSourceStream(gcsReadStream);
+
+			// Create input/output streams (false = byte mode, since GCS outputs Buffers)
+			const queueInput = bufferQueue.createInputStream(false);
+			const queueOutput = bufferQueue.createOutputStream(false);
+
+			// Connect GCS directly to buffer queue FIRST (before any transformations)
+			gcsReadStream.pipe(queueInput);
+
+			// Apply gunzip AFTER the buffer queue if needed
+			let outputPipeline = queueOutput;
+			if (isGzipped) {
+				const gunzip = zlib.createGunzip({
+					chunkSize: GCS_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
+					windowBits: GCS_STREAMING_CONFIG.GZIP_WINDOW_BITS,
+					level: zlib.constants.Z_DEFAULT_COMPRESSION,
+					memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
+				});
+				outputPipeline = outputPipeline.pipe(gunzip);
+			}
+
+			// Convert to NDJSON object stream
+			return outputPipeline.pipe(new JsonlObjectStream(job));
+		}
+
+		// No throttling - standard pipeline
 		let pipeline = gcsReadStream;
 
 		// Handle gzip compression with tunable parameters
@@ -1396,31 +1430,6 @@ async function createGCSJSONStream(gcsPath, job) {
 				memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
 			});
 			pipeline = pipeline.pipe(gunzip);
-		}
-
-		// Add buffer queue for memory-based throttling if requested
-		if (job.throttleGCS || job.throttleMemory) {
-			const { BufferQueue } = require('./buffer-queue');
-			const bufferQueue = new BufferQueue({
-				maxSizeMB: job.throttleMaxBufferMB || 2000,     // Max 2GB buffer
-				pauseThresholdMB: job.throttlePauseMB || 1500,  // Pause at 1.5GB
-				resumeThresholdMB: job.throttleResumeMB || 1000, // Resume at 1GB
-				verbose: job.verbose
-			});
-
-			// CRITICAL: Set the ORIGINAL GCS stream (before any transformations) as the source to control
-			// This is the stream we need to pause/resume, not the gunzipped version
-			bufferQueue.setSourceStream(originalGcsStream);
-
-			// Create input/output streams
-			const queueInput = bufferQueue.createInputStream();
-			const queueOutput = bufferQueue.createOutputStream();
-
-			// Connect: pipeline (potentially gunzipped) → buffer queue input
-			pipeline.pipe(queueInput);
-
-			// Convert queue output to NDJSON object stream
-			return queueOutput.pipe(new JsonlObjectStream(job));
 		}
 
 		// Convert to NDJSON object stream with tunable performance (no throttling)
@@ -1469,28 +1478,15 @@ async function createGCSCSVStream(gcsPath, job) {
 		}
 
 		// Create read stream with throttling
-		const originalGcsStream = gcsFile.createReadStream({
+		const gcsReadStream = gcsFile.createReadStream({
 			decompress: GCS_STREAMING_CONFIG.DECOMPRESS,
 			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION
 			// Note: highWaterMark is not a valid option for GCS createReadStream
 		});
 
-		// Save reference for throttle control
-		let gcsReadStream = originalGcsStream;
-
-		// Handle gzip compression
-		if (isGzipped) {
-			const gunzip = zlib.createGunzip({
-				chunkSize: GCS_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
-				windowBits: GCS_STREAMING_CONFIG.GZIP_WINDOW_BITS,
-				level: zlib.constants.Z_DEFAULT_COMPRESSION,
-				memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
-			});
-			gcsReadStream = gcsReadStream.pipe(gunzip);
-		}
+		let sourceStream;
 
 		// Add buffer queue for memory-based throttling if requested
-		let sourceStream = gcsReadStream;
 		if (job.throttleGCS || job.throttleMemory) {
 			const { BufferQueue } = require('./buffer-queue');
 			const bufferQueue = new BufferQueue({
@@ -1500,16 +1496,42 @@ async function createGCSCSVStream(gcsPath, job) {
 				verbose: job.verbose
 			});
 
-			// Set the ORIGINAL GCS stream (before gzip) as the source to control
-			bufferQueue.setSourceStream(originalGcsStream);
+			// CRITICAL: BufferQueue must be the FIRST consumer of GCS stream
+			bufferQueue.setSourceStream(gcsReadStream);
 
-			// Create input/output streams
-			const queueInput = bufferQueue.createInputStream();
-			const queueOutput = bufferQueue.createOutputStream();
+			// Create input/output streams (false = byte mode, since GCS outputs Buffers)
+			const queueInput = bufferQueue.createInputStream(false);
+			const queueOutput = bufferQueue.createOutputStream(false);
 
-			// Connect: gcsReadStream → buffer queue input
+			// Connect GCS directly to buffer queue FIRST
 			gcsReadStream.pipe(queueInput);
-			sourceStream = queueOutput;
+
+			// Apply gunzip AFTER the buffer queue if needed
+			if (isGzipped) {
+				const gunzip = zlib.createGunzip({
+					chunkSize: GCS_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
+					windowBits: GCS_STREAMING_CONFIG.GZIP_WINDOW_BITS,
+					level: zlib.constants.Z_DEFAULT_COMPRESSION,
+					memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
+				});
+				sourceStream = queueOutput.pipe(gunzip);
+			} else {
+				sourceStream = queueOutput;
+			}
+		} else {
+			// No throttling - standard pipeline
+			sourceStream = gcsReadStream;
+
+			// Handle gzip compression
+			if (isGzipped) {
+				const gunzip = zlib.createGunzip({
+					chunkSize: GCS_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
+					windowBits: GCS_STREAMING_CONFIG.GZIP_WINDOW_BITS,
+					level: zlib.constants.Z_DEFAULT_COMPRESSION,
+					memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
+				});
+				sourceStream = sourceStream.pipe(gunzip);
+			}
 		}
 
 		// Parse CSV using Papa Parse

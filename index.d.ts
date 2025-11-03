@@ -312,6 +312,24 @@ declare namespace main {
      */
     throttleMemory?: boolean;
     /**
+     * Destination path for writing output (local file, gs://bucket/path, or s3://bucket/path)
+     * - When set, data is written to the destination in addition to or instead of Mixpanel
+     * - default `null`
+     */
+    destination?: string;
+    /**
+     * Skip Mixpanel and only write to destination
+     * - Requires `destination` to be set
+     * - default `false`
+     */
+    destinationOnly?: boolean;
+    /**
+     * Skip all transformations for pre-processed data
+     * - Significantly faster but assumes data is already in correct format
+     * - default `false`
+     */
+    fastMode?: boolean;
+    /**
      * - UTC offset which will add/subtract hours to an event's `time` value; can be a positive or negative number; default `0`
      * - default `0`
      */
