@@ -23,9 +23,28 @@ TRANSFORMS
 function postHogEventsToMp(options, heavyObjects) {
 	const {
 		v2_compat = false,
-		ignore_events = ["$feature", "$set", "$webvitals", "$pageleave", "$groupidentify", "$pageview", "$autocapture", "$screen", "$capture_pageview", "$$merge_dangerously"],
+		ignore_events = ["$feature",
+			"$set",
+			"$webvitals",
+			"$pageleave",
+			"$groupidentify",
+			"$pageview",
+			"$autocapture",
+			"$rageclick",
+			"$screen",
+			"$capture_pageview",
+			"$merge_dangerously"
+		],
 		identify_events = ["$identify"],
-		ignore_props = ["$feature/", "$feature_flag_", "$replay_", "$sdk_debug", "$session_recording", "$set", "$set_once"]
+		ignore_props = [
+			"$feature/",
+			"$feature_flag_",
+			"$replay_",
+			"$sdk_debug",
+			"$session_recording",
+			"$set",
+			"$set_once"
+		]
 	} = options;
 
 	let personMap;
@@ -112,7 +131,7 @@ function postHogEventsToMp(options, heavyObjects) {
 		//identities
 		let user_id;
 		let device_id;
-		let distinct_id
+		let distinct_id;
 		let foundUserIdInMap = false;
 		if (postHogDistinctId) distinct_id = postHogDistinctId;
 		if (postHogDeviceId) device_id = postHogDeviceId;
@@ -164,7 +183,7 @@ function postHogEventsToMp(options, heavyObjects) {
 		if (!v2_compat) {
 			// don't send identify events in simplified mode
 			if (identify_events.some(evt => mpEventName === evt)) {
-				
+
 				const { distinct_id } = postHogEvent;
 				const {
 					$anon_distinct_id,
