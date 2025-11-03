@@ -82,7 +82,7 @@ function postHogEventsToMp(options, heavyObjects) {
 			uuid: mpInsertId,
 			person_id: postHogPersonId,	//we want to ignore this as it's a "posthog only" value		
 			properties: postHogProperties,
-			...postHotTopLevelFields
+			//...postHotTopLevelFields
 
 		} = postHogEvent;
 

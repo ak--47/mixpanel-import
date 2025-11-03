@@ -1401,7 +1401,8 @@ async function createGCSJSONStream(gcsPath, job) {
 				highWaterMark: 1,  // Minimal buffer to apply backpressure
 				pauseThresholdMB: job.throttlePauseMB || 1200,
 				resumeThresholdMB: job.throttleResumeMB || 800,
-				checkInterval: 100
+				checkInterval: 100,
+				verbose: job.verbose  // Pass verbose flag for logging
 			});
 			pipeline = pipeline.pipe(throttle);
 		}

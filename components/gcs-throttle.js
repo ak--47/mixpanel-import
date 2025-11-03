@@ -23,6 +23,7 @@ class MemoryThrottle extends Transform {
 		this.pauseThresholdMB = options.pauseThresholdMB || 1200;
 		this.resumeThresholdMB = options.resumeThresholdMB || 800;
 		this.checkInterval = options.checkInterval || 100; // Check every 100ms
+		this.verbose = options.verbose !== undefined ? options.verbose : true; // Default to verbose
 		this._isPaused = false; // Internal state tracker (renamed to avoid conflict with Transform.isPaused())
 		this.lastCheck = Date.now();
 		this.objectCount = 0;
@@ -32,6 +33,8 @@ class MemoryThrottle extends Transform {
 		this.memCheckTimer = null; // Timer for memory checks while paused
 		this.checkCount = 0; // Count checks to reduce logging
 		this.lastLoggedMem = 0; // Track last logged memory to detect changes
+		this.pausedAt = 0; // Timestamp when paused
+		this.objectsAtPause = 0; // Objects processed when paused
 	}
 
 	_checkMemoryAndResume() {
@@ -42,26 +45,51 @@ class MemoryThrottle extends Transform {
 		const external = memUsage.external / 1024 / 1024;
 		this.checkCount++;
 
-		// Only log every 10 checks (10 seconds) or if memory changed significantly
-		const shouldLog = this.checkCount % 10 === 0 || Math.abs(heapUsed - this.lastLoggedMem) > 100;
+		// Log immediately on first check, then every 30 seconds, or if memory changed significantly
+		const shouldLog = this.verbose && (this.checkCount === 1 || this.checkCount % 30 === 0 || Math.abs(heapUsed - this.lastLoggedMem) > 100);
 		if (shouldLog) {
-			console.log(`⏸️  Throttle: Memory - Heap: ${heapUsed.toFixed(0)}/${heapTotal.toFixed(0)}MB, RSS: ${rss.toFixed(0)}MB, External: ${external.toFixed(0)}MB`);
-			console.log(`   Waiting for heap < ${this.resumeThresholdMB}MB to resume (${this.checkCount}s paused, ${this.objectCount} objects processed)`);
+			const pausedDuration = Math.floor((Date.now() - this.pausedAt) / 1000);
+			const minutes = Math.floor(pausedDuration / 60);
+			const seconds = pausedDuration % 60;
+			const timeStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${pausedDuration}s`;
+
+			console.log('');  // Blank line for readability
+			console.log(`    ⏸️  THROTTLE PAUSED - ${timeStr}`);
+			console.log(`    ├─ Memory: Heap ${heapUsed.toFixed(0)}/${heapTotal.toFixed(0)}MB | RSS ${rss.toFixed(0)}MB | External ${external.toFixed(0)}MB`);
+			console.log(`    ├─ Target: Resume when heap < ${this.resumeThresholdMB}MB (currently ${(heapUsed - this.resumeThresholdMB).toFixed(0)}MB over)`);
+			console.log(`    ├─ Objects: ${this.objectCount.toLocaleString()} processed total (${(this.objectCount - this.objectsAtPause).toLocaleString()} since pause)`);
+
 			this.lastLoggedMem = heapUsed;
 
 			// Force garbage collection if available to help memory drop
-			if (global.gc) {
-				console.log(`   Triggering manual GC to help release memory...`);
+			if (global.gc && this.checkCount % 10 === 0) {  // GC every 10 seconds
+				console.log(`    └─ Running GC...`);
 				global.gc();
 				const newHeap = process.memoryUsage().heapUsed / 1024 / 1024;
-				console.log(`   After GC: Heap ${newHeap.toFixed(0)}MB (freed ${(heapUsed - newHeap).toFixed(0)}MB)`);
+				const freed = heapUsed - newHeap;
+				if (freed > 0) {
+					console.log(`       ✓ Freed ${freed.toFixed(0)}MB → Now at ${newHeap.toFixed(0)}MB`);
+				} else {
+					console.log(`       • No memory freed (stable at ${newHeap.toFixed(0)}MB)`);
+				}
 			}
 		}
 
 		// Resume if memory dropped enough
 		if (heapUsed < this.resumeThresholdMB) {
 			this._isPaused = false;
-			console.log(`▶️  Throttle: Resuming GCS (memory: ${heapUsed.toFixed(0)}MB < ${this.resumeThresholdMB}MB) after ${this.checkCount} seconds`);
+			const pausedDuration = Math.floor((Date.now() - this.pausedAt) / 1000);
+			const minutes = Math.floor(pausedDuration / 60);
+			const seconds = pausedDuration % 60;
+			const timeStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${pausedDuration}s`;
+
+			if (this.verbose) {
+				console.log('');
+				console.log(`▶️  THROTTLE: Resuming GCS downloads`);
+				console.log(`    ├─ Memory: ${heapUsed.toFixed(0)}MB < ${this.resumeThresholdMB}MB threshold`);
+				console.log(`    ├─ Duration: Paused for ${timeStr}`);
+				console.log(`    └─ Objects: ${(this.objectCount - this.objectsAtPause).toLocaleString()} processed while paused`);
+			}
 
 			// Clear the timer
 			if (this.memCheckTimer) {
@@ -72,6 +100,8 @@ class MemoryThrottle extends Transform {
 			// Reset counters
 			this.checkCount = 0;
 			this.lastLoggedMem = 0;
+			this.pausedAt = 0;
+			this.objectsAtPause = 0;
 
 			// Process the pending chunk if we have one
 			if (this.pendingCallback) {
@@ -97,8 +127,16 @@ class MemoryThrottle extends Transform {
 			if (heapUsed > this.pauseThresholdMB && !this._isPaused) {
 				this._isPaused = true;
 				this.pauseCount++;
-				console.log(`🛑 Throttle: Pausing GCS (memory: ${heapUsed.toFixed(0)}MB > ${this.pauseThresholdMB}MB) [pause #${this.pauseCount}]`);
-				console.log(`   Pipeline has ~${this.objectCount} objects buffered, draining to Mixpanel...`);
+				this.pausedAt = Date.now();
+				this.objectsAtPause = this.objectCount;
+
+				if (this.verbose) {
+					console.log('');  // Blank line for visibility
+					console.log(`🛑 THROTTLE: Pausing GCS downloads`);
+					console.log(`    ├─ Memory: ${heapUsed.toFixed(0)}MB > ${this.pauseThresholdMB}MB threshold`);
+					console.log(`    ├─ Objects: ${this.objectCount.toLocaleString()} processed so far`);
+					console.log(`    └─ Action: Draining pipeline to Mixpanel...`);
+				}
 
 				// Start checking memory every second to see if we can resume
 				if (!this.memCheckTimer) {
@@ -109,7 +147,9 @@ class MemoryThrottle extends Transform {
 			// Resume when memory drops (also handled in _checkMemoryAndResume)
 			if (heapUsed < this.resumeThresholdMB && this._isPaused) {
 				this._isPaused = false;
-				console.log(`▶️  Throttle: Resuming GCS (memory: ${heapUsed.toFixed(0)}MB < ${this.resumeThresholdMB}MB)`);
+				if (this.verbose) {
+					console.log(`▶️  Throttle: Resuming GCS (memory: ${heapUsed.toFixed(0)}MB < ${this.resumeThresholdMB}MB)`);
+				}
 
 				if (this.memCheckTimer) {
 					clearInterval(this.memCheckTimer);
@@ -147,7 +187,9 @@ class MemoryThrottle extends Transform {
 			pendingCallback(null, pendingChunk);
 		}
 
-		console.log(`📊 Throttle stats: ${this.objectCount} objects, ${this.pauseCount} pauses`);
+		if (this.verbose) {
+			console.log(`📊 Throttle stats: ${this.objectCount} objects, ${this.pauseCount} pauses`);
+		}
 		callback();
 	}
 }

@@ -120,6 +120,10 @@ async function flushToMixpanel(batch, job) {
 				https: HTTP_AGENT
 			},
 			http2: false,
+			timeout: {
+				request: 30000,  // 30 second total request timeout
+				response: 10000,  // 10 second to start receiving response
+			},
 			hooks: {
 				// @ts-ignore
 				beforeRetry: [(req, error, count) => {
