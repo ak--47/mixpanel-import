@@ -159,6 +159,11 @@ class BufferQueue extends EventEmitter {
 						if (this.pendingCallbacks && this.pendingCallbacks.length > 0) {
 							const callback = this.pendingCallbacks.shift();
 							callback(); // Resume one pending write
+
+							// Schedule next process to continue draining callbacks
+							if (this.pendingCallbacks.length > 0) {
+								setImmediate(() => this._processQueue());
+							}
 						}
 
 						if (this.isPaused && this.pendingCallbacks && this.pendingCallbacks.length === 0) {
@@ -171,17 +176,32 @@ class BufferQueue extends EventEmitter {
 				}
 			}
 
-			// If queue is empty and source ended, end the output
-			if (this.queue.length === 0 && this.sourceEnded && this.sinkStream) {
+			// Only end if queue is empty, source ended, AND no pending callbacks
+			// Pending callbacks mean we're still expecting data once memory pressure reduces
+			if (this.queue.length === 0 && this.sourceEnded &&
+			    (!this.pendingCallbacks || this.pendingCallbacks.length === 0) &&
+			    this.sinkStream) {
 				this.sinkStream.push(null);
 			}
 
-			// Log status periodically while paused
-			if (this.isPaused && this.verbose) {
+			// While paused, periodically check if we can resume
+			if (this.isPaused) {
 				const now = Date.now();
 				if (now - this.lastMemCheck > 1000) {
 					this.lastMemCheck = now;
-					this._logPausedStatus();
+
+					// Log status if verbose
+					if (this.verbose) {
+						this._logPausedStatus();
+					}
+
+					// Check if we can resume pending callbacks
+					const heapUsedMB = process.memoryUsage().heapUsed / 1024 / 1024;
+					const queueSizeMB = this.queueSizeBytes / 1024 / 1024;
+					if (heapUsedMB < this.resumeThresholdMB && queueSizeMB < this.resumeThresholdMB) {
+						// Memory dropped, we can resume! Trigger processing again
+						setImmediate(() => this._processQueue());
+					}
 				}
 			}
 
