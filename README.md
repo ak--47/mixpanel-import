@@ -228,6 +228,13 @@ npx mixpanel-import s3://bucket/events.parquet.gz --token your-token --s3Region 
 - **Error Handling**: Automatic retries with exponential backoff
 - **Results Logging**: Detailed logs of successes, failures, and performance
 
+### 🎯 **Adaptive Scaling (NEW in v3.1.1)**
+- **Automatic Configuration**: Samples first 100 events to optimize settings
+- **Event Density Detection**: Categorizes events (tiny/small/medium/large/dense)
+- **OOM Prevention**: Automatically reduces workers for memory-intensive data
+- **Zero Configuration**: Enable with `--adaptive` flag for hands-off operation
+- **Performance Hints**: Use `--avg-event-size` when event size is known
+
 ### 🏗️ **Enterprise Features**
 - **Cloud Streaming**: Direct streaming from GCS/S3 without local download
 - **Multi-File Support**: Process entire directories or file lists
@@ -274,6 +281,16 @@ npx mixpanel-import s3://data-lake/2024/01/*.parquet \
   --token your-token
 ```
 
+### 🚀 **Handling Dense Event Data (Adaptive Scaling)**
+
+```bash
+# Automatic configuration for dense events (PostHog, Segment, etc.)
+npx mixpanel-import dense_events.json --token your-token --adaptive
+
+# Or provide event size hint for immediate optimization (11KB avg)
+npx mixpanel-import posthog_export.jsonl --token your-token --avgEventSize 11000 --vendor posthog
+```
+
 ### 🔄 **Data Quality & Testing**
 
 ```bash
@@ -311,6 +328,8 @@ npx mixpanel-import messy_data.json \
 | `recordType` | `string` | `"event"` | Type of data: `event`, `user`, `group`, `table` |
 | `region` | `string` | `"US"` | Data residency: `US`, `EU`, `IN` |
 | `workers` | `number` | `10` | Number of concurrent HTTP requests |
+| `adaptive` | `boolean` | `false` | Enable adaptive scaling to prevent OOM errors |
+| `avgEventSize` | `number` | | Average event size hint in bytes (for adaptive mode) |
 | `recordsPerBatch` | `number` | `2000` | Records per API request (max 2000 for events) |
 | `bytesPerBatch` | `number` | `2000000` | Max bytes per request (2MB) |
 | `maxRetries` | `number` | `10` | Retry attempts for failed requests |
@@ -660,10 +679,11 @@ npx mixpanel-import huge_file.json \
 - Reduce `workers` (try 5 instead of 10)
 - Reduce `recordsPerBatch` (try 1000 instead of 2000)
 
-**"Memory" errors**  
-- Add `--forceStream` flag
-- Reduce `workers` count
-- Process files in smaller chunks
+**"Memory" errors**
+- Use `--adaptive` flag for automatic configuration (recommended)
+- Or provide `--avg-event-size` if known (e.g., `--avg-event-size 5000` for 5KB events)
+- Manual fixes: Add `--forceStream` flag, reduce `workers` count
+- Process files in smaller chunks if adaptive scaling doesn't help
 
 **"Authentication" errors**
 - Verify project token in Mixpanel project settings

@@ -113,8 +113,8 @@ class Job {
 		
 		/** @type {string} scd prop id */
 		this.scdPropId = opts.scdPropId || '';
-		/** @type {string} transport mechanism to use for sending data (default: got) */
-		this.transport = opts.transport || 'got';
+		/** @type {string} transport mechanism to use for sending data (default: undici for better performance) */
+		this.transport = opts.transport || 'undici';
 		
 		/** @type {string} Google Cloud project ID for GCS operations */
 		this.gcpProjectId = opts.gcpProjectId || safeCreds.gcpProjectId || 'mixpanel-gtm-training';
@@ -208,16 +208,26 @@ class Job {
 		// ? number options
 		this.streamSize = opts.streamSize || 27; // power of 2 for highWaterMark in stream  (default 134 MB)		
 		this.recordsPerBatch = opts.recordsPerBatch || 2000; // records in each req; max 2000 (200 for groups)
-		this.bytesPerBatch = opts.bytesPerBatch || 9 * 1024 * 1024; // max bytes in each req ... api max: 10485760
+		this.bytesPerBatch = opts.bytesPerBatch || 10 * 1024 * 1024; // max bytes in each req (10MB = 10485760)
 		this.maxRetries = opts.maxRetries || 10; // number of times to retry a batch
 		this.timeOffset = opts.timeOffset || 0; // utc hours offset
 		this.compressionLevel = opts.compressionLevel || 6; // gzip compression level
 		this.workers = opts.workers || 10; // number of workers to use
-		this.highWater = (this.workers * this.recordsPerBatch) || 2000;
+		// Set consistent highWaterMark based on workers for proper backpressure
+		// Keep small enough to prevent OOM, large enough for good throughput
+		// For dense objects (>5KB each), use smaller buffers to prevent memory issues
+		this.highWater = Math.min(this.workers * 10, 100); // Much smaller for dense PostHog events!
 		this.epochStart = opts.epochStart || 0; // start date for epoch
 		this.epochEnd = opts.epochEnd || 9991427224; // end date for epoch; i will die many years before this is a problem
 
 		if (opts.concurrency) this.workers = opts.concurrency; // alias for workers
+
+		// Warn if workers exceed what undici pool can efficiently handle
+		if (this.transport === 'undici' && this.workers > 30) {
+			console.warn(`⚠️  High worker count (${this.workers}) may exceed connection pool capacity.`);
+			console.warn(`   Consider using 30 or fewer workers for optimal performance with undici.`);
+			console.warn(`   Or use --adaptive flag to auto-configure based on event density.`);
+		}
 
 		// ? don't allow batches bigger than API limits
 		if (this.recordType === 'event' && this.recordsPerBatch > 2000) this.recordsPerBatch = 2000;
@@ -353,6 +363,25 @@ class Job {
 		if (this.dropColumns.length > 0) {
 			this.columnDropper = transforms.dropColumns(this.dropColumns);
 		}
+
+		// Pre-compute active transforms for performance
+		this.activeTransforms = [];
+		if (this.shouldApplyAliases) this.activeTransforms.push({ name: 'applyAliases', fn: this.applyAliases });
+		if (this.recordType === "scd") this.activeTransforms.push({ name: 'scdTransform', fn: this.scdTransform, mutates: false });
+		if (this.fixData) this.activeTransforms.push({ name: 'ezTransform', fn: this.ezTransform, mutates: false });
+		if (this.v2_compat) this.activeTransforms.push({ name: 'v2CompatTransform', fn: this.v2CompatTransform, mutates: false });
+		if (this.removeNulls) this.activeTransforms.push({ name: 'nullRemover', fn: this.nullRemover });
+		if (this.timeOffset) this.activeTransforms.push({ name: 'UTCoffset', fn: this.UTCoffset });
+		if (this.shouldAddTags) this.activeTransforms.push({ name: 'addTags', fn: this.addTags });
+		if (this.shouldWhiteBlackList) this.activeTransforms.push({ name: 'whiteAndBlackLister', fn: this.whiteAndBlackLister, mutates: false });
+		if (this.shouldEpochFilter) this.activeTransforms.push({ name: 'epochFilter', fn: this.epochFilter, mutates: false });
+		if (this.propertyScrubber) this.activeTransforms.push({ name: 'propertyScrubber', fn: this.propertyScrubber });
+		if (this.columnDropper) this.activeTransforms.push({ name: 'columnDropper', fn: this.columnDropper });
+		if (this.flattenData) this.activeTransforms.push({ name: 'flattener', fn: this.flattener });
+		if (this.fixJson) this.activeTransforms.push({ name: 'jsonFixer', fn: this.jsonFixer });
+		if (this.shouldCreateInsertId) this.activeTransforms.push({ name: 'insertIdAdder', fn: this.insertIdAdder });
+		if (this.addToken) this.activeTransforms.push({ name: 'tokenAdder', fn: this.tokenAdder });
+		if (this.fixTime) this.activeTransforms.push({ name: 'timeTransform', fn: this.timeTransform });
 
 		this.vendor = opts.vendor || '';
 

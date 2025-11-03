@@ -183,6 +183,12 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			type: 'boolean',
 			alias: 'removeNulls'
 		})
+		.option("abridged", {
+			demandOption: false,
+			default: false,
+			describe: 'use less memory by not storing all responses (only error counts)',
+			type: 'boolean'
+		})
 		.option("batch", {
 			demandOption: false,
 			default: 2000,
@@ -253,6 +259,18 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			default: false,
 			describe: 'enable manual garbage collection when memory usage exceeds 85% of heap limit (requires --expose-gc)',
 			type: 'boolean'
+		})
+		.options("adaptive", {
+			demandOption: false,
+			default: false,
+			describe: 'enable adaptive scaling to auto-adjust workers based on event density (prevents OOM)',
+			type: 'boolean'
+		})
+		.options("avg-event-size", {
+			demandOption: false,
+			alias: 'avgEventSize',
+			describe: 'average event size in bytes (hint for adaptive scaling)',
+			type: 'number'
 		})
 		.options('event-whitelist', {
 			demandOption: false,

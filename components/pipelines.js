@@ -12,6 +12,7 @@ const v8 = require('v8');
 // $ networking + filesystem
 const { exportEvents, exportProfiles, deleteProfiles } = require('./exporters');
 const { flushLookupTable, flushToMixpanel, flushToMixpanelWithUndici } = require('./importers.js');
+const { createEventSampler, createMemoryMonitor, applySmartDefaults } = require('./smart-config.js');
 const { replaceAnnotations, getAnnotations, deleteAnnotations } = require('./meta.js');
 const fs = require('fs');
 
@@ -43,7 +44,7 @@ function createExistenceFilter(job) {
 	let terminated = false;
 	return new Transform({
 		objectMode: true,
-		highWaterMark: job.highWater || 16,
+		highWaterMark: job.highWater,
 		transform(chunk, encoding, callback) {
 			// If we've already terminated, don't process any more
 			if (terminated) {
@@ -83,7 +84,7 @@ function createExistenceFilter(job) {
 function createVendorTransform(job) {
 	return new Transform({
 		objectMode: true,
-		highWaterMark: job.highWater || 16,
+		highWaterMark: job.highWater,
 		transform(data, encoding, callback) {
 			try {
 				if (job.vendor && job.vendorTransform) {
@@ -105,7 +106,7 @@ function createVendorTransform(job) {
 function createUserTransform(job) {
 	return new Transform({
 		objectMode: true,
-		highWaterMark: job.highWater || 16,
+		highWaterMark: job.highWater,
 		transform(data, encoding, callback) {
 			try {
 				if (job.transformFunc) {
@@ -124,10 +125,10 @@ function createUserTransform(job) {
  * Handles "exploded" transforms [{},{},{}] to emit single events {}
  * @returns {Transform}
  */
-function createFlattenStream() {
+function createFlattenStream(job) {
 	return new Transform({
 		objectMode: true,
-		highWaterMark: 16,
+		highWaterMark: job.highWater,
 		transform(data, encoding, callback) {
 			if (Array.isArray(data)) {
 				for (const item of data) {
@@ -149,7 +150,7 @@ function createFlattenStream() {
 function createDedupeTransform(job) {
 	return new Transform({
 		objectMode: true,
-		highWaterMark: job.highWater || 16,
+		highWaterMark: job.highWater,
 		transform(data, encoding, callback) {
 			try {
 				if (job.dedupe) {
@@ -171,7 +172,7 @@ function createDedupeTransform(job) {
 function createExistenceFilter2(job) {
 	return new Transform({
 		objectMode: true,
-		highWaterMark: job.highWater || 16,
+		highWaterMark: job.highWater,
 		transform(data, encoding, callback) {
 			const exists = isNotEmpty(data);
 			if (exists) {
@@ -186,31 +187,25 @@ function createExistenceFilter2(job) {
 
 /**
  * Creates a transform stream for all helper transforms
+ * Uses pre-computed array of active transforms for better performance
  * @param {JobConfig} job
  * @returns {Transform}
  */
 function createHelperTransforms(job) {
 	return new Transform({
 		objectMode: true,
-		highWaterMark: job.highWater || 16,
+		highWaterMark: job.highWater,
 		transform(data, encoding, callback) {
 			try {
-				if (job.shouldApplyAliases) job.applyAliases(data);
-				if (job.recordType === "scd") data = job.scdTransform(data);
-				if (job.fixData) data = job.ezTransform(data);
-				if (job.v2_compat) data = job.v2CompatTransform(data);
-				if (job.removeNulls) job.nullRemover(data);
-				if (job.timeOffset) job.UTCoffset(data);
-				if (job.shouldAddTags) job.addTags(data);
-				if (job.shouldWhiteBlackList) data = job.whiteAndBlackLister(data);
-				if (job.shouldEpochFilter) data = job.epochFilter(data);
-				if (job.propertyScrubber) job.propertyScrubber(data);
-				if (job.columnDropper) job.columnDropper(data);
-				if (job.flattenData) job.flattener(data);
-				if (job.fixJson) job.jsonFixer(data);
-				if (job.shouldCreateInsertId) job.insertIdAdder(data);
-				if (job.addToken) job.tokenAdder(data);
-				if (job.fixTime) job.timeTransform(data);
+				// Iterate through pre-computed active transforms
+				for (const transform of job.activeTransforms) {
+					// Some transforms mutate data, others return new data
+					if (transform.mutates === false) {
+						data = transform.fn(data);
+					} else {
+						transform.fn(data);
+					}
+				}
 				callback(null, data);
 			} catch (err) {
 				callback(err);
@@ -229,7 +224,7 @@ function createHelperTransforms(job) {
 function createStringifyCacher(job, jsonCache, bytesCache) {
 	return new Transform({
 		objectMode: true,
-		highWaterMark: job.highWater || 16,
+		highWaterMark: job.highWater,
 		transform(data, encoding, callback) {
 			const exists = isNotEmpty(data);
 			if (!exists) {
@@ -253,7 +248,73 @@ function createStringifyCacher(job, jsonCache, bytesCache) {
 }
 
 /**
- * Creates a transform stream that batches records by count
+ * Creates a smart batching transform that respects BOTH count and size limits
+ * Batches by 2000 records OR 9.85MB (whichever comes first)
+ * @param {JobConfig} job
+ * @param {WeakMap} bytesCache
+ * @returns {Transform}
+ */
+function createSmartBatcher(job, bytesCache) {
+	let buffer = [];
+	let currentSize = 0;
+	const maxCount = job.recordsPerBatch;
+	const maxBytes = Math.floor(job.bytesPerBatch * 0.985); // Target 9.85MB to avoid going over 10MB
+
+	return new Transform({
+		objectMode: true,
+		highWaterMark: job.highWater,
+		transform(chunk, encoding, callback) {
+			// Stop batching if we've hit maxRecords
+			if (job.maxRecords !== null && job.recordsProcessed > job.maxRecords) {
+				return callback();
+			}
+
+			// Get cached size or calculate it
+			const chunkSize = bytesCache.get(chunk) || Buffer.byteLength(JSON.stringify(chunk), 'utf-8');
+
+			// Check if adding this chunk would exceed limits
+			if (buffer.length > 0 && (
+				buffer.length >= maxCount ||
+				(currentSize + chunkSize > maxBytes)
+			)) {
+				// Emit current batch
+				const batch = buffer;
+				buffer = [];
+				currentSize = 0;
+				this.push(batch);
+			}
+
+			// Add chunk to buffer
+			buffer.push(chunk);
+			currentSize += chunkSize;
+
+			// Check if we've hit the count limit after adding
+			if (buffer.length >= maxCount) {
+				const batch = buffer;
+				buffer = [];
+				currentSize = 0;
+				callback(null, batch);
+			} else {
+				callback();
+			}
+		},
+		flush(callback) {
+			if (buffer.length > 0) {
+				// Only flush if we haven't exceeded maxRecords
+				if (job.maxRecords === null || job.recordsProcessed <= job.maxRecords) {
+					callback(null, buffer);
+				} else {
+					callback();
+				}
+			} else {
+				callback();
+			}
+		}
+	});
+}
+
+/**
+ * Creates a transform stream that batches records by count (DEPRECATED - use createSmartBatcher)
  * @param {number} batchSize
  * @param {number} highWater
  * @param {JobConfig} job
@@ -304,11 +365,11 @@ function createBatcher(batchSize, highWater = 16, job = null) {
 function createSizeBatcher(job, bytesCache) {
 	let currentBatch = [];
 	let currentSize = 0;
-	const maxBytes = job.maxBatchSizeKB * 1024;
+	const maxBytes = job.bytesPerBatch; // Use the actual bytesPerBatch setting (10MB)
 
 	return new Transform({
 		objectMode: true,
-		highWaterMark: job.highWater || 16,
+		highWaterMark: job.highWater,
 		transform(batch, encoding, callback) {
 			// If it's already a batch from the count batcher
 			if (Array.isArray(batch)) {
@@ -361,7 +422,7 @@ function createHttpSender(job, jsonCache, fileStream, gcThreshold) {
 
 	return new ParallelTransform(job.workers, {
 		objectMode: true,
-		highWaterMark: Math.max(1, Math.floor(job.workers / 2))  // Lower highWaterMark for backpressure
+		highWaterMark: job.workers  // One batch per worker for proper backpressure
 	}, async function(batch, callback) {
 		try {
 			const thisBatchId = ++batchId;
@@ -407,7 +468,7 @@ function createLogger(job, LOG_INTERVAL = 100) {
 
 	return new Transform({
 		objectMode: true,
-		highWaterMark: job.highWater || 16,
+		highWaterMark: job.highWater,
 		transform(result, encoding, callback) {
 			const [response, batch] = result;
 
@@ -481,22 +542,31 @@ async function corePipeline(stream, job, toNodeStream = false) {
 	const jsonCache = new WeakMap();
 	const bytesCache = new WeakMap();
 
-	// Create all transform stages in order
-	const stages = [
+	// Create base transform stages
+	const stages = [];
+
+	// Only add adaptive stages if enabled (opt-in)
+	if (job.adaptive === true) {
+		applySmartDefaults(job);
+		stages.push(createEventSampler(job)); // Sample events to determine optimal configuration
+		stages.push(createMemoryMonitor(job)); // Monitor memory usage
+	}
+
+	// Add core transform stages
+	stages.push(
 		createExistenceFilter(job),
 		createVendorTransform(job),
-		createFlattenStream(),
+		// Note: Vendor transforms are 1:1, no flatten needed
 		createUserTransform(job),
-		createFlattenStream(),
+		createFlattenStream(job), // User transforms can explode 1 row to multiple
 		createDedupeTransform(job),
 		createExistenceFilter2(job),
 		createHelperTransforms(job),
 		createStringifyCacher(job, jsonCache, bytesCache),
-		createBatcher(job.recordsPerBatch, job.highWater, job),
-		createSizeBatcher(job, bytesCache),
+		createSmartBatcher(job, bytesCache), // Combined count + size batching
 		createHttpSender(job, jsonCache, fileStream, gcThreshold),
 		createLogger(job)
-	];
+	);
 
 	// For createMpStream - return the entry point of the pipeline
 	if (toNodeStream) {
