@@ -30,24 +30,37 @@ class MemoryThrottle extends Transform {
 		this.pendingCallback = null; // Store callback when paused
 		this.pendingChunk = null; // Store chunk when paused
 		this.memCheckTimer = null; // Timer for memory checks while paused
+		this.checkCount = 0; // Count checks to reduce logging
+		this.lastLoggedMem = 0; // Track last logged memory to detect changes
 	}
 
 	_checkMemoryAndResume() {
-		const heapUsed = process.memoryUsage().heapUsed / 1024 / 1024;
+		const memUsage = process.memoryUsage();
+		const heapUsed = memUsage.heapUsed / 1024 / 1024;
+		const rss = memUsage.rss / 1024 / 1024;
+		this.checkCount++;
 
-		// Log status while paused
-		console.log(`⏸️  Throttle: Memory check (${heapUsed.toFixed(0)}MB / ${this.resumeThresholdMB}MB to resume)`);
+		// Only log every 10 checks (10 seconds) or if memory changed significantly
+		const shouldLog = this.checkCount % 10 === 0 || Math.abs(heapUsed - this.lastLoggedMem) > 100;
+		if (shouldLog) {
+			console.log(`⏸️  Throttle: Memory status - Heap: ${heapUsed.toFixed(0)}MB, RSS: ${rss.toFixed(0)}MB (resume at < ${this.resumeThresholdMB}MB) [${this.checkCount}s paused]`);
+			this.lastLoggedMem = heapUsed;
+		}
 
 		// Resume if memory dropped enough
 		if (heapUsed < this.resumeThresholdMB) {
 			this._isPaused = false;
-			console.log(`▶️  Throttle: Resuming GCS (memory: ${heapUsed.toFixed(0)}MB < ${this.resumeThresholdMB}MB)`);
+			console.log(`▶️  Throttle: Resuming GCS (memory: ${heapUsed.toFixed(0)}MB < ${this.resumeThresholdMB}MB) after ${this.checkCount} seconds`);
 
 			// Clear the timer
 			if (this.memCheckTimer) {
 				clearInterval(this.memCheckTimer);
 				this.memCheckTimer = null;
 			}
+
+			// Reset counters
+			this.checkCount = 0;
+			this.lastLoggedMem = 0;
 
 			// Process the pending chunk if we have one
 			if (this.pendingCallback) {
