@@ -270,9 +270,45 @@ declare namespace main {
      */
     forceStream?: boolean;
     /**
-     * - 2^N; highWaterMark value for stream [DEPRECATED] ... use workers instead
+     * - 2^N; highWaterMark value for stream [DEPRECATED] ... use highWater instead
      */
     streamSize?: number;
+    /**
+     * Stream buffer size (number of objects buffered between pipeline stages)
+     * - Lower values (16-50): Less memory usage, better for dense/large events
+     * - Higher values (100-500): Better throughput for small events
+     * - Default: Calculated as min(workers * 10, 100)
+     * - Works independently from workers but they should be tuned together
+     * @example
+     * // For dense PostHog events (>10KB each)
+     * { workers: 10, highWater: 50 }
+     * // For tiny events (<1KB each)
+     * { workers: 30, highWater: 200 }
+     */
+    highWater?: number;
+    /**
+     * Enable memory-based throttling for GCS/S3 streams
+     * - Pauses cloud storage downloads when memory exceeds threshold
+     * - Prevents OOM errors with fast cloud storage + slow processing
+     * - default `false`
+     */
+    throttleGCS?: boolean;
+    /**
+     * Memory threshold (MB) to pause GCS/S3 downloads
+     * - When heap usage exceeds this, cloud downloads pause
+     * - default `1200` (1.2GB)
+     */
+    throttlePauseMB?: number;
+    /**
+     * Memory threshold (MB) to resume GCS/S3 downloads
+     * - When heap usage drops below this, cloud downloads resume
+     * - default `800` (800MB)
+     */
+    throttleResumeMB?: number;
+    /**
+     * Alias for throttleGCS (either works)
+     */
+    throttleMemory?: boolean;
     /**
      * - UTC offset which will add/subtract hours to an event's `time` value; can be a positive or negative number; default `0`
      * - default `0`

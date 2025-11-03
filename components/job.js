@@ -213,10 +213,18 @@ class Job {
 		this.timeOffset = opts.timeOffset || 0; // utc hours offset
 		this.compressionLevel = opts.compressionLevel || 6; // gzip compression level
 		this.workers = opts.workers || 10; // number of workers to use
-		// Set consistent highWaterMark based on workers for proper backpressure
-		// Keep small enough to prevent OOM, large enough for good throughput
-		// For dense objects (>5KB each), use smaller buffers to prevent memory issues
-		this.highWater = Math.min(this.workers * 10, 100); // Much smaller for dense PostHog events!
+		// highWater controls the stream buffer size (number of objects in object mode)
+		// It affects how many records are buffered in memory between pipeline stages
+		// Lower values = less memory usage but potentially lower throughput
+		// Higher values = more memory usage but potentially better throughput
+		// Default: calculated based on workers, but can be overridden explicitly
+		if (typeof opts.highWater === 'number' && opts.highWater > 0) {
+			this.highWater = opts.highWater;
+		} else {
+			// Auto-calculate based on workers for proper backpressure
+			// Keep small enough to prevent OOM, large enough for good throughput
+			this.highWater = Math.min(this.workers * 10, 100);
+		}
 		this.epochStart = opts.epochStart || 0; // start date for epoch
 		this.epochEnd = opts.epochEnd || 9991427224; // end date for epoch; i will die many years before this is a problem
 

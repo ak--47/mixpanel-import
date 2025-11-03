@@ -189,7 +189,7 @@ const getParquetRead = async () => {
 const GCS_STREAMING_CONFIG = {
 	// Buffer sizes for high-performance streaming
 	GCS_BUFFER_MULTIPLIER: 100,      // Multiply job.highWater by this for GCS reads
-	OBJECT_STREAM_MULTIPLIER: 3,     // 3x multiplier for better throughput (was 10x, caused OOM)
+	OBJECT_STREAM_MULTIPLIER: 1,     // No multiplier - use exact highWater to prevent buffering
 
 	// Gzip decompression settings
 	GZIP_CHUNK_SIZE: 64 * 1024,      // 64KB chunks for decompression
@@ -1380,7 +1380,8 @@ async function createGCSJSONStream(gcsPath, job) {
 		const gcsReadStream = gcsFile.createReadStream({
 			// Use configurable compression and validation settings
 			decompress: GCS_STREAMING_CONFIG.DECOMPRESS,
-			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION
+			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION,
+			highWaterMark: 64 * 1024  // 64KB chunks to reduce memory pressure
 		});
 
 		// Create transform pipeline based on compression
@@ -1395,6 +1396,18 @@ async function createGCSJSONStream(gcsPath, job) {
 				memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
 			});
 			pipeline = pipeline.pipe(gunzip);
+		}
+
+		// Add memory-based throttling if requested
+		if (job.throttleGCS || job.throttleMemory) {
+			const { MemoryThrottle } = require('./gcs-throttle');
+			const throttle = new MemoryThrottle({
+				highWaterMark: 1,  // Minimal buffer to apply backpressure
+				pauseThresholdMB: job.throttlePauseMB || 1200,
+				resumeThresholdMB: job.throttleResumeMB || 800,
+				checkInterval: 100
+			});
+			pipeline = pipeline.pipe(throttle);
 		}
 
 		// Convert to NDJSON object stream with tunable performance
@@ -1442,10 +1455,11 @@ async function createGCSCSVStream(gcsPath, job) {
 			throw new Error(`File not found: ${gcsPath}`);
 		}
 
-		// Create read stream
+		// Create read stream with throttling
 		let gcsReadStream = gcsFile.createReadStream({
 			decompress: GCS_STREAMING_CONFIG.DECOMPRESS,
-			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION
+			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION,
+			highWaterMark: 64 * 1024  // 64KB chunks (much smaller than default)
 		});
 
 		// Handle gzip compression
@@ -1541,10 +1555,11 @@ async function createGCSParquetStream(gcsPath, job) {
 			throw new Error(`File not found: ${gcsPath}`);
 		}
 
-		// Create GCS read stream
+		// Create GCS read stream with throttling
 		let gcsReadStream = gcsFile.createReadStream({
 			decompress: GCS_STREAMING_CONFIG.DECOMPRESS,
-			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION
+			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION,
+			highWaterMark: 64 * 1024  // 64KB chunks to reduce memory pressure
 		});
 
 		// Handle gzip decompression for .parquet.gz files
