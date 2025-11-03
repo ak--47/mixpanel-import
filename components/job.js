@@ -882,12 +882,12 @@ class Job {
 	getEps() {
 		const duration = (Date.now() - dayjs(this.startTime).valueOf()) / 1000;
 		const eps = this.recordsProcessed / duration;
-		return eps.toFixed(2);
+		return u.comma(Math.round(eps));
 	}
 	getRps() {
 		const duration = (Date.now() - dayjs(this.startTime).valueOf()) / 1000;
 		const rps = this.requests / duration;
-		return rps.toFixed(2);
+		return u.comma(Math.round(rps));
 	}
 	getMbps() {
 		const duration = (Date.now() - dayjs(this.startTime).valueOf()) / 1000;

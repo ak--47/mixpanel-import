@@ -421,8 +421,8 @@ function showProgress(record = "", processed = 0, requests = 0, eps = "", succes
 	line += ` | failed: ${u.comma(failed || 0)}`;
 	line += ` | empty: ${u.comma(empty || 0)}`;
 	line += ` | req: ${u.comma(requests || 0)}`;
-	line += ` | eps: ${eps || "0.00"}`;
-	line += ` | rps: ${rps || "0.00"}`;
+	line += ` | eps: ${eps || "0"}`;
+	line += ` | rps: ${rps || "0"}`;
 	line += ` | mbps: ${mbps || "0 B/s"}`;
 	line += ` | mem: ${u.bytesHuman(heapUsed || 0)}`;
 	line += ` | proc: ${u.bytesHuman(amountSent || 0)}`;

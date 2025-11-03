@@ -64,11 +64,15 @@ class BufferQueue extends EventEmitter {
 				self.queueSizeBytes += size;
 				self.objectsQueued++;
 
-				// Check if we should apply backpressure
+				// Check ACTUAL HEAP MEMORY, not just queue size
+				// This ensures we pause based on total memory pressure, not just buffered data
+				const heapUsedMB = process.memoryUsage().heapUsed / 1024 / 1024;
 				const queueSizeMB = self.queueSizeBytes / 1024 / 1024;
-				if (queueSizeMB > self.pauseThresholdMB) {
+
+				// Pause if EITHER heap memory OR queue size exceeds threshold
+				if (heapUsedMB > self.pauseThresholdMB || queueSizeMB > self.pauseThresholdMB) {
 					if (!self.isPaused) {
-						self._pauseSource(queueSizeMB);
+						self._pauseSource(heapUsedMB);
 					}
 
 					// Store callback to call later when buffer drains
@@ -147,7 +151,10 @@ class BufferQueue extends EventEmitter {
 
 					// Check if we should resume source
 					const queueSizeMB = this.queueSizeBytes / 1024 / 1024;
-					if (queueSizeMB < this.resumeThresholdMB) {
+					const heapUsedMB = process.memoryUsage().heapUsed / 1024 / 1024;
+
+					// Resume if BOTH heap memory AND queue size are below resume threshold
+					if (heapUsedMB < this.resumeThresholdMB && queueSizeMB < this.resumeThresholdMB) {
 						// Call pending callbacks to resume data flow
 						if (this.pendingCallbacks && this.pendingCallbacks.length > 0) {
 							const callback = this.pendingCallbacks.shift();
@@ -186,20 +193,31 @@ class BufferQueue extends EventEmitter {
 	/**
 	 * Pause the source stream
 	 */
-	_pauseSource(queueSizeMB) {
+	_pauseSource(heapUsedMB) {
 		this.isPaused = true;
 		this.pausedAt = Date.now();
 		this.checkCount = 0;
 		// Track memory at pause start to show how much we free
-		this.memoryAtPause = process.memoryUsage().heapUsed / 1024 / 1024;
+		this.memoryAtPause = heapUsedMB;
 		this.objectsDequeuedAtPause = this.objectsDequeued;
+
+		const queueSizeMB = this.queueSizeBytes / 1024 / 1024;
 
 		if (this.verbose) {
 			console.log('');
 			console.log(`🛑 BUFFER QUEUE: Pausing GCS input`);
-			console.log(`    ├─ Queue size: ${u.bytesHuman(this.queueSizeBytes)} > ${u.bytesHuman(this.pauseThresholdMB * 1024 * 1024)} threshold`);
+			// Show both heap memory and queue size, indicating which triggered the pause
+			if (heapUsedMB > this.pauseThresholdMB) {
+				console.log(`    ├─ Heap memory: ${u.bytesHuman(heapUsedMB * 1024 * 1024)} > ${u.bytesHuman(this.pauseThresholdMB * 1024 * 1024)} threshold (TRIGGERED PAUSE)`);
+			} else {
+				console.log(`    ├─ Heap memory: ${u.bytesHuman(heapUsedMB * 1024 * 1024)}`);
+			}
+			if (queueSizeMB > this.pauseThresholdMB) {
+				console.log(`    ├─ Queue size: ${u.bytesHuman(this.queueSizeBytes)} > ${u.bytesHuman(this.pauseThresholdMB * 1024 * 1024)} threshold (TRIGGERED PAUSE)`);
+			} else {
+				console.log(`    ├─ Queue size: ${u.bytesHuman(this.queueSizeBytes)}`);
+			}
 			console.log(`    ├─ Queue depth: ${this.queue.length.toLocaleString()} objects`);
-			console.log(`    ├─ Memory: Heap ${u.bytesHuman(this.memoryAtPause * 1024 * 1024)}`);
 			console.log(`    ├─ Objects: ${this.objectsQueued.toLocaleString()} queued, ${this.objectsDequeued.toLocaleString()} sent`);
 			console.log(`    └─ Pipeline continues draining buffered data to Mixpanel...`);
 		}
@@ -228,6 +246,7 @@ class BufferQueue extends EventEmitter {
 		if (this.verbose) {
 			console.log('');
 			console.log(`▶️  BUFFER QUEUE: Resuming GCS input`);
+			console.log(`    ├─ Heap memory: ${u.bytesHuman(heapUsed * 1024 * 1024)} < ${u.bytesHuman(this.resumeThresholdMB * 1024 * 1024)} threshold`);
 			console.log(`    ├─ Queue size: ${u.bytesHuman(this.queueSizeBytes)} < ${u.bytesHuman(this.resumeThresholdMB * 1024 * 1024)} threshold`);
 			console.log(`    ├─ Duration: Paused for ${timeStr}`);
 			console.log(`    ├─ Memory freed: ${u.bytesHuman(memoryFreed * 1024 * 1024)} (from ${u.bytesHuman(this.memoryAtPause * 1024 * 1024)} to ${u.bytesHuman(heapUsed * 1024 * 1024)})`);
@@ -269,11 +288,11 @@ class BufferQueue extends EventEmitter {
 
 		console.log('');
 		console.log(`    ⏸️  GCS PAUSED - ${timeStr} | ACTIVELY DRAINING TO MIXPANEL`);
+		console.log(`    ├─ Heap memory: ${u.bytesHuman(heapUsed * 1024 * 1024)} (freed ${u.bytesHuman(memoryFreed * 1024 * 1024)} since pause)`);
 		console.log(`    ├─ Queue: ${u.bytesHuman(this.queueSizeBytes)} (${this.queue.length.toLocaleString()} objects remaining)`);
-		console.log(`    ├─ Memory: Heap ${u.bytesHuman(heapUsed * 1024 * 1024)} (freed ${u.bytesHuman(memoryFreed * 1024 * 1024)} since pause)`);
 		console.log(`    ├─ Progress: ${objectsSentWhilePaused.toLocaleString()} objects sent to Mixpanel while paused`);
 		console.log(`    ├─ Total: ${this.objectsDequeued.toLocaleString()} / ${this.objectsQueued.toLocaleString()} objects sent overall`);
-		console.log(`    └─ Target: Resume GCS when queue < ${u.bytesHuman(this.resumeThresholdMB * 1024 * 1024)} (need to drain ${u.bytesHuman((queueSizeMB - this.resumeThresholdMB) * 1024 * 1024)} more)`);
+		console.log(`    └─ Target: Resume when heap < ${u.bytesHuman(this.resumeThresholdMB * 1024 * 1024)} AND queue < ${u.bytesHuman(this.resumeThresholdMB * 1024 * 1024)}`);
 
 		// Show drain rate if actively draining
 		if (objectsSentWhilePaused > 0) {
