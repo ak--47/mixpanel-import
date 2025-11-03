@@ -292,15 +292,21 @@ declare namespace main {
     /**
      * Memory threshold (MB) to pause GCS/S3 downloads
      * - When heap usage exceeds this, cloud downloads pause
-     * - default `1200` (1.2GB)
+     * - default `1500` (1.5GB)
      */
     throttlePauseMB?: number;
     /**
      * Memory threshold (MB) to resume GCS/S3 downloads
      * - When heap usage drops below this, cloud downloads resume
-     * - default `800` (800MB)
+     * - default `1000` (1GB)
      */
     throttleResumeMB?: number;
+    /**
+     * Maximum buffer size (MB) for the BufferQueue when using throttleGCS/throttleMemory
+     * - Controls how much data can be buffered between GCS and the pipeline
+     * - default `2000` (2GB)
+     */
+    throttleMaxBufferMB?: number;
     /**
      * Alias for throttleGCS (either works)
      */

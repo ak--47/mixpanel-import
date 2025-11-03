@@ -235,6 +235,49 @@ npx mixpanel-import s3://bucket/events.parquet.gz --token your-token --s3Region 
 - **Zero Configuration**: Enable with `--adaptive` flag for hands-off operation
 - **Performance Hints**: Use `--avg-event-size` when event size is known
 
+### 💾 **Handling Large/Dense Files (NEW in v3.1.2)**
+
+When importing very large files (>1GB) or dense data from cloud storage:
+
+#### **Recommended Settings for Large Files:**
+```bash
+# For files > 1GB from GCS/S3
+npx mixpanel-import gs://bucket/large-file.json \
+  --throttleGCS \
+  --throttlePauseMB 1500 \
+  --throttleResumeMB 1000 \
+  --throttleMaxBufferMB 2000 \
+  --token your-token
+
+# For extremely dense events (PostHog, Segment, etc.)
+npx mixpanel-import s3://bucket/dense-data.json \
+  --throttleMemory \
+  --adaptive \
+  --workers 5 \
+  --token your-token
+```
+
+#### **How BufferQueue Works:**
+- **Smart Buffering**: Decouples fast cloud downloads (100MB/s) from slower processing (10MB/s)
+- **Memory Protection**: Pauses cloud downloads when buffer exceeds threshold, allowing pipeline to drain
+- **Continuous Processing**: Pipeline continues sending to Mixpanel while cloud download is paused
+- **Auto-Resume**: Downloads resume automatically when buffer drains below threshold
+- **No Data Loss**: All data is processed in order without dropping records
+
+#### **Throttle Configuration Options:**
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--throttleGCS` | `false` | Enable memory-aware throttling for cloud storage |
+| `--throttlePauseMB` | `1500` | Pause downloads when buffer reaches this size (MB) |
+| `--throttleResumeMB` | `1000` | Resume downloads when buffer drops to this size (MB) |
+| `--throttleMaxBufferMB` | `2000` | Maximum buffer size before forcing pause (MB) |
+
+**Pro Tips:**
+- Use `--throttleGCS` for any GCS/S3 file over 1GB
+- Combine with `--adaptive` for automatic worker optimization
+- Monitor memory with `--verbose` to see buffer status
+- For local files, throttling is not needed (disk I/O is naturally slower)
+
 ### 🏗️ **Enterprise Features**
 - **Cloud Streaming**: Direct streaming from GCS/S3 without local download
 - **Multi-File Support**: Process entire directories or file lists

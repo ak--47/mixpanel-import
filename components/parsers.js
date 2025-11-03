@@ -897,6 +897,7 @@ async function parquetStream(filename, job = {}, isGzipped = false) {
 
 		// Decompress if gzipped
 		if (isGzipped) {
+			// @ts-ignore
 			buffer = zlib.gunzipSync(buffer);
 		}
 
@@ -1394,22 +1395,31 @@ async function createGCSJSONStream(gcsPath, job) {
 			pipeline = pipeline.pipe(gunzip);
 		}
 
-		// Add memory-based throttling if requested
+		// Add buffer queue for memory-based throttling if requested
 		if (job.throttleGCS || job.throttleMemory) {
-			const { MemoryThrottle } = require('./gcs-throttle');
-			const throttle = new MemoryThrottle({
-				highWaterMark: 16,  // Allow some buffering
-				pauseThresholdMB: job.throttlePauseMB || 1200,
-				resumeThresholdMB: job.throttleResumeMB || 800,
-				checkInterval: 100,
-				verbose: job.verbose  // Pass verbose flag for logging
+			const { BufferQueue } = require('./buffer-queue');
+			const bufferQueue = new BufferQueue({
+				maxSizeMB: job.throttleMaxBufferMB || 2000,     // Max 2GB buffer
+				pauseThresholdMB: job.throttlePauseMB || 1500,  // Pause at 1.5GB
+				resumeThresholdMB: job.throttleResumeMB || 1000, // Resume at 1GB
+				verbose: job.verbose
 			});
-			// Give throttle a reference to the GCS stream to pause/resume
-			throttle.setSourceStream(gcsReadStream);
-			pipeline = pipeline.pipe(throttle);
+
+			// Set the source stream to control
+			bufferQueue.setSourceStream(gcsReadStream);
+
+			// Create input/output streams
+			const queueInput = bufferQueue.createInputStream();
+			const queueOutput = bufferQueue.createOutputStream();
+
+			// Connect: pipeline → buffer queue input
+			pipeline.pipe(queueInput);
+
+			// Convert queue output to NDJSON object stream
+			return queueOutput.pipe(new JsonlObjectStream(job));
 		}
 
-		// Convert to NDJSON object stream with tunable performance
+		// Convert to NDJSON object stream with tunable performance (no throttling)
 		return pipeline.pipe(new JsonlObjectStream(job));
 
 	} catch (error) {
@@ -1472,6 +1482,32 @@ async function createGCSCSVStream(gcsPath, job) {
 			gcsReadStream = gcsReadStream.pipe(gunzip);
 		}
 
+		// Add buffer queue for memory-based throttling if requested
+		let sourceStream = gcsReadStream;
+		if (job.throttleGCS || job.throttleMemory) {
+			const { BufferQueue } = require('./buffer-queue');
+			const bufferQueue = new BufferQueue({
+				maxSizeMB: job.throttleMaxBufferMB || 2000,     // Max 2GB buffer
+				pauseThresholdMB: job.throttlePauseMB || 1500,  // Pause at 1.5GB
+				resumeThresholdMB: job.throttleResumeMB || 1000, // Resume at 1GB
+				verbose: job.verbose
+			});
+
+			// Set the original GCS stream (before gzip) as the source to control
+			bufferQueue.setSourceStream(gcsFile.createReadStream({
+				decompress: GCS_STREAMING_CONFIG.DECOMPRESS,
+				validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION
+			}));
+
+			// Create input/output streams
+			const queueInput = bufferQueue.createInputStream();
+			const queueOutput = bufferQueue.createOutputStream();
+
+			// Connect: gcsReadStream → buffer queue input
+			gcsReadStream.pipe(queueInput);
+			sourceStream = queueOutput;
+		}
+
 		// Parse CSV using Papa Parse
 		const mappings = Object.entries(job.aliases);
 		const csvParser = Papa.parse(Papa.NODE_STREAM_INPUT, {
@@ -1509,8 +1545,8 @@ async function createGCSCSVStream(gcsPath, job) {
 			}
 		});
 
-		// Pipe: GCS Stream -> CSV Parser -> Transform -> Output
-		return gcsReadStream.pipe(csvParser).pipe(transformer);
+		// Pipe: Source Stream -> CSV Parser -> Transform -> Output
+		return sourceStream.pipe(csvParser).pipe(transformer);
 
 	} catch (error) {
 		throw new Error(`Error creating GCS CSV stream: ${error.message}`);

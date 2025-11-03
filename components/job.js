@@ -278,8 +278,9 @@ class Job {
 		// ? throttling options for cloud storage
 		this.throttleGCS = u.isNil(opts.throttleGCS) ? false : opts.throttleGCS; //enable memory-based throttling for GCS
 		this.throttleMemory = u.isNil(opts.throttleMemory) ? false : opts.throttleMemory; //alias for throttleGCS
-		this.throttlePauseMB = opts.throttlePauseMB || 1200; //memory threshold to pause cloud downloads (MB)
-		this.throttleResumeMB = opts.throttleResumeMB || 800; //memory threshold to resume cloud downloads (MB)
+		this.throttlePauseMB = opts.throttlePauseMB || 1500; //memory threshold to pause cloud downloads (MB)
+		this.throttleResumeMB = opts.throttleResumeMB || 1000; //memory threshold to resume cloud downloads (MB)
+		this.throttleMaxBufferMB = opts.throttleMaxBufferMB || 2000; //max buffer size for BufferQueue (MB)
 
 		// ? destination options for writing output
 		this.destination = opts.destination || null; //path to write output (local file or gs://bucket/path or s3://bucket/path)

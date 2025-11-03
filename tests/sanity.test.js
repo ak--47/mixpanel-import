@@ -875,3 +875,245 @@ describe("sanity: formats", () => {
 		}, longTimeout);
 	});
 });
+
+describe("sanity: destination feature", () => {
+	const fs = require('fs');
+	const path = require('path');
+	const testDir = './test-output-sanity';
+
+	// Sample test data
+	const testEvents = [
+		{
+			event: 'Page View',
+			properties: {
+				distinct_id: 'user_001',
+				time: 1234567890000,
+				$browser: 'Chrome',
+				page: '/home'
+			}
+		},
+		{
+			event: 'Button Click',
+			properties: {
+				distinct_id: 'user_002',
+				time: 1234567891000,
+				button: 'signup'
+			}
+		}
+	];
+
+	beforeAll(() => {
+		// Create test directory
+		if (!fs.existsSync(testDir)) {
+			fs.mkdirSync(testDir, { recursive: true });
+		}
+	});
+
+	afterEach(() => {
+		// Clean up test files after each test
+		if (fs.existsSync(testDir)) {
+			const files = fs.readdirSync(testDir);
+			files.forEach(file => {
+				fs.unlinkSync(path.join(testDir, file));
+			});
+		}
+	});
+
+	afterAll(() => {
+		// Remove test directory
+		if (fs.existsSync(testDir)) {
+			fs.rmSync(testDir, { recursive: true });
+		}
+	});
+
+	test("writes to local file with explicit destination", async () => {
+		const destPath = path.join(testDir, 'explicit-dest.ndjson');
+		const data = await mp(
+			{ token: MP_TOKEN },
+			testEvents,
+			{
+				recordType: 'event',
+				dryRun: true,
+				destination: destPath
+			}
+		);
+
+		// Check file exists
+		expect(fs.existsSync(destPath)).toBe(true);
+
+		// Read and verify content
+		const content = fs.readFileSync(destPath, 'utf8');
+		const lines = content.trim().split('\n').filter(line => line.length > 0);
+		expect(lines.length).toBeGreaterThanOrEqual(2);
+
+		// Parse and verify first line
+		const firstRecord = JSON.parse(lines[0]);
+		expect(firstRecord.event).toBe('Page View');
+		expect(firstRecord.properties.distinct_id).toBe('user_001');
+	});
+
+	test("auto-generates filename when destination is a directory", async () => {
+		const data = await mp(
+			{ token: MP_TOKEN },
+			testEvents,
+			{
+				recordType: 'event',
+				dryRun: true,
+				destination: testDir
+			}
+		);
+
+		// Check that a file was created with pattern event-YYYY-MM-DD-*.ndjson
+		const files = fs.readdirSync(testDir);
+		const eventFiles = files.filter(f => f.startsWith('event-') && f.endsWith('.ndjson'));
+		expect(eventFiles.length).toBe(1);
+
+		// Check filename format
+		const pattern = /^event-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.ndjson$/;
+		expect(eventFiles[0]).toMatch(pattern);
+	});
+
+	test("writes compressed file when destination ends with .gz", async () => {
+		const destPath = path.join(testDir, 'compressed.ndjson.gz');
+		const data = await mp(
+			{ token: MP_TOKEN },
+			testEvents,
+			{
+				recordType: 'event',
+				dryRun: true,
+				destination: destPath
+			}
+		);
+
+		// Check file exists and is small (compressed)
+		expect(fs.existsSync(destPath)).toBe(true);
+		const stats = fs.statSync(destPath);
+		expect(stats.size).toBeGreaterThan(0);
+	});
+
+	test("works with destinationOnly mode", async () => {
+		const destPath = path.join(testDir, 'destination-only.ndjson');
+		const data = await mp(
+			{ token: MP_TOKEN },
+			testEvents,
+			{
+				recordType: 'event',
+				destination: destPath,
+				destinationOnly: true
+			}
+		);
+
+		// Verify no API calls were made
+		expect(data.requests).toBe(0);
+
+		// But file should have records
+		expect(fs.existsSync(destPath)).toBe(true);
+		const content = fs.readFileSync(destPath, 'utf8');
+		const lines = content.trim().split('\n').filter(line => line.length > 0);
+		expect(lines.length).toBeGreaterThanOrEqual(2);
+	});
+
+	test("throws error if destinationOnly without destination", async () => {
+		await expect(mp(
+			{ token: MP_TOKEN },
+			testEvents,
+			{
+				recordType: 'event',
+				destinationOnly: true
+				// No destination specified!
+			}
+		)).rejects.toThrow('destination is required when destinationOnly is true');
+	});
+});
+
+describe("sanity: fastMode feature", () => {
+	const testEvents = [
+		{
+			event: 'Test Event',
+			properties: {
+				distinct_id: 'user_001',
+				time: '2024-01-01T00:00:00Z', // String time that would normally be fixed
+				nested: { deep: { value: 'test' } },
+				value: 100
+			}
+		}
+	];
+
+	test("skips transformations in fast mode", async () => {
+		const data = await mp(
+			{ token: MP_TOKEN },
+			testEvents,
+			{
+				recordType: 'event',
+				dryRun: true,
+				fastMode: true,
+				fixTime: true // This should be ignored in fast mode
+			}
+		);
+
+		// In fast mode, the time should remain as a string
+		expect(data.dryRun).toBeDefined();
+		expect(data.dryRun[0].properties.time).toBe('2024-01-01T00:00:00Z');
+		expect(typeof data.dryRun[0].properties.time).toBe('string');
+	});
+
+	test("applies transformations in normal mode", async () => {
+		const data = await mp(
+			{ token: MP_TOKEN },
+			testEvents,
+			{
+				recordType: 'event',
+				dryRun: true,
+				fastMode: false, // Normal mode
+				fixTime: true
+			}
+		);
+
+		// In normal mode, time should be converted to milliseconds
+		expect(data.dryRun).toBeDefined();
+		expect(typeof data.dryRun[0].properties.time).toBe('number');
+		expect(data.dryRun[0].properties.time).toBe(1704067200000); // 2024-01-01T00:00:00Z in ms
+	});
+
+	test("works with both fastMode and destination", async () => {
+		const fs = require('fs');
+		const path = require('path');
+		const testDir = './test-output-fastmode';
+		const destPath = path.join(testDir, 'fast-dest.ndjson');
+
+		// Create test directory
+		if (!fs.existsSync(testDir)) {
+			fs.mkdirSync(testDir, { recursive: true });
+		}
+
+		try {
+			const data = await mp(
+				{ token: MP_TOKEN },
+				testEvents,
+				{
+					recordType: 'event',
+					dryRun: true,
+					fastMode: true,
+					destination: destPath
+				}
+			);
+
+			// Check file exists
+			expect(fs.existsSync(destPath)).toBe(true);
+
+			// Verify data is untransformed (fast mode)
+			const content = fs.readFileSync(destPath, 'utf8');
+			const lines = content.trim().split('\n').filter(line => line.length > 0);
+			expect(lines.length).toBeGreaterThanOrEqual(1);
+
+			const firstRecord = JSON.parse(lines[0]);
+			// Time should be exactly as provided (not transformed)
+			expect(firstRecord.properties.time).toBe('2024-01-01T00:00:00Z');
+		} finally {
+			// Clean up
+			if (fs.existsSync(testDir)) {
+				fs.rmSync(testDir, { recursive: true });
+			}
+		}
+	});
+});
