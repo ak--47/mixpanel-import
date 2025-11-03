@@ -37,14 +37,25 @@ class MemoryThrottle extends Transform {
 	_checkMemoryAndResume() {
 		const memUsage = process.memoryUsage();
 		const heapUsed = memUsage.heapUsed / 1024 / 1024;
+		const heapTotal = memUsage.heapTotal / 1024 / 1024;
 		const rss = memUsage.rss / 1024 / 1024;
+		const external = memUsage.external / 1024 / 1024;
 		this.checkCount++;
 
 		// Only log every 10 checks (10 seconds) or if memory changed significantly
 		const shouldLog = this.checkCount % 10 === 0 || Math.abs(heapUsed - this.lastLoggedMem) > 100;
 		if (shouldLog) {
-			console.log(`⏸️  Throttle: Memory status - Heap: ${heapUsed.toFixed(0)}MB, RSS: ${rss.toFixed(0)}MB (resume at < ${this.resumeThresholdMB}MB) [${this.checkCount}s paused]`);
+			console.log(`⏸️  Throttle: Memory - Heap: ${heapUsed.toFixed(0)}/${heapTotal.toFixed(0)}MB, RSS: ${rss.toFixed(0)}MB, External: ${external.toFixed(0)}MB`);
+			console.log(`   Waiting for heap < ${this.resumeThresholdMB}MB to resume (${this.checkCount}s paused, ${this.objectCount} objects processed)`);
 			this.lastLoggedMem = heapUsed;
+
+			// Force garbage collection if available to help memory drop
+			if (global.gc) {
+				console.log(`   Triggering manual GC to help release memory...`);
+				global.gc();
+				const newHeap = process.memoryUsage().heapUsed / 1024 / 1024;
+				console.log(`   After GC: Heap ${newHeap.toFixed(0)}MB (freed ${(heapUsed - newHeap).toFixed(0)}MB)`);
+			}
 		}
 
 		// Resume if memory dropped enough

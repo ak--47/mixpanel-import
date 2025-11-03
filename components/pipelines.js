@@ -420,6 +420,7 @@ function createSizeBatcher(job, bytesCache) {
 function createHttpSender(job, jsonCache, fileStream, gcThreshold) {
 	const flush = job.transport === 'undici' ? flushToMixpanelWithUndici : flushToMixpanel;
 	let batchId = 0;
+	let lastLogTime = Date.now();
 
 	return new ParallelTransform(job.workers, {
 		objectMode: true,
@@ -431,6 +432,14 @@ function createHttpSender(job, jsonCache, fileStream, gcThreshold) {
 			job.requests++;
 			job.batches++;
 			job.addBatchLength(batch.length);
+
+			// Log batch flushes periodically to confirm pipeline is draining
+			const now = Date.now();
+			if (now - lastLogTime > 5000) {  // Log every 5 seconds
+				const heapUsed = process.memoryUsage().heapUsed / 1024 / 1024;
+				console.log(`📤 Pipeline: Flushing batch #${thisBatchId} (${batch.length} records, ${job.requests} total requests, heap: ${heapUsed.toFixed(0)}MB)`);
+				lastLogTime = now;
+			}
 
 			// Trigger manual GC if enabled and threshold exceeded
 			if (gcThreshold && process.memoryUsage().heapUsed > gcThreshold) {
