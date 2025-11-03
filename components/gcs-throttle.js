@@ -63,14 +63,29 @@ class MemoryThrottle extends Transform {
 
 			// Force garbage collection if available to help memory drop
 			if (global.gc && this.checkCount % 10 === 0) {  // GC every 10 seconds
-				console.log(`    └─ Running GC...`);
+				console.log(`    └─ Running aggressive GC (3 cycles)...`);
+
+				// Run GC multiple times to be more aggressive
 				global.gc();
+				global.gc();
+				global.gc();
+
+				// Force a full GC with expose-gc flag
+				if (global.gc) {
+					global.gc(true); // Full GC if supported
+				}
+
 				const newHeap = process.memoryUsage().heapUsed / 1024 / 1024;
 				const freed = heapUsed - newHeap;
 				if (freed > 0) {
 					console.log(`       ✓ Freed ${freed.toFixed(0)}MB → Now at ${newHeap.toFixed(0)}MB`);
 				} else {
 					console.log(`       • No memory freed (stable at ${newHeap.toFixed(0)}MB)`);
+					// If we're stuck and can't free memory, log what's holding it
+					if (heapUsed - this.resumeThresholdMB < 50 && heapUsed - this.resumeThresholdMB > 0) {
+						console.log(`       ⚠️  Stuck ${(heapUsed - this.resumeThresholdMB).toFixed(0)}MB above resume threshold`);
+						console.log(`       💡 Pipeline minimum memory with current config: ~${newHeap.toFixed(0)}MB`);
+					}
 				}
 			}
 		}
