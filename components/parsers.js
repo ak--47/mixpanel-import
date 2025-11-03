@@ -181,14 +181,14 @@ const getParquetRead = async () => {
 //
 // TOP IMPACT TUNING PARAMETERS:
 // 1. MEMORY_CONFIG.FREE_MEMORY_THRESHOLD (0.5 → 0.8 for dedicated processing)
-// 2. GCS_STREAMING_CONFIG.GCS_BUFFER_MULTIPLIER (100 → 200 for large files)
-// 3. STREAM_CONFIG.OBJECT_MODE_MULTIPLIER (2 → 10 for high throughput)
-// 4. JSON_CONFIG.OBJECT_STREAM_HIGH_WATER (1000 → 5000 for large datasets)
+// 2. GCS_STREAMING_CONFIG.OBJECT_STREAM_MULTIPLIER (keep at 1 to prevent buffering)
+// 3. JSON_CONFIG.OBJECT_STREAM_HIGH_WATER (1000 → 5000 for large datasets)
+// 4. job.highWater (16-50 for dense events, 100-500 for small events)
 
 // GCS Streaming Configuration
 const GCS_STREAMING_CONFIG = {
-	// Buffer sizes for high-performance streaming
-	GCS_BUFFER_MULTIPLIER: 100,      // Multiply job.highWater by this for GCS reads
+	// Buffer multiplier for object streams
+	// IMPORTANT: Keep this at 1 to prevent excessive buffering
 	OBJECT_STREAM_MULTIPLIER: 1,     // No multiplier - use exact highWater to prevent buffering
 
 	// Gzip decompression settings
@@ -206,9 +206,6 @@ const GCS_STREAMING_CONFIG = {
 
 // S3 Streaming Configuration
 const S3_STREAMING_CONFIG = {
-	// Buffer sizes for high-performance streaming
-	S3_BUFFER_MULTIPLIER: 100,       // Multiply job.highWater by this for S3 reads
-	OBJECT_STREAM_MULTIPLIER: 10,    // Multiply job.highWater by this for object stream
 
 	// Gzip decompression settings
 	GZIP_CHUNK_SIZE: 64 * 1024,      // 64KB chunks for decompression
@@ -247,7 +244,6 @@ const FILE_PROCESSING_CONFIG = {
 // Stream Configuration (prepared for future use)
 const _STREAM_CONFIG = {
 	DEFAULT_HIGH_WATER_MARK: 16,     // Default stream buffer size (can be overridden by job.highWater)
-	OBJECT_MODE_MULTIPLIER: 2,       // Multiply buffer size for object mode streams  
 	AUTO_CLOSE: true,                // Auto-close file streams
 	EMIT_CLOSE: true,                // Emit close events
 
@@ -325,7 +321,7 @@ async function determineDataType(data, job) {
 	// ALL OTHER PARSING
 	let parsingError;
 	try {
-		const { lineByLineFileExt, objectModeFileExt, tableFileExt, supportedFileExt, streamFormat, forceStream, highWater } = job;
+		const { supportedFileExt, streamFormat, forceStream, highWater } = job;
 		let isArrayOfFileNames = false; // !ugh ... so disorganized 
 		//data might be an array of filenames
 		if (Array.isArray(data) && data.every(item => typeof item === 'string')) {
@@ -340,7 +336,7 @@ async function determineDataType(data, job) {
 				if (pathInfo.isFile) {
 					const fileInfo = fs.lstatSync(pathInfo.path);
 					//it's a file
-					const { isGzipped, baseFormat, parsingCase: detectedCase } = analyzeFileFormat(pathInfo.path, job);
+					const { isGzipped, parsingCase: detectedCase } = analyzeFileFormat(pathInfo.path, job);
 					let parsingCase = detectedCase;
 
 					// Allow streamFormat to override detected format
@@ -708,7 +704,7 @@ function existingStreamInterface(inputStream) {
 	const transform = new Transform({
 		objectMode: true,
 		highWaterMark: 16,
-		transform(chunk, encoding, callback) {
+		transform(_chunk, _encoding, callback) {
 			// This will be called by readline events
 			callback();
 		}
@@ -1380,8 +1376,8 @@ async function createGCSJSONStream(gcsPath, job) {
 		const gcsReadStream = gcsFile.createReadStream({
 			// Use configurable compression and validation settings
 			decompress: GCS_STREAMING_CONFIG.DECOMPRESS,
-			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION,
-			highWaterMark: 64 * 1024  // 64KB chunks to reduce memory pressure
+			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION
+			// Note: highWaterMark is not a valid option for GCS createReadStream
 		});
 
 		// Create transform pipeline based on compression
@@ -1458,8 +1454,8 @@ async function createGCSCSVStream(gcsPath, job) {
 		// Create read stream with throttling
 		let gcsReadStream = gcsFile.createReadStream({
 			decompress: GCS_STREAMING_CONFIG.DECOMPRESS,
-			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION,
-			highWaterMark: 64 * 1024  // 64KB chunks (much smaller than default)
+			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION
+			// Note: highWaterMark is not a valid option for GCS createReadStream
 		});
 
 		// Handle gzip compression
@@ -1558,8 +1554,8 @@ async function createGCSParquetStream(gcsPath, job) {
 		// Create GCS read stream with throttling
 		let gcsReadStream = gcsFile.createReadStream({
 			decompress: GCS_STREAMING_CONFIG.DECOMPRESS,
-			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION,
-			highWaterMark: 64 * 1024  // 64KB chunks to reduce memory pressure
+			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION
+			// Note: highWaterMark is not a valid option for GCS createReadStream
 		});
 
 		// Handle gzip decompression for .parquet.gz files

@@ -270,10 +270,6 @@ declare namespace main {
      */
     forceStream?: boolean;
     /**
-     * - 2^N; highWaterMark value for stream [DEPRECATED] ... use highWater instead
-     */
-    streamSize?: number;
-    /**
      * Stream buffer size (number of objects buffered between pipeline stages)
      * - Lower values (16-50): Less memory usage, better for dense/large events
      * - Higher values (100-500): Better throughput for small events
@@ -473,6 +469,12 @@ declare namespace main {
      * the properties will be deleted from the data before it is sent to mixpanel
      */
     scrubProps?: string[];
+
+    /**
+     * an array of column names to drop from CSV/TSV data
+     * the columns will be removed from the data before it is processed
+     */
+    dropColumns?: string[];
 
     /**
      * if true, will add a token or $token to the data

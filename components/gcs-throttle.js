@@ -23,7 +23,7 @@ class MemoryThrottle extends Transform {
 		this.pauseThresholdMB = options.pauseThresholdMB || 1200;
 		this.resumeThresholdMB = options.resumeThresholdMB || 800;
 		this.checkInterval = options.checkInterval || 100; // Check every 100ms
-		this.isPaused = false;
+		this._isPaused = false; // Internal state tracker (renamed to avoid conflict with Transform.isPaused())
 		this.lastCheck = Date.now();
 		this.objectCount = 0;
 		this.pauseCount = 0;
@@ -39,8 +39,8 @@ class MemoryThrottle extends Transform {
 			const heapUsed = process.memoryUsage().heapUsed / 1024 / 1024;
 
 			// Pause if memory is too high
-			if (heapUsed > this.pauseThresholdMB && !this.isPaused) {
-				this.isPaused = true;
+			if (heapUsed > this.pauseThresholdMB && !this._isPaused) {
+				this._isPaused = true;
 				this.pauseCount++;
 
 				console.log(`🛑 Throttle: Pausing GCS (memory: ${heapUsed.toFixed(0)}MB > ${this.pauseThresholdMB}MB) [pause #${this.pauseCount}]`);
@@ -52,7 +52,7 @@ class MemoryThrottle extends Transform {
 
 					if (currentHeap < this.resumeThresholdMB) {
 						clearInterval(checkMemory);
-						this.isPaused = false;
+						this._isPaused = false;
 						console.log(`▶️  Throttle: Resuming GCS (memory: ${currentHeap.toFixed(0)}MB < ${this.resumeThresholdMB}MB)`);
 						callback(null, chunk);
 					}
