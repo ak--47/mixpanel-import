@@ -884,6 +884,17 @@ class Job {
 		const eps = this.recordsProcessed / duration;
 		return eps.toFixed(2);
 	}
+	getRps() {
+		const duration = (Date.now() - dayjs(this.startTime).valueOf()) / 1000;
+		const rps = this.requests / duration;
+		return rps.toFixed(2);
+	}
+	getMbps() {
+		const duration = (Date.now() - dayjs(this.startTime).valueOf()) / 1000;
+		const bytesPerSecond = this.bytesProcessed / duration;
+		// Use u.bytesHuman to format the rate nicely
+		return u.bytesHuman(bytesPerSecond) + '/s';
+	}
 	/**
 	 * summary of the results of an import
 	 * @param {boolean} includeResponses - should `errors` and `responses` be included in summary

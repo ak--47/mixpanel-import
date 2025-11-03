@@ -12,7 +12,7 @@ const zlib = require('zlib');
  * Creates a writable stream for the specified destination
  * @param {string} destination - Path to write (local file, gs://, or s3://)
  * @param {object} job - Job configuration with cloud credentials
- * @returns {Promise<stream.Writable>} Writable stream for the destination
+ * @returns {Promise<import('stream').Writable>} Writable stream for the destination
  */
 async function createDestinationStream(destination, job) {
 	if (!destination) {
@@ -59,7 +59,7 @@ async function createDestinationStream(destination, job) {
  * Creates a local file writable stream
  * @param {string} filePath - Local file path
  * @param {object} job - Job configuration
- * @returns {stream.Writable} Writable stream for local file
+ * @returns {import('stream').Writable} Writable stream for local file
  */
 function createLocalDestinationStream(filePath, job) {
 	// Ensure directory exists
@@ -69,20 +69,11 @@ function createLocalDestinationStream(filePath, job) {
 	}
 
 	// Create write stream
-	let writeStream = fs.createWriteStream(filePath, {
+	const fileStream = fs.createWriteStream(filePath, {
 		flags: 'w',
 		encoding: 'utf8',
 		highWaterMark: 64 * 1024 // 64KB buffer
 	});
-
-	// Add gzip compression if file ends with .gz
-	if (filePath.endsWith('.gz')) {
-		const gzip = zlib.createGzip({
-			level: 6, // Balanced compression
-		});
-		gzip.pipe(writeStream);
-		writeStream = gzip;
-	}
 
 	// Create a transform stream that converts objects to NDJSON
 	const jsonLineWriter = new Transform({
@@ -99,8 +90,17 @@ function createLocalDestinationStream(filePath, job) {
 		}
 	});
 
-	// Pipe through JSON line writer to file stream
-	jsonLineWriter.pipe(writeStream);
+	// Add gzip compression if file ends with .gz
+	if (filePath.endsWith('.gz')) {
+		const gzip = zlib.createGzip({
+			level: 6, // Balanced compression
+		});
+		// Pipe: jsonLineWriter -> gzip -> fileStream
+		jsonLineWriter.pipe(gzip).pipe(fileStream);
+	} else {
+		// Pipe: jsonLineWriter -> fileStream
+		jsonLineWriter.pipe(fileStream);
+	}
 
 	// Log when destination is ready
 	if (job.verbose) {
@@ -115,7 +115,7 @@ function createLocalDestinationStream(filePath, job) {
  * Creates a Google Cloud Storage writable stream
  * @param {string} gcsPath - GCS path (gs://bucket/path/to/file)
  * @param {object} job - Job configuration with GCS credentials
- * @returns {Promise<stream.Writable>} Writable stream for GCS
+ * @returns {Promise<import('stream').Writable>} Writable stream for GCS
  */
 async function createGCSDestinationStream(gcsPath, job) {
 	const { Storage } = require('@google-cloud/storage');
@@ -199,11 +199,10 @@ async function createGCSDestinationStream(gcsPath, job) {
  * Creates an Amazon S3 writable stream
  * @param {string} s3Path - S3 path (s3://bucket/path/to/file)
  * @param {object} job - Job configuration with S3 credentials
- * @returns {Promise<stream.Writable>} Writable stream for S3
+ * @returns {Promise<import('stream').Writable>} Writable stream for S3
  */
 async function createS3DestinationStream(s3Path, job) {
-	const { S3Client } = require('@aws-sdk/client-s3');
-	const { Upload } = require('@aws-sdk/lib-storage');
+	const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 	const { PassThrough } = require('stream');
 
 	// Parse S3 path
@@ -227,39 +226,45 @@ async function createS3DestinationStream(s3Path, job) {
 	}
 	const s3Client = new S3Client(s3Config);
 
-	// Create a PassThrough stream for S3 upload
-	let uploadStream = new PassThrough();
+	// Create a PassThrough stream to collect all data
+	const dataStream = new PassThrough();
+	const chunks = [];
+
+	// Collect all chunks
+	dataStream.on('data', (chunk) => {
+		chunks.push(chunk);
+	});
+
+	// When stream ends, upload to S3
+	dataStream.on('end', async () => {
+		try {
+			const body = Buffer.concat(chunks);
+
+			// Upload to S3
+			await s3Client.send(new PutObjectCommand({
+				Bucket: bucketName,
+				Key: key,
+				Body: body,
+				ContentType: key.endsWith('.gz') ? 'application/gzip' : 'application/x-ndjson'
+			}));
+
+			if (job.verbose) {
+				console.log(`✅ Successfully wrote to S3: ${s3Path}`);
+			}
+		} catch (error) {
+			console.error(`❌ S3 write error: ${error.message}`);
+		}
+	});
 
 	// Add gzip compression if needed
+	let finalStream = dataStream;
 	if (key.endsWith('.gz')) {
 		const gzip = zlib.createGzip({
 			level: 6, // Balanced compression
 		});
-		gzip.pipe(uploadStream);
-		uploadStream = gzip;
+		gzip.pipe(dataStream);
+		finalStream = gzip;
 	}
-
-	// Create S3 upload
-	const upload = new Upload({
-		client: s3Client,
-		params: {
-			Bucket: bucketName,
-			Key: key,
-			Body: uploadStream,
-			ContentType: key.endsWith('.gz') ? 'application/gzip' : 'application/x-ndjson'
-		},
-		queueSize: 4, // Concurrent parts
-		partSize: 5 * 1024 * 1024, // 5MB parts
-	});
-
-	// Start the upload asynchronously
-	upload.done().then(() => {
-		if (job.verbose) {
-			console.log(`✅ Successfully wrote to S3: ${s3Path}`);
-		}
-	}).catch(error => {
-		console.error(`❌ S3 write error: ${error.message}`);
-	});
 
 	// Create a transform stream that converts objects to NDJSON
 	const jsonLineWriter = new Transform({
@@ -276,8 +281,8 @@ async function createS3DestinationStream(s3Path, job) {
 		}
 	});
 
-	// Pipe through JSON line writer to upload stream
-	jsonLineWriter.pipe(uploadStream);
+	// Pipe through JSON line writer to final stream
+	jsonLineWriter.pipe(finalStream);
 
 	// Log when destination is ready
 	if (job.verbose) {
@@ -290,8 +295,8 @@ async function createS3DestinationStream(s3Path, job) {
 
 /**
  * Creates a tee stream that duplicates data to both Mixpanel and a destination
- * @param {stream.Writable} destinationStream - Stream to write to destination
- * @returns {stream.Transform} Transform stream that passes data through and writes to destination
+ * @param {import('stream').Writable} destinationStream - Stream to write to destination
+ * @returns {import('stream').Transform} Transform stream that passes data through and writes to destination
  */
 function createTeeStream(destinationStream) {
 	return new Transform({
@@ -304,6 +309,7 @@ function createTeeStream(destinationStream) {
 			// Write each record to destination (don't wait for it)
 			for (const record of records) {
 				destinationStream.write(record, (err) => {
+					// @ts-ignore - Node.js errors have a code property
 					if (err && err.code !== 'ERR_STREAM_DESTROYED') {
 						console.error('Destination write error:', err);
 					}

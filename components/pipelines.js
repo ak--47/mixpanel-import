@@ -1,5 +1,6 @@
 // $ parsers
 const { chunkForSize } = require("./parsers.js");
+const u = require('ak-tools');
 
 // $ native node streams
 const { Transform, PassThrough, pipeline } = require('stream');
@@ -510,7 +511,7 @@ function createLogger(job, LOG_INTERVAL = 100) {
 			} else {
 				const now = Date.now();
 				if ((job.verbose || job.showProgress) && (now - lastLogUpdate >= LOG_INTERVAL)) {
-					counter(job.recordType, job.recordsProcessed, job.requests, job.getEps(), job.success, job.failed, job.bytesProcessed, job.progressCallback, job.empty, job.startTime);
+					counter(job.recordType, job.recordsProcessed, job.requests, job.getEps(), job.success, job.failed, job.bytesProcessed, job.progressCallback, job.empty, job.startTime, job.getRps(), job.getMbps());
 					lastLogUpdate = now;
 				}
 			}

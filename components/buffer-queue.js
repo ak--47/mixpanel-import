@@ -7,6 +7,7 @@
 
 const { Transform, Writable, Readable } = require('stream');
 const { EventEmitter } = require('events');
+const u = require('ak-tools');
 
 /**
  * In-memory buffer queue that decouples source from sink
@@ -37,6 +38,8 @@ class BufferQueue extends EventEmitter {
 		this.memCheckInterval = 100; // Check every 100ms
 		this.pausedAt = 0;
 		this.checkCount = 0;
+		this.memoryAtPause = 0; // Track memory when pause starts
+		this.objectsDequeuedAtPause = 0; // Track objects sent when pause starts
 
 		// Stream state
 		this.sourceEnded = false;
@@ -187,14 +190,18 @@ class BufferQueue extends EventEmitter {
 		this.isPaused = true;
 		this.pausedAt = Date.now();
 		this.checkCount = 0;
+		// Track memory at pause start to show how much we free
+		this.memoryAtPause = process.memoryUsage().heapUsed / 1024 / 1024;
+		this.objectsDequeuedAtPause = this.objectsDequeued;
 
 		if (this.verbose) {
 			console.log('');
 			console.log(`🛑 BUFFER QUEUE: Pausing GCS input`);
-			console.log(`    ├─ Queue size: ${queueSizeMB.toFixed(0)}MB > ${this.pauseThresholdMB}MB threshold`);
+			console.log(`    ├─ Queue size: ${u.bytesHuman(this.queueSizeBytes)} > ${u.bytesHuman(this.pauseThresholdMB * 1024 * 1024)} threshold`);
 			console.log(`    ├─ Queue depth: ${this.queue.length.toLocaleString()} objects`);
+			console.log(`    ├─ Memory: Heap ${u.bytesHuman(this.memoryAtPause * 1024 * 1024)}`);
 			console.log(`    ├─ Objects: ${this.objectsQueued.toLocaleString()} queued, ${this.objectsDequeued.toLocaleString()} sent`);
-			console.log(`    └─ Pipeline continues draining buffered data...`);
+			console.log(`    └─ Pipeline continues draining buffered data to Mixpanel...`);
 		}
 
 		// Pause the actual source stream
@@ -212,15 +219,20 @@ class BufferQueue extends EventEmitter {
 		const seconds = pausedDuration % 60;
 		const timeStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${pausedDuration}s`;
 
+		const heapUsed = process.memoryUsage().heapUsed / 1024 / 1024;
+		const memoryFreed = this.memoryAtPause - heapUsed;
+		const objectsSentWhilePaused = this.objectsDequeued - this.objectsDequeuedAtPause;
+
 		this.isPaused = false;
 
 		if (this.verbose) {
 			console.log('');
 			console.log(`▶️  BUFFER QUEUE: Resuming GCS input`);
-			console.log(`    ├─ Queue size: ${queueSizeMB.toFixed(0)}MB < ${this.resumeThresholdMB}MB threshold`);
+			console.log(`    ├─ Queue size: ${u.bytesHuman(this.queueSizeBytes)} < ${u.bytesHuman(this.resumeThresholdMB * 1024 * 1024)} threshold`);
 			console.log(`    ├─ Duration: Paused for ${timeStr}`);
+			console.log(`    ├─ Memory freed: ${u.bytesHuman(memoryFreed * 1024 * 1024)} (from ${u.bytesHuman(this.memoryAtPause * 1024 * 1024)} to ${u.bytesHuman(heapUsed * 1024 * 1024)})`);
 			console.log(`    ├─ Queue depth: ${this.queue.length.toLocaleString()} objects remaining`);
-			console.log(`    └─ Objects: ${(this.objectsDequeued - (this.objectsQueued - this.queue.length)).toLocaleString()} processed while paused`);
+			console.log(`    └─ Sent to Mixpanel while paused: ${objectsSentWhilePaused.toLocaleString()} objects`);
 		}
 
 		// Resume the actual source stream
@@ -230,6 +242,8 @@ class BufferQueue extends EventEmitter {
 
 		this.pausedAt = 0;
 		this.checkCount = 0;
+		this.memoryAtPause = 0;
+		this.objectsDequeuedAtPause = 0;
 	}
 
 	/**
@@ -238,8 +252,8 @@ class BufferQueue extends EventEmitter {
 	_logPausedStatus() {
 		this.checkCount++;
 
-		// Log every 10 seconds
-		if (this.checkCount % 10 !== 0) return;
+		// Log every 30 seconds
+		if (this.checkCount % 30 !== 0) return;
 
 		const pausedDuration = Math.floor((Date.now() - this.pausedAt) / 1000);
 		const minutes = Math.floor(pausedDuration / 60);
@@ -249,17 +263,23 @@ class BufferQueue extends EventEmitter {
 		const queueSizeMB = this.queueSizeBytes / 1024 / 1024;
 		const heapUsed = process.memoryUsage().heapUsed / 1024 / 1024;
 
-		console.log('');
-		console.log(`    ⏸️  GCS PAUSED - ${timeStr} | QUEUE DRAINING`);
-		console.log(`    ├─ Queue: ${queueSizeMB.toFixed(0)}MB (${this.queue.length.toLocaleString()} objects)`);
-		console.log(`    ├─ Memory: Heap ${heapUsed.toFixed(0)}MB`);
-		console.log(`    ├─ Progress: ${this.objectsDequeued.toLocaleString()} / ${this.objectsQueued.toLocaleString()} objects sent`);
-		console.log(`    └─ Target: Resume when queue < ${this.resumeThresholdMB}MB`);
+		// Calculate memory freed since pause
+		const memoryFreed = this.memoryAtPause - heapUsed;
+		const objectsSentWhilePaused = this.objectsDequeued - this.objectsDequeuedAtPause;
 
-		// If queue is actively draining, show rate
-		if (this.objectsDequeued > 0) {
-			const drainRate = this.objectsDequeued / (pausedDuration || 1);
-			console.log(`    └─ Drain rate: ${drainRate.toFixed(1)} objects/sec to Mixpanel`);
+		console.log('');
+		console.log(`    ⏸️  GCS PAUSED - ${timeStr} | ACTIVELY DRAINING TO MIXPANEL`);
+		console.log(`    ├─ Queue: ${u.bytesHuman(this.queueSizeBytes)} (${this.queue.length.toLocaleString()} objects remaining)`);
+		console.log(`    ├─ Memory: Heap ${u.bytesHuman(heapUsed * 1024 * 1024)} (freed ${u.bytesHuman(memoryFreed * 1024 * 1024)} since pause)`);
+		console.log(`    ├─ Progress: ${objectsSentWhilePaused.toLocaleString()} objects sent to Mixpanel while paused`);
+		console.log(`    ├─ Total: ${this.objectsDequeued.toLocaleString()} / ${this.objectsQueued.toLocaleString()} objects sent overall`);
+		console.log(`    └─ Target: Resume GCS when queue < ${u.bytesHuman(this.resumeThresholdMB * 1024 * 1024)} (need to drain ${u.bytesHuman((queueSizeMB - this.resumeThresholdMB) * 1024 * 1024)} more)`);
+
+		// Show drain rate if actively draining
+		if (objectsSentWhilePaused > 0) {
+			const drainRate = objectsSentWhilePaused / (pausedDuration || 1);
+			const mbDrainRate = (this.memoryAtPause - heapUsed) / (pausedDuration || 1) * 60; // MB per minute
+			console.log(`    └─ Rates: ${drainRate.toFixed(1)} objects/sec | ${u.bytesHuman(mbDrainRate * 1024 * 1024)}/min memory freed`);
 		}
 	}
 

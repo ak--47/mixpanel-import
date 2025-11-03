@@ -38,7 +38,7 @@ class MemoryThrottle extends Transform {
 
 	/**
 	 * Set the source stream that we'll pause/resume
-	 * @param {stream.Readable} source - The GCS stream to control
+	 * @param {import('stream').Readable} source - The GCS stream to control
 	 */
 	setSourceStream(source) {
 		this.sourceStream = source;

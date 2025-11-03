@@ -714,6 +714,70 @@ npx mixpanel-import huge_file.json \
 
 ---
 
+## 🏗️ Recommended Settings for Large/Dense Files
+
+### **Handling Multi-GB Files from Cloud Storage**
+
+When importing large files (>1GB) from Google Cloud Storage or S3, especially with dense events (>5KB each), use these settings to prevent OOM errors:
+
+```bash
+# For large files with dense events (e.g., PostHog exports)
+npx mixpanel-import gs://bucket/large-file.json \
+  --token your-token \
+  --throttleGCS \           # Pause cloud downloads when memory is high
+  --throttlePauseMB 1500 \  # Pause at 1.5GB heap (default)
+  --throttleResumeMB 1000 \ # Resume at 1GB heap (default)
+  --workers 10 \            # Lower workers for dense data
+  --highWater 50 \          # Lower buffer size
+  --verbose                 # Monitor pause/resume cycles
+
+# Alternative: Use adaptive scaling
+npx mixpanel-import gs://bucket/large-file.json \
+  --token your-token \
+  --adaptive \              # Auto-configure based on event density
+  --throttleGCS \           # Still use throttling for safety
+  --verbose
+```
+
+### **Key Options for Memory Management**
+
+| Option | Description | When to Use |
+|--------|-------------|-------------|
+| `--throttleGCS` | Pauses cloud downloads when memory exceeds threshold | Large cloud files (>500MB) |
+| `--throttleMemory` | Alias for throttleGCS | Same as above |
+| `--throttlePauseMB` | Memory threshold to pause (MB) | Default 1500, lower if still OOMing |
+| `--throttleResumeMB` | Memory threshold to resume (MB) | Default 1000, must be < pauseMB |
+| `--adaptive` | Auto-adjusts workers and buffers | Dense events (>2KB each) |
+| `--highWater` | Stream buffer size | Lower (16-50) for dense events |
+| `--workers` | Concurrent HTTP requests | Lower (5-10) for dense data |
+
+### **How Throttling Works**
+
+1. **BufferQueue decouples cloud storage from processing** - Creates a buffer between fast GCS/S3 downloads and slower Mixpanel uploads
+2. **Automatic pause/resume** - When heap exceeds `throttlePauseMB`, cloud downloads pause but pipeline continues draining
+3. **Backpressure management** - Prevents unbounded memory growth while maintaining throughput
+4. **Verbose monitoring** - Shows pause/resume cycles and memory usage in real-time
+
+### **Example Output with Throttling**
+```
+🛑 BUFFER QUEUE: Pausing GCS input
+    ├─ Queue size: 1523MB > 1500MB threshold
+    ├─ Queue depth: 152,304 objects
+    └─ Pipeline continues draining buffered data...
+
+    📤 Pipeline draining while paused: Batch #134 sent (heap: 1495MB)
+    ⏸️  GCS PAUSED - 2m 15s | QUEUE DRAINING
+    ├─ Queue: 982MB (98,234 objects)
+    └─ Progress: 54,070 / 152,304 objects sent
+
+▶️  BUFFER QUEUE: Resuming GCS input
+    ├─ Queue size: 982MB < 1000MB threshold
+    ├─ Duration: Paused for 2m 15s
+    └─ Objects: 54,070 processed while paused
+```
+
+---
+
 ## 🔍 Troubleshooting
 
 ### ❌ **Common Issues**
