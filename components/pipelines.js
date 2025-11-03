@@ -433,11 +433,15 @@ function createHttpSender(job, jsonCache, fileStream, gcThreshold) {
 			job.batches++;
 			job.addBatchLength(batch.length);
 
-			// Log batch flushes periodically to confirm pipeline is draining
+			// Only log batch flushes when throttle is paused to confirm draining
+			// Check if memory is high (indicating throttle might be active)
+			const heapUsed = process.memoryUsage().heapUsed / 1024 / 1024;
+			const throttleThreshold = job.throttlePauseMB || 3250;
 			const now = Date.now();
-			if (now - lastLogTime > 5000) {  // Log every 5 seconds
-				const heapUsed = process.memoryUsage().heapUsed / 1024 / 1024;
-				console.log(`📤 Pipeline: Flushing batch #${thisBatchId} (${batch.length} records, ${job.requests} total requests, heap: ${heapUsed.toFixed(0)}MB)`);
+
+			// Only log if memory is near/above throttle threshold AND 5 seconds elapsed
+			if (heapUsed > (throttleThreshold * 0.9) && now - lastLogTime > 5000) {
+				console.log(`📤 Pipeline draining: Batch #${thisBatchId} flushed (${batch.length} records, heap: ${heapUsed.toFixed(0)}MB)`);
 				lastLogTime = now;
 			}
 
