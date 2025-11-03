@@ -1381,6 +1381,9 @@ async function createGCSJSONStream(gcsPath, job) {
 			// Note: highWaterMark is not a valid option for GCS createReadStream
 		});
 
+		// IMPORTANT: Save reference to original stream for throttle control
+		const originalGcsStream = gcsReadStream;
+
 		// Create transform pipeline based on compression
 		let pipeline = gcsReadStream;
 
@@ -1405,14 +1408,15 @@ async function createGCSJSONStream(gcsPath, job) {
 				verbose: job.verbose
 			});
 
-			// Set the source stream to control
-			bufferQueue.setSourceStream(gcsReadStream);
+			// CRITICAL: Set the ORIGINAL GCS stream (before any transformations) as the source to control
+			// This is the stream we need to pause/resume, not the gunzipped version
+			bufferQueue.setSourceStream(originalGcsStream);
 
 			// Create input/output streams
 			const queueInput = bufferQueue.createInputStream();
 			const queueOutput = bufferQueue.createOutputStream();
 
-			// Connect: pipeline → buffer queue input
+			// Connect: pipeline (potentially gunzipped) → buffer queue input
 			pipeline.pipe(queueInput);
 
 			// Convert queue output to NDJSON object stream
@@ -1465,11 +1469,14 @@ async function createGCSCSVStream(gcsPath, job) {
 		}
 
 		// Create read stream with throttling
-		let gcsReadStream = gcsFile.createReadStream({
+		const originalGcsStream = gcsFile.createReadStream({
 			decompress: GCS_STREAMING_CONFIG.DECOMPRESS,
 			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION
 			// Note: highWaterMark is not a valid option for GCS createReadStream
 		});
+
+		// Save reference for throttle control
+		let gcsReadStream = originalGcsStream;
 
 		// Handle gzip compression
 		if (isGzipped) {
@@ -1493,11 +1500,8 @@ async function createGCSCSVStream(gcsPath, job) {
 				verbose: job.verbose
 			});
 
-			// Set the original GCS stream (before gzip) as the source to control
-			bufferQueue.setSourceStream(gcsFile.createReadStream({
-				decompress: GCS_STREAMING_CONFIG.DECOMPRESS,
-				validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION
-			}));
+			// Set the ORIGINAL GCS stream (before gzip) as the source to control
+			bufferQueue.setSourceStream(originalGcsStream);
 
 			// Create input/output streams
 			const queueInput = bufferQueue.createInputStream();
