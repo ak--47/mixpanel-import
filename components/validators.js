@@ -48,6 +48,7 @@ async function validateToken(token) {
 	};
 
 	const config = new Job({ token }, { recordType: 'event', strict: true, verbose: false, logs: false, compress: false, region: 'US' });
+	/** @type {any} */
 	const res = await flushToMixpanel(veryOldEventBatch, config);
 
 	//v2_compat requires distinct_id

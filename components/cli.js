@@ -119,13 +119,6 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'always use streams to load files',
 			type: 'boolean'
 		})
-		.option("water", {
-			demandOption: false,
-			default: 27,
-			describe: '2^n value of highWaterMark',
-			type: 'number',
-			alias: 'streamSize'
-		})
 		.option("workers", {
 			demandOption: false,
 			default: 10,

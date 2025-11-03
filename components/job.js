@@ -47,13 +47,13 @@ class Job {
 		this.pass = safeCreds.pass || ``;
 		
 		/** @type {string} project id */
-		this.project = safeCreds.project || ``;
-		
+		this.project = safeCreds.project ? String(safeCreds.project) : ``;
+
 		/** @type {string} workspace id */
-		this.workspace = safeCreds.workspace || ``;
-		
+		this.workspace = safeCreds.workspace ? String(safeCreds.workspace) : ``;
+
 		/** @type {string} org id */
-		this.org = safeCreds.org || ``;
+		this.org = safeCreds.org ? String(safeCreds.org) : ``;
 		
 		/** @type {string} api secret (deprecated auth) */
 		this.secret = safeCreds.secret || ``;
@@ -71,7 +71,7 @@ class Job {
 		this.lookupTableId = safeCreds.lookupTableId || ``;
 		
 		/** @type {string} group key id */
-		this.groupKey = safeCreds.groupKey || opts.groupKey || ``;
+		this.groupKey = safeCreds.groupKey || (opts.groupKey ? String(opts.groupKey) : '') || ``;
 		/** @type {string} resolved authentication info */
 		this.auth = this.resolveProjInfo();
 		
@@ -206,17 +206,25 @@ class Job {
 		this.vendor = opts.vendor || ''; // heap or amplitude
 
 		// ? number options
-		this.streamSize = opts.streamSize || 27; // power of 2 for highWaterMark in stream  (default 134 MB)		
 		this.recordsPerBatch = opts.recordsPerBatch || 2000; // records in each req; max 2000 (200 for groups)
 		this.bytesPerBatch = opts.bytesPerBatch || 10 * 1024 * 1024; // max bytes in each req (10MB = 10485760)
 		this.maxRetries = opts.maxRetries || 10; // number of times to retry a batch
 		this.timeOffset = opts.timeOffset || 0; // utc hours offset
 		this.compressionLevel = opts.compressionLevel || 6; // gzip compression level
 		this.workers = opts.workers || 10; // number of workers to use
-		// Set consistent highWaterMark based on workers for proper backpressure
-		// Keep small enough to prevent OOM, large enough for good throughput
-		// For dense objects (>5KB each), use smaller buffers to prevent memory issues
-		this.highWater = Math.min(this.workers * 10, 100); // Much smaller for dense PostHog events!
+		// highWater controls the stream buffer size (number of objects in object mode)
+		// It affects how many records are buffered in memory between pipeline stages
+		// Lower values = less memory usage but potentially lower throughput
+		// Higher values = more memory usage but potentially better throughput
+		// Default: calculated based on workers, but can be overridden explicitly
+		if (typeof opts.highWater === 'number' && opts.highWater > 0) {
+			this.highWater = opts.highWater;
+		} else {
+			// Auto-calculate based on workers for proper backpressure
+			// Keep small enough to prevent OOM, large enough for good throughput
+			// Reduced from 10x to 5x multiplier to be more conservative with memory
+			this.highWater = Math.min(this.workers * 5, 100);
+		}
 		this.epochStart = opts.epochStart || 0; // start date for epoch
 		this.epochEnd = opts.epochEnd || 9991427224; // end date for epoch; i will die many years before this is a problem
 
@@ -252,6 +260,7 @@ class Job {
 		this.dedupe = u.isNil(opts.dedupe) ? false : opts.dedupe; //remove duplicate records
 		this.createProfiles = u.isNil(opts.createProfiles) ? false : opts.createProfiles; //remove duplicate records
 		this.dryRun = u.isNil(opts.dryRun) ? false : opts.dryRun; //don't actually send data
+		this.adaptive = u.isNil(opts.adaptive) ? false : opts.adaptive; //enable adaptive scaling
 		this.http2 = u.isNil(opts.http2) ? false : opts.http2; //use http2
 		this.addToken = u.isNil(opts.addToken) ? false : opts.addToken; //add token to each record
 		this.isGzip = u.isNil(opts.isGzip) ? false : opts.isGzip; //force treat input as gzipped (overrides extension detection)
@@ -265,6 +274,13 @@ class Job {
 		this.skipWriteToDisk = u.isNil(opts.skipWriteToDisk) ? false : opts.skipWriteToDisk; //don't write to disk
 		this.keepBadRecords = u.isNil(opts.keepBadRecords) ? true : opts.keepBadRecords; //keep bad records
 		this.manualGc = u.isNil(opts.manualGc) ? false : opts.manualGc; //enable manual garbage collection when memory usage is high
+
+		// ? throttling options for cloud storage
+		this.throttleGCS = u.isNil(opts.throttleGCS) ? false : opts.throttleGCS; //enable memory-based throttling for GCS
+		this.throttleMemory = u.isNil(opts.throttleMemory) ? false : opts.throttleMemory; //alias for throttleGCS
+		this.throttlePauseMB = opts.throttlePauseMB || 1200; //memory threshold to pause cloud downloads (MB)
+		this.throttleResumeMB = opts.throttleResumeMB || 800; //memory threshold to resume cloud downloads (MB)
+
 		this.v2_compat = u.isNil(opts.v2_compat) ? false : opts.v2_compat; //automatically set distinct_id from $user_id or $device_id (events only)
 
 		// ? tagging options
@@ -523,13 +539,13 @@ class Job {
 		return url;
 	}
 	
-	/** 
+	/**
 	 * Get the current job options as an object
 	 * @returns {Object} Current job configuration options
 	 */
 	get opts() {
-		const { recordType, compress, streamSize, workers, region, recordsPerBatch, bytesPerBatch, strict, logs, fixData, streamFormat, transformFunc } = this;
-		return { recordType, compress, streamSize, workers, region, recordsPerBatch, bytesPerBatch, strict, logs, fixData, streamFormat, transformFunc };
+		const { recordType, compress, workers, region, recordsPerBatch, bytesPerBatch, strict, logs, fixData, streamFormat, transformFunc } = this;
+		return { recordType, compress, workers, region, recordsPerBatch, bytesPerBatch, strict, logs, fixData, streamFormat, transformFunc };
 	}
 	get creds() {
 		const { acct, pass, project, secret, token, lookupTableId, groupKey, auth, bearer, workspace } = this;
@@ -912,7 +928,6 @@ class Job {
 			mbps: 0,
 			errors: [],
 			responses: [],
-			transport: this.transport,
 			// @ts-ignore
 			badRecords: this.badRecords,
 			dryRun: this.dryRunResults,

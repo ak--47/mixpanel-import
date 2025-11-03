@@ -88,6 +88,7 @@ function createVendorTransform(job) {
 		transform(data, encoding, callback) {
 			try {
 				if (job.vendor && job.vendorTransform) {
+					// @ts-ignore - Some vendor transforms (like PostHog) take heavyObjects as second param
 					data = job.vendorTransform(data, job.heavyObjects);
 				}
 				callback(null, data);
@@ -501,10 +502,10 @@ function createLogger(job, LOG_INTERVAL = 100) {
 
 /**
  * the core pipeline
- * @param {ReadableStream | null} stream
+ * @param {import('stream').Readable | null} stream
  * @param {JobConfig} job
  * @param {boolean} toNodeStream
- * @returns {Promise<ImportResults> | Transform} a promise or stream
+ * @returns {Promise<Transform | ImportResults>} a promise or stream
  */
 async function corePipeline(stream, job, toNodeStream = false) {
 	const l = logger(job);
@@ -599,6 +600,7 @@ async function corePipeline(stream, job, toNodeStream = false) {
 
 		// Use the promise-based pipeline for proper error handling and completion
 		await pipelinePromise(
+			// @ts-ignore - TypeScript doesn't understand the spread correctly
 			stream,
 			...stages
 		);
@@ -608,7 +610,8 @@ async function corePipeline(stream, job, toNodeStream = false) {
 			fileStream.end();
 		}
 
-		return results;
+		// Return the job summary as ImportResults
+		return job.summary();
 	}
 
 	// Should not reach here
