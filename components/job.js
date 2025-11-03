@@ -47,13 +47,13 @@ class Job {
 		this.pass = safeCreds.pass || ``;
 		
 		/** @type {string} project id */
-		this.project = safeCreds.project || ``;
-		
+		this.project = safeCreds.project ? String(safeCreds.project) : ``;
+
 		/** @type {string} workspace id */
-		this.workspace = safeCreds.workspace || ``;
-		
+		this.workspace = safeCreds.workspace ? String(safeCreds.workspace) : ``;
+
 		/** @type {string} org id */
-		this.org = safeCreds.org || ``;
+		this.org = safeCreds.org ? String(safeCreds.org) : ``;
 		
 		/** @type {string} api secret (deprecated auth) */
 		this.secret = safeCreds.secret || ``;
@@ -71,7 +71,7 @@ class Job {
 		this.lookupTableId = safeCreds.lookupTableId || ``;
 		
 		/** @type {string} group key id */
-		this.groupKey = safeCreds.groupKey || opts.groupKey || ``;
+		this.groupKey = safeCreds.groupKey || (opts.groupKey ? String(opts.groupKey) : '') || ``;
 		/** @type {string} resolved authentication info */
 		this.auth = this.resolveProjInfo();
 		

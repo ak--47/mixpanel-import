@@ -547,6 +547,7 @@ function downloadProgress(amount, job = null) {
 			const downloadMessage = `downloaded: ${u.bytesHuman(amount, 2, true)}`;
 			// Don't send processed count during download (we don't have line counts yet)
 			// Pass null for processed to avoid showing misleading numbers
+			// @ts-ignore
 			job.progressCallback('download', null, 0, 0, amount, downloadMessage);
 		}
 	}

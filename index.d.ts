@@ -71,9 +71,9 @@ declare namespace main {
      */
     pass?: string;
     /**
-     * - project id
+     * - project id (numeric ID, passed as string internally)
      */
-    project?: string | number;
+    project?: number | string;
     /**
      * - project token (for importing user profiles)
      */
@@ -95,13 +95,13 @@ declare namespace main {
      */
     bearer?: string;
     /**
-     *  - a workspace id (data views)
+     * - workspace id (numeric ID for data views, passed as string internally)
      */
-    workspace?: string | number;
+    workspace?: number | string;
     /**
-     * - an organization id (data views)
+     * - organization id (numeric ID for data views, passed as string internally)
      */
-    org?: string | number;
+    org?: number | string;
 	/**
 	 * - for export/import (the destination project)
 	 */
