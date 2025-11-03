@@ -448,7 +448,7 @@ function createHttpSender(job, jsonCache, fileStream, gcThreshold) {
 
 			// Only log if memory is ABOVE pause threshold (throttle is active) AND 10 seconds elapsed
 			if (job.verbose && heapUsed > throttleThreshold && now - lastLogTime > 10000) {
-				console.log(`    📤 Pipeline draining while paused: Batch #${thisBatchId} sent (heap: ${heapUsed.toFixed(0)}MB)`);
+				console.log(`    📤 Pipeline draining while paused: Batch #${thisBatchId} sent (heap: ${u.bytesHuman(heapUsed * 1024 * 1024)})`);
 				lastLogTime = now;
 			}
 
