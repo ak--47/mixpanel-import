@@ -1398,12 +1398,14 @@ async function createGCSJSONStream(gcsPath, job) {
 		if (job.throttleGCS || job.throttleMemory) {
 			const { MemoryThrottle } = require('./gcs-throttle');
 			const throttle = new MemoryThrottle({
-				highWaterMark: 1,  // Minimal buffer to apply backpressure
+				highWaterMark: 16,  // Allow some buffering
 				pauseThresholdMB: job.throttlePauseMB || 1200,
 				resumeThresholdMB: job.throttleResumeMB || 800,
 				checkInterval: 100,
 				verbose: job.verbose  // Pass verbose flag for logging
 			});
+			// Give throttle a reference to the GCS stream to pause/resume
+			throttle.setSourceStream(gcsReadStream);
 			pipeline = pipeline.pipe(throttle);
 		}
 

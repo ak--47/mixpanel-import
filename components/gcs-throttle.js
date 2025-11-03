@@ -8,15 +8,15 @@
 const { Transform } = require('stream');
 
 /**
- * Memory-aware throttle that actually pauses upstream
- * This works by applying backpressure when memory is high
+ * Memory-aware throttle that pauses upstream GCS reading
+ * This works by pausing/resuming the source stream, not blocking the pipeline
  */
 class MemoryThrottle extends Transform {
 	constructor(options = {}) {
 		super({
 			objectMode: true,
-			// CRITICAL: Small highWaterMark to trigger backpressure quickly
-			highWaterMark: options.highWaterMark || 1, // Only buffer 1 object!
+			// Allow some buffering for smooth flow
+			highWaterMark: options.highWaterMark || 16,
 		});
 
 		this.maxHeapMB = options.maxHeapMB || 1500;
@@ -28,13 +28,21 @@ class MemoryThrottle extends Transform {
 		this.lastCheck = Date.now();
 		this.objectCount = 0;
 		this.pauseCount = 0;
-		this.pendingCallback = null; // Store callback when paused
-		this.pendingChunk = null; // Store chunk when paused
+		this.sourceStream = null; // Reference to the upstream source to pause/resume
 		this.memCheckTimer = null; // Timer for memory checks while paused
 		this.checkCount = 0; // Count checks to reduce logging
 		this.lastLoggedMem = 0; // Track last logged memory to detect changes
 		this.pausedAt = 0; // Timestamp when paused
 		this.objectsAtPause = 0; // Objects processed when paused
+	}
+
+	/**
+	 * Set the source stream that we'll pause/resume
+	 * @param {stream.Readable} source - The GCS stream to control
+	 */
+	setSourceStream(source) {
+		this.sourceStream = source;
+		return this;
 	}
 
 	_checkMemoryAndResume() {
@@ -54,10 +62,11 @@ class MemoryThrottle extends Transform {
 			const timeStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${pausedDuration}s`;
 
 			console.log('');  // Blank line for readability
-			console.log(`    ⏸️  THROTTLE PAUSED - ${timeStr}`);
+			console.log(`    ⏸️  GCS INPUT PAUSED - ${timeStr}`);
 			console.log(`    ├─ Memory: Heap ${heapUsed.toFixed(0)}/${heapTotal.toFixed(0)}MB | RSS ${rss.toFixed(0)}MB | External ${external.toFixed(0)}MB`);
 			console.log(`    ├─ Target: Resume when heap < ${this.resumeThresholdMB}MB (currently ${(heapUsed - this.resumeThresholdMB).toFixed(0)}MB over)`);
-			console.log(`    ├─ Objects: ${this.objectCount.toLocaleString()} processed total (${(this.objectCount - this.objectsAtPause).toLocaleString()} since pause)`);
+			console.log(`    ├─ Objects: ${this.objectCount.toLocaleString()} processed total`);
+			console.log(`    └─ Pipeline continues draining to Mixpanel...`);
 
 			this.lastLoggedMem = heapUsed;
 
@@ -100,10 +109,15 @@ class MemoryThrottle extends Transform {
 
 			if (this.verbose) {
 				console.log('');
-				console.log(`▶️  THROTTLE: Resuming GCS downloads`);
+				console.log(`▶️  THROTTLE: Resuming GCS input`);
 				console.log(`    ├─ Memory: ${heapUsed.toFixed(0)}MB < ${this.resumeThresholdMB}MB threshold`);
 				console.log(`    ├─ Duration: Paused for ${timeStr}`);
 				console.log(`    └─ Objects: ${(this.objectCount - this.objectsAtPause).toLocaleString()} processed while paused`);
+			}
+
+			// Resume the source stream if we have it
+			if (this.sourceStream && typeof this.sourceStream.resume === 'function') {
+				this.sourceStream.resume();
 			}
 
 			// Clear the timer
@@ -117,15 +131,6 @@ class MemoryThrottle extends Transform {
 			this.lastLoggedMem = 0;
 			this.pausedAt = 0;
 			this.objectsAtPause = 0;
-
-			// Process the pending chunk if we have one
-			if (this.pendingCallback) {
-				const callback = this.pendingCallback;
-				const chunk = this.pendingChunk;
-				this.pendingCallback = null;
-				this.pendingChunk = null;
-				callback(null, chunk);
-			}
 		}
 	}
 
@@ -147,10 +152,14 @@ class MemoryThrottle extends Transform {
 
 				if (this.verbose) {
 					console.log('');  // Blank line for visibility
-					console.log(`🛑 THROTTLE: Pausing GCS downloads`);
-					console.log(`    ├─ Memory: ${heapUsed.toFixed(0)}MB > ${this.pauseThresholdMB}MB threshold`);
+					console.log(`🛑 THROTTLE: Pausing GCS input (memory: ${heapUsed.toFixed(0)}MB > ${this.pauseThresholdMB}MB)`);
 					console.log(`    ├─ Objects: ${this.objectCount.toLocaleString()} processed so far`);
-					console.log(`    └─ Action: Draining pipeline to Mixpanel...`);
+					console.log(`    └─ Pipeline will continue draining to Mixpanel...`);
+				}
+
+				// Pause the source stream to stop reading new data
+				if (this.sourceStream && typeof this.sourceStream.pause === 'function') {
+					this.sourceStream.pause();
 				}
 
 				// Start checking memory every second to see if we can resume
@@ -163,7 +172,12 @@ class MemoryThrottle extends Transform {
 			if (heapUsed < this.resumeThresholdMB && this._isPaused) {
 				this._isPaused = false;
 				if (this.verbose) {
-					console.log(`▶️  Throttle: Resuming GCS (memory: ${heapUsed.toFixed(0)}MB < ${this.resumeThresholdMB}MB)`);
+					console.log(`▶️  Throttle: Resuming GCS input (memory: ${heapUsed.toFixed(0)}MB < ${this.resumeThresholdMB}MB)`);
+				}
+
+				// Resume the source stream
+				if (this.sourceStream && typeof this.sourceStream.resume === 'function') {
+					this.sourceStream.resume();
 				}
 
 				if (this.memCheckTimer) {
@@ -173,17 +187,9 @@ class MemoryThrottle extends Transform {
 			}
 		}
 
-		// CRITICAL: Apply backpressure by NOT calling callback when paused
-		// This prevents GCS from reading more data while pipeline drains
-		if (this._isPaused) {
-			// Store the callback and chunk - we'll call it when memory drops
-			this.pendingCallback = callback;
-			this.pendingChunk = chunk;
-			// Don't call callback - this applies backpressure upstream!
-		} else {
-			// Normal flow - pass through immediately
-			callback(null, chunk);
-		}
+		// ALWAYS pass data through immediately - no delays, no blocking
+		// The pause/resume of the source stream handles the flow control
+		callback(null, chunk);
 	}
 
 	_final(callback) {
@@ -193,17 +199,13 @@ class MemoryThrottle extends Transform {
 			this.memCheckTimer = null;
 		}
 
-		// Process any pending callback
-		if (this.pendingCallback) {
-			const pendingCallback = this.pendingCallback;
-			const pendingChunk = this.pendingChunk;
-			this.pendingCallback = null;
-			this.pendingChunk = null;
-			pendingCallback(null, pendingChunk);
+		// Resume source stream if it was paused
+		if (this._isPaused && this.sourceStream && typeof this.sourceStream.resume === 'function') {
+			this.sourceStream.resume();
 		}
 
 		if (this.verbose) {
-			console.log(`📊 Throttle stats: ${this.objectCount} objects, ${this.pauseCount} pauses`);
+			console.log(`📊 Throttle stats: ${this.objectCount.toLocaleString()} objects, ${this.pauseCount} pauses`);
 		}
 		callback();
 	}

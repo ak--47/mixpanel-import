@@ -281,6 +281,11 @@ class Job {
 		this.throttlePauseMB = opts.throttlePauseMB || 1200; //memory threshold to pause cloud downloads (MB)
 		this.throttleResumeMB = opts.throttleResumeMB || 800; //memory threshold to resume cloud downloads (MB)
 
+		// ? destination options for writing output
+		this.destination = opts.destination || null; //path to write output (local file or gs://bucket/path or s3://bucket/path)
+		this.destinationOnly = u.isNil(opts.destinationOnly) ? false : opts.destinationOnly; //skip Mixpanel, only write to destination
+		this.fastMode = u.isNil(opts.fastMode) ? false : opts.fastMode; //skip all transformations for pre-processed data
+
 		this.v2_compat = u.isNil(opts.v2_compat) ? false : opts.v2_compat; //automatically set distinct_id from $user_id or $device_id (events only)
 
 		// ? tagging options

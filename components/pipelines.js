@@ -14,6 +14,7 @@ const { exportEvents, exportProfiles, deleteProfiles } = require('./exporters');
 const { flushLookupTable, flushToMixpanel, flushToMixpanelWithUndici } = require('./importers.js');
 const { createEventSampler, createMemoryMonitor, applySmartDefaults } = require('./smart-config.js');
 const { replaceAnnotations, getAnnotations, deleteAnnotations } = require('./meta.js');
+const { createDestinationStream, createTeeStream } = require('./destination-writer.js');
 const fs = require('fs');
 
 // $ env
@@ -556,6 +557,17 @@ async function corePipeline(stream, job, toNodeStream = false) {
 	const jsonCache = new WeakMap();
 	const bytesCache = new WeakMap();
 
+	// Create destination stream if needed
+	let destinationStream = null;
+	if (job.destination) {
+		try {
+			destinationStream = await createDestinationStream(job.destination, job);
+			l(`Destination configured: ${job.destination}`);
+		} catch (error) {
+			throw new Error(`Failed to create destination stream: ${error.message}`);
+		}
+	}
+
 	// Create base transform stages
 	const stages = [];
 
@@ -566,21 +578,113 @@ async function corePipeline(stream, job, toNodeStream = false) {
 		stages.push(createMemoryMonitor(job)); // Monitor memory usage
 	}
 
-	// Add core transform stages
-	stages.push(
-		createExistenceFilter(job),
-		createVendorTransform(job),
-		// Note: Vendor transforms are 1:1, no flatten needed
-		createUserTransform(job),
-		createFlattenStream(job), // User transforms can explode 1 row to multiple
-		createDedupeTransform(job),
-		createExistenceFilter2(job),
-		createHelperTransforms(job),
-		createStringifyCacher(job, jsonCache, bytesCache),
-		createSmartBatcher(job, bytesCache), // Combined count + size batching
-		createHttpSender(job, jsonCache, fileStream, gcThreshold),
-		createLogger(job)
-	);
+	// Fast mode: skip all transformations for pre-processed data
+	if (job.fastMode) {
+		l('Fast mode enabled - skipping all transformations');
+		stages.push(
+			createExistenceFilter(job),
+			createStringifyCacher(job, jsonCache, bytesCache),
+			createSmartBatcher(job, bytesCache) // Combined count + size batching
+		);
+
+		// Add destination tee if needed
+		if (destinationStream && !job.destinationOnly) {
+			stages.push(createTeeStream(destinationStream));
+		}
+
+		// Add HTTP sender or destination-only writer
+		if (job.destinationOnly) {
+			// Write only to destination, skip Mixpanel
+			l('Destination-only mode - skipping Mixpanel');
+			if (!destinationStream) {
+				throw new Error('destination is required when destinationOnly is true');
+			}
+			// For destination-only, write directly to the destination stream
+			stages.push(
+				new Transform({
+					objectMode: true,
+					highWaterMark: job.highWater,
+					transform(batch, encoding, callback) {
+						// Write each record in the batch to destination
+						for (const record of batch) {
+							destinationStream.write(record);
+						}
+						// Pass through for logging
+						callback(null, { success: batch.length, failed: 0 });
+					},
+					flush(callback) {
+						if (destinationStream) {
+							destinationStream.end();
+						}
+						callback();
+					}
+				}),
+				createLogger(job)
+			);
+		} else {
+			// Send to Mixpanel (and optionally to destination via tee)
+			stages.push(
+				createHttpSender(job, jsonCache, fileStream, gcThreshold),
+				createLogger(job)
+			);
+		}
+	} else {
+		// Normal mode: full transformation pipeline
+		stages.push(
+			createExistenceFilter(job),
+			createVendorTransform(job),
+			// Note: Vendor transforms are 1:1, no flatten needed
+			createUserTransform(job),
+			createFlattenStream(job), // User transforms can explode 1 row to multiple
+			createDedupeTransform(job),
+			createExistenceFilter2(job),
+			createHelperTransforms(job),
+			createStringifyCacher(job, jsonCache, bytesCache),
+			createSmartBatcher(job, bytesCache) // Combined count + size batching
+		);
+
+		// Add destination tee if needed
+		if (destinationStream && !job.destinationOnly) {
+			stages.push(createTeeStream(destinationStream));
+		}
+
+		// Add HTTP sender or destination-only writer
+		if (job.destinationOnly) {
+			// Write only to destination, skip Mixpanel
+			l('Destination-only mode - skipping Mixpanel');
+			if (!destinationStream) {
+				throw new Error('destination is required when destinationOnly is true');
+			}
+			// For destination-only, write directly to the destination stream
+			stages.push(
+				new Transform({
+					objectMode: true,
+					highWaterMark: job.highWater,
+					transform(batch, encoding, callback) {
+						// Write each record in the batch to destination
+						for (const record of batch) {
+							destinationStream.write(record);
+						}
+						// Pass through for logging
+						callback(null, { success: batch.length, failed: 0 });
+					},
+					flush(callback) {
+						if (destinationStream) {
+							destinationStream.end();
+						}
+						callback();
+					}
+				}),
+				createLogger(job)
+			);
+		} else {
+			// Send to Mixpanel (and optionally to destination via tee)
+			stages.push(
+				createHttpSender(job, jsonCache, fileStream, gcThreshold),
+				createLogger(job)
+			);
+		}
+	}
 
 	// For createMpStream - return the entry point of the pipeline
 	if (toNodeStream) {
