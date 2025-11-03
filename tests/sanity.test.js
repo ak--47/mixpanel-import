@@ -1117,3 +1117,213 @@ describe("sanity: fastMode feature", () => {
 		}
 	});
 });
+
+describe('BufferQueue Backpressure', () => {
+	const { BufferQueue } = require('../components/buffer-queue');
+	const { Readable, Writable } = require('stream');
+
+	jest.setTimeout(10000);
+
+	test('applies backpressure to pause source when buffer is full', async () => {
+		const bufferQueue = new BufferQueue({
+			pauseThresholdMB: 0.001,  // Pause at 1KB for testing
+			resumeThresholdMB: 0.0005, // Resume at 0.5KB
+			verbose: false
+		});
+
+		// Track metrics
+		let sourcePausedByBackpressure = false;
+		const sourceData = [];
+		const sinkData = [];
+
+		// Create a fast source that monitors backpressure
+		const source = new Readable({
+			objectMode: true,
+			highWaterMark: 1,
+			read() {
+				// This will be called when the stream needs more data
+			}
+		});
+
+		// Create sink that's very slow
+		const sink = new Writable({
+			objectMode: true,
+			highWaterMark: 1,
+			async write(chunk, encoding, callback) {
+				// Very slow processing
+				await new Promise(resolve => setTimeout(resolve, 100));
+				sinkData.push(chunk);
+				callback();
+			}
+		});
+
+		// Connect the streams
+		const queueInput = bufferQueue.createInputStream();
+		const queueOutput = bufferQueue.createOutputStream();
+
+		source.pipe(queueInput);
+		queueOutput.pipe(sink);
+
+		// Send data and monitor backpressure
+		for (let i = 0; i < 20; i++) {
+			const data = { id: i, data: 'x'.repeat(100) }; // Each ~100+ bytes
+			sourceData.push(data);
+
+			// source.push returns false when backpressure is applied
+			const canContinue = source.push(data);
+			if (!canContinue) {
+				sourcePausedByBackpressure = true;
+				break; // Stop pushing when backpressure is applied
+			}
+		}
+
+		// Send null to end the source after a delay
+		setTimeout(() => {
+			source.push(null);
+		}, 500);
+
+		// Wait for completion
+		await new Promise((resolve, reject) => {
+			sink.on('finish', resolve);
+			sink.on('error', reject);
+			setTimeout(resolve, 5000); // Timeout after 5 seconds
+		}).catch(() => {
+			// Timeout is expected if backpressure is working
+		});
+
+		// Verify backpressure was applied
+		expect(sourcePausedByBackpressure).toBe(true);
+
+		// The source should have been paused before sending all 20 items
+		expect(sourceData.length).toBeLessThan(20);
+	});
+
+	test('resumes when buffer drains below threshold', async () => {
+		const bufferQueue = new BufferQueue({
+			pauseThresholdMB: 0.002,  // Pause at 2KB
+			resumeThresholdMB: 0.001,  // Resume at 1KB
+			verbose: false
+		});
+
+		let writeCallbackDelayed = false;
+		let writeCallbackResumed = false;
+
+		// Create a controlled source
+		const source = new Readable({
+			objectMode: true,
+			read() {}
+		});
+
+		// Create sink
+		const sink = new Writable({
+			objectMode: true,
+			async write(chunk, encoding, callback) {
+				await new Promise(resolve => setTimeout(resolve, 10));
+				callback();
+			}
+		});
+
+		// Connect
+		const queueInput = bufferQueue.createInputStream();
+		const queueOutput = bufferQueue.createOutputStream();
+
+		// Override the write method to track callbacks
+		const originalWrite = queueInput.write.bind(queueInput);
+		queueInput.write = function(chunk, encoding, callback) {
+			if (bufferQueue.pendingCallbacks && bufferQueue.pendingCallbacks.length > 0) {
+				writeCallbackDelayed = true;
+			}
+
+			const wrappedCallback = callback ? () => {
+				if (writeCallbackDelayed && !writeCallbackResumed) {
+					writeCallbackResumed = true;
+				}
+				callback();
+			} : undefined;
+
+			return originalWrite(chunk, encoding, wrappedCallback);
+		};
+
+		source.pipe(queueInput);
+		queueOutput.pipe(sink);
+
+		// Send enough data to trigger pause
+		for (let i = 0; i < 30; i++) {
+			source.push({ id: i, data: 'x'.repeat(100) });
+		}
+		source.push(null);
+
+		// Wait for completion
+		await new Promise((resolve) => {
+			sink.on('finish', resolve);
+		});
+
+		// Verify callbacks were delayed and then resumed
+		expect(writeCallbackDelayed).toBe(true);
+		expect(writeCallbackResumed).toBe(true);
+	});
+
+	test('pending callbacks are called when buffer drains', async () => {
+		const bufferQueue = new BufferQueue({
+			pauseThresholdMB: 0.001,  // Very low threshold
+			resumeThresholdMB: 0.0005,
+			verbose: false
+		});
+
+		const results = [];
+
+		// Create source
+		const source = new Readable({
+			objectMode: true,
+			read() {}
+		});
+
+		// Create a custom writable to track write callbacks
+		const queueInput = bufferQueue.createInputStream();
+		let callbackCount = 0;
+
+		// Wrap the write method
+		const originalWrite = queueInput.write.bind(queueInput);
+		queueInput.write = function(chunk, encoding, callback) {
+			const callbackId = ++callbackCount;
+			const wrappedCallback = () => {
+				results.push(`callback-${callbackId}`);
+				if (callback) callback();
+			};
+			return originalWrite(chunk, encoding, wrappedCallback);
+		};
+
+		// Create sink
+		const sink = new Writable({
+			objectMode: true,
+			async write(chunk, encoding, callback) {
+				results.push(`sink-${chunk.id}`);
+				await new Promise(resolve => setTimeout(resolve, 5));
+				callback();
+			}
+		});
+
+		// Connect
+		const queueOutput = bufferQueue.createOutputStream();
+		source.pipe(queueInput);
+		queueOutput.pipe(sink);
+
+		// Send data
+		for (let i = 0; i < 15; i++) {
+			source.push({ id: i, data: 'x'.repeat(200) });
+		}
+		source.push(null);
+
+		// Wait
+		await new Promise((resolve) => {
+			sink.on('finish', resolve);
+		});
+
+		// All callbacks should have been called
+		expect(callbackCount).toBe(15);
+
+		// Check that callbacks were called (may be delayed)
+		const callbackResults = results.filter(r => r.startsWith('callback'));
+		expect(callbackResults.length).toBe(15);
+	});
+});

@@ -59,17 +59,28 @@ class BufferQueue extends EventEmitter {
 				self.queueSizeBytes += size;
 				self.objectsQueued++;
 
-				// Check if we should pause source
+				// Check if we should apply backpressure
 				const queueSizeMB = self.queueSizeBytes / 1024 / 1024;
-				if (queueSizeMB > self.pauseThresholdMB && !self.isPaused) {
-					self._pauseSource(queueSizeMB);
+				if (queueSizeMB > self.pauseThresholdMB) {
+					if (!self.isPaused) {
+						self._pauseSource(queueSizeMB);
+					}
+
+					// Store callback to call later when buffer drains
+					if (!self.pendingCallbacks) {
+						self.pendingCallbacks = [];
+					}
+					self.pendingCallbacks.push(callback);
+
+					// DON'T call callback yet - this creates backpressure
+					// The callback will be called when the buffer drains
+				} else {
+					// Buffer has space, accept more data
+					callback();
 				}
 
 				// Trigger processing
 				self._processQueue();
-
-				// Always accept data (buffering internally)
-				callback();
 			},
 
 			final(callback) {
@@ -130,8 +141,16 @@ class BufferQueue extends EventEmitter {
 
 					// Check if we should resume source
 					const queueSizeMB = this.queueSizeBytes / 1024 / 1024;
-					if (queueSizeMB < this.resumeThresholdMB && this.isPaused) {
-						this._resumeSource(queueSizeMB);
+					if (queueSizeMB < this.resumeThresholdMB) {
+						// Call pending callbacks to resume data flow
+						if (this.pendingCallbacks && this.pendingCallbacks.length > 0) {
+							const callback = this.pendingCallbacks.shift();
+							callback(); // Resume one pending write
+						}
+
+						if (this.isPaused && this.pendingCallbacks && this.pendingCallbacks.length === 0) {
+							this._resumeSource(queueSizeMB);
+						}
 					}
 				} else {
 					// Sink is full, stop processing

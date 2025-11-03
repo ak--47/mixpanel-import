@@ -412,29 +412,33 @@ cliParams.welcome = welcome;
  * @param  {number} amountSent
  * @param  {Function} [callback] - optional callback for progress updates (used by UI WebSocket)
  */
-function showProgress(record = "", processed = 0, requests = 0, eps = "", success = 0, failed = 0, amountSent = 0, callback = null) {
+function showProgress(record = "", processed = 0, requests = 0, eps = "", success = 0, failed = 0, amountSent = 0, callback = null, empty = 0, startTime = null) {
 	const { heapUsed } = process.memoryUsage();
-	// const { rss, heapTotal, heapUsed } = process.memoryUsage();
-	// const percentHeap = (heapUsed / heapTotal) * 100;
-	// const percentRSS = (heapUsed / rss) * 100;
-	let line = `${record}s: ${u.comma(processed)}`;
-	if (requests) {
-		line += ` | req: ${u.comma(requests)} reqs`;
-	}
-	if (eps) {
-		line += ` | eps: ${u.comma(eps)} `;
-	}
-	if (success) {
-		line += ` | success: ${u.comma(success)}`;
-	}
-	if (failed) {
-		line += ` | failed: ${u.comma(failed)}`;
-	}
-	if (heapUsed) {
-		line += ` | mem: ${u.bytesHuman(heapUsed)}`;
-	}
-	if (amountSent) {
-		line += ` | proc: ${u.bytesHuman(amountSent)}`;
+
+	// Build progress line with all metrics (show 0 values too)
+	let line = `total: ${u.comma(processed || 0)}`;
+	line += ` | success: ${u.comma(success || 0)}`;
+	line += ` | failed: ${u.comma(failed || 0)}`;
+	line += ` | empty: ${u.comma(empty || 0)}`;
+	line += ` | mem: ${u.bytesHuman(heapUsed || 0)}`;
+	line += ` | proc: ${u.bytesHuman(amountSent || 0)}`;
+
+	// Add elapsed time if startTime is provided
+	if (startTime) {
+		const elapsed = Math.floor((Date.now() - startTime) / 1000);
+		const hours = Math.floor(elapsed / 3600);
+		const minutes = Math.floor((elapsed % 3600) / 60);
+		const seconds = elapsed % 60;
+
+		let timeStr = '';
+		if (hours > 0) {
+			timeStr = `${hours}h ${minutes}m ${seconds}s`;
+		} else if (minutes > 0) {
+			timeStr = `${minutes}m ${seconds}s`;
+		} else {
+			timeStr = `${seconds}s`;
+		}
+		line += ` | time: ${timeStr}`;
 	}
 	// Get the terminal width
 	const terminalWidth = process.stdout.columns || 80; // Default to 80 if columns is undefined

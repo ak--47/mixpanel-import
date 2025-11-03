@@ -1886,3 +1886,140 @@ describe('v2_compat', () => {
 		expect(result.dryRun[0].properties.$user_id).toBe('user123');
 	});
 });
+
+describe('BufferQueue', () => {
+	const { BufferQueue } = require('../components/buffer-queue');
+	const { Readable, Writable } = require('stream');
+
+	test('handles source completion correctly', async () => {
+		const bufferQueue = new BufferQueue({
+			pauseThresholdMB: 10, // High threshold so no pausing
+			verbose: false
+		});
+
+		const data = [];
+
+		// Create source that ends immediately after 5 items
+		const source = new Readable({
+			objectMode: true,
+			read() {
+				for (let i = 0; i < 5; i++) {
+					this.push({ id: i });
+				}
+				this.push(null);
+			}
+		});
+
+		// Create sink
+		const sink = new Writable({
+			objectMode: true,
+			write(chunk, encoding, callback) {
+				data.push(chunk);
+				callback();
+			}
+		});
+
+		// Connect
+		const queueInput = bufferQueue.createInputStream();
+		const queueOutput = bufferQueue.createOutputStream();
+
+		source.pipe(queueInput);
+		queueOutput.pipe(sink);
+
+		// Wait for completion
+		await new Promise((resolve) => {
+			sink.on('finish', resolve);
+		});
+
+		// All data should have been transmitted
+		expect(data).toHaveLength(5);
+		expect(data[0]).toEqual({ id: 0 });
+		expect(data[4]).toEqual({ id: 4 });
+	});
+
+	test('getStats returns correct statistics', () => {
+		const bufferQueue = new BufferQueue({
+			verbose: false
+		});
+
+		// Initial stats
+		let stats = bufferQueue.getStats();
+		expect(stats.queueLength).toBe(0);
+		expect(stats.objectsQueued).toBe(0);
+		expect(stats.objectsDequeued).toBe(0);
+		expect(stats.isPaused).toBe(false);
+
+		// Add some data to queue
+		bufferQueue.queue.push({ data: 'test', size: 100 });
+		bufferQueue.queueSizeBytes += 100;
+		bufferQueue.objectsQueued++;
+
+		stats = bufferQueue.getStats();
+		expect(stats.queueLength).toBe(1);
+		expect(stats.objectsQueued).toBe(1);
+		expect(parseFloat(stats.queueSizeMB)).toBeCloseTo(0.0001, 3);
+	});
+});
+
+describe('Progress Display', () => {
+	const { showProgress } = require('../components/cli');
+
+	// Mock readline to capture output
+	let capturedOutput = '';
+	const originalWrite = process.stdout.write;
+
+	beforeEach(() => {
+		capturedOutput = '';
+		// Mock process.stdout.write to capture output
+		process.stdout.write = (str) => {
+			capturedOutput = str;
+			return true;
+		};
+	});
+
+	afterEach(() => {
+		// Restore original write
+		process.stdout.write = originalWrite;
+	});
+
+	test('displays all metrics including zeros', () => {
+		// Test with all zeros
+		showProgress('event', 0, 0, '0', 0, 0, 0, null, 0, Date.now());
+
+		expect(capturedOutput).toContain('total: 0');
+		expect(capturedOutput).toContain('success: 0');
+		expect(capturedOutput).toContain('failed: 0');
+		expect(capturedOutput).toContain('empty: 0');
+		expect(capturedOutput).toContain('mem:');
+		expect(capturedOutput).toContain('proc: 0 B');
+		expect(capturedOutput).toContain('time: 0s');
+	});
+
+	test('formats large numbers with commas', () => {
+		showProgress('event', 1234567, 100, '1234.56', 1000000, 234567, 1024*1024*100, null, 89012, Date.now());
+
+		expect(capturedOutput).toContain('total: 1,234,567');
+		expect(capturedOutput).toContain('success: 1,000,000');
+		expect(capturedOutput).toContain('failed: 234,567');
+		expect(capturedOutput).toContain('empty: 89,012');
+	});
+
+	test('formats elapsed time correctly', () => {
+		const now = Date.now();
+
+		// Test seconds only
+		let startTime = now - 45 * 1000; // 45 seconds ago
+		showProgress('event', 100, 10, '100', 50, 5, 0, null, 10, startTime);
+		expect(capturedOutput).toContain('time: 45s');
+
+		// Test minutes and seconds
+		startTime = now - (3 * 60 + 25) * 1000; // 3m 25s ago
+		showProgress('event', 100, 10, '100', 50, 5, 0, null, 10, startTime);
+		expect(capturedOutput).toContain('time: 3m 25s');
+
+		// Test hours, minutes and seconds
+		startTime = now - (2 * 3600 + 15 * 60 + 30) * 1000; // 2h 15m 30s ago
+		showProgress('event', 100, 10, '100', 50, 5, 0, null, 10, startTime);
+		expect(capturedOutput).toContain('time: 2h 15m 30s');
+	});
+});
