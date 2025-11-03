@@ -27,6 +27,37 @@ class MemoryThrottle extends Transform {
 		this.lastCheck = Date.now();
 		this.objectCount = 0;
 		this.pauseCount = 0;
+		this.pendingCallback = null; // Store callback when paused
+		this.pendingChunk = null; // Store chunk when paused
+		this.memCheckTimer = null; // Timer for memory checks while paused
+	}
+
+	_checkMemoryAndResume() {
+		const heapUsed = process.memoryUsage().heapUsed / 1024 / 1024;
+
+		// Log status while paused
+		console.log(`⏸️  Throttle: Memory check (${heapUsed.toFixed(0)}MB / ${this.resumeThresholdMB}MB to resume)`);
+
+		// Resume if memory dropped enough
+		if (heapUsed < this.resumeThresholdMB) {
+			this._isPaused = false;
+			console.log(`▶️  Throttle: Resuming GCS (memory: ${heapUsed.toFixed(0)}MB < ${this.resumeThresholdMB}MB)`);
+
+			// Clear the timer
+			if (this.memCheckTimer) {
+				clearInterval(this.memCheckTimer);
+				this.memCheckTimer = null;
+			}
+
+			// Process the pending chunk if we have one
+			if (this.pendingCallback) {
+				const callback = this.pendingCallback;
+				const chunk = this.pendingChunk;
+				this.pendingCallback = null;
+				this.pendingChunk = null;
+				callback(null, chunk);
+			}
+		}
 	}
 
 	_transform(chunk, encoding, callback) {
@@ -38,35 +69,60 @@ class MemoryThrottle extends Transform {
 			this.lastCheck = now;
 			const heapUsed = process.memoryUsage().heapUsed / 1024 / 1024;
 
-			// Pause if memory is too high
+			// Start pausing if memory is too high
 			if (heapUsed > this.pauseThresholdMB && !this._isPaused) {
 				this._isPaused = true;
 				this.pauseCount++;
-
 				console.log(`🛑 Throttle: Pausing GCS (memory: ${heapUsed.toFixed(0)}MB > ${this.pauseThresholdMB}MB) [pause #${this.pauseCount}]`);
+				console.log(`   Pipeline has ~${this.objectCount} objects buffered, draining to Mixpanel...`);
 
-				// Apply backpressure by delaying callback
-				// This will cause upstream to pause
-				const checkMemory = setInterval(() => {
-					const currentHeap = process.memoryUsage().heapUsed / 1024 / 1024;
+				// Start checking memory every second to see if we can resume
+				if (!this.memCheckTimer) {
+					this.memCheckTimer = setInterval(() => this._checkMemoryAndResume(), 1000);
+				}
+			}
 
-					if (currentHeap < this.resumeThresholdMB) {
-						clearInterval(checkMemory);
-						this._isPaused = false;
-						console.log(`▶️  Throttle: Resuming GCS (memory: ${currentHeap.toFixed(0)}MB < ${this.resumeThresholdMB}MB)`);
-						callback(null, chunk);
-					}
-				}, 200); // Check every 200ms while paused
+			// Resume when memory drops (also handled in _checkMemoryAndResume)
+			if (heapUsed < this.resumeThresholdMB && this._isPaused) {
+				this._isPaused = false;
+				console.log(`▶️  Throttle: Resuming GCS (memory: ${heapUsed.toFixed(0)}MB < ${this.resumeThresholdMB}MB)`);
 
-				return; // Don't call callback yet - this applies backpressure!
+				if (this.memCheckTimer) {
+					clearInterval(this.memCheckTimer);
+					this.memCheckTimer = null;
+				}
 			}
 		}
 
-		// Normal flow - pass through immediately
-		callback(null, chunk);
+		// CRITICAL: Apply backpressure by NOT calling callback when paused
+		// This prevents GCS from reading more data while pipeline drains
+		if (this._isPaused) {
+			// Store the callback and chunk - we'll call it when memory drops
+			this.pendingCallback = callback;
+			this.pendingChunk = chunk;
+			// Don't call callback - this applies backpressure upstream!
+		} else {
+			// Normal flow - pass through immediately
+			callback(null, chunk);
+		}
 	}
 
 	_final(callback) {
+		// Clean up timer if still running
+		if (this.memCheckTimer) {
+			clearInterval(this.memCheckTimer);
+			this.memCheckTimer = null;
+		}
+
+		// Process any pending callback
+		if (this.pendingCallback) {
+			const pendingCallback = this.pendingCallback;
+			const pendingChunk = this.pendingChunk;
+			this.pendingCallback = null;
+			this.pendingChunk = null;
+			pendingCallback(null, pendingChunk);
+		}
+
 		console.log(`📊 Throttle stats: ${this.objectCount} objects, ${this.pauseCount} pauses`);
 		callback();
 	}

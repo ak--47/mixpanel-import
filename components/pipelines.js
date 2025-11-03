@@ -423,6 +423,7 @@ function createHttpSender(job, jsonCache, fileStream, gcThreshold) {
 
 	return new ParallelTransform(job.workers, {
 		objectMode: true,
+		ordered: false,  // No need to maintain order - reduces memory overhead
 		highWaterMark: job.workers  // One batch per worker for proper backpressure
 	}, async function(batch, callback) {
 		try {
