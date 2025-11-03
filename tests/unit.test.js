@@ -1992,7 +1992,7 @@ describe('Progress Display', () => {
 		expect(capturedOutput).toContain('empty: 0');
 		expect(capturedOutput).toContain('mem:');
 		expect(capturedOutput).toContain('proc: 0 B');
-		expect(capturedOutput).toContain('time: 0s');
+		expect(capturedOutput).toContain('time: 00:00:00');
 	});
 
 	test('formats large numbers with commas', () => {
@@ -2002,24 +2002,30 @@ describe('Progress Display', () => {
 		expect(capturedOutput).toContain('success: 1,000,000');
 		expect(capturedOutput).toContain('failed: 234,567');
 		expect(capturedOutput).toContain('empty: 89,012');
+		expect(capturedOutput).toContain('time: 00:00:00'); // Just started
 	});
 
 	test('formats elapsed time correctly', () => {
 		const now = Date.now();
 
-		// Test seconds only
-		let startTime = now - 45 * 1000; // 45 seconds ago
+		// Test seconds only (45 seconds)
+		let startTime = now - 45 * 1000;
 		showProgress('event', 100, 10, '100', 50, 5, 0, null, 10, startTime);
-		expect(capturedOutput).toContain('time: 45s');
+		expect(capturedOutput).toContain('time: 00:00:45');
 
-		// Test minutes and seconds
-		startTime = now - (3 * 60 + 25) * 1000; // 3m 25s ago
+		// Test minutes and seconds (3m 25s)
+		startTime = now - (3 * 60 + 25) * 1000;
 		showProgress('event', 100, 10, '100', 50, 5, 0, null, 10, startTime);
-		expect(capturedOutput).toContain('time: 3m 25s');
+		expect(capturedOutput).toContain('time: 00:03:25');
 
-		// Test hours, minutes and seconds
-		startTime = now - (2 * 3600 + 15 * 60 + 30) * 1000; // 2h 15m 30s ago
+		// Test hours, minutes and seconds (2h 15m 30s)
+		startTime = now - (2 * 3600 + 15 * 60 + 30) * 1000;
 		showProgress('event', 100, 10, '100', 50, 5, 0, null, 10, startTime);
-		expect(capturedOutput).toContain('time: 2h 15m 30s');
+		expect(capturedOutput).toContain('time: 02:15:30');
+
+		// Test ISO string format (job.startTime format)
+		const isoTime = new Date(now - 61 * 1000).toISOString(); // 1m 1s ago
+		showProgress('event', 100, 10, '100', 50, 5, 0, null, 10, isoTime);
+		expect(capturedOutput).toContain('time: 00:01:01');
 	});
 });

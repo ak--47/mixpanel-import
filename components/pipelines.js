@@ -71,6 +71,8 @@ function createExistenceFilter(job) {
 				callback(null, chunk);
 			} else {
 				job.empty++;
+				// Explicitly null the reference to help GC
+				chunk = null;
 				callback(); // Skip this item but continue
 			}
 		}
@@ -181,6 +183,8 @@ function createExistenceFilter2(job) {
 				callback(null, data);
 			} else {
 				job.empty++;
+				// Explicitly null the reference to help GC
+				data = null;
 				callback(); // Skip but continue
 			}
 		}
@@ -231,6 +235,8 @@ function createStringifyCacher(job, jsonCache, bytesCache) {
 			const exists = isNotEmpty(data);
 			if (!exists) {
 				job.empty++;
+				// Explicitly null the reference to help GC
+				data = null;
 				callback(); // Skip
 				return;
 			}

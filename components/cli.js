@@ -425,20 +425,37 @@ function showProgress(record = "", processed = 0, requests = 0, eps = "", succes
 
 	// Add elapsed time if startTime is provided
 	if (startTime) {
-		const elapsed = Math.floor((Date.now() - startTime) / 1000);
-		const hours = Math.floor(elapsed / 3600);
-		const minutes = Math.floor((elapsed % 3600) / 60);
-		const seconds = elapsed % 60;
-
-		let timeStr = '';
-		if (hours > 0) {
-			timeStr = `${hours}h ${minutes}m ${seconds}s`;
-		} else if (minutes > 0) {
-			timeStr = `${minutes}m ${seconds}s`;
+		// Handle both ISO string and timestamp formats
+		let startTimestamp;
+		if (typeof startTime === 'string') {
+			startTimestamp = new Date(startTime).getTime();
+		} else if (typeof startTime === 'number') {
+			startTimestamp = startTime;
 		} else {
-			timeStr = `${seconds}s`;
+			startTimestamp = 0;
 		}
-		line += ` | time: ${timeStr}`;
+
+		// Calculate elapsed time, handle invalid values
+		if (startTimestamp && !isNaN(startTimestamp)) {
+			const elapsed = Math.floor((Date.now() - startTimestamp) / 1000);
+
+			// Format as HH:MM:SS
+			const hours = Math.floor(elapsed / 3600);
+			const minutes = Math.floor((elapsed % 3600) / 60);
+			const seconds = elapsed % 60;
+
+			// Pad with zeros for consistent format
+			const pad = (num) => num.toString().padStart(2, '0');
+			const timeStr = `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+
+			line += ` | time: ${timeStr}`;
+		} else {
+			// If invalid time, show 00:00:00
+			line += ` | time: 00:00:00`;
+		}
+	} else {
+		// If no startTime provided, show 00:00:00
+		line += ` | time: 00:00:00`;
 	}
 	// Get the terminal width
 	const terminalWidth = process.stdout.columns || 80; // Default to 80 if columns is undefined
