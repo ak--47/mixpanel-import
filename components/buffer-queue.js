@@ -160,10 +160,49 @@ class BufferQueue extends EventEmitter {
 	 * Process queue - move data from queue to output
 	 */
 	_processQueue() {
-		if (this.processing) return;
+		// Allow re-entrance for resuming pending callbacks
+		if (this.processing && !this.isPaused) return;
 		this.processing = true;
 
 		try {
+			// First check if we should resume pending callbacks even if queue is empty
+			if (this.isPaused && this.pendingCallbacks && this.pendingCallbacks.length > 0) {
+				const heapUsedMB = process.memoryUsage().heapUsed / 1024 / 1024;
+				const queueSizeMB = this.queueSizeBytes / 1024 / 1024;
+
+				if (heapUsedMB < this.resumeThresholdMB && queueSizeMB < this.resumeThresholdMB) {
+					// Resume pending callbacks
+					const callback = this.pendingCallbacks.shift();
+					callback(); // Resume one pending write
+
+					if (this.verbose) {
+						console.log(`    ♻️ BufferQueue: Resumed pending callback (${this.pendingCallbacks.length} remaining)`);
+					}
+
+					// If no more pending callbacks, resume source
+					if (this.pendingCallbacks.length === 0) {
+						this._resumeSource(queueSizeMB);
+
+						// If we had a final callback waiting and no more pending, mark as ended now
+						if (this.finalCallback) {
+							if (this.verbose) {
+								console.log(`    ✅ BufferQueue: All pending callbacks processed, now ending source`);
+							}
+							this.sourceEnded = true;
+							const finalCb = this.finalCallback;
+							this.finalCallback = null;
+							finalCb();
+						}
+					} else {
+						// More callbacks to process, schedule another check
+						setImmediate(() => this._processQueue());
+					}
+					this.processing = false; // Clear flag before returning
+					return; // Exit early to let the resumed callback do its work
+				}
+				this.processing = false; // Clear flag if conditions not met
+			}
+
 			// Process while we have data and sink wants it
 			while (this.queue.length > 0 && this.sinkStream && !this.sinkStream.readableEnded) {
 				const item = this.queue[0];
@@ -276,6 +315,13 @@ class BufferQueue extends EventEmitter {
 		// Start periodic checks to resume when memory drops
 		if (!this.checkInterval) {
 			this.checkInterval = setInterval(() => {
+				// Only check if we're still paused
+				if (!this.isPaused) {
+					clearInterval(this.checkInterval);
+					this.checkInterval = null;
+					return;
+				}
+
 				// Check if we can resume
 				const currentHeapMB = process.memoryUsage().heapUsed / 1024 / 1024;
 				const currentQueueMB = this.queueSizeBytes / 1024 / 1024;
@@ -286,9 +332,12 @@ class BufferQueue extends EventEmitter {
 				this.checkCount++;
 
 				if (currentHeapMB < this.resumeThresholdMB && currentQueueMB < this.resumeThresholdMB) {
-					// Memory dropped enough, trigger processing to resume
+					// Memory dropped enough, clear timer and trigger ONE resume
+					clearInterval(this.checkInterval);
+					this.checkInterval = null;
+
 					if (this.verbose) {
-						console.log(`    ✨ BufferQueue: Memory dropped enough, triggering resume...`);
+						console.log(`    ✨ BufferQueue: Memory dropped below threshold, triggering resume...`);
 					}
 					this._processQueue();
 				}
