@@ -44,6 +44,7 @@ class BufferQueue extends EventEmitter {
 		// Stream state
 		this.sourceEnded = false;
 		this.processing = false;
+		this.finalCallback = null; // Stores the final callback when source wants to end but has pending data
 	}
 
 	/**
@@ -93,9 +94,23 @@ class BufferQueue extends EventEmitter {
 			},
 
 			final(callback) {
-				self.sourceEnded = true;
-				self._processQueue();
-				callback();
+				// Don't mark as ended if we have pending callbacks - those represent unprocessed data!
+				if (self.pendingCallbacks && self.pendingCallbacks.length > 0) {
+					if (self.verbose) {
+						console.log(`    📋 BufferQueue: Source wants to end but has ${self.pendingCallbacks.length} pending callbacks (paused data) - deferring end`);
+					}
+					// Store the final callback to call when all pending callbacks are processed
+					self.finalCallback = callback;
+					self._processQueue();
+				} else {
+					// No pending callbacks, safe to mark as ended
+					if (self.verbose) {
+						console.log(`    ✓ BufferQueue: Source ended cleanly, no pending callbacks`);
+					}
+					self.sourceEnded = true;
+					self._processQueue();
+					callback();
+				}
 			}
 		});
 
@@ -168,6 +183,17 @@ class BufferQueue extends EventEmitter {
 
 						if (this.isPaused && this.pendingCallbacks && this.pendingCallbacks.length === 0) {
 							this._resumeSource(queueSizeMB);
+
+							// If we had a final callback waiting and no more pending, mark as ended now
+							if (this.finalCallback) {
+								if (this.verbose) {
+									console.log(`    ✅ BufferQueue: All pending callbacks processed, now ending source`);
+								}
+								this.sourceEnded = true;
+								const callback = this.finalCallback;
+								this.finalCallback = null;
+								callback();
+							}
 						}
 					}
 				} else {
@@ -238,6 +264,7 @@ class BufferQueue extends EventEmitter {
 				console.log(`    ├─ Queue size: ${u.bytesHuman(this.queueSizeBytes)}`);
 			}
 			console.log(`    ├─ Queue depth: ${this.queue.length.toLocaleString()} objects`);
+			console.log(`    ├─ Pending callbacks: ${this.pendingCallbacks ? this.pendingCallbacks.length : 0} (paused data waiting)`);
 			console.log(`    ├─ Objects: ${this.objectsQueued.toLocaleString()} queued, ${this.objectsDequeued.toLocaleString()} sent`);
 			console.log(`    └─ Pipeline continues draining buffered data to Mixpanel...`);
 		}
@@ -310,6 +337,7 @@ class BufferQueue extends EventEmitter {
 		console.log(`    ⏸️  GCS PAUSED - ${timeStr} | ACTIVELY DRAINING TO MIXPANEL`);
 		console.log(`    ├─ Heap memory: ${u.bytesHuman(heapUsed * 1024 * 1024)} (freed ${u.bytesHuman(memoryFreed * 1024 * 1024)} since pause)`);
 		console.log(`    ├─ Queue: ${u.bytesHuman(this.queueSizeBytes)} (${this.queue.length.toLocaleString()} objects remaining)`);
+		console.log(`    ├─ Pending callbacks: ${this.pendingCallbacks ? this.pendingCallbacks.length : 0} (paused data waiting)`);
 		console.log(`    ├─ Progress: ${objectsSentWhilePaused.toLocaleString()} objects sent to Mixpanel while paused`);
 		console.log(`    ├─ Total: ${this.objectsDequeued.toLocaleString()} / ${this.objectsQueued.toLocaleString()} objects sent overall`);
 		console.log(`    └─ Target: Resume when heap < ${u.bytesHuman(this.resumeThresholdMB * 1024 * 1024)} AND queue < ${u.bytesHuman(this.resumeThresholdMB * 1024 * 1024)}`);
