@@ -203,18 +203,36 @@ async function flushToMixpanel(batch, job) {
 			if (res.error || !res.status) job.failed += job.lastBatchLength;
 		}
 
-		job.store(res, success);
+		// MEMORY FIX: Store abbreviated responses to prevent memory issues
+		// Even in unabridged mode, we store only essential fields for monitoring
+		if (!job.abridged) {
+			// Store abbreviated version for monitoring without memory bloat
+			const abbreviatedForStorage = {
+				num_records_imported: res.num_records_imported || 0,
+				num_failed: res?.failed_records?.length || 0,
+				error: res.error || null,
+				status: res.status !== undefined ? res.status : success,
+				code: res.code || (success ? 200 : 400)
+			};
+			job.store(abbreviatedForStorage, success);
+		} else {
+			// Abridged mode - don't store anything
+			job.store(res, success);
+		}
 
 		// MEMORY FIX: Return minimal response data, not full response object
 		// The full response object was being stored in parallel-transform's buffer causing memory leaks
 		// We only need success/fail counts for logging, everything else is already handled above
 
-		// Extract only essential data for logging
+		// Extract only essential data for logging and downstream processing
+		// Include all fields that might be accessed, but with abbreviated data
 		const minimalResponse = {
-			success: res.num_records_imported || res.num_good_events || 0,
-			failed: res?.failed_records?.length || 0,
+			num_records_imported: res.num_records_imported || 0,
+			num_good_events: res.num_good_events || 0,
+			failed_records: res?.failed_records ? [] : undefined,  // Empty array to prevent iteration errors
 			error: res.error || null,
-			status: res.status || success
+			status: res.status !== undefined ? res.status : success,
+			code: res.code || (success ? 200 : 400)
 		};
 
 		// Only return batch if needed (dry run or custom response handler)
@@ -233,6 +251,8 @@ async function flushToMixpanel(batch, job) {
 		catch (e) {
 			//noop
 		}
+		// CRITICAL: Must return array even on error to prevent "result is not iterable"
+		return [{error: e.message || 'Unknown error'}, null];
 	}
 }
 
@@ -435,18 +455,36 @@ async function flushToMixpanelWithUndici(batch, job) {
 			if (res.error || !res.status) job.failed += job.lastBatchLength;
 		}
 
-		job.store(res, success);
+		// MEMORY FIX: Store abbreviated responses to prevent memory issues
+		// Even in unabridged mode, we store only essential fields for monitoring
+		if (!job.abridged) {
+			// Store abbreviated version for monitoring without memory bloat
+			const abbreviatedForStorage = {
+				num_records_imported: res.num_records_imported || 0,
+				num_failed: res?.failed_records?.length || 0,
+				error: res.error || null,
+				status: res.status !== undefined ? res.status : success,
+				code: res.code || (success ? 200 : 400)
+			};
+			job.store(abbreviatedForStorage, success);
+		} else {
+			// Abridged mode - don't store anything
+			job.store(res, success);
+		}
 
 		// MEMORY FIX: Return minimal response data, not full response object
 		// The full response object was being stored in parallel-transform's buffer causing memory leaks
 		// We only need success/fail counts for logging, everything else is already handled above
 
-		// Extract only essential data for logging
+		// Extract only essential data for logging and downstream processing
+		// Include all fields that might be accessed, but with abbreviated data
 		const minimalResponse = {
-			success: res.num_records_imported || res.num_good_events || 0,
-			failed: res?.failed_records?.length || 0,
+			num_records_imported: res.num_records_imported || 0,
+			num_good_events: res.num_good_events || 0,
+			failed_records: res?.failed_records ? [] : undefined,  // Empty array to prevent iteration errors
 			error: res.error || null,
-			status: res.status || success
+			status: res.status !== undefined ? res.status : success,
+			code: res.code || (success ? 200 : 400)
 		};
 
 		// Only return batch if needed (dry run or custom response handler)

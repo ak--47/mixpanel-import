@@ -449,16 +449,31 @@ class Job {
 		// SCD cannot be strict mode -_-
 		if (this.recordType === "scd") this.strict = false;
 
+		// ? validate recordType - reject plural forms with clear error message
+		const invalidPluralTypes = {
+			'events': 'event',
+			'users': 'user',
+			'groups': 'group',
+			'tables': 'table'
+		};
 
-		// ? allow plurals
-		// @ts-ignore
-		if (this.recordType === 'events') this.recordType === 'event';
-		// @ts-ignore
-		if (this.recordType === 'users') this.recordType === 'user';
-		// @ts-ignore
-		if (this.recordType === 'groups') this.recordType === 'group';
-		// @ts-ignore
-		if (this.recordType === 'tables') this.recordType === 'table';
+		if (invalidPluralTypes[this.recordType]) {
+			const correctType = invalidPluralTypes[this.recordType];
+			throw new Error(
+				`Invalid recordType: "${this.recordType}" (plural form not allowed)\n` +
+				`Please use the singular form: "${correctType}"\n` +
+				`Valid options are: "event", "user", "group", "table", "export", "scd", "export-import"`
+			);
+		}
+
+		// Validate recordType is one of the allowed values
+		const validRecordTypes = ['event', 'user', 'group', 'table', 'export', 'scd', 'export-import'];
+		if (this.recordType && !validRecordTypes.includes(this.recordType)) {
+			throw new Error(
+				`Invalid recordType: "${this.recordType}"\n` +
+				`Valid options are: ${validRecordTypes.join(', ')}`
+			);
+		}
 
 		// ? headers for lookup tables
 		if (this.recordType === "table") {
