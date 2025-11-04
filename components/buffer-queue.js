@@ -45,6 +45,7 @@ class BufferQueue extends EventEmitter {
 		this.sourceEnded = false;
 		this.processing = false;
 		this.finalCallback = null; // Stores the final callback when source wants to end but has pending data
+		this.checkInterval = null; // Timer for periodic checks while paused
 	}
 
 	/**
@@ -82,30 +83,40 @@ class BufferQueue extends EventEmitter {
 					}
 					self.pendingCallbacks.push(callback);
 
+					if (self.verbose) {
+						console.log(`    🔄 BufferQueue: Storing callback #${self.pendingCallbacks.length}, not calling it (creates backpressure)`);
+					}
+
 					// DON'T call callback yet - this creates backpressure
 					// The callback will be called when the buffer drains
+					// But DO keep processing the queue so pipeline drains to Mixpanel!
+					self._processQueue(); // Keep draining even while paused
+					return; // Return after triggering process
 				} else {
 					// Buffer has space, accept more data
 					callback();
 				}
 
-				// Trigger processing
-				self._processQueue();
+				// Trigger processing only if we're not paused
+				if (!self.isPaused) {
+					self._processQueue();
+				}
 			},
 
 			final(callback) {
-				// Don't mark as ended if we have pending callbacks - those represent unprocessed data!
-				if (self.pendingCallbacks && self.pendingCallbacks.length > 0) {
+				// Don't mark as ended if we're paused OR have pending callbacks
+				if (self.isPaused || (self.pendingCallbacks && self.pendingCallbacks.length > 0)) {
 					if (self.verbose) {
-						console.log(`    📋 BufferQueue: Source wants to end but has ${self.pendingCallbacks.length} pending callbacks (paused data) - deferring end`);
+						console.log(`    📋 BufferQueue: Source wants to end but we're ${self.isPaused ? 'paused' : 'have pending callbacks'} - deferring end`);
+						console.log(`       └─ Paused: ${self.isPaused}, Pending callbacks: ${self.pendingCallbacks ? self.pendingCallbacks.length : 0}`);
 					}
-					// Store the final callback to call when all pending callbacks are processed
+					// Store the final callback to call when we resume and drain
 					self.finalCallback = callback;
 					self._processQueue();
 				} else {
-					// No pending callbacks, safe to mark as ended
+					// Not paused and no pending callbacks, safe to mark as ended
 					if (self.verbose) {
-						console.log(`    ✓ BufferQueue: Source ended cleanly, no pending callbacks`);
+						console.log(`    ✓ BufferQueue: Source ended cleanly, not paused and no pending callbacks`);
 					}
 					self.sourceEnded = true;
 					self._processQueue();
@@ -210,24 +221,12 @@ class BufferQueue extends EventEmitter {
 				this.sinkStream.push(null);
 			}
 
-			// While paused, periodically check if we can resume
-			if (this.isPaused) {
+			// Log status periodically while paused (the check timer handles resuming)
+			if (this.isPaused && this.verbose) {
 				const now = Date.now();
 				if (now - this.lastMemCheck > 1000) {
 					this.lastMemCheck = now;
-
-					// Log status if verbose
-					if (this.verbose) {
-						this._logPausedStatus();
-					}
-
-					// Check if we can resume pending callbacks
-					const heapUsedMB = process.memoryUsage().heapUsed / 1024 / 1024;
-					const queueSizeMB = this.queueSizeBytes / 1024 / 1024;
-					if (heapUsedMB < this.resumeThresholdMB && queueSizeMB < this.resumeThresholdMB) {
-						// Memory dropped, we can resume! Trigger processing again
-						setImmediate(() => this._processQueue());
-					}
+					this._logPausedStatus();
 				}
 			}
 
@@ -273,6 +272,28 @@ class BufferQueue extends EventEmitter {
 		if (this.sourceStream && typeof this.sourceStream.pause === 'function') {
 			this.sourceStream.pause();
 		}
+
+		// Start periodic checks to resume when memory drops
+		if (!this.checkInterval) {
+			this.checkInterval = setInterval(() => {
+				// Check if we can resume
+				const currentHeapMB = process.memoryUsage().heapUsed / 1024 / 1024;
+				const currentQueueMB = this.queueSizeBytes / 1024 / 1024;
+
+				if (this.verbose && this.checkCount % 10 === 0) { // Log every 10 seconds
+					console.log(`    ⏳ BufferQueue: Checking if can resume - Heap: ${u.bytesHuman(currentHeapMB * 1024 * 1024)}, Queue: ${u.bytesHuman(this.queueSizeBytes)}`);
+				}
+				this.checkCount++;
+
+				if (currentHeapMB < this.resumeThresholdMB && currentQueueMB < this.resumeThresholdMB) {
+					// Memory dropped enough, trigger processing to resume
+					if (this.verbose) {
+						console.log(`    ✨ BufferQueue: Memory dropped enough, triggering resume...`);
+					}
+					this._processQueue();
+				}
+			}, 1000); // Check every second
+		}
 	}
 
 	/**
@@ -304,6 +325,12 @@ class BufferQueue extends EventEmitter {
 		// Resume the actual source stream
 		if (this.sourceStream && typeof this.sourceStream.resume === 'function') {
 			this.sourceStream.resume();
+		}
+
+		// Stop the periodic check timer
+		if (this.checkInterval) {
+			clearInterval(this.checkInterval);
+			this.checkInterval = null;
 		}
 
 		this.pausedAt = 0;
