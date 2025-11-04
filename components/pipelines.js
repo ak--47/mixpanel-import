@@ -95,7 +95,13 @@ function createVendorTransform(job) {
 					// @ts-ignore - Some vendor transforms (like PostHog) take heavyObjects as second param
 					data = job.vendorTransform(data, job.heavyObjects);
 				}
-				callback(null, data);
+				// Handle null returns from vendor transforms (e.g., PostHog filtering events)
+				if (data === null || data === undefined) {
+					job.empty++;
+					callback(); // Skip this record
+				} else {
+					callback(null, data);
+				}
 			} catch (err) {
 				callback(err);
 			}
@@ -117,7 +123,13 @@ function createUserTransform(job) {
 				if (job.transformFunc) {
 					data = job.transformFunc(data, job.heavyObjects);
 				}
-				callback(null, data);
+				// Handle null returns from user transforms (filtering)
+				if (data === null || data === undefined) {
+					job.empty++;
+					callback(); // Skip this record
+				} else {
+					callback(null, data);
+				}
 			} catch (err) {
 				callback(err);
 			}
