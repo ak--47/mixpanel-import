@@ -87,7 +87,8 @@ function postHogEventsToMp(options, heavyObjects) {
 		} = postHogEvent;
 
 		// PERFORMANCE: Use pre-compiled regex instead of Array.some()
-		if (ignoreEventPattern.test(mpEventName)) return {};
+		// MEMORY FIX: Return null instead of {} to filter early in pipeline
+		if (ignoreEventPattern.test(mpEventName)) return null;
 
 
 
