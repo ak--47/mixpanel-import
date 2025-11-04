@@ -253,17 +253,17 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'enable manual garbage collection when memory usage exceeds 85% of heap limit (requires --expose-gc)',
 			type: 'boolean'
 		})
-		.options("adaptive", {
+		.options("aggressiveGC", {
 			demandOption: false,
 			default: false,
-			describe: 'enable adaptive scaling to auto-adjust workers based on event density (prevents OOM)',
+			describe: 'enable aggressive garbage collection every 30 seconds (requires --expose-gc)',
 			type: 'boolean'
 		})
-		.options("avg-event-size", {
+		.options("memoryMonitor", {
 			demandOption: false,
-			alias: 'avgEventSize',
-			describe: 'average event size in bytes (hint for adaptive scaling)',
-			type: 'number'
+			default: false,
+			describe: 'enable memory monitoring even without verbose mode',
+			type: 'boolean'
 		})
 		.options('event-whitelist', {
 			demandOption: false,

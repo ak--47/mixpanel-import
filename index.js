@@ -100,22 +100,61 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	// Enhanced job creation logging with configuration details
 	l(`\n✅ JOB CREATED!\n`);
 	if (job.verbose) {
-		l(`📋 Configuration Summary:`);
-		l(`   • Record Type: ${job.recordType}`);
-		l(`   • Region: ${job.region.toUpperCase()}`);
-		l(`   • Workers: ${job.workers}`);
-		l(`   • Records per Batch: ${u.comma(job.recordsPerBatch)}`);
-		l(`   • Stream Format: ${job.streamFormat}`);
+		l(`╔════════════════════════════════════════════════════════════════╗`);
+		l(`║                     CONFIGURATION SUMMARY                       ║`);
+		l(`╠════════════════════════════════════════════════════════════════╣`);
+		l(`║ Pipeline Configuration:                                         ║`);
+		l(`║   • Record Type: ${job.recordType.padEnd(47)}║`);
+		l(`║   • Region: ${job.region.toUpperCase().padEnd(52)}║`);
+		l(`║   • Stream Format: ${job.streamFormat.padEnd(45)}║`);
+		l(`║                                                                  ║`);
+		l(`║ Performance Settings:                                           ║`);
+		l(`║   • Workers: ${String(job.workers).padEnd(51)}║`);
+		l(`║   • High Water Mark: ${String(job.highWater).padEnd(43)}║`);
+		l(`║   • Records per Batch: ${u.comma(job.recordsPerBatch).padEnd(41)}║`);
+		l(`║   • Bytes per Batch: ${u.bytesHuman(job.bytesPerBatch).padEnd(43)}║`);
+		l(`║   • Compression: ${job.compress ? 'Enabled' : 'Disabled'.padEnd(47)}║`);
+
+		// Data processing options
+		if (job.vendor || job.transformFunc || job.fixData || job.fixTime || job.removeNulls) {
+			l(`║                                                                  ║`);
+			l(`║ Data Processing:                                                ║`);
+			if (job.vendor) {
+				const vendorText = `${job.vendor.toUpperCase()} vendor transform`;
+				l(`║   • Vendor: ${vendorText.padEnd(52)}║`);
+			}
+			if (job.transformFunc) l(`║   • Custom Transform: Enabled                                   ║`);
+			if (job.fixData) l(`║   • Fix Data: Enabled                                           ║`);
+			if (job.fixTime) l(`║   • Fix Time: Enabled                                           ║`);
+			if (job.removeNulls) l(`║   • Remove Nulls: Enabled                                       ║`);
+			if (job.dedupe) l(`║   • Deduplication: Enabled                                      ║`);
+		}
+
+		// Export specific settings
 		if (job.recordType.includes('export')) {
-			l(`   • Export Mode: ${job.where ? (job.where.startsWith('gs://') ? '☁️  GCS' : job.where.startsWith('s3://') ? '☁️  S3' : '💾 Local') : '💾 Local'}`);
+			l(`║                                                                  ║`);
+			l(`║ Export Settings:                                                ║`);
+			l(`║   • Export Mode: ${job.where ? (job.where.startsWith('gs://') ? '☁️  GCS' : job.where.startsWith('s3://') ? '☁️  S3' : '💾 Local') : '💾 Local'.padEnd(47)}║`);
 			if (job.params && Object.keys(job.params).length > 0) {
-				// Format params more cleanly
 				const paramCount = Object.keys(job.params).length;
-				l(`   • Export Params: ${paramCount} custom parameter${paramCount > 1 ? 's' : ''} configured`);
+				l(`║   • Export Params: ${String(paramCount) + ' parameter' + (paramCount > 1 ? 's' : '').padEnd(45)}║`);
 			}
 		}
-		if (job.transformFunc) l(`   • Transform: Custom function`);
-		if (job.vendor) l(`   • Vendor Transform: ${job.vendor}`);
+
+		// Memory management
+		if (job.throttleGCS || job.throttleMemory || job.manualGc || job.aggressiveGC) {
+			l(`║                                                                  ║`);
+			l(`║ Memory Management:                                              ║`);
+			if (job.throttleGCS || job.throttleMemory) {
+				l(`║   • Memory Throttling: Enabled                                  ║`);
+				l(`║     - Pause at: ${u.bytesHuman((job.throttlePauseMB || 1500) * 1024 * 1024).padEnd(48)}║`);
+				l(`║     - Resume at: ${u.bytesHuman((job.throttleResumeMB || 1000) * 1024 * 1024).padEnd(47)}║`);
+			}
+			if (job.manualGc) l(`║   • Manual GC: Enabled                                          ║`);
+			if (job.aggressiveGC) l(`║   • Aggressive GC: Enabled (every 30s)                          ║`);
+		}
+
+		l(`╚════════════════════════════════════════════════════════════════╝`);
 		l(``);
 	}
 	await job.init();
@@ -156,12 +195,13 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	l('\n');
 	if (job.createProfiles)  //job.transform = await createProfiles(job);
 
-		// clean up
-		job.timer.end(false);
+	// clean up - stop timer before getting summary
+	job.timer.stop(false);
 	const summary = job.summary();
 	// Always show completion message for exports (even when not CLI)
-	if (job.type === 'export' || isCLI) {
-		l(`\n🎉 ${job.type === 'export' ? 'EXPORT' : 'IMPORT'} COMPLETE in ${summary.durationHuman}!\n`);
+	const isExport = job.recordType && job.recordType.includes('export');
+	if (isExport || isCLI) {
+		l(`\n🎉 ${isExport ? 'EXPORT' : 'IMPORT'} COMPLETE in ${summary.durationHuman}!\n`);
 	}
 	
 	const stats = {
@@ -181,21 +221,22 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	
 	// For verbose mode, show key info even when not CLI
 	if (job.verbose && !isCLI) {
-		if (job.type === 'export') {
-			l(`📊 ${summary.success} records exported in ${summary.durationHuman}`);
+		if (job.recordType && job.recordType.includes('export')) {
+			l(`📊 ${u.comma(summary.success)} records exported in ${summary.durationHuman}`);
 			if (job.where && (job.where.startsWith('gs://') || job.where.startsWith('s3://'))) {
 				l(`☁️  Saved to: ${job.where}`);
 			}
 		} else {
 			// Import summary
-			l(`📊 ${summary.success} records imported in ${summary.durationHuman}`);
+			l(`📊 ${u.comma(summary.success)} records imported in ${summary.durationHuman}`);
 			if (summary.failed > 0) {
-				l(`❌ ${summary.failed} records failed`);
+				l(`❌ ${u.comma(summary.failed)} records failed`);
 			}
 			if (summary.duplicates > 0) {
-				l(`🔄 ${summary.duplicates} duplicates skipped`);
+				l(`🔄 ${u.comma(summary.duplicates)} duplicates skipped`);
 			}
-			l(`⚡ ${summary.eps} events/sec • ${summary.rps} requests/sec`);
+			const rpsValue = summary.rps ? summary.rps.toFixed(2) : '0.00';
+			l(`⚡ ${u.comma(summary.eps || 0)} events/sec • ${rpsValue} requests/sec`);
 		}
 		l('');
 	}

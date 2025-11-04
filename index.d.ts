@@ -648,6 +648,17 @@ declare namespace main {
 	 */
 	manualGc?: boolean;
 	/**
+	 * Enable aggressive periodic garbage collection every 30 seconds
+	 * Requires Node.js --expose-gc flag
+	 * @default false
+	 */
+	aggressiveGC?: boolean;
+	/**
+	 * Enable memory monitoring even without verbose mode
+	 * @default false
+	 */
+	memoryMonitor?: boolean;
+	/**
 	 * For events only: automatically set distinct_id from $user_id or $device_id if distinct_id is missing
 	 * Prefers $user_id, falls back to $device_id
 	 * @default false

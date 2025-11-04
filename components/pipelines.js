@@ -13,7 +13,7 @@ const v8 = require('v8');
 // $ networking + filesystem
 const { exportEvents, exportProfiles, deleteProfiles } = require('./exporters');
 const { flushLookupTable, flushToMixpanel, flushToMixpanelWithUndici } = require('./importers.js');
-const { createEventSampler, createMemoryMonitor, applySmartDefaults } = require('./smart-config.js');
+const { createMemoryMonitor } = require('./smart-config.js');
 const { replaceAnnotations, getAnnotations, deleteAnnotations } = require('./meta.js');
 const { createDestinationStream, createTeeStream } = require('./destination-writer.js');
 const fs = require('fs');
@@ -593,10 +593,8 @@ async function corePipeline(stream, job, toNodeStream = false) {
 	// Create base transform stages
 	const stages = [];
 
-	// Only add adaptive stages if enabled (opt-in)
-	if (job.adaptive === true) {
-		applySmartDefaults(job);
-		stages.push(createEventSampler(job)); // Sample events to determine optimal configuration
+	// Add memory monitoring if verbose mode is enabled
+	if (job.verbose || job.memoryMonitor) {
 		stages.push(createMemoryMonitor(job)); // Monitor memory usage
 	}
 

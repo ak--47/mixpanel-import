@@ -234,7 +234,6 @@ class Job {
 		if (this.transport === 'undici' && this.workers > 30) {
 			console.warn(`⚠️  High worker count (${this.workers}) may exceed connection pool capacity.`);
 			console.warn(`   Consider using 30 or fewer workers for optimal performance with undici.`);
-			console.warn(`   Or use --adaptive flag to auto-configure based on event density.`);
 		}
 
 		// ? don't allow batches bigger than API limits
@@ -260,7 +259,6 @@ class Job {
 		this.dedupe = u.isNil(opts.dedupe) ? false : opts.dedupe; //remove duplicate records
 		this.createProfiles = u.isNil(opts.createProfiles) ? false : opts.createProfiles; //remove duplicate records
 		this.dryRun = u.isNil(opts.dryRun) ? false : opts.dryRun; //don't actually send data
-		this.adaptive = u.isNil(opts.adaptive) ? false : opts.adaptive; //enable adaptive scaling
 		this.http2 = u.isNil(opts.http2) ? false : opts.http2; //use http2
 		this.addToken = u.isNil(opts.addToken) ? false : opts.addToken; //add token to each record
 		this.isGzip = u.isNil(opts.isGzip) ? false : opts.isGzip; //force treat input as gzipped (overrides extension detection)
@@ -273,7 +271,8 @@ class Job {
 		this.outputFilePath = opts.outputFilePath || './mixpanel-transform.json'; //where to write the file
 		this.skipWriteToDisk = u.isNil(opts.skipWriteToDisk) ? false : opts.skipWriteToDisk; //don't write to disk
 		this.keepBadRecords = u.isNil(opts.keepBadRecords) ? true : opts.keepBadRecords; //keep bad records
-		this.manualGc = u.isNil(opts.manualGc) ? false : opts.manualGc; //enable manual garbage collection when memory usage is high
+		this.aggressiveGC = u.isNil(opts.aggressiveGC) ? false : opts.aggressiveGC; //enable aggressive garbage collection (periodic + emergency)
+		this.memoryMonitor = u.isNil(opts.memoryMonitor) ? false : opts.memoryMonitor; //enable memory monitoring without verbose mode
 
 		// ? throttling options for cloud storage
 		this.throttleGCS = u.isNil(opts.throttleGCS) ? false : opts.throttleGCS; //enable memory-based throttling for GCS
@@ -899,8 +898,10 @@ class Job {
 	}
 	getRps() {
 		const duration = (Date.now() - dayjs(this.startTime).valueOf()) / 1000;
+		if (duration <= 0 || !this.requests) return '0.00';
 		const rps = this.requests / duration;
-		return u.comma(Math.round(rps));
+		// Format to 2 decimal places for better precision
+		return rps.toFixed(2);
 	}
 	getMbps() {
 		const duration = (Date.now() - dayjs(this.startTime).valueOf()) / 1000;
