@@ -2,7 +2,7 @@ const got = require('got');
 const https = require('https');
 const { gzip } = require('node-gzip');
 const u = require('ak-tools');
-const HTTP_AGENT = new https.Agent({ keepAlive: true, maxSockets: 100 });
+const HTTP_AGENT = new https.Agent({ keepAlive: true, maxSockets: 50 });
 
 // Undici imports for high-performance HTTP
 const { Pool } = require('undici');

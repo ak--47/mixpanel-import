@@ -255,7 +255,7 @@ class Job {
 		this.fixJson = u.isNil(opts.fixJson) ? false : opts.fixJson; //fix json
 		this.removeNulls = u.isNil(opts.removeNulls) ? false : opts.removeNulls; //remove null fields
 		this.flattenData = u.isNil(opts.flattenData) ? false : opts.flattenData; //flatten nested properties
-		this.abridged = u.isNil(opts.abridged) ? false : opts.abridged; //don't include success responses
+		this.abridged = u.isNil(opts.abridged) ? true : opts.abridged; //true = don't store HTTP responses (prevents memory leak)
 		this.forceStream = u.isNil(opts.forceStream) ? true : opts.forceStream; //don't ever buffer files into memory
 		this.dedupe = u.isNil(opts.dedupe) ? false : opts.dedupe; //remove duplicate records
 		this.createProfiles = u.isNil(opts.createProfiles) ? false : opts.createProfiles; //remove duplicate records
@@ -712,19 +712,19 @@ class Job {
 	}
 	store(response, success = true) {
 		const isVerbose = !this.abridged;
+
+		// IMPORTANT: When abridged=true (production mode), we don't store responses
+		// This prevents memory leaks from accumulating hundreds of HTTP response objects
 		if (isVerbose) {
-			if (success) this.responses.push(response);
-			if (!success) {
-				if (!this.abridged) {
-					this.errors.push(response);
-
-				}
-
+			// Store full responses only in verbose/debug mode
+			if (success) {
+				this.responses.push(response);  // WARNING: Can cause memory leak with large imports!
 			}
-		}
-
-		if (!isVerbose) {
-			// summarize the error + count			
+			if (!success) {
+				this.errors.push(response);
+			}
+		} else {
+			// In abridged mode, only summarize errors (no response storage)
 			if (!success && response?.failed_records) {
 				if (Array.isArray(response.failed_records)) {
 					response.failed_records.forEach(failure => {
@@ -732,10 +732,8 @@ class Job {
 						if (!this.errors[message]) this.errors[message] = 1;
 						this.errors[message]++;
 					});
-
 				}
 			}
-
 		}
 
 		return;
