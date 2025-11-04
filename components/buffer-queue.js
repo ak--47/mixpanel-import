@@ -23,6 +23,13 @@ class BufferQueue extends EventEmitter {
 		this.resumeThresholdMB = options.resumeThresholdMB || 1000; // Resume at 1GB
 		this.verbose = options.verbose !== undefined ? options.verbose : true;
 
+		// Debug log the actual values
+		if (this.verbose) {
+			console.log(`📊 BufferQueue initialized with thresholds:`);
+			console.log(`    ├─ Pause at: ${this.pauseThresholdMB}MB`);
+			console.log(`    └─ Resume at: ${this.resumeThresholdMB}MB`);
+		}
+
 		// Queue state
 		this.queue = [];
 		this.queueSizeBytes = 0;

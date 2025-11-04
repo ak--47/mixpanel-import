@@ -899,8 +899,17 @@ class Job {
 	 * @returns {import('../index.js').ImportResults} `{success, failed, total, requests, duration}`
 	 */
 	summary(includeResponses = true) {
-		this.timer.stop(false);
-		const { delta, human } = this.timer.report(false);
+		// Only stop timer if it was started (avoid "etl has not been started" errors in tests)
+		let delta = 0;
+		let human = '0s';
+		try {
+			this.timer.stop(false);
+			const report = this.timer.report(false);
+			delta = report.delta;
+			human = report.human;
+		} catch (e) {
+			// Timer was never started, use defaults
+		}
 		const memoryHuman = this.memPretty();
 		const memory = this.memAvg();
 		/** @type {import('../index.js').ImportResults} */
@@ -986,7 +995,9 @@ class Job {
 				"success",
 				"total",
 				"failed",
-				"errors"
+				"errors",
+				"startTime",
+				"endTime"
 			];
 			for (const key in summary) {
 				if (!includeOnly.includes(key)) delete summary[key];

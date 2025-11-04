@@ -204,12 +204,25 @@ async function flushToMixpanel(batch, job) {
 		}
 
 		job.store(res, success);
+
+		// MEMORY FIX: Return minimal response data, not full response object
+		// The full response object was being stored in parallel-transform's buffer causing memory leaks
+		// We only need success/fail counts for logging, everything else is already handled above
+
+		// Extract only essential data for logging
+		const minimalResponse = {
+			success: res.num_records_imported || res.num_good_events || 0,
+			failed: res?.failed_records?.length || 0,
+			error: res.error || null,
+			status: res.status || success
+		};
+
 		// Only return batch if needed (dry run or custom response handler)
 		// This prevents memory accumulation in production imports
 		if (job.dryRun || job.responseHandler) {
-			return [res, batch];
+			return [res, batch];  // Keep full response for dry run/custom handlers
 		}
-		return [res, null];
+		return [minimalResponse, null];
 	}
 
 	catch (e) {
@@ -423,12 +436,25 @@ async function flushToMixpanelWithUndici(batch, job) {
 		}
 
 		job.store(res, success);
+
+		// MEMORY FIX: Return minimal response data, not full response object
+		// The full response object was being stored in parallel-transform's buffer causing memory leaks
+		// We only need success/fail counts for logging, everything else is already handled above
+
+		// Extract only essential data for logging
+		const minimalResponse = {
+			success: res.num_records_imported || res.num_good_events || 0,
+			failed: res?.failed_records?.length || 0,
+			error: res.error || null,
+			status: res.status || success
+		};
+
 		// Only return batch if needed (dry run or custom response handler)
 		// This prevents memory accumulation in production imports
 		if (job.dryRun || job.responseHandler) {
-			return [res, batch];
+			return [res, batch];  // Keep full response for dry run/custom handlers
 		}
-		return [res, null];
+		return [minimalResponse, null];
 	}
 
 	catch (e) {

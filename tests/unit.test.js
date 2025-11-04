@@ -58,14 +58,14 @@ describe("job config", () => {
 	});
 
 	test("can store stuff", () => {
-		const job = new Job(fakeCreds);
+		const job = new Job(fakeCreds, { abridged: false });
 		job.store("response", true);
 		expect(job.responses.length).toBe(1);
 		expect(job.responses[0]).toBe("response");
 	});
 
 	test("stores errors too", () => {
-		const job = new Job(fakeCreds);
+		const job = new Job(fakeCreds, { abridged: false });
 		job.store("error_response", false);
 		expect(job.errors.length).toBe(1);
 		expect(job.errors[0]).toBe("error_response");
@@ -1667,7 +1667,19 @@ describe("maxRecords functionality", () => {
 		});
 
 		expect(result.total).toBe(0);
-		expect(result.dryRun.length).toBe(0);
+		expect(result.dryRun).toBe(undefined);
+	});
+
+	test('one processes one', async () => {
+		const testData = generateTestData(10);
+
+		const result = await mpImport(fakeCreds, testData, {
+			maxRecords: 1,
+			dryRun: true
+		});
+
+		expect(result.total).toBe(1);
+		expect(result.dryRun.length).toBe(1);
 	});
 
 	test('larger than dataset', async () => {
@@ -1919,9 +1931,9 @@ describe('BufferQueue', () => {
 			}
 		});
 
-		// Connect
-		const queueInput = bufferQueue.createInputStream();
-		const queueOutput = bufferQueue.createOutputStream();
+		// Connect (specify objectMode: true since we're dealing with objects not bytes)
+		const queueInput = bufferQueue.createInputStream(true);
+		const queueOutput = bufferQueue.createOutputStream(true);
 
 		source.pipe(queueInput);
 		queueOutput.pipe(sink);
