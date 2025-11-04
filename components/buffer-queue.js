@@ -40,6 +40,8 @@ class BufferQueue extends EventEmitter {
 		this.checkCount = 0;
 		this.memoryAtPause = 0; // Track memory when pause starts
 		this.objectsDequeuedAtPause = 0; // Track objects sent when pause starts
+		this.baselineMemoryMB = null; // Track baseline pipeline memory
+		this.emptyQueueCheckCount = 0; // Track how long queue has been empty
 
 		// Stream state
 		this.sourceEnded = false;
@@ -326,8 +328,67 @@ class BufferQueue extends EventEmitter {
 				const currentHeapMB = process.memoryUsage().heapUsed / 1024 / 1024;
 				const currentQueueMB = this.queueSizeBytes / 1024 / 1024;
 
-				if (this.verbose && this.checkCount % 10 === 0) { // Log every 10 seconds
+				// Track baseline memory when queue is empty
+				if (this.queueSizeBytes === 0) {
+					this.emptyQueueCheckCount++;
+					// After 5 checks with empty queue, consider this baseline memory
+					if (this.emptyQueueCheckCount >= 5 && !this.baselineMemoryMB) {
+						this.baselineMemoryMB = currentHeapMB;
+						if (this.verbose) {
+							console.log(`    📊 BufferQueue: Detected baseline pipeline memory: ${u.bytesHuman(this.baselineMemoryMB * 1024 * 1024)}`);
+							if (this.baselineMemoryMB > this.resumeThresholdMB) {
+								console.log(`    ⚠️  WARNING: Baseline memory (${u.bytesHuman(this.baselineMemoryMB * 1024 * 1024)}) exceeds resume threshold (${u.bytesHuman(this.resumeThresholdMB * 1024 * 1024)})`);
+								console.log(`       └─ Pipeline will be stuck! Increase resumeThresholdMB to at least ${Math.ceil(this.baselineMemoryMB + 100)}MB`);
+							}
+						}
+					}
+
+					// Force garbage collection when queue is empty and memory is high
+					if (this.emptyQueueCheckCount % 5 === 0 && currentHeapMB > this.resumeThresholdMB) {
+						if (global.gc) {
+							const beforeGC = process.memoryUsage().heapUsed / 1024 / 1024;
+							global.gc();
+							const afterGC = process.memoryUsage().heapUsed / 1024 / 1024;
+							const freed = beforeGC - afterGC;
+							if (this.verbose) {
+								if (freed > 10) {
+									console.log(`    ♻️  BufferQueue: Forced GC freed ${u.bytesHuman(freed * 1024 * 1024)} (${u.bytesHuman(beforeGC * 1024 * 1024)} → ${u.bytesHuman(afterGC * 1024 * 1024)})`);
+								} else {
+									console.log(`    ♻️  BufferQueue: Forced GC freed minimal memory (${freed.toFixed(1)}MB) - pipeline holding legitimate data`);
+								}
+							}
+						} else if (this.verbose && this.emptyQueueCheckCount === 5) {
+							console.log(`    ⚠️  BufferQueue: Cannot force GC - run with 'node --expose-gc' flag`);
+						}
+					}
+				} else {
+					this.emptyQueueCheckCount = 0;
+				}
+
+				// Log status every 10 seconds
+				if (this.verbose) {
 					console.log(`    ⏳ BufferQueue: Checking if can resume - Heap: ${u.bytesHuman(currentHeapMB * 1024 * 1024)}, Queue: ${u.bytesHuman(this.queueSizeBytes)}`);
+
+					// Log detailed status every 10 seconds
+					if (this.checkCount % 10 === 0) {
+						const memoryGap = currentHeapMB - this.resumeThresholdMB;
+						if (memoryGap > 0) {
+							console.log(`       ├─ Need heap < ${u.bytesHuman(this.resumeThresholdMB * 1024 * 1024)} to resume (currently ${u.bytesHuman(memoryGap * 1024 * 1024)} above)`);
+							if (this.queueSizeBytes === 0) {
+								console.log(`       ├─ BufferQueue is EMPTY (0 bytes) - memory held elsewhere in pipeline`);
+								console.log(`       ├─ Pending callbacks: ${this.pendingCallbacks ? this.pendingCallbacks.length : 0}`);
+
+								// Show memory breakdown
+								const memUsage = process.memoryUsage();
+								console.log(`       ├─ Memory breakdown:`);
+								console.log(`       │  ├─ Heap Used: ${u.bytesHuman(memUsage.heapUsed)}`);
+								console.log(`       │  ├─ Heap Total: ${u.bytesHuman(memUsage.heapTotal)}`);
+								console.log(`       │  ├─ RSS: ${u.bytesHuman(memUsage.rss)}`);
+								console.log(`       │  └─ External: ${u.bytesHuman(memUsage.external)}`);
+								console.log(`       └─ Pipeline is processing data through 10 HTTP workers + 13 transform stages`);
+							}
+						}
+					}
 				}
 				this.checkCount++;
 
