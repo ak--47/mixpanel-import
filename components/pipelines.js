@@ -721,8 +721,9 @@ async function corePipeline(stream, job, toNodeStream = false) {
 
 	// Pipe the input stream through our pipeline
 	if (stream) {
-		// Create an array to collect results
-		const results = [];
+		// MEMORY FIX: Don't accumulate results - they're never used!
+		// The results array was accumulating every response causing memory leaks
+		// const results = [];
 
 		// Get the last stage to listen for results
 		const lastStage = stages[stages.length - 1];
@@ -732,10 +733,11 @@ async function corePipeline(stream, job, toNodeStream = false) {
 			l(`\n\nDATA FLOWING\n`);
 		});
 
-		// Set up result collection from the last stage
-		lastStage.on('data', (result) => {
-			results.push(result);
-		});
+		// MEMORY FIX: Don't accumulate results in array
+		// Just let them flow through and be garbage collected
+		// lastStage.on('data', (result) => {
+		//     results.push(result);
+		// });
 
 		// Use the promise-based pipeline for proper error handling and completion
 		await pipelinePromise(
