@@ -56,6 +56,7 @@ CORE
 /**
  * Mixpanel Importer
  * stream `events`, `users`, `groups`, and `tables` to mixpanel!
+ * @function main
  * @example
  * const mp = require('mixpanel-import')
  * const imported = await mp(creds, data, options)

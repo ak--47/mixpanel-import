@@ -140,7 +140,7 @@ describe("sanity: filenames", () => {
 	test(
 		"group",
 		async () => {
-			const data = await mp({}, groups, { ...opts, recordType: `group` });
+			const data = await mp({}, groups, { ...opts, recordType: `group`, groupKey: "company_id" });
 			expect(data.success).toBe(3);
 			expect(data.failed).toBe(0);
 			expect(data.duration).toBeGreaterThan(0);
@@ -718,7 +718,7 @@ describe("sanity: cli", () => {
 	test(
 		"groups",
 		async () => {
-			const output = execSync(`node ./index.js ${groups} --type group --fixData`).toString().trim().split("\n").pop();
+			const output = execSync(`node ./index.js ${groups} --type group --fixData --groupKey company_id`).toString().trim().split("\n").pop();
 			const result = await u.load(output, true);
 			expect(result.success).toBe(3);
 		},
@@ -1248,7 +1248,7 @@ describe('sanity: backpressure', () => {
 
 	jest.setTimeout(10000);
 
-	test.skip('applies backpressure to pause source when buffer is full', async () => {
+	test('applies backpressure to pause source when buffer is full', async () => {
 		const bufferQueue = new BufferQueue({
 			pauseThresholdMB: 0.001,  // Pause at 1KB for testing
 			resumeThresholdMB: 0.0005, // Resume at 0.5KB
@@ -1373,7 +1373,7 @@ describe('sanity: backpressure', () => {
 
 		// Send enough data to trigger pause
 		for (let i = 0; i < 30; i++) {
-			source.push({ id: i, data: 'x'.repeat(100) });
+			source.push({ id: i, data: 'x'.repeat(1000) });
 		}
 		source.push(null);
 

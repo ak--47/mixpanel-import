@@ -198,7 +198,7 @@ async function testWorkerPerformance() {
 	console.log(`${colors.bright}${colors.blue}TEST 1: Workers Performance (Parallel HTTP Requests)${colors.reset}`);
 	console.log('Testing how worker count affects throughput...\n');
 
-	const workerCounts = [1, 3, 5, 10, 15, 20, 30];
+	const workerCounts = [1, 3, 5, 10, 15, 20, 30, 40, 50, 60, 80, 100];
 	const testData = TEST_DATA.small;
 
 	const testResults = [];
@@ -238,7 +238,7 @@ async function testHighWaterPerformance() {
 	console.log(`${colors.bright}${colors.blue}TEST 2: HighWater Buffer Size (Stream Buffering)${colors.reset}`);
 	console.log('Testing how buffer size affects throughput and memory...\n');
 
-	const highWaterValues = [16, 30, 50, 100, 150, 200];
+	const highWaterValues = [16, 30, 50, 100, 150, 200, 250, 300, 400, 500];
 	const testData = TEST_DATA.small;
 	const fixedWorkers = 10;
 
@@ -277,7 +277,8 @@ async function testHighWaterPerformance() {
  */
 async function testEventSizeImpact() {
 	console.log(`${colors.bright}${colors.blue}TEST 3: Event Size Impact (As per PERFORMANCE_TUNING.md)${colors.reset}`);
-	console.log('Testing optimal configurations for different event sizes...\n');
+	console.log('Testing optimal configurations for different event sizes...');
+	console.log(`${colors.dim}(Note: Each test uses specific workers/highwater optimized for that event size)${colors.reset}\n`);
 
 	// Configurations from PERFORMANCE_TUNING.md
 	const scenarios = [
@@ -299,7 +300,8 @@ async function testEventSizeImpact() {
 	];
 
 	for (const scenario of scenarios) {
-		process.stdout.write(`  ${scenario.name.padEnd(25)} `);
+		const configStr = `(w:${scenario.config.workers} h:${scenario.config.highWater})`;
+		process.stdout.write(`  ${scenario.name.padEnd(25)} ${colors.dim}${configStr.padEnd(12)}${colors.reset} `);
 
 		const result = await runBenchmark(
 			`size_${scenario.name}`,
@@ -327,7 +329,8 @@ async function testEventSizeImpact() {
  */
 async function testCompressionImpact() {
 	console.log(`${colors.bright}${colors.blue}TEST 4: Compression Impact${colors.reset}`);
-	console.log('Testing compression levels vs throughput...\n');
+	console.log('Testing compression levels vs throughput...');
+	console.log(`${colors.dim}(Fixed config: workers=10, highWater=100)${colors.reset}\n`);
 
 	const compressionLevels = [
 		{ name: 'No compression', compress: false },
@@ -366,7 +369,8 @@ async function testCompressionImpact() {
  */
 async function testMemoryManagement() {
 	console.log(`${colors.bright}${colors.blue}TEST 5: Memory Management Options${colors.reset}`);
-	console.log('Testing memory management features...\n');
+	console.log('Testing memory management features...');
+	console.log(`${colors.dim}(Fixed config: workers=5, highWater=30)${colors.reset}\n`);
 
 	const memoryConfigs = [
 		{ name: 'Baseline', config: {} },
@@ -401,73 +405,62 @@ async function testMemoryManagement() {
 }
 
 /**
- * Test 6: Combined Optimal Settings (from PERFORMANCE_TUNING.md)
+ * Test 6: Transform Impact
  */
-async function testOptimalConfigurations() {
-	console.log(`${colors.bright}${colors.blue}TEST 6: Optimal Configurations (PERFORMANCE_TUNING.md Scenarios)${colors.reset}`);
-	console.log('Testing recommended configurations for different scenarios...\n');
+async function testTransformImpact() {
+	console.log(`${colors.bright}${colors.blue}TEST 6: Transform Impact${colors.reset}`);
+	console.log('Testing performance impact of data transformations...');
+	console.log(`${colors.dim}(Fixed config: workers=10, highWater=100)${colors.reset}\n`);
 
-	const scenarios = [
+	const testData = TEST_DATA.small;
+
+	const transformConfigs = [
 		{
-			name: 'Maximum Speed',
-			data: TEST_DATA.small,
+			name: 'No Transforms (baseline)',
 			config: {
-				workers: 30,
-				highWater: 200,
-				recordsPerBatch: 2000,
-				compress: true,
-				abridged: true
+				fastMode: true  // This skips ALL transforms
 			}
 		},
 		{
-			name: 'Memory Constrained',
-			data: TEST_DATA.small,
+			name: 'Fix Data Only',
 			config: {
-				workers: 5,
-				highWater: 30,
-				recordsPerBatch: 1000,
-				aggressiveGC: true,
-				abridged: true
+				fixData: true,
+				fixTime: false,
+				removeNulls: false,
+				flattenData: false
 			}
 		},
 		{
-			name: 'Large Events (PostHog)',
-			data: TEST_DATA.large,
+			name: 'All Transforms Enabled',
 			config: {
-				workers: 3,
-				highWater: 20,
-				recordsPerBatch: 500,
-				aggressiveGC: true
-			}
-		},
-		{
-			name: 'Network Limited',
-			data: TEST_DATA.medium,
-			config: {
-				workers: 10,
-				highWater: 100,
-				compress: true,
-				compressionLevel: 9
+				fixData: true,
+				fixTime: true,
+				removeNulls: true,
+				flattenData: true,
+				addToken: true,
+				dedupe: true,
+				tags: { source: 'benchmark', version: '3.1.1' },
+				aliases: { user: 'distinct_id', timestamp: 'time' }
 			}
 		}
 	];
 
-	for (const scenario of scenarios) {
-		process.stdout.write(`  ${scenario.name.padEnd(25)} `);
+	for (const transform of transformConfigs) {
+		process.stdout.write(`  ${transform.name.padEnd(30)} `);
 
 		const result = await runBenchmark(
-			`optimal_${scenario.name}`,
-			scenario.data,
-			scenario.config
+			`transform_${transform.name}`,
+			testData,
+			{ workers: 10, highWater: 100, ...transform.config }
 		);
 
 		if (result.metrics) {
-			const { eps, mbps, rps, memoryUsedMB } = result.metrics;
+			const { eps, mbps, duration, memoryUsedMB } = result.metrics;
 			console.log(
 				`${colors.green}${eps.toLocaleString().padStart(6)} eps${colors.reset} | ` +
 				`${colors.cyan}${mbps.toFixed(1).padStart(5)} MB/s${colors.reset} | ` +
-				`${colors.yellow}${rps.toFixed(1).padStart(5)} rps${colors.reset} | ` +
-				`${colors.magenta}${memoryUsedMB.toString().padStart(4)} MB${colors.reset}`
+				`${colors.magenta}${memoryUsedMB.toString().padStart(4)} MB${colors.reset} | ` +
+				`${colors.dim}${duration.toFixed(2)}s${colors.reset}`
 			);
 		}
 
@@ -585,7 +578,7 @@ async function main() {
 		await testEventSizeImpact();
 		await testCompressionImpact();
 		await testMemoryManagement();
-		await testOptimalConfigurations();
+		await testTransformImpact();
 
 		// Generate and display summary
 		generateSummary();

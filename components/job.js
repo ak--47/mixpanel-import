@@ -261,7 +261,7 @@ class Job {
 
 		// ? number options
 		this.recordsPerBatch = opts.recordsPerBatch || 2000; // records in each req; max 2000 (200 for groups)
-		this.bytesPerBatch = opts.bytesPerBatch || 10 * 1024 * 1024; // max bytes in each req (10MB = 10485760)
+		this.bytesPerBatch = opts.bytesPerBatch || 9.8 * 1024 * 1024; // max bytes in each req (9.8MB = 10276045, safely below 10MB limit)
 		this.maxRetries = opts.maxRetries || 10; // number of times to retry a batch
 		this.timeOffset = opts.timeOffset || 0; // utc hours offset
 		this.compressionLevel = opts.compressionLevel || 6; // gzip compression level

@@ -197,7 +197,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 		})
 		.option("bytes", {
 			demandOption: false,
-			default: '2MB',
+			default: '9.8MB',
 			describe: 'max size of each request',
 			type: 'number',
 			alias: 'bytesPerBatch'

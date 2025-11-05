@@ -279,11 +279,12 @@ declare namespace main {
 
     /**
      * Maximum bytes per API batch
-     * @range 1-2097152 (2MB max)
-     * @default 2000000 (slightly under 2MB)
+     * @range 1-10485760 (10MB max API limit)
+     * @default 10276045 (9.8MB - safely under 10MB limit)
      * @example
-     * { bytesPerBatch: 2000000 }  // Maximum size
-     * { bytesPerBatch: 1000000 }  // Conservative 1MB batches
+     * { bytesPerBatch: 10276045 }  // Default - 9.8MB
+     * { bytesPerBatch: 5242880 }   // Conservative 5MB batches
+     * { bytesPerBatch: 1048576 }   // Small 1MB batches
      */
     bytesPerBatch?: number;
 
@@ -906,7 +907,7 @@ declare namespace main {
     /**
      * AWS S3 access key ID
      * @example
-     * { s3Key: "AKIAIOSFODNN7EXAMPLE" }
+     * { s3Key: "FOOBARBAZ7EXAMPLE" }
      */
     s3Key?: string;
 
@@ -980,6 +981,25 @@ declare namespace main {
      * @default false
      */
     createProfiles?: boolean;
+
+    // ═══════════════════════════════════════════════════════════════
+    // PROFILE UPDATE OPTIONS
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Profile update operation directive (user and group profiles only)
+     * Controls how properties are updated in user/group profiles
+     * @default "$set"
+     * @example
+     * { directive: "$set" }       // Overwrite existing values (default)
+     * { directive: "$set_once" }  // Only set if property doesn't exist
+     * { directive: "$add" }       // Increment numeric properties
+     * { directive: "$union" }     // Add unique items to list properties
+     * { directive: "$append" }    // Add items to list properties
+     * { directive: "$remove" }    // Remove specific items from list properties
+     * { directive: "$unset" }     // Delete properties from profiles
+     */
+    directive?: ProfileOperation;
   };
 
   /**
