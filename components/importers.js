@@ -210,7 +210,10 @@ async function flushToMixpanel(batch, job) {
 			const abbreviatedForStorage = {
 				num_records_imported: res.num_records_imported || 0,
 				num_failed: res?.failed_records?.length || 0,
-				error: res.error || null,
+				// Don't include generic error if we have specific failed_records
+				// The generic error "some data points in the request failed validation"
+				// is just a wrapper - the real errors are in failed_records
+				error: res?.failed_records?.length ? null : (res.error || null),
 				status: res.status !== undefined ? res.status : success,
 				code: res.code || (success ? 200 : 400)
 			};
@@ -469,7 +472,10 @@ async function flushToMixpanelWithUndici(batch, job) {
 			const abbreviatedForStorage = {
 				num_records_imported: res.num_records_imported || 0,
 				num_failed: res?.failed_records?.length || 0,
-				error: res.error || null,
+				// Don't include generic error if we have specific failed_records
+				// The generic error "some data points in the request failed validation"
+				// is just a wrapper - the real errors are in failed_records
+				error: res?.failed_records?.length ? null : (res.error || null),
 				status: res.status !== undefined ? res.status : success,
 				code: res.code || (success ? 200 : 400)
 			};

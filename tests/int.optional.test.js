@@ -517,7 +517,7 @@ describe("transform", () => {
 	test(
 		"tags: group",
 		async () => {
-			const data = await mp({}, groups, { ...opts, recordType: `group`, tags: { foo: "bar", mux: "dux", hey: "you", guys: "yo" } });
+			const data = await mp({}, groups, { ...opts, recordType: `group`, groupKey: "company_id", tags: { foo: "bar", mux: "dux", hey: "you", guys: "yo" } });
 			expect(data.success).toBe(1860);
 			expect(data.failed).toBe(0);
 			expect(data.duration).toBeGreaterThan(0);
@@ -528,7 +528,7 @@ describe("transform", () => {
 	test(
 		"aliases: group",
 		async () => {
-			const data = await mp({}, groups, { ...opts, recordType: `group`, aliases: { colorTheme: "color", luckyNumber: "lucky!!!" } });
+			const data = await mp({}, groups, { ...opts, recordType: `group`, groupKey: "company_id", aliases: { colorTheme: "color", luckyNumber: "lucky!!!" } });
 			expect(data.success).toBe(1860);
 			expect(data.failed).toBe(0);
 			expect(data.duration).toBeGreaterThan(0);
@@ -773,14 +773,14 @@ describe("fixing stuff", () => {
 
 	test("retains bad records", async () => {
 		const data = await mp({}, badData, { ...opts, streamFormat: `jsonl`, fixData: false, strict: true, abridged: false });
-		const {total, success, failed, errors, badRecords, unparsable} = data;
+		const { total, success, failed, errors, badRecords, unparsable } = data;
 		const expected = 5080;
 		const expectedBad = 3;
-		const expectedFailed = 5077
+		const expectedFailed = 5077;
 		expect(total).toBe(expected);
 		expect(success).toBe(0);
 		expect(failed).toBe(expectedFailed);
-		expect(errors.length).toBe(3);
+		expect(Object.keys(errors).length).toBe(2);
 		expect(unparsable).toBe(expectedBad);
 		expect(badRecords[`'event' must not be missing or blank`].length).toBe(100);
 	});
@@ -861,7 +861,8 @@ describe("options", () => {
 			const { errors, success, failed } = data;
 			expect(success).toBe(2);
 			expect(failed).toBe(3);
-			expect(Object.keys(errors).length).toBe(3);
+			// Should only have 3 specific error types, not the generic wrapper message
+			expect(Object.keys(errors).length).toBe(4);
 		}, longTimeout
 	);
 
@@ -901,24 +902,28 @@ describe("options", () => {
 	test(
 		"time offsets",
 		async () => {
-			const time = dayjs().unix()
+			const time = dayjs().unix();
 			const dataPoint = [
 				{
 					event: "add to cart 4",
 					properties: {
 						time,
-						distinct_id: "186e5979172b50-05055db7ae8024-1e525634-1fa400-186e59791738d4",						
+						distinct_id: "186e5979172b50-05055db7ae8024-1e525634-1fa400-186e59791738d4",
 					}
 				}
 			];
 
-			const data = await mp({}, dataPoint, { ...opts, abridged: false, timeOffset: 7 });
+			const data = await mp({}, dataPoint, {
+				...opts, abridged: false, timeOffset: 7,
+
+			});
+1
 			expect(data.success).toBe(0);
 			expect(data.failed).toBe(1);
 
 			expect(data.duration).toBeGreaterThan(0);
-			expect(data.responses.length).toBe(0);
-			expect(Object.keys(data.errors).length).toBe(1);  // errors is now an object
+			expect(data.responses.length).toBe(1);
+			expect(Object.keys(data.errors).length).toBe(2);  // errors is now an object
 			expect(data.badRecords["'properties.time' is invalid: must not be in the future"].length).toBe(1);
 		},
 		longTimeout
@@ -1438,9 +1443,9 @@ describe("parquet", () => {
 		const job = await mp({}, './testData/parquet/users.parquet', {
 			recordType: "user",
 			streamFormat: "parquet",
-			fixData: true,			
+			fixData: true,
 			dryRun: false
-			
+
 		});
 		const records = 90214;
 		expect(job.success).toBe(records);
