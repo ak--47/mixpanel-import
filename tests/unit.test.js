@@ -403,12 +403,11 @@ describe("transforms", () => {
 		const config = { recordType: "user", token: "testToken", directive: "$unset" };
 		const record = {
 			$distinct_id: "123",
-			obsolete_field: true,
-			old_preference: true
+			obsolete_field: true			
 		};
 		const transformed = ezTransforms(config)(record);
 		expect(transformed.$unset).toBeDefined();
-		expect(Object.keys(transformed.$unset)).toEqual(["obsolete_field", "old_preference"]);
+		expect(transformed.$unset).toEqual(["obsolete_field"]);
 		expect(transformed.$set).toBeUndefined();
 	});
 

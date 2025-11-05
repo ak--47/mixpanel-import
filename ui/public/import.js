@@ -976,6 +976,12 @@ class MixpanelImportUI {
 			if (element) element.style.display = 'none';
 		});
 
+		// Show/hide directive dropdown for profiles only
+		const directiveRow = document.getElementById('directive-row');
+		if (directiveRow) {
+			directiveRow.style.display = (recordType === 'user' || recordType === 'group') ? 'block' : 'none';
+		}
+
 		// Define authentication requirements based on RecordType
 		switch (recordType) {
 			case 'event':
@@ -1156,6 +1162,13 @@ class MixpanelImportUI {
 			const timeOffsetEl = document.getElementById('timeOffset');
 			const timeOffset = timeOffsetEl ? timeOffsetEl.value : '';
 			if (timeOffset && timeOffset !== '0') command += ` --offset ${timeOffset}`;
+
+			// Profile directive (for user and group profiles only)
+			if (recordType === 'user' || recordType === 'group') {
+				const directiveEl = document.getElementById('directive');
+				const directive = directiveEl ? directiveEl.value : '';
+				if (directive && directive !== '$set') command += ` --directive '${directive}'`;
+			}
 
 			// Aliases from column mapper and text input
 			const aliases = this.getCurrentAliases();
@@ -1544,6 +1557,14 @@ function transform(row) {
 		const vendor = document.getElementById('vendor').value;
 		if (vendor) options.vendor = vendor;
 
+		// Add directive for profile operations
+		const recordType = recordTypeEl ? recordTypeEl.value : '';
+		if (recordType === 'user' || recordType === 'group') {
+			const directiveEl = document.getElementById('directive');
+			const directive = directiveEl ? directiveEl.value : '$set';
+			if (directive) options.directive = directive;
+		}
+
 		// Add aliases from column mapper (merged with text input, text takes precedence)
 		const currentAliases = this.getCurrentAliases();
 		if (Object.keys(currentAliases).length > 0) {
@@ -1666,6 +1687,14 @@ function transform(row) {
 
 		const vendor = document.getElementById('vendor').value;
 		if (vendor) options.vendor = vendor;
+
+		// Add directive for profile operations
+		const recordType = recordTypeEl ? recordTypeEl.value : '';
+		if (recordType === 'user' || recordType === 'group') {
+			const directiveEl = document.getElementById('directive');
+			const directive = directiveEl ? directiveEl.value : '$set';
+			if (directive) options.directive = directive;
+		}
 
 		// Add aliases from column mapper (merged with text input, text takes precedence)
 		const currentAliases = this.getCurrentAliases();

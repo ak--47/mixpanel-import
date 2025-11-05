@@ -552,6 +552,22 @@
 									<small>Generate $insert_id from these columns (prevents duplicates)</small>
 								</div>
 							</div>
+
+							<div class="form-row" id="directive-row" style="display: none;">
+								<div class="form-group">
+									<label for="directive">Profile Update Operation</label>
+									<select id="directive" name="directive">
+										<option value="$set" selected>$set - Overwrite existing values (default)</option>
+										<option value="$set_once">$set_once - Only set if property doesn't exist</option>
+										<option value="$add">$add - Add to numeric properties</option>
+										<option value="$union">$union - Append unique values to lists</option>
+										<option value="$append">$append - Append all values to lists</option>
+										<option value="$remove">$remove - Remove values from lists</option>
+										<option value="$unset">$unset - Remove properties entirely</option>
+									</select>
+									<small>Controls how properties are updated in user/group profiles</small>
+								</div>
+							</div>
 						</div>
 					</div>
 

@@ -176,6 +176,12 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			type: 'boolean',
 			alias: 'removeNulls'
 		})
+		.option("directive", {
+			demandOption: false,
+			default: '$set',
+			describe: 'profile update operation ($set, $set_once, $add, $union, $append, $remove, $unset)',
+			type: 'string'
+		})
 		.option("abridged", {
 			demandOption: false,
 			default: false,
