@@ -142,7 +142,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 		}
 
 		// Memory management
-		if (job.throttleGCS || job.throttleMemory || job.manualGc || job.aggressiveGC) {
+		if (job.throttleGCS || job.throttleMemory || job.aggressiveGC) {
 			l(`║                                                                  ║`);
 			l(`║ Memory Management:                                              ║`);
 			if (job.throttleGCS || job.throttleMemory) {
@@ -150,8 +150,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 				l(`║     - Pause at: ${u.bytesHuman((job.throttlePauseMB || 1500) * 1024 * 1024).padEnd(48)}║`);
 				l(`║     - Resume at: ${u.bytesHuman((job.throttleResumeMB || 1000) * 1024 * 1024).padEnd(47)}║`);
 			}
-			if (job.manualGc) l(`║   • Manual GC: Enabled                                          ║`);
-			if (job.aggressiveGC) l(`║   • Aggressive GC: Enabled (every 30s)                          ║`);
+			if (job.aggressiveGC) l(`║   • Aggressive GC: Enabled (periodic + emergency)               ║`);
 		}
 
 		l(`╚════════════════════════════════════════════════════════════════╝`);
@@ -162,7 +161,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 
 	// ETL
 	l(`\n⚡ ETL STARTED!\n`);
-	job.timer.start();
+	// Timer is auto-started in Job constructor
 
 	let stream;
 	try {
@@ -258,14 +257,14 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 async function pipeInterface(creds = {}, opts = {}, finish = () => { }) {
 	const envVar = getEnvVars();
 	const config = new importJob({ ...envVar, ...creds }, { ...envVar, ...opts });
-	config.timer.start();
+	// Timer is auto-started in Job constructor
 
 	const pipeToMe = await corePipeline(null, config, true);
 
 	// * handlers
 	// @ts-ignore
 	pipeToMe.on('finish', () => {
-		config.timer.end(false);
+		config.timer.stop(false);
 
 		// @ts-ignore
 		finish(null, config.summary());

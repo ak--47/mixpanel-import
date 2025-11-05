@@ -435,10 +435,9 @@ function createSizeBatcher(job, bytesCache) {
  * @param {JobConfig} job
  * @param {WeakMap} jsonCache
  * @param {fs.WriteStream} fileStream
- * @param {number} gcThreshold
  * @returns {Transform}
  */
-function createHttpSender(job, jsonCache, fileStream, gcThreshold) {
+function createHttpSender(job, jsonCache, fileStream) {
 	const flush = job.transport === 'undici' ? flushToMixpanelWithUndici : flushToMixpanel;
 	let batchId = 0;
 	let lastLogTime = Date.now();
@@ -465,10 +464,7 @@ function createHttpSender(job, jsonCache, fileStream, gcThreshold) {
 				lastLogTime = now;
 			}
 
-			// Trigger manual GC if enabled and threshold exceeded
-			if (gcThreshold && process.memoryUsage().heapUsed > gcThreshold) {
-				global.gc();
-			}
+			// GC is now handled by memory monitor stage if aggressiveGC is enabled
 
 			if (job.dryRun) {
 				// Add batch ID for debugging
@@ -559,14 +555,12 @@ async function corePipeline(stream, job, toNodeStream = false) {
 	if (job.recordType === 'delete-annotations') return deleteAnnotations(job);
 	if (job.recordType === 'profile-delete') return deleteProfiles(job);
 
-	// Manual GC setup (if enabled)
-	let gcThreshold = null;
-	if (job.manualGc && global.gc) {
+	// Aggressive GC setup (if enabled)
+	if (job.aggressiveGC && global.gc) {
 		const heapStats = v8.getHeapStatistics();
-		gcThreshold = heapStats.heap_size_limit * 0.85; // Trigger GC at 85% heap usage
-		l(`Manual GC enabled: will trigger at ${(gcThreshold / 1024 / 1024).toFixed(0)} MB (85% of ${(heapStats.heap_size_limit / 1024 / 1024).toFixed(0)} MB heap)`);
-	} else if (job.manualGc && !global.gc) {
-		l(`Manual GC requested but global.gc not available. Start Node with --expose-gc flag.`);
+		l(`Aggressive GC enabled: periodic every 30s + emergency at 90% heap (${(heapStats.heap_size_limit * 0.9 / 1024 / 1024).toFixed(0)} MB)`);
+	} else if (job.aggressiveGC && !global.gc) {
+		l(`Aggressive GC requested but global.gc not available. Start Node with --expose-gc flag.`);
 	}
 
 	let fileStream;
@@ -644,7 +638,7 @@ async function corePipeline(stream, job, toNodeStream = false) {
 		} else {
 			// Send to Mixpanel (and optionally to destination via tee)
 			stages.push(
-				createHttpSender(job, jsonCache, fileStream, gcThreshold),
+				createHttpSender(job, jsonCache, fileStream),
 				createLogger(job)
 			);
 		}
@@ -700,7 +694,7 @@ async function corePipeline(stream, job, toNodeStream = false) {
 		} else {
 			// Send to Mixpanel (and optionally to destination via tee)
 			stages.push(
-				createHttpSender(job, jsonCache, fileStream, gcThreshold),
+				createHttpSender(job, jsonCache, fileStream),
 				createLogger(job)
 			);
 		}

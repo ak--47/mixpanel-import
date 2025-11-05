@@ -247,16 +247,10 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'dedupe records by murmur hash',
 			type: 'boolean'
 		})
-		.options("manualGc", {
-			demandOption: false,
-			default: false,
-			describe: 'enable manual garbage collection when memory usage exceeds 85% of heap limit (requires --expose-gc)',
-			type: 'boolean'
-		})
 		.options("aggressiveGC", {
 			demandOption: false,
 			default: false,
-			describe: 'enable aggressive garbage collection every 30 seconds (requires --expose-gc)',
+			describe: 'enable aggressive garbage collection - periodic every 30s + emergency when memory is high (requires --expose-gc)',
 			type: 'boolean'
 		})
 		.options("memoryMonitor", {

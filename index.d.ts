@@ -184,486 +184,802 @@ declare namespace main {
   }
 
   /**
-   * options for the import job
+   * Configuration options for the import/export job
+   * @interface Options
    */
   type Options = {
+    // ═══════════════════════════════════════════════════════════════
+    // CORE CONFIGURATION
+    // ═══════════════════════════════════════════════════════════════
+
     /**
-     * - type of record to import (`event`, `user`, `group`, or `table`)
-     * - default `event`
+     * Type of record to import/export
+     * @default "event"
+     * @example
+     * { recordType: "event" }    // Import events
+     * { recordType: "user" }     // Import user profiles
+     * { recordType: "group" }    // Import group profiles
+     * { recordType: "table" }    // Import lookup tables
+     * { recordType: "export" }   // Export events
      */
     recordType?: RecordType;
 
     /**
-     * - US or EU (data residency)
-     * - default `US`
+     * Data residency region for Mixpanel API
+     * @default "US"
+     * @example
+     * { region: "US" }  // United States data center
+     * { region: "EU" }  // European data center
+     * { region: "IN" }  // India data center
      */
     region?: Regions;
 
     /**
-     * - format of underlying data stream; json or jsonl
-     * - default `jsonl`
+     * Format of the data stream
+     * @default "jsonl"
+     * @example
+     * { streamFormat: "jsonl" }     // Newline-delimited JSON
+     * { streamFormat: "strict_json" } // Standard JSON array
+     * { streamFormat: "csv" }       // CSV with headers
+     * { streamFormat: "parquet" }   // Apache Parquet format
      */
     streamFormat?: SupportedFormats;
+
+    // ═══════════════════════════════════════════════════════════════
+    // PERFORMANCE & CONCURRENCY
+    // ═══════════════════════════════════════════════════════════════
+
     /**
-     * - use gzip compression (events only)
-     * - default `true`
-     */
-    compress?: boolean;
-    /**
-     * - compression level (events only)
-     * - default `6`
-     */
-    compressionLevel?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
-    /**
-     * - force treat input files as gzipped (overrides extension detection)
-     * - default `false`
-     */
-    isGzip?: boolean;
-    /**
-     * - validate data on send (events only) ...
-     * - default `true`
-     */
-    strict?: boolean;
-    /**
-     * - log results to `./logs/`
-     * - default `false`
-     */
-    logs?: boolean;
-    /**
-     * - display verbose output messages
-     * - default `true`
-     */
-    verbose?: boolean;
-    /**
-     * - show the progress bar; only matters if verbose is unset
-     * - default `false`
-     */
-    showProgress?: boolean;
-    /**
-     * - optional callback function for progress updates (used by UI WebSocket)
-     * - signature: (recordType, processed, requests, eps, bytesProcessed) => void
-     * - default `null`
-     */
-    progressCallback?: (recordType: string, processed: number, requests: number, eps: string, bytesProcessed: number) => void;
-    /**
-     * - apply various transformations to ensure data is properly ingested
-     * - default `true`
-     */
-    fixData?: boolean;
-	/**
-	 * - apply various transformations to ensure timestamp is properly formatted as a UNIX epoch
-	 */
-	fixTime?: boolean;
-    /**
-     * - remove the following (keys and values) from each record with values = `null`, `''`, `undefined`, `{}`, or `[]`
-     * - default `false`
-     */
-    removeNulls?: boolean;
-    /**
-     * - included only error responses; not successes; also abbreviate error responses
-     * - default `false`
-     */
-    abridged?: boolean;
-    /**
-     * - don't buffer files into memory (even if they can fit)
-     * - default `false`
-     */
-    forceStream?: boolean;
-    /**
-     * Stream buffer size (number of objects buffered between pipeline stages)
-     * - Lower values (16-50): Less memory usage, better for dense/large events
-     * - Higher values (100-500): Better throughput for small events
-     * - Default: Calculated as min(workers * 10, 100)
-     * - Works independently from workers but they should be tuned together
+     * Number of concurrent HTTP workers for parallel requests
+     * Controls the speed of data import (more workers = faster)
+     * @range 1-50 (practical), 1-100 (theoretical)
+     * @default 10
+     * @memory Each worker holds ~2-3 batches in memory
      * @example
-     * // For dense PostHog events (>10KB each)
-     * { workers: 10, highWater: 50 }
-     * // For tiny events (<1KB each)
-     * { workers: 30, highWater: 200 }
-     */
-    highWater?: number;
-    /**
-     * Enable memory-based throttling for GCS/S3 streams
-     * - Pauses cloud storage downloads when memory exceeds threshold
-     * - Prevents OOM errors with fast cloud storage + slow processing
-     * - default `false`
-     */
-    throttleGCS?: boolean;
-    /**
-     * Memory threshold (MB) to pause GCS/S3 downloads
-     * - When heap usage exceeds this, cloud downloads pause
-     * - default `1500` (1.5GB)
-     */
-    throttlePauseMB?: number;
-    /**
-     * Memory threshold (MB) to resume GCS/S3 downloads
-     * - When heap usage drops below this, cloud downloads resume
-     * - default `1000` (1GB)
-     */
-    throttleResumeMB?: number;
-    /**
-     * Maximum buffer size (MB) for the BufferQueue when using throttleGCS/throttleMemory
-     * - Controls how much data can be buffered between GCS and the pipeline
-     * - default `2000` (2GB)
-     */
-    throttleMaxBufferMB?: number;
-    /**
-     * Alias for throttleGCS (either works)
-     */
-    throttleMemory?: boolean;
-    /**
-     * Destination path for writing output (local file, gs://bucket/path, or s3://bucket/path)
-     * - When set, data is written to the destination in addition to or instead of Mixpanel
-     * - default `null`
-     */
-    destination?: string;
-    /**
-     * Skip Mixpanel and only write to destination
-     * - Requires `destination` to be set
-     * - default `false`
-     */
-    destinationOnly?: boolean;
-    /**
-     * Skip all transformations for pre-processed data
-     * - Significantly faster but assumes data is already in correct format
-     * - default `false`
-     */
-    fastMode?: boolean;
-    /**
-     * - UTC offset which will add/subtract hours to an event's `time` value; can be a positive or negative number; default `0`
-     * - default `0`
-     */
-    timeOffset?: number;
-    /**
-     * - max # of records in each payload (max 2000; max 200 for group profiles)
-     * - default `2000` (events + users), `200` (groups)
-     */
-    recordsPerBatch?: number;
-    /**
-     * - max # of bytes in each payload (max 2MB)
-     * - default `2000000`
-     */
-    bytesPerBatch?: number;
-    /**
-     * - maximum # of times to retry
-     * - default `10`
-     */
-    maxRetries?: number;
-    /**
-     * - # of concurrent workers sending requests (same as concurrency)
-     * - default `10`
+     * { workers: 5 }   // Conservative (low memory)
+     * { workers: 10 }  // Balanced (default)
+     * { workers: 30 }  // Aggressive (high speed, high memory)
      */
     workers?: number;
+
     /**
-     * - # of concurrent requests (same as workers)
-     * - default `10`
+     * Alias for workers (either works)
+     * @deprecated Use `workers` instead
      */
     concurrency?: number;
+
     /**
-     * - where to put files (logs, exports)
-     * - default `./`
+     * Stream buffer size between pipeline stages
+     * Controls memory vs throughput trade-off
+     * @range 16-500
+     * @default min(workers * 10, 100)
+     * @memory Direct impact - each object stored in buffer
+     * @example
+     * // Small events (<1KB): maximize throughput
+     * { workers: 30, highWater: 200 }
+     *
+     * // Large events (>10KB): minimize memory
+     * { workers: 3, highWater: 20 }
+     *
+     * // Balanced approach
+     * { workers: 10, highWater: 100 }
      */
-    where?: string;
+    highWater?: number;
+
     /**
-     * should only be used with `export` or `profile-export` record types
-     * exported data will be held in memory and not written to disk
-     * default DOES write to disk
+     * Maximum records per API batch
+     * @range 1-2000 (events/users), 1-200 (groups)
+     * @default 2000 (events/users), 200 (groups)
+     * @example
+     * { recordsPerBatch: 2000 }  // Maximum efficiency
+     * { recordsPerBatch: 1000 }  // Reduced memory per batch
+     * { recordsPerBatch: 500 }   // For very large events
      */
-    skipWriteToDisk?: boolean;
+    recordsPerBatch?: number;
+
     /**
-     * - a transform function to `map()` over the data
-     * - if it returns `{}` the record will be skipped
-     * - if it returns `[{},{},{}]` the record will be split into multiple records
-     * - default `null`
+     * Maximum bytes per API batch
+     * @range 1-2097152 (2MB max)
+     * @default 2000000 (slightly under 2MB)
+     * @example
+     * { bytesPerBatch: 2000000 }  // Maximum size
+     * { bytesPerBatch: 1000000 }  // Conservative 1MB batches
+     */
+    bytesPerBatch?: number;
+
+    /**
+     * Maximum retry attempts for failed requests
+     * @range 0-100
+     * @default 10
+     * @example
+     * { maxRetries: 10 }  // Default with exponential backoff
+     * { maxRetries: 3 }   // Quick fail for testing
+     * { maxRetries: 50 }  // Persistent retry for critical data
+     */
+    maxRetries?: number;
+
+    // ═══════════════════════════════════════════════════════════════
+    // MEMORY MANAGEMENT
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Enable aggressive garbage collection for memory-constrained environments
+     * - Runs periodic GC every 30 seconds
+     * - Triggers emergency GC when heap usage exceeds 90%
+     * - Requires Node.js to be started with --expose-gc flag
+     * @default false
+     * @example
+     * // Run with: node --expose-gc index.js
+     * { aggressiveGC: true }
+     */
+    aggressiveGC?: boolean;
+
+    /**
+     * Enable memory monitoring without verbose output
+     * Tracks and logs memory usage statistics
+     * @default false
+     * @example
+     * { memoryMonitor: true, verbose: false }  // Silent memory tracking
+     */
+    memoryMonitor?: boolean;
+
+    /**
+     * Enable memory throttling for cloud storage streams (GCS/S3)
+     * Prevents OOM errors by pausing downloads when memory is high
+     * @default false
+     * @example
+     * // Essential for large cloud files
+     * { throttleMemory: true }
+     */
+    throttleMemory?: boolean;
+
+    /**
+     * Alias for throttleMemory (either works)
+     * @deprecated Use `throttleMemory` instead
+     */
+    throttleGCS?: boolean;
+
+    /**
+     * Memory threshold (MB) to pause cloud downloads
+     * @range 500-8000
+     * @default 1500 (1.5GB)
+     * @example
+     * { throttleMemory: true, throttlePauseMB: 1500 }  // Pause at 1.5GB
+     * { throttleMemory: true, throttlePauseMB: 3000 }  // Pause at 3GB (high memory system)
+     */
+    throttlePauseMB?: number;
+
+    /**
+     * Memory threshold (MB) to resume cloud downloads
+     * @range 500-8000
+     * @default 1000 (1GB)
+     * @note Must be lower than throttlePauseMB
+     * @example
+     * { throttleMemory: true, throttleResumeMB: 1000 }  // Resume at 1GB
+     */
+    throttleResumeMB?: number;
+
+    /**
+     * Maximum buffer size (MB) for BufferQueue
+     * @range 1000-10000
+     * @default 2000 (2GB)
+     * @example
+     * { throttleMaxBufferMB: 2000 }  // 2GB max buffer
+     */
+    throttleMaxBufferMB?: number;
+    // ═══════════════════════════════════════════════════════════════
+    // DATA COMPRESSION & STREAMING
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Enable gzip compression for API requests (events only)
+     * Reduces bandwidth by 60-80%
+     * @default true
+     * @example
+     * { compress: true }   // Enable compression (recommended)
+     * { compress: false }  // Disable for debugging
+     */
+    compress?: boolean;
+
+    /**
+     * Gzip compression level (1=fastest, 9=smallest)
+     * @range 0-9 (0=no compression, 9=maximum)
+     * @default 6
+     * @example
+     * { compressionLevel: 1 }  // Fast compression
+     * { compressionLevel: 6 }  // Balanced (default)
+     * { compressionLevel: 9 }  // Maximum compression
+     */
+    compressionLevel?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+
+    /**
+     * Force treat input files as gzipped (overrides extension detection)
+     * @default false
+     * @example
+     * // For files without .gz extension that are gzipped
+     * { isGzip: true }
+     */
+    isGzip?: boolean;
+
+    /**
+     * Force streaming mode even for small files
+     * @default false
+     * @example
+     * { forceStream: true }  // Always stream, never buffer in memory
+     */
+    forceStream?: boolean;
+
+    // ═══════════════════════════════════════════════════════════════
+    // DATA TRANSFORMATION
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Custom transformation function applied to each record
+     * - Return {} to skip the record
+     * - Return [{}, {}, {}] to split into multiple records
+     * @default null
+     * @example
+     * {
+     *   transformFunc: (record) => {
+     *     // Skip test events
+     *     if (record.properties.test) return {};
+     *     // Add custom property
+     *     record.properties.processed = true;
+     *     return record;
+     *   }
+     * }
      */
     transformFunc?: transFunc;
+
     /**
-     * - a transform function to handle parsing errors
-     * - whatever is returned will be forwarded down the pipeline
-     * - the signature of this function is `(err, record, reviver) => {}`
-     * - default is  `(a) => { return {} }}`
+     * Apply built-in data fixes and validations
+     * @default true
+     * @example
+     * { fixData: true }  // Apply all automatic fixes
      */
-    parseErrorHandler?: transFunc;
+    fixData?: boolean;
+
     /**
-     * - a set of tags which will be added to all records
-     * - default `{}`
+     * Fix and validate timestamp formats to UNIX epoch
+     * @default false
+     * @example
+     * { fixTime: true }  // Convert various time formats to UNIX timestamp
+     */
+    fixTime?: boolean;
+
+    /**
+     * Remove null, empty, and undefined values from records
+     * @default false
+     * @example
+     * { removeNulls: true }  // Clean up sparse data
+     */
+    removeNulls?: boolean;
+
+    /**
+     * UTC offset in hours for time adjustments
+     * @range -12 to 12
+     * @default 0
+     * @example
+     * { timeOffset: -8 }  // PST timezone adjustment
+     * { timeOffset: 1 }   // CET timezone adjustment
+     */
+    timeOffset?: number;
+
+    /**
+     * Tags to add to all records
+     * @default {}
+     * @example
+     * { tags: { source: "mobile_app", version: "2.0" } }
      */
     tags?: genericObj;
-    /**
-     * - a set of aliases used to rename property keys in the source data
-     * - note this is required for importing CSVs; we expect a value like `{uuid: "distinct_id", row_id: "$insert_id"}`, etc..
-     * - default `{}`
-     */
 
+    /**
+     * Property key aliases for renaming fields
+     * Required for CSV imports to map columns
+     * @default {}
+     * @example
+     * // For CSV imports
+     * { aliases: {
+     *   "user_id": "distinct_id",
+     *   "timestamp": "time",
+     *   "action": "event"
+     * }}
+     */
     aliases?: genericObj;
 
+    // ═══════════════════════════════════════════════════════════════
+    // VENDOR TRANSFORMS
+    // ═══════════════════════════════════════════════════════════════
+
     /**
-     * data points with a UNIX time BEFORE this value will be skipped
+     * Built-in transform for vendor data formats
+     * @default null
+     * @example
+     * { vendor: "amplitude" }  // Convert Amplitude data
+     * { vendor: "posthog" }    // Convert PostHog data
+     * { vendor: "ga4" }        // Convert Google Analytics 4
+     * { vendor: "heap" }       // Convert Heap Analytics
+     */
+    vendor?: Vendors;
+
+    /**
+     * Options for vendor-specific transforms
+     * @default {}
+     * @example
+     * // PostHog options
+     * { vendorOpts: { v2_compat: true, ignore_events: ["$pageview"] } }
+     * // GA4 options
+     * { vendorOpts: { time_conversion: "ms", set_insert_id: true } }
+     */
+    vendorOpts?: amplitudeOpts | heapOpts | ga4Opts | juneOpts | postHogOpts | {};
+
+    // ═══════════════════════════════════════════════════════════════
+    // FILTERING & VALIDATION
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Remove duplicate records based on content hash
+     * @default false
+     * @example
+     * { dedupe: true }  // Skip duplicate records
+     */
+    dedupe?: boolean;
+
+    /**
+     * Skip records before this UNIX timestamp (seconds)
+     * @example
+     * { epochStart: 1609459200 }  // Skip before Jan 1, 2021
      */
     epochStart?: number;
 
     /**
-     * data points with a UNIX time AFTER this value will be skipped
+     * Skip records after this UNIX timestamp (seconds)
+     * @example
+     * { epochEnd: 1640995200 }  // Skip after Jan 1, 2022
      */
     epochEnd?: number;
 
     /**
-     * if true, will remove duplicate records based on a hash of the records
-     */
-    dedupe?: boolean;
-    /**
-     * only import events on the whitelist
+     * Only import events with these names
+     * @example
+     * { eventWhitelist: ["Sign Up", "Purchase", "Login"] }
      */
     eventWhitelist?: string[];
+
     /**
-     * don't import events on the blacklist
+     * Skip events with these names
+     * @example
+     * { eventBlacklist: ["Test Event", "$pageview"] }
      */
     eventBlacklist?: string[];
+
     /**
-     * only import events with property keys on the whitelist
+     * Only import events containing these property keys
+     * @example
+     * { propKeyWhitelist: ["user_id", "session_id"] }
      */
     propKeyWhitelist?: string[];
+
     /**
-     * don't import events with property keys on the blacklist
+     * Skip events containing these property keys
+     * @example
+     * { propKeyBlacklist: ["internal_id", "debug_info"] }
      */
     propKeyBlacklist?: string[];
+
     /**
-     * only import events with property values on the whitelist
+     * Only import events with these property values
+     * @example
+     * { propValWhitelist: ["production", "paid"] }
      */
     propValWhitelist?: string[];
+
     /**
-     * don't import events with property values on the blacklist
+     * Skip events with these property values
+     * @example
+     * { propValBlacklist: ["test", "debug"] }
      */
     propValBlacklist?: string[];
+
     /**
-     * only import events which have property keys and values on the whitelist
+     * Only import events with specific key-value combinations
+     * @example
+     * { comboWhiteList: { environment: ["production"], plan: ["enterprise"] } }
      */
     comboWhiteList?: { [key: string]: string[] };
+
     /**
-     * don't import events which have property keys and values on the blacklist
+     * Skip events with specific key-value combinations
+     * @example
+     * { comboBlackList: { status: ["deleted"], test: ["true"] } }
      */
     comboBlackList?: { [key: string]: string[] };
     /**
-     * the start date of the export (events only)
+     * Validate data strictly (events only)
+     * @default true
+     * @example
+     * { strict: true }   // Enforce strict validation
+     * { strict: false }  // Allow malformed data
      */
-    start?: string;
+    strict?: boolean;
+
     /**
-     * the end date of the export (events only)
-     */
-    end?: string;
-    /**
-     * don't actually send the data to mixpanel, just transform it
-     */
-    dryRun?: boolean;
-    /**
-     * built in transform functions for various vendors
-     */
-    vendor?: Vendors;
-    /**
-     * options for built in transform functions
-     */
-    vendorOpts?: amplitudeOpts | heapOpts | ga4Opts | juneOpts | postHogOpts | {};
-    /**
-     * whether or not to use http2; default `false` and http2 seems slower...
-     */
-    http2?: boolean;
-    /**
-     * whether or not to flatten the data; default `false`
-     */
-    flattenData?: boolean;
-    /**
-     * a tuple of column names to use as the insert_id; only set this if you want mixpanel-import to generate the insert_id for you
-     * it will use mumurhash3
-     */
-    insertIdTuple?: string[];
-    /**
-     * attempt to parse values that poorly encoded json into valid json
-     */
-    fixJson?: boolean;
-    /**
-     * a cohort_id to use for people profile exports
-     */
-    cohortId?: string | number;
-    /**
-     * a data_group_id to use for exporting group profiles
-     */
-    dataGroupId?: string;
-    /**
-     * a list of properties to scrub from the data; this is useful for removing PII or other sensitive data
-     * the properties will be deleted from the data before it is sent to mixpanel
+     * Scrub specific properties from all records (PII removal)
+     * @example
+     * { scrubProps: ["ssn", "credit_card", "email"] }
      */
     scrubProps?: string[];
 
     /**
-     * an array of column names to drop from CSV/TSV data
-     * the columns will be removed from the data before it is processed
+     * Drop specific columns from CSV/TSV data
+     * @example
+     * { dropColumns: ["internal_id", "debug_column"] }
      */
     dropColumns?: string[];
 
     /**
-     * if true, will add a token or $token to the data
+     * Generate insert_id from specified columns (uses MurmurHash3)
+     * @example
+     * { insertIdTuple: ["user_id", "timestamp", "event"] }
+     */
+    insertIdTuple?: string[];
+
+    /**
+     * Fix malformed JSON in string values
+     * @default false
+     * @example
+     * { fixJson: true }  // Attempt to parse and fix broken JSON
+     */
+    fixJson?: boolean;
+
+    /**
+     * Flatten nested object structures
+     * @default false
+     * @example
+     * { flattenData: true }  // Convert nested.property to nested_property
+     */
+    flattenData?: boolean;
+
+    /**
+     * Add token to all records
+     * @default false
+     * @example
+     * { addToken: true }  // Adds $token or token field
      */
     addToken?: boolean;
 
     /**
-     * whether or not to write the transformed data to a file instead of sending it to mixpanel
+     * Skip all transformations (fast mode for pre-processed data)
+     * @default false
+     * @example
+     * { fastMode: true }  // Skip all data transformations
+     */
+    fastMode?: boolean;
+
+    // ═══════════════════════════════════════════════════════════════
+    // OUTPUT & LOGGING
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Display verbose output with detailed progress
+     * @default true
+     * @example
+     * { verbose: false }  // Silent mode
+     */
+    verbose?: boolean;
+
+    /**
+     * Show progress bar (only when verbose is false)
+     * @default false
+     * @example
+     * { verbose: false, showProgress: true }  // Progress bar only
+     */
+    showProgress?: boolean;
+
+    /**
+     * Save results to ./logs/ directory
+     * @default false
+     * @example
+     * { logs: true }  // Create detailed log files
+     */
+    logs?: boolean;
+
+    /**
+     * Only include error responses, not successes
+     * @default false
+     * @example
+     * { abridged: true }  // Minimize response storage
+     */
+    abridged?: boolean;
+
+    /**
+     * Base directory for logs and exports
+     * @default "./"
+     * @example
+     * { where: "/tmp/mixpanel/" }  // Custom output directory
+     */
+    where?: string;
+
+    /**
+     * Callback for progress updates (used by UI WebSocket)
+     * @internal
+     */
+    progressCallback?: (recordType: string, processed: number, requests: number, eps: string, bytesProcessed: number) => void;
+
+    // ═══════════════════════════════════════════════════════════════
+    // TESTING & DRY RUN
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Test mode - transform but don't send to Mixpanel
+     * @default false
+     * @example
+     * { dryRun: true }  // Test transformations without API calls
+     */
+    dryRun?: boolean;
+
+    /**
+     * Maximum records to process (useful for testing)
+     * @example
+     * { maxRecords: 1000 }  // Process only first 1000 records
+     */
+    maxRecords?: number;
+
+    /**
+     * Keep bad/failed records in results
+     * @default false
+     * @example
+     * { keepBadRecords: true }  // Include failed records for debugging
+     */
+    keepBadRecords?: boolean;
+
+    // ═══════════════════════════════════════════════════════════════
+    // EXPORT OPTIONS
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Start date for exports (YYYY-MM-DD)
+     * @example
+     * { start: "2024-01-01" }
+     */
+    start?: string;
+
+    /**
+     * End date for exports (YYYY-MM-DD)
+     * @example
+     * { end: "2024-12-31" }
+     */
+    end?: string;
+
+    /**
+     * Limit the number of records returned (exports only)
+     * @example
+     * { limit: 1000 }  // Return max 1000 records
+     */
+    limit?: number;
+
+    /**
+     * WHERE clause for exports (Mixpanel segmentation expression syntax)
+     * @see https://developer.mixpanel.com/reference/segmentation-expressions
+     * @example
+     * { whereClause: "properties['$os'] == 'iOS'" }
+     */
+    whereClause?: string;
+
+    /**
+     * Additional query parameters for export endpoints
+     * @example
+     * { params: { event: ['Sign Up'], limit: 1000 } }
+     */
+    params?: Record<string, any>;
+
+    /**
+     * Cohort ID for profile exports
+     * @example
+     * { cohortId: 12345 }
+     */
+    cohortId?: string | number;
+
+    /**
+     * Data group ID for group profile exports
+     * @example
+     * { dataGroupId: "company" }
+     */
+    dataGroupId?: string;
+
+    // ═══════════════════════════════════════════════════════════════
+    // FILE OUTPUT OPTIONS
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Write transformed data to file instead of Mixpanel
+     * @default false
+     * @example
+     * { writeToFile: true, outputFilePath: "./output.jsonl" }
      */
     writeToFile?: boolean;
+
     /**
-     * the path to write the transformed data to
+     * Output file path for writeToFile mode
+     * @example
+     * { outputFilePath: "./transformed_data.jsonl" }
      */
     outputFilePath?: string;
 
     /**
-     * SCD STUFF
+     * Destination path for exports or dual writing
+     * @example
+     * { destination: "./exports/events.jsonl" }
+     * { destination: "gs://bucket/path/events.jsonl" }
+     * { destination: "s3://bucket/path/events.jsonl" }
      */
+    destination?: string;
 
     /**
-     * the internal label for the SCD; visible only in data definitions
+     * Skip Mixpanel and only write to destination
+     * @default false
+     * @example
+     * { destinationOnly: true, destination: "./output.jsonl" }
+     */
+    destinationOnly?: boolean;
+
+    /**
+     * Skip writing export data to disk (hold in memory)
+     * @default false
+     * @internal Used by UI for streaming exports
+     */
+    skipWriteToDisk?: boolean;
+
+    // ═══════════════════════════════════════════════════════════════
+    // ADVANCED OPTIONS
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Transport mechanism for HTTP requests
+     * @default "undici" (faster than got)
+     * @example
+     * { transport: "undici" }  // Recommended
+     * { transport: "got" }     // Legacy option
+     */
+    transport?: transports;
+
+    /**
+     * Use HTTP/2 (experimental, usually slower)
+     * @default false
+     */
+    http2?: boolean;
+
+    /**
+     * Error handler for parsing failures
+     * @example
+     * { parseErrorHandler: (err, record) => ({ ...record, error: err.message }) }
+     */
+    parseErrorHandler?: transFunc;
+
+    /**
+     * Response handler for API responses (debugging)
+     * @internal
+     */
+    responseHandler?: (response: any, record: any) => void;
+
+    /**
+     * Dimension maps for lookups in transforms
+     * @example
+     * { dimensionMaps: [{ filePath: "./users.csv", keyOne: "id", keyTwo: "name" }] }
+     */
+    dimensionMaps?: dependentTables[];
+
+    /**
+     * Heavy objects cache for transforms
+     * @internal
+     */
+    heavyObjects?: Object;
+
+    /**
+     * Second region for export-import operations
+     * @example
+     * { secondRegion: "EU" }  // Export from US, import to EU
+     */
+    secondRegion?: "US" | "EU" | "IN" | "";
+
+    /**
+     * Bytes cache for performance optimization
+     * @internal
+     */
+    bytesCache?: WeakMap<any, number>;
+
+    /**
+     * Path to GCS service account credentials
+     * @example
+     * { gcsCredentials: "./service-account.json" }
+     */
+    gcsCredentials?: string;
+
+    /**
+     * Google Cloud project ID for GCS operations
+     * @default "mixpanel-gtm-training"
+     * @example
+     * { gcpProjectId: "my-project-123" }
+     */
+    gcpProjectId?: string;
+
+    /**
+     * AWS S3 access key ID
+     * @example
+     * { s3Key: "AKIAIOSFODNN7EXAMPLE" }
+     */
+    s3Key?: string;
+
+    /**
+     * AWS S3 secret access key
+     * @example
+     * { s3Secret: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" }
+     */
+    s3Secret?: string;
+
+    /**
+     * AWS S3 region
+     * @example
+     * { s3Region: "us-west-2" }
+     */
+    s3Region?: string;
+
+    /**
+     * Enable v2 compatibility mode for ID management
+     * @default false
+     * @example
+     * { v2_compat: true }  // Auto-set distinct_id from $user_id or $device_id
+     */
+    v2_compat?: boolean;
+
+    // ═══════════════════════════════════════════════════════════════
+    // SCD (SLOWLY CHANGING DIMENSIONS) OPTIONS
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * SCD label for data definitions
+     * @internal
      */
     scdLabel?: string;
 
     /**
-     * the scd key that will be in the data (like NPS or plan)
+     * SCD key in the data
+     * @example
+     * { scdKey: "plan_type" }
      */
     scdKey?: string;
+
     /**
-     * the datatype for the SCD
+     * SCD data type
+     * @example
+     * { scdType: "string" }
      */
     scdType?: "string" | "number" | "boolean";
+
     /**
-     * created dynamically; an id for the SCD in data definitions
+     * SCD ID in data definitions
+     * @internal
      */
     scdId?: string;
+
     /**
-     * an id for the SCD in prop definitions
+     * SCD property ID
+     * @internal
      */
     scdPropId?: string;
+
     /**
-     * for group profiles + group analytics
+     * Group key for group profiles
+     * @example
+     * { groupKey: "company_id" }
      */
     groupKey?: string | number;
+
     /**
-     * after imported the SCD, should we create profiles for the SCD
+     * Create profiles after SCD import
+     * @default false
      */
     createProfiles?: boolean;
-	/**
-	 * just for exports, limit the number of records returned
-	 */
-	limit?: number;
-	/**
-	 * just for export
-	 * ? https://developer.mixpanel.com/reference/segmentation-expressions
-	 */
-	whereClause?: string; 
-
-	/**
-	 * arbitrary query parameters for export endpoints
-	 * gets merged into the export URL as search parameters
-	 * example: { event: ['event_name'], limit: 1000 }
-	 */
-	params?: Record<string, any>;
-
-	/**
-	 * allowing arbitrary lookups which get turned into maps() in heavyObject
-	 * this will be provided to the transformer function and lets you do on-the-fly lookups
-	 * 
-	 */
-	dimensionMaps?: dependentTables[]; 
-
-	/**
-	 * A cache for heavy objects used in data transformation and lookups.
-	 * it's better to use dimensionMaps if possible
-	 */
-	heavyObjects?: Object
-
-	/**
-	 * - for export/import (the destination project)
-	 */
-	secondRegion?: "US" | "EU" | "IN" | "";
-
-	/**
-	 * - keep bad records in the results
-	 */
-	keepBadRecords?: boolean;
-	/**
-	 * the transport mechanism to use for sending data (`got` or `undici`)
-	 */
-	transport?: transports;
-	/**
-	 * Google Cloud project ID for GCS operations (defaults to 'mixpanel-gtm-training')
-	 */
-	gcpProjectId?: string;
-	/**
-	 * AWS S3 access key ID for S3 operations
-	 */
-	s3Key?: string;
-	/**
-	 * AWS S3 secret access key for S3 operations
-	 */
-	s3Secret?: string;
-	/**
-	 * AWS S3 region for S3 operations (required for S3 access)
-	 */
-	s3Region?: string;
-	/**
-	 * a function to handle responses from the API; mostly used for debugging
-	 */
-	responseHandler?: (response: any, record: any) => void;
-	/**
-	 * maximum number of records to process before stopping the stream early; useful for testing and dry runs
-	 */
-	maxRecords?: number;
-	/**`
-	 * - cache for byte calculations to improve performance
-	 */
-	bytesCache?: WeakMap<any, number>;
-	/**
-	 * Path to GCS service account credentials JSON file (optional, defaults to ADC)
-	 */
-	gcsCredentials?: string;
-	/**
-	 * Enable adaptive scaling to automatically adjust workers and batch size based on event density
-	 * When enabled, samples first 100 events to determine optimal configuration
-	 * Prevents OOM errors and improves performance for dense event data
-	 * @default false
-	 */
-	adaptive?: boolean;
-	/**
-	 * Provide average event size in bytes as a hint for adaptive scaling
-	 * When specified, skips sampling and immediately applies optimal configuration
-	 * Useful when event size is known in advance
-	 */
-	avgEventSize?: number;
-	/**
-	 * Enable adaptive scaling independently of the 'adaptive' flag
-	 * Internal flag set by applySmartDefaults
-	 * @default true (when adaptive system is enabled)
-	 */
-	adaptiveScaling?: boolean;
-	/**
-	 * Enable manual garbage collection when memory usage exceeds 85% of heap limit
-	 * Requires Node.js --expose-gc flag (enabled in Docker container)
-	 * @default false
-	 */
-	manualGc?: boolean;
-	/**
-	 * Enable aggressive periodic garbage collection every 30 seconds
-	 * Requires Node.js --expose-gc flag
-	 * @default false
-	 */
-	aggressiveGC?: boolean;
-	/**
-	 * Enable memory monitoring even without verbose mode
-	 * @default false
-	 */
-	memoryMonitor?: boolean;
-	/**
-	 * For events only: automatically set distinct_id from $user_id or $device_id if distinct_id is missing
-	 * Prefers $user_id, falls back to $device_id
-	 * @default false
-	 */
-	v2_compat?: boolean;
   };
 
   /**

@@ -12,7 +12,61 @@ const { mixpanelEventsToMixpanel } = require('../vendor/mixpanel.js');
 const { juneEventsToMp, juneUserToMp, juneGroupToMp } = require('../vendor/june.js');
 const { buildMapFromPath } = require('./parsers.js');
 
+/**
+ * Simple instance-specific timer to replace ak-tools global timer
+ * Preserves the same API but avoids global state conflicts
+ */
+class SimpleTimer {
+	constructor() {
+		this.startTime = null;
+		this.endTime = null;
+		this.isRunning = false;
+	}
 
+	start() {
+		this.startTime = Date.now();
+		this.endTime = null;
+		this.isRunning = true;
+		return this;
+	}
+
+	stop(verbose = false) {
+		if (this.isRunning) {
+			this.endTime = Date.now();
+			this.isRunning = false;
+		}
+		return this;
+	}
+
+	report(verbose = false) {
+		const end = this.endTime || Date.now();
+		const start = this.startTime || end;
+		const delta = end - start;
+
+		// Format human readable time
+		let human;
+		if (delta < 1000) {
+			human = `${delta}ms`;
+		} else if (delta < 60000) {
+			human = `${(delta / 1000).toFixed(1)}s`;
+		} else if (delta < 3600000) {
+			const minutes = Math.floor(delta / 60000);
+			const seconds = Math.floor((delta % 60000) / 1000);
+			human = `${minutes}m ${seconds}s`;
+		} else {
+			const hours = Math.floor(delta / 3600000);
+			const minutes = Math.floor((delta % 3600000) / 60000);
+			human = `${hours}h ${minutes}m`;
+		}
+
+		return {
+			delta,
+			human,
+			startTime: this.startTime,
+			endTime: this.endTime
+		};
+	}
+}
 
 /** @typedef {import('../index.js').Creds} Creds */
 /** @typedef {import('../index.js').Options} Options */
@@ -426,7 +480,10 @@ class Job {
 		this.batchLengths = [];
 		this.lastBatchLength = 0;
 		this.unparsable = 0;
-		this.timer = u.time('etl');
+
+		// Instance-specific timer to avoid global conflicts
+		this.timer = new SimpleTimer();
+		this.timer.start();
 
 		// Memory management for large jobs
 		this.maxBatchLengths = 1000; // Limit batch length tracking
@@ -915,17 +972,11 @@ class Job {
 	 * @returns {import('../index.js').ImportResults} `{success, failed, total, requests, duration}`
 	 */
 	summary(includeResponses = true) {
-		// Only stop timer if it was started (avoid "etl has not been started" errors in tests)
-		let delta = 0;
-		let human = '0s';
-		try {
-			this.timer.stop(false);
-			const report = this.timer.report(false);
-			delta = report.delta;
-			human = report.human;
-		} catch (e) {
-			// Timer was never started, use defaults
-		}
+		// Stop timer and get report
+		this.timer.stop(false);
+		const report = this.timer.report(false);
+		const delta = report.delta;
+		const human = report.human;
 		const memoryHuman = this.memPretty();
 		const memory = this.memAvg();
 		/** @type {import('../index.js').ImportResults} */

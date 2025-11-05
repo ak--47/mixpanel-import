@@ -1,6 +1,6 @@
 {
   "name": "mixpanel-import",
-  "version": "3.1.01",
+  "version": "3.1.1",
   "description": "stream and import data to mixpanel from node.js",
   "main": "index.js",
   "types": "index.d.ts",
@@ -53,7 +53,10 @@
     "components/**/*.js",
     "vendor/**/*.js",
     "ui/**/*",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "CLAUDE.md",
+    "package.json"
   ],
   "dependencies": {
     "@aws-sdk/client-s3": "^3.812.0",
