@@ -604,7 +604,7 @@ async function handleSpecialRecordTypes(data, job) {
 		return filename;
 	}
 
-	if (job.recordType === 'export-import-events') {
+	if (job.recordType === 'export-import-event') {
 		const exportStream = streamEvents(job);
 		job.recordType = 'event';
 
@@ -620,7 +620,7 @@ async function handleSpecialRecordTypes(data, job) {
 		return exportStream;
 	}
 
-	if (job.recordType === 'export-import-profiles') {
+	if (job.recordType === 'export-import-profile') {
 		const exportStream = streamProfiles(job);
 		if (job.dataGroupId || job.groupKey) job.recordType = 'group';
 		else job.recordType = 'user';

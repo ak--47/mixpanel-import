@@ -35,7 +35,7 @@ function truncate(s) {
  */
 function ezTransforms(job) {
 	// EVENT RECORDS
-	if (job.recordType?.startsWith("event") || job.recordType === "export-import-events") {
+	if (job.recordType?.startsWith("event") || job.recordType === "export-import-event") {
 		return function transformEvent(record) {
 			// 1. Fix “wrong shape”: ensure record.properties exists
 			if (!record.properties) {
@@ -115,7 +115,7 @@ function ezTransforms(job) {
 	}
 
 	// USER PROFILE RECORDS
-	if (job.recordType?.startsWith("user") || (job.recordType === "export-import-profiles" && !job.groupKey)) {
+	if (job.recordType?.startsWith("user") || (job.recordType === "export-import-profile" && !job.groupKey)) {
 		return function transformUser(user) {
 			// Determine the directive to use
 			const directive = (job.directive && validOperations.includes(job.directive)) ? job.directive : null;
@@ -221,7 +221,7 @@ function ezTransforms(job) {
 
 	// GROUP PROFILE RECORDS
 	// @ts-ignore
-	if (job.recordType?.startsWith("group") || (job.recordType === "export-import-profiles" && job.groupKey)) {
+	if (job.recordType?.startsWith("group") || (job.recordType === "export-import-profile" && job.groupKey)) {
 		return function transformGroup(group) {
 			// Determine the directive to use
 			const directive = (job.directive && validOperations.includes(job.directive)) ? job.directive : null;
@@ -1007,7 +1007,7 @@ module.exports = {
  */
 // eslint-disable-next-line no-unused-vars
 function ezTransformsOLD(job) {
-	if (job.recordType === `event` || job.recordType === 'export-import-events') {
+	if (job.recordType === `event` || job.recordType === 'export-import-event') {
 		return function FixShapeAndAddInsertIfAbsentAndFixTime(record) {
 			//wrong shape
 			if (!record.properties) {
@@ -1084,7 +1084,7 @@ function ezTransformsOLD(job) {
 	}
 
 	//for user imports, make sure every record has a $token and the right shape
-	if (job.recordType === `user` || job.recordType === 'export-import-profiles') {
+	if (job.recordType === `user` || job.recordType === 'export-import-profile') {
 		return function addUserTokenIfAbsent(user) {
 
 			//wrong shape; fix it
@@ -1147,7 +1147,7 @@ function ezTransformsOLD(job) {
 
 	//for group imports, make sure every record has a $token and the right shape
 	// @ts-ignore
-	if (job.recordType === `group` || job.recordType === 'export-import-profiles') {
+	if (job.recordType === `group` || job.recordType === 'export-import-profile') {
 		return function addGroupKeysIfAbsent(group) {
 			//wrong shape; fix it
 			if (!(group.$set || group.$set_once || group.$add || group.$union || group.$append || group.$remove || group.$unset)) {

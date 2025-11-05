@@ -46,9 +46,9 @@ declare namespace main {
     | "annotations"
     | "get-annotations"
 	| "delete-annotations"
-	| "export-import-events"
-	| "export-import-profiles"
-	| "export-import-groups";
+	| "export-import-event"
+	| "export-import-profile"
+	| "export-import-group";
 	
   /**
    * - a path to a file/folder, objects in memory, or a readable object/file stream that contains data you wish to import

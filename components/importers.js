@@ -436,10 +436,17 @@ async function flushToMixpanelWithUndici(batch, job) {
 		if (job.recordType === 'event' || job.recordType === "scd") {
 			job.success += res.num_records_imported || 0;
 			job.failed += res?.failed_records?.length || 0;
-			if (!job.abridged && res?.failed_records?.length) {
+			if (res?.failed_records?.length) {
 				for (const error of res.failed_records) {
 					const { index, message } = error;
-					job.addBadRecord(message, batch[index]); // Use bounded method
+					// Update error counts (this was missing!)
+					if (!job.errors[message]) job.errors[message] = 0;
+					job.errors[message]++;
+
+					// Store bad records if not in abridged mode
+					if (!job.abridged) {
+						job.addBadRecord(message, batch[index]); // Use bounded method
+					}
 				}
 			}
 		}

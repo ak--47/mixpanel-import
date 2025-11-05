@@ -50,7 +50,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 		})
 		.option("secondToken", {
 			demandOption: false,
-			describe: 'second project token (for export-import-events)',
+			describe: 'second project token (for export-import-event)',
 			type: 'string'
 		})
 		.option("table", {
@@ -67,7 +67,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			demandOption: false,
 			alias: "recordType",
 			default: 'event',
-			describe: 'event, user, group, table, export, scd, or profile-export, or export-import-events or export-import-profiles',
+			describe: 'event, user, group, table, export, scd, or profile-export, or export-import-event or export-import-profile',
 			type: 'string'
 		})
 		.option("compress", {

@@ -295,7 +295,7 @@ describe("sanity: file streams", () => {
 	test(
 		"group",
 		async () => {
-			const data = await mp({}, createReadStream(groups), { ...opts, recordType: `group` });
+			const data = await mp({}, createReadStream(groups), { ...opts, recordType: `group`, groupKey: "company_id" });
 			expect(data.success).toBe(3);
 			expect(data.failed).toBe(0);
 			expect(data.duration).toBeGreaterThan(0);

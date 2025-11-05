@@ -153,7 +153,7 @@ describe("filenames", () => {
 	test(
 		"group",
 		async () => {
-			const data = await mp({}, groups, { ...opts, recordType: `group` });
+			const data = await mp({}, groups, { ...opts, recordType: `group`, groupKey: "company_id" });
 			expect(data.success).toBe(1860);
 			expect(data.failed).toBe(0);
 			expect(data.duration).toBeGreaterThan(0);
@@ -297,9 +297,9 @@ describe("in memory", () => {
 	);
 
 	test(
-		"export-import-events",
+		"export-import-event",
 		async () => {
-			const data = await mp({}, null, { ...opts, recordType: "export-import-events", start: "2023-01-01", end: "2023-01-01", skipWriteToDisk: true });
+			const data = await mp({}, null, { ...opts, recordType: "export-import-event", start: "2023-01-01", end: "2023-01-01", skipWriteToDisk: true });
 			const { success, failed, total } = data;
 			const expectedSuccess = 200;
 			const expectedFailed = 70;
@@ -316,7 +316,7 @@ describe("in memory", () => {
 			const data = await mp(
 				{ token: MP_PROFILE_EXPORT_TOKEN, secret: MP_PROFILE_EXPORT_SECRET },
 				null,
-				{ ...opts, recordType: "export-import-profiles", verbose: true, skipWriteToDisk: true });
+				{ ...opts, recordType: "export-import-profile", verbose: true, skipWriteToDisk: true });
 			const { recordType, success, failed, total } = data;
 			const expected = 1000;
 			expect(recordType).toBe("user");
@@ -327,7 +327,7 @@ describe("in memory", () => {
 	);
 
 	test(
-		"export-import-groups",
+		"export-import-group",
 		async () => {
 			const data = await mp(
 				{
@@ -337,7 +337,7 @@ describe("in memory", () => {
 				},
 				null,
 				{
-					...opts, recordType: "export-import-profiles",
+					...opts, recordType: "export-import-profile",
 					skipWriteToDisk: true,
 					dataGroupId: MP_PROFILE_EXPORT_DATAGROUP_ID,
 					groupKey: MP_PROFILE_EXPORT_GROUP_KEY,
@@ -410,7 +410,7 @@ describe("file streams", () => {
 	test(
 		"group",
 		async () => {
-			const data = await mp({}, createReadStream(groups), { ...opts, recordType: `group` });
+			const data = await mp({}, createReadStream(groups), { ...opts, recordType: `group`, groupKey: "company_id" });
 			expect(data.success).toBe(1860);
 			expect(data.failed).toBe(0);
 			expect(data.duration).toBeGreaterThan(0);

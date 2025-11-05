@@ -93,13 +93,13 @@ class Job {
 
 		// Use empty object if creds is null/undefined but operation is allowed without creds
 		const safeCreds = creds || {};
-		
+
 		/** @type {string} service account username */
 		this.acct = safeCreds.acct || ``;
-		
+
 		/** @type {string} service account secret */
 		this.pass = safeCreds.pass || ``;
-		
+
 		/** @type {string} project id */
 		this.project = safeCreds.project ? String(safeCreds.project) : ``;
 
@@ -108,80 +108,80 @@ class Job {
 
 		/** @type {string} org id */
 		this.org = safeCreds.org ? String(safeCreds.org) : ``;
-		
+
 		/** @type {string} api secret (deprecated auth) */
 		this.secret = safeCreds.secret || ``;
-		
+
 		/** @type {string} bearer token */
 		this.bearer = safeCreds.bearer || ``;
-		
+
 		/** @type {string} project token */
 		this.token = safeCreds.token || ``;
-		
+
 		/** @type {string} second token for export / import */
 		this.secondToken = safeCreds.secondToken || ``;
-		
+
 		/** @type {string} lookup table id */
 		this.lookupTableId = safeCreds.lookupTableId || ``;
-		
+
 		/** @type {string} group key id */
 		this.groupKey = safeCreds.groupKey || (opts.groupKey ? String(opts.groupKey) : '') || ``;
 		/** @type {string} resolved authentication info */
 		this.auth = this.resolveProjInfo();
-		
+
 		/** @type {string} start time of the job */
 		this.startTime = new Date().toISOString();
-		
+
 		/** @type {string|null} end time of the job */
 		this.endTime = null;
-		
+
 		/** @type {Set} used if de-dupe is on */
 		this.hashTable = new Set();
-		
+
 		/** @type {Array} used to calculate memory usage */
 		this.memorySamples = [];
-		
+
 		/** @type {boolean|null} was the data loaded into memory or streamed? */
 		this.wasStream = null;
-		
+
 		/** @type {Array} results of dry run */
 		this.dryRunResults = [];
-		
+
 		/** @type {Object} storage for invalid records */
 		this.badRecords = {};
-		
+
 		/** @type {Array} tuple of keys for insert_id */
 		this.insertIdTuple = opts.insertIdTuple || [];
-		
+
 		/** @type {string} scd label */
 		this.scdLabel = opts.scdLabel || '';
-		
+
 		/** @type {string} scd key */
 		this.scdKey = opts.scdKey || '';
-		
+
 		/** @type {string} scd type */
 		this.scdType = opts.scdType || 'string';
-		
+
 		/** @type {string} scd id */
 		this.scdId = opts.scdId || '';
-		
+
 		/** @type {string} scd prop id */
 		this.scdPropId = opts.scdPropId || '';
 		/** @type {string} transport mechanism to use for sending data (default: undici for better performance) */
 		this.transport = opts.transport || 'undici';
-		
+
 		/** @type {string} Google Cloud project ID for GCS operations */
 		this.gcpProjectId = opts.gcpProjectId || safeCreds.gcpProjectId || 'mixpanel-gtm-training';
-		
+
 		/** @type {string} Path to GCS service account credentials JSON file (optional, defaults to ADC) */
 		this.gcsCredentials = opts.gcsCredentials || safeCreds.gcsCredentials || '';
-		
+
 		/** @type {string} AWS S3 access key ID for S3 operations */
 		this.s3Key = opts.s3Key || safeCreds.s3Key || '';
-		
+
 		/** @type {string} AWS S3 secret access key for S3 operations */
 		this.s3Secret = opts.s3Secret || safeCreds.s3Secret || '';
-		
+
 		/** @type {string} AWS S3 region for S3 operations */
 		this.s3Region = opts.s3Region || safeCreds.s3Region || '';
 
@@ -207,7 +207,7 @@ class Job {
 		if (opts.whereClause) {
 			this.whereClause = opts.whereClause;
 		}
-		
+
 		// ? arbitrary export params
 		this.params = opts.params || {};
 
@@ -252,7 +252,7 @@ class Job {
 
 		// ? string options
 		this.recordType = opts.recordType || `event`; // event, user, group or table		
-		this.streamFormat = opts.streamFormat || ""; 
+		this.streamFormat = opts.streamFormat || "";
 		this.region = opts.region || `US`; // US or EU or IN
 		/** @type {import('../index.d.ts').Regions | ''} */
 		this.secondRegion = opts.secondRegion || ''; // US or EU or IN; used for exports => import
@@ -523,8 +523,8 @@ class Job {
 		}
 
 		// Validate recordType is one of the allowed values
-		const validRecordTypes = ['event', 'user', 'group', 'table', 'export', 'scd', 'export-import'];
-		if (this.recordType && !validRecordTypes.includes(this.recordType)) {
+		const validRecordTypes = ['event', 'user', 'group', 'table', 'export', 'scd', 'export-import-'];
+		if (this.recordType && !validRecordTypes.some(t => this.recordType.includes(t))) {
 			throw new Error(
 				`Invalid recordType: "${this.recordType}"\n` +
 				`Valid options are: ${validRecordTypes.join(', ')}`
@@ -569,8 +569,8 @@ class Job {
 			table: `https://api.mixpanel.com/lookup-tables/`,
 			export: `https://data.mixpanel.com/api/2.0/export`,
 			"profile-export": `https://mixpanel.com/api/2.0/engage`,
-			"export-import-events": `https://data.mixpanel.com/api/2.0/export`,
-			"export-import-profiles": `https://mixpanel.com/api/2.0/engage`
+			"export-import-event": `https://data.mixpanel.com/api/2.0/export`,
+			"export-import-profile": `https://mixpanel.com/api/2.0/engage`
 		},
 		eu: {
 			event: `https://api-eu.mixpanel.com/import`,
@@ -580,8 +580,8 @@ class Job {
 			table: `https://api-eu.mixpanel.com/lookup-tables/`,
 			export: `https://data-eu.mixpanel.com/api/2.0/export`,
 			"profile-export": `https://eu.mixpanel.com/api/2.0/engage`,
-			"export-import-events": `https://data-eu.mixpanel.com/api/2.0/export`,
-			"export-import-profiles": `https://eu.mixpanel.com/api/2.0/engage`
+			"export-import-event": `https://data-eu.mixpanel.com/api/2.0/export`,
+			"export-import-profile": `https://eu.mixpanel.com/api/2.0/engage`
 		},
 		in: {
 			event: `https://api-in.mixpanel.com/import`,
@@ -591,8 +591,8 @@ class Job {
 			table: `https://api-in.mixpanel.com/lookup-tables/`,
 			export: `https://data-in.mixpanel.com/api/2.0/export`,
 			"profile-export": `https://in.mixpanel.com/api/2.0/engage`,
-			"export-import-events": `https://data-in.mixpanel.com/api/2.0/export`,
-			"export-import-profiles": `https://in.mixpanel.com/api/2.0/engage`
+			"export-import-event": `https://data-in.mixpanel.com/api/2.0/export`,
+			"export-import-profile": `https://in.mixpanel.com/api/2.0/engage`
 		}
 
 	};
@@ -605,7 +605,7 @@ class Job {
 	get type() {
 		return this.recordType;
 	}
-	
+
 	/** 
 	 * Get the Mixpanel API URL for the current record type and region
 	 * @returns {string} The API endpoint URL
@@ -615,7 +615,7 @@ class Job {
 		if (this.recordType === "table") url += this.lookupTableId;
 		return url;
 	}
-	
+
 	/**
 	 * Get the current job options as an object
 	 * @returns {Object} Current job configuration options
