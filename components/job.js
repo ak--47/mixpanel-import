@@ -308,7 +308,7 @@ class Job {
 		this.fixJson = u.isNil(opts.fixJson) ? false : opts.fixJson; //fix json
 		this.removeNulls = u.isNil(opts.removeNulls) ? false : opts.removeNulls; //remove null fields
 		this.flattenData = u.isNil(opts.flattenData) ? false : opts.flattenData; //flatten nested properties
-		this.abridged = u.isNil(opts.abridged) ? true : opts.abridged; //true = don't store HTTP responses (prevents memory leak)
+		this.abridged = u.isNil(opts.abridged) ? false : opts.abridged; //false = store full responses for better debugging
 		this.forceStream = u.isNil(opts.forceStream) ? true : opts.forceStream; //don't ever buffer files into memory
 		this.dedupe = u.isNil(opts.dedupe) ? false : opts.dedupe; //remove duplicate records
 		this.createProfiles = u.isNil(opts.createProfiles) ? false : opts.createProfiles; //remove duplicate records
@@ -341,6 +341,9 @@ class Job {
 		this.fastMode = u.isNil(opts.fastMode) ? false : opts.fastMode; //skip all transformations for pre-processed data
 
 		this.v2_compat = u.isNil(opts.v2_compat) ? false : opts.v2_compat; //automatically set distinct_id from $user_id or $device_id (events only)
+
+		/** @type {string} directive for profile operations ($set, $set_once, $append, $increment, etc.) */
+		this.directive = opts.directive || '$set'; //directive for profile operations (user and group profiles) - defaults to $set
 
 		// ? tagging options
 		this.tags = parse(opts.tags) || {}; //tags for the import		
@@ -497,10 +500,7 @@ class Job {
 		this.contentType = "application/json";
 		this.encoding = "";
 		this.responses = [];
-		this.errors = [];
-
-		// if we're in abridged mode errors is a hash
-		if (this.abridged) this.errors = {};
+		this.errors = {};  // Always an object for counting errors
 
 		// SCD cannot be strict mode -_-
 		if (this.recordType === "scd") this.strict = false;
@@ -781,28 +781,76 @@ class Job {
 	report() {
 		return Object.assign({}, this);
 	}
-	store(response, success = true) {
-		const isVerbose = !this.abridged;
+	store(response, success = true, batch = null) {
+		// Store full responses if not in abridged mode
+		if (!this.abridged) {
+			this.responses.push(response);
+		}
 
-		// IMPORTANT: When abridged=true (production mode), we don't store responses
-		// This prevents memory leaks from accumulating hundreds of HTTP response objects
-		if (isVerbose) {
-			// Store full responses only in verbose/debug mode
-			if (success) {
-				this.responses.push(response);  // WARNING: Can cause memory leak with large imports!
-			}
-			if (!success) {
-				this.errors.push(response);
-			}
-		} else {
-			// In abridged mode, only summarize errors (no response storage)
-			if (!success && response?.failed_records) {
-				if (Array.isArray(response.failed_records)) {
-					response.failed_records.forEach(failure => {
-						const { message = "unknown error" } = failure;
-						if (!this.errors[message]) this.errors[message] = 1;
-						this.errors[message]++;
-					});
+		// Always count errors (regardless of abridged mode)
+		if (!success) {
+			// Extract error message from various response formats
+			let errorMessage = "unknown error";
+
+			if (response?.failed_records && Array.isArray(response.failed_records)) {
+				// Format 1: failed_records array
+				response.failed_records.forEach(failure => {
+					const message = failure.message || "unknown error";
+					if (!this.errors[message]) this.errors[message] = 0;
+					this.errors[message]++;
+
+					// Store bad records if keepBadRecords is true
+					if (this.keepBadRecords && batch) {
+						if (!this.badRecords[message]) this.badRecords[message] = [];
+						// Find the corresponding record in the batch
+						const index = failure.index || 0;
+						if (batch[index]) {
+							this.badRecords[message].push(batch[index]);
+						}
+					}
+				});
+			} else if (response?.error) {
+				// Format 2: Single error message
+				errorMessage = response.error;
+				if (!this.errors[errorMessage]) this.errors[errorMessage] = 0;
+				this.errors[errorMessage]++;
+
+				// Store all records from batch as bad if keepBadRecords is true
+				if (this.keepBadRecords && batch) {
+					if (!this.badRecords[errorMessage]) this.badRecords[errorMessage] = [];
+					this.badRecords[errorMessage].push(...batch);
+				}
+			} else if (response?.message) {
+				// Format 3: Message field
+				errorMessage = response.message;
+				if (!this.errors[errorMessage]) this.errors[errorMessage] = 0;
+				this.errors[errorMessage]++;
+
+				// Store all records from batch as bad if keepBadRecords is true
+				if (this.keepBadRecords && batch) {
+					if (!this.badRecords[errorMessage]) this.badRecords[errorMessage] = [];
+					this.badRecords[errorMessage].push(...batch);
+				}
+			} else if (typeof response === 'string') {
+				// Format 4: String error
+				errorMessage = response;
+				if (!this.errors[errorMessage]) this.errors[errorMessage] = 0;
+				this.errors[errorMessage]++;
+
+				// Store all records from batch as bad if keepBadRecords is true
+				if (this.keepBadRecords && batch) {
+					if (!this.badRecords[errorMessage]) this.badRecords[errorMessage] = [];
+					this.badRecords[errorMessage].push(...batch);
+				}
+			} else {
+				// Format 5: Unknown error format
+				if (!this.errors["unknown error"]) this.errors["unknown error"] = 0;
+				this.errors["unknown error"]++;
+
+				// Store all records from batch as bad if keepBadRecords is true
+				if (this.keepBadRecords && batch) {
+					if (!this.badRecords["unknown error"]) this.badRecords["unknown error"] = [];
+					this.badRecords["unknown error"].push(...batch);
 				}
 			}
 		}
@@ -1017,27 +1065,24 @@ class Job {
 			eps: 0,
 			rps: 0,
 			mbps: 0,
-			errors: [],
-			responses: [],
-			// @ts-ignore
-			badRecords: this.badRecords,
+			errors: this.errors,  // Always include errors object
+			responses: this.responses,  // Include responses (empty if abridged)
 			dryRun: this.dryRunResults,
 			vendor: this.vendor || "",
 			vendorOpts: this.vendorOpts
 		};
+
+		// Only include badRecords if keepBadRecords is true
+		if (this.keepBadRecords && Object.keys(this.badRecords).length > 0) {
+			// @ts-ignore
+			summary.badRecords = this.badRecords;
+		}
 
 		// stats
 		if (summary.total && summary.duration && summary.requests && summary.bytes) {
 			summary.eps = Math.floor(summary.total / summary.duration * 1000);
 			summary.rps = summary.duration > 0 ? u.round(summary.requests / summary.duration * 1000, 3) : 0;
 			summary.mbps = u.round((summary.bytes / 1e+6) / summary.duration * 1000, 3);
-		}
-
-		summary.errors = this.errors;
-
-
-		if (includeResponses && this?.responses?.length) {
-			summary.responses = this.responses;
 		}
 
 		if (this.file) {
@@ -1064,6 +1109,7 @@ class Job {
 				"failed",
 				"empty",
 				"errors",
+				"responses",  // Include responses (will be empty array in abridged mode)
 				"startTime",
 				"endTime",
 				// Important skip/filter counts that should always be included

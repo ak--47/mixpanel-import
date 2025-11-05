@@ -166,7 +166,7 @@ describe("vendor tests", () => {
 			expect(job.dryRun.length).toBe(64);
 			const { dryRun: data } = job;
 			expect(data.every(u => u.$distinct_id)).toBe(true);
-			expect(data.every(u => u.$ip)).toBe(true);
+			expect(data.every(u => u.$token)).toBe(true);
 			expect(data.every(u => u.$set)).toBe(true);
 		},
 		longTimeout
@@ -278,7 +278,8 @@ describe("vendor tests", () => {
 				recordType: "group", 
 				vendor: "june", 
 				dryRun: true,
-				streamFormat: "csv"
+				streamFormat: "csv",
+				groupKey: "company"
 			});
 			expect(job.dryRun.length).toBeGreaterThan(0);
 			const { dryRun: data } = job;

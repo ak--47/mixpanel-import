@@ -477,104 +477,6 @@ describe("sanity: fixing stuff", () => {
 		longTimeout
 	);
 
-	test("user profiles with custom directive", async () => {
-		const data = [{
-			$distinct_id: "user-directive-test",
-			name: "Test User",
-			email: "test@example.com",
-			counter: 5
-		}];
-
-		// Test with $set_once directive
-		const job = await mp({}, data, {
-			...opts,
-			recordType: "user",
-			fixData: true,
-			directive: "$set_once",
-			dryRun: true
-		});
-
-		expect(job.dryRun).toBeDefined();
-		expect(job.dryRun[0].$set_once).toBeDefined();
-		// name and email are special props that get prefixed with $
-		expect(job.dryRun[0].$set_once.$name).toBe("Test User");
-		expect(job.dryRun[0].$set_once.$email).toBe("test@example.com");
-		expect(job.dryRun[0].$set_once.counter).toBe(5);
-		expect(job.dryRun[0].$set).toBeUndefined(); // Should not have $set
-
-		// Test with $add directive
-		const job2 = await mp({}, data, {
-			...opts,
-			recordType: "user",
-			fixData: true,
-			directive: "$add",
-			dryRun: true
-		});
-
-		expect(job2.dryRun[0].$add).toBeDefined();
-		expect(job2.dryRun[0].$add.counter).toBe(5);
-		expect(job2.dryRun[0].$set).toBeUndefined();
-	});
-
-	test("group profiles with custom directive", async () => {
-		const data = [{
-			$group_id: "group-directive-test",
-			company_name: "Test Company",
-			plan: "enterprise",
-			seats: 10
-		}];
-
-		// Test with $union directive
-		const job = await mp({}, data, {
-			...opts,
-			recordType: "group",
-			fixData: true,
-			groupKey: "company",
-			directive: "$union",
-			dryRun: true
-		});
-
-		expect(job.dryRun).toBeDefined();
-		expect(job.dryRun[0].$union).toBeDefined();
-		expect(job.dryRun[0].$union.company_name).toBe("Test Company");
-		expect(job.dryRun[0].$set).toBeUndefined(); // Should not have $set
-	});
-
-	test("invalid directive defaults to $set", async () => {
-		const data = [{
-			$distinct_id: "user-invalid-directive",
-			name: "Test User",
-			email: "test@example.com"
-		}];
-
-		// Test with invalid directive - should default to $set
-		const job = await mp({}, data, {
-			...opts,
-			recordType: "user",
-			fixData: true,
-			directive: "$invalid_directive", // This is not a valid operation
-			dryRun: true
-		});
-
-		expect(job.dryRun).toBeDefined();
-		// Should default to $set when directive is invalid
-		expect(job.dryRun[0].$set).toBeDefined();
-		expect(job.dryRun[0].$set.$name).toBe("Test User");
-		expect(job.dryRun[0].$invalid_directive).toBeUndefined();
-
-		// Test with empty directive - should also default to $set
-		const job2 = await mp({}, data, {
-			...opts,
-			recordType: "user",
-			fixData: true,
-			directive: "", // Empty directive
-			dryRun: true
-		});
-
-		expect(job2.dryRun[0].$set).toBeDefined();
-		expect(job2.dryRun[0].$set.$name).toBe("Test User");
-	});
-
 	test("fixes time", async () => {
 		const data = [{
 			event: "test_event",
@@ -743,7 +645,7 @@ describe("sanity: options", () => {
 			const data = await mp({}, smallEvents, { ...opts, abridged: true });
 			expect(data.success).toBe(2);
 			expect(data.failed).toBe(0);
-			expect(data.responses).toEqual([]);  // Empty array in abridged mode
+			expect(data.responses).toBe(undefined);
 			expect(data.duration).toBeGreaterThan(0);
 		},
 		longTimeout

@@ -597,13 +597,16 @@ async function corePipeline(stream, job, toNodeStream = false) {
 		l('Fast mode enabled - skipping all transformations');
 		stages.push(
 			createExistenceFilter(job),
-			createStringifyCacher(job, jsonCache, bytesCache),
-			createSmartBatcher(job, bytesCache) // Combined count + size batching
+			createStringifyCacher(job, jsonCache, bytesCache)
 		);
 
 		// Add destination tee if needed
 		if (destinationStream && !job.destinationOnly) {
-			stages.push(createTeeStream(destinationStream));
+			// For dual writing (Mixpanel + destination), add batching first
+			stages.push(
+				createSmartBatcher(job, bytesCache), // Combined count + size batching
+				createTeeStream(destinationStream)
+			);
 		}
 
 		// Add HTTP sender or destination-only writer
@@ -613,30 +616,43 @@ async function corePipeline(stream, job, toNodeStream = false) {
 			if (!destinationStream) {
 				throw new Error('destination is required when destinationOnly is true');
 			}
-			// For destination-only, write directly to the destination stream
+			// For destination-only, write directly to the destination stream (no batching needed)
 			stages.push(
 				new Transform({
 					objectMode: true,
 					highWaterMark: job.highWater,
-					transform(batch, encoding, callback) {
-						// Write each record in the batch to destination
-						for (const record of batch) {
-							destinationStream.write(record);
+					transform(record, encoding, callback) {
+						// Write single record to destination (not batched)
+						if (!destinationStream.write(record)) {
+							// Handle backpressure
+							destinationStream.once('drain', () => {
+								const response = { success: 1, failed: 0 };
+								const batch = [record]; // Logger expects a batch array
+								callback(null, [response, batch]);
+							});
+						} else {
+							// Pass through for logging in the expected format [response, batch]
+							const response = { success: 1, failed: 0 };
+							const batch = [record]; // Logger expects a batch array
+							callback(null, [response, batch]);
 						}
-						// Pass through for logging
-						callback(null, { success: batch.length, failed: 0 });
 					},
 					flush(callback) {
 						if (destinationStream) {
-							destinationStream.end();
+							destinationStream.end(callback);
+						} else {
+							callback();
 						}
-						callback();
 					}
 				}),
 				createLogger(job)
 			);
 		} else {
-			// Send to Mixpanel (and optionally to destination via tee)
+			// Send to Mixpanel (batching required)
+			if (!destinationStream) {
+				// Only Mixpanel, add batching
+				stages.push(createSmartBatcher(job, bytesCache));
+			}
 			stages.push(
 				createHttpSender(job, jsonCache, fileStream),
 				createLogger(job)
@@ -653,46 +669,57 @@ async function corePipeline(stream, job, toNodeStream = false) {
 			createDedupeTransform(job),
 			createExistenceFilter2(job),
 			createHelperTransforms(job),
-			createStringifyCacher(job, jsonCache, bytesCache),
-			createSmartBatcher(job, bytesCache) // Combined count + size batching
+			createStringifyCacher(job, jsonCache, bytesCache)
 		);
 
-		// Add destination tee if needed
-		if (destinationStream && !job.destinationOnly) {
-			stages.push(createTeeStream(destinationStream));
-		}
-
-		// Add HTTP sender or destination-only writer
+		// Add batching and destination handling based on mode
 		if (job.destinationOnly) {
-			// Write only to destination, skip Mixpanel
+			// Write only to destination, skip Mixpanel and batching
 			l('Destination-only mode - skipping Mixpanel');
 			if (!destinationStream) {
 				throw new Error('destination is required when destinationOnly is true');
 			}
-			// For destination-only, write directly to the destination stream
+			// For destination-only, write directly to the destination stream (no batching)
 			stages.push(
 				new Transform({
 					objectMode: true,
 					highWaterMark: job.highWater,
-					transform(batch, encoding, callback) {
-						// Write each record in the batch to destination
-						for (const record of batch) {
-							destinationStream.write(record);
+					transform(record, encoding, callback) {
+						// Write single record to destination (not batched)
+						if (!destinationStream.write(record)) {
+							// Handle backpressure
+							destinationStream.once('drain', () => {
+								const response = { success: 1, failed: 0 };
+								const batch = [record]; // Logger expects a batch array
+								callback(null, [response, batch]);
+							});
+						} else {
+							// Pass through for logging in the expected format [response, batch]
+							const response = { success: 1, failed: 0 };
+							const batch = [record]; // Logger expects a batch array
+							callback(null, [response, batch]);
 						}
-						// Pass through for logging
-						callback(null, { success: batch.length, failed: 0 });
 					},
 					flush(callback) {
 						if (destinationStream) {
-							destinationStream.end();
+							destinationStream.end(callback);
+						} else {
+							callback();
 						}
-						callback();
 					}
 				}),
 				createLogger(job)
 			);
 		} else {
-			// Send to Mixpanel (and optionally to destination via tee)
+			// Send to Mixpanel (requires batching)
+			stages.push(createSmartBatcher(job, bytesCache)); // Combined count + size batching
+
+			// Add destination tee if needed
+			if (destinationStream) {
+				stages.push(createTeeStream(destinationStream));
+			}
+
+			// Add HTTP sender
 			stages.push(
 				createHttpSender(job, jsonCache, fileStream),
 				createLogger(job)

@@ -117,25 +117,58 @@ function ezTransforms(job) {
 	// USER PROFILE RECORDS
 	if (job.recordType?.startsWith("user") || (job.recordType === "export-import-profiles" && !job.groupKey)) {
 		return function transformUser(user) {
-			// 1. Fix “wrong shape” into {$set: {...}}
-			if (!validOperations.some((op) => op in user)) {
+			// Determine the directive to use
+			const directive = (job.directive && validOperations.includes(job.directive)) ? job.directive : null;
+
+			// 1. Fix "wrong shape" into {$directive: {...}} or default to {$set: {...}}
+			// If directive is specified, always use it (even if other operations exist)
+			if (directive || !validOperations.some((op) => op in user)) {
 				const uuidKey = user.$distinct_id
 					? "$distinct_id"
 					: user.distinct_id
 						? "distinct_id"
 						: null;
 				if (!uuidKey) return {}; // skip if no distinct_id
+				//!important store uuid value
+				const uuidValue = String(user[uuidKey]);
 
+				// Collect all properties from the user object (including any existing operations)
 				const base = { ...user };
-				user = { $set: base };
-				user.$distinct_id = String(base[uuidKey]);
-				delete user.$set[uuidKey];
-				delete user.$set.$token;
+				// Remove all existing operation buckets if directive is specified
+				if (directive) {
+					for (const op of validOperations) {
+						if (base[op]) {
+							// Merge properties from existing operations into base
+							Object.assign(base, base[op]);
+							delete base[op];
+						}
+					}
+				}
 
-				// Handle Mixpanel-export shape:
-				if (typeof user.$set.$properties === "object") {
-					user.$set = { ...user.$set.$properties };
-					delete user.$set.$properties;
+				// Use the specified directive if provided, otherwise default to $set
+				const finalDirective = directive || '$set';
+
+				// For $unset, we need an array of property names, not an object
+				if (finalDirective === '$unset') {
+					const propsToUnset = [];
+					for (const key of Object.keys(base)) {
+						if (key !== uuidKey && key !== '$token' && !key.startsWith('$')) {
+							propsToUnset.push(key);
+						}
+					}
+					user = { [finalDirective]: propsToUnset };
+				} else {
+					user = { [finalDirective]: base };
+					delete user[finalDirective][uuidKey];
+					delete user[finalDirective].$token;
+				}
+				//!important: set $distinct_id
+				user.$distinct_id = uuidValue;
+
+				// Handle Mixpanel-export shape (only for non-$unset operations):
+				if (finalDirective !== '$unset' && typeof user[finalDirective].$properties === "object") {
+					user[finalDirective] = { ...user[finalDirective].$properties };
+					delete user[finalDirective].$properties;
 				}
 			}
 
@@ -190,8 +223,12 @@ function ezTransforms(job) {
 	// @ts-ignore
 	if (job.recordType?.startsWith("group") || (job.recordType === "export-import-profiles" && job.groupKey)) {
 		return function transformGroup(group) {
-			// 1. Fix “wrong shape” into {$set: {...}}
-			if (!validOperations.some((op) => op in group)) {
+			// Determine the directive to use
+			const directive = (job.directive && validOperations.includes(job.directive)) ? job.directive : null;
+
+			// 1. Fix "wrong shape" into {$directive: {...}} or default to {$set: {...}}
+			// If directive is specified, always use it (even if other operations exist)
+			if (directive || !validOperations.some((op) => op in group)) {
 				// fallback chain for uuidKey
 				const uuidKey =
 					(group?.[job?.groupKey] && job.groupKey) ||
@@ -202,12 +239,41 @@ function ezTransforms(job) {
 					null;
 				if (!uuidKey) return {}; // skip if no group_id
 
+				const uuidValue = String(group[uuidKey]);
+
+				// Collect all properties from the group object (including any existing operations)
 				const base = { ...group };
-				group = { $set: base };
-				group.$group_id = String(base[uuidKey]);
-				delete group.$set[uuidKey];
-				delete group.$set.$group_id;
-				delete group.$set.$token;
+				// Remove all existing operation buckets if directive is specified
+				if (directive) {
+					for (const op of validOperations) {
+						if (base[op]) {
+							// Merge properties from existing operations into base
+							Object.assign(base, base[op]);
+							delete base[op];
+						}
+					}
+				}
+
+				// Use the specified directive if provided, otherwise default to $set
+				const finalDirective = directive || '$set';
+
+				// For $unset, we need an array of property names, not an object
+				if (finalDirective === '$unset') {
+					const propsToUnset = [];
+					for (const key of Object.keys(base)) {
+						if (key !== uuidKey && key !== '$group_id' && key !== '$token' && key !== '$group_key' && !key.startsWith('$')) {
+							propsToUnset.push(key);
+						}
+					}
+					group = { [finalDirective]: propsToUnset };
+				} else {
+					group = { [finalDirective]: base };
+					delete group[finalDirective][uuidKey];
+					delete group[finalDirective].$group_id;
+					delete group[finalDirective].$token;
+				}
+
+				group.$group_id = uuidValue;
 			}
 
 			// 2. Ensure $token and $group_key are present

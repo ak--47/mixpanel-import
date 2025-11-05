@@ -189,6 +189,12 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	catch (e) {
 		l(`ERROR: ${e.message}`);
 		if (e?.response?.body) l(`RESPONSE: ${u.json(e.response.body)}\n`);
+
+		// Re-throw the error so tests and non-CLI usage can catch it
+		if (!isCLI) {
+			throw e;
+		}
+		// For CLI, we continue to show the summary even on error
 	}
 
 	l('\n');

@@ -214,10 +214,10 @@ async function flushToMixpanel(batch, job) {
 				status: res.status !== undefined ? res.status : success,
 				code: res.code || (success ? 200 : 400)
 			};
-			job.store(abbreviatedForStorage, success);
+			job.store(abbreviatedForStorage, success, batch);
 		} else {
 			// Abridged mode - don't store anything, don't even pass the response
-			job.store(null, success);
+			job.store(null, success, batch);
 		}
 
 		// MEMORY FIX: Return minimal response data, not full response object
@@ -466,10 +466,10 @@ async function flushToMixpanelWithUndici(batch, job) {
 				status: res.status !== undefined ? res.status : success,
 				code: res.code || (success ? 200 : 400)
 			};
-			job.store(abbreviatedForStorage, success);
+			job.store(abbreviatedForStorage, success, batch);
 		} else {
 			// Abridged mode - don't store anything, don't even pass the response
-			job.store(null, success);
+			job.store(null, success, batch);
 		}
 
 		// MEMORY FIX: Return minimal response data, not full response object

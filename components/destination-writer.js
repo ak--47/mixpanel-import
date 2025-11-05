@@ -75,44 +75,15 @@ function createLocalDestinationStream(filePath, job) {
 		highWaterMark: 64 * 1024 // 64KB buffer
 	});
 
-	// Create a writable stream that writes objects as NDJSON
-	const destinationWriter = new Writable({
-		objectMode: true,
-		highWaterMark: job.highWater || 16,
-		write(chunk, encoding, callback) {
-			try {
-				// Convert object to JSON line and write to file
-				const line = JSON.stringify(chunk) + '\n';
-
-				// Write to the appropriate stream
-				if (filePath.endsWith('.gz')) {
-					// For gzipped files, write through gzip first
-					// This will be handled below
-					callback(new Error('Gzip writing handled separately'));
-				} else {
-					// Direct write to file stream
-					if (!fileStream.write(line)) {
-						// Backpressure - wait for drain
-						fileStream.once('drain', callback);
-					} else {
-						callback();
-					}
-				}
-			} catch (error) {
-				callback(error);
-			}
-		},
-		final(callback) {
-			// Ensure the file stream is properly closed
-			fileStream.end(callback);
-		}
-	});
-
 	// Handle gzip compression if needed
 	if (filePath.endsWith('.gz')) {
+		// For gzipped files, create a gzip stream first
 		const gzip = zlib.createGzip({
 			level: 6, // Balanced compression
 		});
+
+		// Pipe gzip output to file
+		gzip.pipe(fileStream);
 
 		// Create a transform stream for gzipped output
 		const gzipWriter = new Writable({
@@ -131,13 +102,12 @@ function createLocalDestinationStream(filePath, job) {
 				}
 			},
 			final(callback) {
-				gzip.end();
-				fileStream.end(callback);
+				// Properly close both streams
+				gzip.end(() => {
+					fileStream.end(callback);
+				});
 			}
 		});
-
-		// Pipe gzip to file
-		gzip.pipe(fileStream);
 
 		// Log when destination is ready
 		if (job.verbose) {
@@ -146,6 +116,32 @@ function createLocalDestinationStream(filePath, job) {
 
 		return gzipWriter;
 	}
+
+	// Create a regular writable stream that writes objects as NDJSON
+	const destinationWriter = new Writable({
+		objectMode: true,
+		highWaterMark: job.highWater || 16,
+		write(chunk, encoding, callback) {
+			try {
+				// Convert object to JSON line and write to file
+				const line = JSON.stringify(chunk) + '\n';
+
+				// Direct write to file stream
+				if (!fileStream.write(line)) {
+					// Backpressure - wait for drain
+					fileStream.once('drain', callback);
+				} else {
+					callback();
+				}
+			} catch (error) {
+				callback(error);
+			}
+		},
+		final(callback) {
+			// Ensure the file stream is properly closed
+			fileStream.end(callback);
+		}
+	});
 
 	// Log when destination is ready
 	if (job.verbose) {

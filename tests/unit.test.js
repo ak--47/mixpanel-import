@@ -67,8 +67,11 @@ describe("job config", () => {
 	test("stores errors too", () => {
 		const job = new Job(fakeCreds, { abridged: false });
 		job.store("error_response", false);
-		expect(job.errors.length).toBe(1);
-		expect(job.errors[0]).toBe("error_response");
+		// In non-abridged mode, error responses go to responses array
+		expect(job.responses.length).toBe(1);
+		expect(job.responses[0]).toBe("error_response");
+		// Errors are counted in the errors object
+		expect(job.errors["error_response"]).toBe(1);
 	});
 
 	test("auth string", () => {
@@ -307,6 +310,238 @@ describe("transforms", () => {
 		const record = { data: "test" };
 		const transformed = ezTransforms(config)(record);
 		expect(transformed).toEqual(record);
+	});
+
+	// Directive option tests
+	test("user profile: $set directive (default)", () => {
+		const config = { recordType: "user", token: "testToken" };
+		const record = {
+			$distinct_id: "123",
+			name: "John",
+			email: "john@example.com"
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.$set).toBeDefined();
+		expect(transformed.$set.$name).toBe("John");
+		expect(transformed.$set.$email).toBe("john@example.com");
+		expect(transformed.$set_once).toBeUndefined();
+		expect(transformed.$add).toBeUndefined();
+	});
+
+	test("user profile: $set_once directive", () => {
+		const config = { recordType: "user", token: "testToken", directive: "$set_once" };
+		const record = {
+			$distinct_id: "123",
+			name: "John",
+			created: "2024-01-01"
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.$set_once).toBeDefined();
+		expect(transformed.$set_once.$name).toBe("John");
+		expect(transformed.$set_once.$created).toBe("2024-01-01");
+		expect(transformed.$set).toBeUndefined();
+	});
+
+	test("user profile: $add directive", () => {
+		const config = { recordType: "user", token: "testToken", directive: "$add" };
+		const record = {
+			$distinct_id: "123",
+			points: 100,
+			credits: 50
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.$add).toBeDefined();
+		expect(transformed.$add.points).toBe(100);
+		expect(transformed.$add.credits).toBe(50);
+		expect(transformed.$set).toBeUndefined();
+		expect(transformed.$set_once).toBeUndefined();
+	});
+
+	test("user profile: $union directive", () => {
+		const config = { recordType: "user", token: "testToken", directive: "$union" };
+		const record = {
+			$distinct_id: "123",
+			tags: ["premium", "verified"],
+			categories: ["tech", "gaming"]
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.$union).toBeDefined();
+		expect(transformed.$union.tags).toEqual(["premium", "verified"]);
+		expect(transformed.$union.categories).toEqual(["tech", "gaming"]);
+		expect(transformed.$set).toBeUndefined();
+	});
+
+	test("user profile: $append directive", () => {
+		const config = { recordType: "user", token: "testToken", directive: "$append" };
+		const record = {
+			$distinct_id: "123",
+			purchases: { item: "widget", price: 99.99 },
+			events: { type: "login", timestamp: "2024-01-01" }
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.$append).toBeDefined();
+		expect(transformed.$append.purchases).toEqual({ item: "widget", price: 99.99 });
+		expect(transformed.$append.events).toEqual({ type: "login", timestamp: "2024-01-01" });
+		expect(transformed.$set).toBeUndefined();
+	});
+
+	test("user profile: $remove directive", () => {
+		const config = { recordType: "user", token: "testToken", directive: "$remove" };
+		const record = {
+			$distinct_id: "123",
+			tags: ["old", "deprecated"],
+			features: ["beta"]
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.$remove).toBeDefined();
+		expect(transformed.$remove.tags).toEqual(["old", "deprecated"]);
+		expect(transformed.$remove.features).toEqual(["beta"]);
+		expect(transformed.$set).toBeUndefined();
+	});
+
+	test("user profile: $unset directive", () => {
+		const config = { recordType: "user", token: "testToken", directive: "$unset" };
+		const record = {
+			$distinct_id: "123",
+			obsolete_field: true,
+			old_preference: true
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.$unset).toBeDefined();
+		expect(Object.keys(transformed.$unset)).toEqual(["obsolete_field", "old_preference"]);
+		expect(transformed.$set).toBeUndefined();
+	});
+
+	test("user profile: invalid directive defaults to $set", () => {
+		const config = { recordType: "user", token: "testToken", directive: "$invalid" };
+		const record = {
+			$distinct_id: "123",
+			name: "John"
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.$set).toBeDefined();
+		expect(transformed.$set.$name).toBe("John");
+		expect(transformed.$invalid).toBeUndefined();
+	});
+
+	test("user profile: empty directive defaults to $set", () => {
+		const config = { recordType: "user", token: "testToken", directive: "" };
+		const record = {
+			$distinct_id: "123",
+			name: "John"
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.$set).toBeDefined();
+		expect(transformed.$set.$name).toBe("John");
+	});
+
+	test("group profile: $set directive (default)", () => {
+		const config = { recordType: "group", token: "testToken", groupKey: "company" };
+		const record = {
+			$group_id: "acme-corp",
+			name: "ACME Corporation"
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.$set).toBeDefined();
+		expect(transformed.$set.$name).toBe("ACME Corporation");
+		expect(transformed.$set_once).toBeUndefined();
+	});
+
+	test("group profile: $set_once directive", () => {
+		const config = { recordType: "group", token: "testToken", groupKey: "company", directive: "$set_once" };
+		const record = {
+			$group_id: "acme-corp",
+			founded: "1946",
+			industry: "Manufacturing"
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.$set_once).toBeDefined();
+		expect(transformed.$set_once.founded).toBe("1946");
+		expect(transformed.$set_once.industry).toBe("Manufacturing");
+		expect(transformed.$set).toBeUndefined();
+	});
+
+	test("group profile: $add directive", () => {
+		const config = { recordType: "group", token: "testToken", groupKey: "company", directive: "$add" };
+		const record = {
+			$group_id: "acme-corp",
+			employees: 10,
+			revenue: 1000000
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.$add).toBeDefined();
+		expect(transformed.$add.employees).toBe(10);
+		expect(transformed.$add.revenue).toBe(1000000);
+		expect(transformed.$set).toBeUndefined();
+	});
+
+	test("group profile: $union directive", () => {
+		const config = { recordType: "group", token: "testToken", groupKey: "company", directive: "$union" };
+		const record = {
+			$group_id: "acme-corp",
+			locations: ["New York", "San Francisco"],
+			products: ["Widget", "Gadget"]
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.$union).toBeDefined();
+		expect(transformed.$union.locations).toEqual(["New York", "San Francisco"]);
+		expect(transformed.$union.products).toEqual(["Widget", "Gadget"]);
+		expect(transformed.$set).toBeUndefined();
+	});
+
+	test("group profile: invalid directive defaults to $set", () => {
+		const config = { recordType: "group", token: "testToken", groupKey: "company", directive: "not_valid" };
+		const record = {
+			$group_id: "acme-corp",
+			name: "ACME Corporation"
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.$set).toBeDefined();
+		expect(transformed.$set.$name).toBe("ACME Corporation");
+		expect(transformed.not_valid).toBeUndefined();
+	});
+
+	test("user profile: directive with existing operation bucket", () => {
+		const config = { recordType: "user", token: "testToken", directive: "$set_once" };
+		const record = {
+			$distinct_id: "123",
+			$set: { should_be_ignored: "value" },
+			name: "John",
+			created: "2024-01-01"
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.$set_once).toBeDefined();
+		expect(transformed.$set_once.$name).toBe("John");
+		expect(transformed.$set_once.$created).toBe("2024-01-01");
+		// Original $set should be overwritten
+		expect(transformed.$set).toBeUndefined();
+	});
+
+	test("user profile: directive handles special properties correctly", () => {
+		const config = { recordType: "user", token: "testToken", directive: "$set_once" };
+		const record = {
+			$distinct_id: "123",
+			name: "John",
+			email: "john@example.com",
+			first_name: "John",
+			last_name: "Doe",
+			phone: "555-0123",
+			avatar: "https://example.com/avatar.jpg",
+			created: "2024-01-01",
+			custom_field: "custom_value"
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.$set_once).toBeDefined();
+		// Special properties should be prefixed with $
+		expect(transformed.$set_once.$name).toBe("John");
+		expect(transformed.$set_once.$email).toBe("john@example.com");
+		expect(transformed.$set_once.$first_name).toBe("John");
+		expect(transformed.$set_once.$last_name).toBe("Doe");
+		expect(transformed.$set_once.$phone).toBe("555-0123");
+		expect(transformed.$set_once.$avatar).toBe("https://example.com/avatar.jpg");
+		expect(transformed.$set_once.$created).toBe("2024-01-01");
+		// Custom fields remain unprefixed
+		expect(transformed.$set_once.custom_field).toBe("custom_value");
 	});
 
 	test("null remover", () => {
@@ -1667,7 +1902,7 @@ describe("maxRecords functionality", () => {
 		});
 
 		expect(result.total).toBe(0);
-		expect(result.dryRun).toBe(undefined);
+		expect(result.dryRun).toEqual([]); // Empty array when no records processed
 	});
 
 	test('one processes one', async () => {

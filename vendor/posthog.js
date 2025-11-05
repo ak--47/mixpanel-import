@@ -28,7 +28,7 @@ function postHogEventsToMp(options, heavyObjects) {
 			"$webvitals",
 			"$pageleave",
 			"$groupidentify",
-			"$pageview",
+			// "$pageview",
 			"$autocapture",
 			"$rageclick",
 			"$screen",
