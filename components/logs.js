@@ -22,10 +22,8 @@ async function writeLogs(data) {
 		const fileDir = u.mkdir('./logs');
 		const fileName = `${data.recordType}-import-log-${dateTime}.json`;
 		const filePath = `${fileDir}/${fileName}`;
-		// Convert object to JSON string for file writing
-		const file = await u.touch(filePath, JSON.stringify(data, null, 2), true);
-		// @ts-ignore
-		console.log(`📝 Log saved: ${filePath}`);
+		// u.touch expects an object and will stringify it internally
+		const file = await u.touch(filePath, data, true);
 		return filePath;
 	} catch (error) {
 		console.error(`⚠️  Failed to write log file: ${error.message}`);

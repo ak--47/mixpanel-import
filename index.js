@@ -240,7 +240,14 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 		l('');
 	}
 
-	if (job.logs) await writeLogs(summary);
+	if (job.logs) {
+		const logPath = await writeLogs(summary);
+		if (logPath && isCLI) {
+			l(`📝 Log saved: ${logPath}`);
+			// Output just the path on the last line for tests
+			console.log(logPath);
+		}
+	}
 	return summary;
 }
 

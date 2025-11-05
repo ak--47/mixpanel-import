@@ -1062,9 +1062,16 @@ class Job {
 				"success",
 				"total",
 				"failed",
+				"empty",
 				"errors",
 				"startTime",
-				"endTime"
+				"endTime",
+				// Important skip/filter counts that should always be included
+				"duplicates",
+				"outOfBounds",
+				"whiteListSkipped",
+				"blackListSkipped",
+				"unparsable"
 			];
 			for (const key in summary) {
 				if (!includeOnly.includes(key)) delete summary[key];

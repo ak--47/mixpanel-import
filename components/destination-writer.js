@@ -75,31 +75,76 @@ function createLocalDestinationStream(filePath, job) {
 		highWaterMark: 64 * 1024 // 64KB buffer
 	});
 
-	// Create a transform stream that converts objects to NDJSON
-	const jsonLineWriter = new Transform({
+	// Create a writable stream that writes objects as NDJSON
+	const destinationWriter = new Writable({
 		objectMode: true,
 		highWaterMark: job.highWater || 16,
-		transform(chunk, encoding, callback) {
+		write(chunk, encoding, callback) {
 			try {
-				// Convert object to JSON line
+				// Convert object to JSON line and write to file
 				const line = JSON.stringify(chunk) + '\n';
-				callback(null, line);
+
+				// Write to the appropriate stream
+				if (filePath.endsWith('.gz')) {
+					// For gzipped files, write through gzip first
+					// This will be handled below
+					callback(new Error('Gzip writing handled separately'));
+				} else {
+					// Direct write to file stream
+					if (!fileStream.write(line)) {
+						// Backpressure - wait for drain
+						fileStream.once('drain', callback);
+					} else {
+						callback();
+					}
+				}
 			} catch (error) {
 				callback(error);
 			}
+		},
+		final(callback) {
+			// Ensure the file stream is properly closed
+			fileStream.end(callback);
 		}
 	});
 
-	// Add gzip compression if file ends with .gz
+	// Handle gzip compression if needed
 	if (filePath.endsWith('.gz')) {
 		const gzip = zlib.createGzip({
 			level: 6, // Balanced compression
 		});
-		// Pipe: jsonLineWriter -> gzip -> fileStream
-		jsonLineWriter.pipe(gzip).pipe(fileStream);
-	} else {
-		// Pipe: jsonLineWriter -> fileStream
-		jsonLineWriter.pipe(fileStream);
+
+		// Create a transform stream for gzipped output
+		const gzipWriter = new Writable({
+			objectMode: true,
+			highWaterMark: job.highWater || 16,
+			write(chunk, encoding, callback) {
+				try {
+					const line = JSON.stringify(chunk) + '\n';
+					if (!gzip.write(line)) {
+						gzip.once('drain', callback);
+					} else {
+						callback();
+					}
+				} catch (error) {
+					callback(error);
+				}
+			},
+			final(callback) {
+				gzip.end();
+				fileStream.end(callback);
+			}
+		});
+
+		// Pipe gzip to file
+		gzip.pipe(fileStream);
+
+		// Log when destination is ready
+		if (job.verbose) {
+			console.log(`📝 Destination stream created (gzipped): ${filePath}`);
+		}
+
+		return gzipWriter;
 	}
 
 	// Log when destination is ready
@@ -107,8 +152,8 @@ function createLocalDestinationStream(filePath, job) {
 		console.log(`📝 Destination stream created: ${filePath}`);
 	}
 
-	// Return the transform stream that accepts objects
-	return jsonLineWriter;
+	// Return the writable stream that accepts objects
+	return destinationWriter;
 }
 
 /**
@@ -303,17 +348,25 @@ function createTeeStream(destinationStream) {
 		objectMode: true,
 		highWaterMark: 16,
 		transform(batch, encoding, callback) {
+			// Skip null/undefined batches
+			if (!batch) {
+				return callback(null, batch);
+			}
+
 			// Handle both batches (arrays) and individual records
 			const records = Array.isArray(batch) ? batch : [batch];
 
 			// Write each record to destination (don't wait for it)
 			for (const record of records) {
-				destinationStream.write(record, (err) => {
-					// @ts-ignore - Node.js errors have a code property
-					if (err && err.code !== 'ERR_STREAM_DESTROYED') {
-						console.error('Destination write error:', err);
-					}
-				});
+				// Skip null/undefined records
+				if (record) {
+					destinationStream.write(record, (err) => {
+						// @ts-ignore - Node.js errors have a code property
+						if (err && err.code !== 'ERR_STREAM_DESTROYED') {
+							console.error('Destination write error:', err);
+						}
+					});
+				}
 			}
 
 			// Pass the batch through to next stage (Mixpanel)
