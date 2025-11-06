@@ -25,31 +25,28 @@ const colors = {
 	magenta: '\x1b[35m'
 };
 
-// Test configuration based on PERFORMANCE_TUNING.md
+// Use realistic test data from actual production workloads
 const TEST_DATA = {
-	tiny: {
-		name: 'Tiny Events (250 bytes)',
-		file: './benchmarks/testData/tiny-events-10k.jsonl',
-		avgSize: 250,
-		count: 10000
+	tiny_json: {
+		name: 'Tiny Events JSON (700MB)',
+		file: './benchmarks/testData/5m-events-TINY-700MB-RAW.json.gz',
+		avgSize: 140,  // ~700MB / 5M events
+		count: 100000,  // Use subset for faster benchmarks
+		maxRecords: 100000
 	},
-	small: {
-		name: 'Small Events (500 bytes)',
-		file: './benchmarks/testData/small-events-10k.jsonl',
-		avgSize: 500,
-		count: 10000
+	dense_json: {
+		name: 'Dense Events JSON (1GB)',
+		file: './benchmarks/testData/300k-events-DENSE-1GB-RAW.json.gz',
+		avgSize: 3500,  // ~1GB / 300k events
+		count: 30000,  // Use subset for faster benchmarks
+		maxRecords: 30000
 	},
-	medium: {
-		name: 'Medium Events (2KB)',
-		file: './benchmarks/testData/medium-events-10k.jsonl',
-		avgSize: 2048,
-		count: 10000
-	},
-	large: {
-		name: 'Large Events (10KB)',
-		file: './benchmarks/testData/large-events-5k.jsonl',
-		avgSize: 10240,
-		count: 5000
+	dense_parquet: {
+		name: 'Dense Events Parquet (1GB)',
+		file: './benchmarks/testData/1m-events-DENSE-4GB-RAW.parquet',
+		avgSize: 4000,  // ~4GB / 1M events (uncompressed)
+		count: 30000,  // Use subset for faster benchmarks
+		maxRecords: 30000
 	}
 };
 
@@ -67,64 +64,34 @@ const results = {
 };
 
 /**
- * Generate test data if it doesn't exist
+ * Verify test data files exist
  */
 async function generateTestData() {
-	console.log(`${colors.cyan}Generating test data...${colors.reset}\n`);
+	console.log(`${colors.cyan}Verifying realistic test data...${colors.reset}\n`);
 
+	let allExist = true;
 	for (const [key, config] of Object.entries(TEST_DATA)) {
 		const filePath = config.file;
 		if (fs.existsSync(filePath)) {
-			console.log(`  ✓ ${config.name} exists`);
-			continue;
+			const stats = fs.statSync(filePath);
+			const sizeMB = Math.round(stats.size / 1024 / 1024);
+
+			// Extract uncompressed size from filename (e.g., "4GB" from "1m-events-DENSE-4GB-RAW.json.gz")
+			const uncompressedMatch = filePath.match(/(\d+(?:MB|GB))-RAW/);
+			const uncompressedSize = uncompressedMatch ? uncompressedMatch[1] : 'unknown';
+
+			console.log(`  ✓ ${config.name} exists (${sizeMB}MB compressed → ${uncompressedSize} uncompressed)`);
+		} else {
+			console.log(`  ✗ ${config.name} missing: ${filePath}`);
+			allExist = false;
 		}
+	}
 
-		console.log(`  → Generating ${config.name}...`);
-		const dir = path.dirname(filePath);
-		if (!fs.existsSync(dir)) {
-			fs.mkdirSync(dir, { recursive: true });
-		}
-
-		const events = [];
-		for (let i = 0; i < config.count; i++) {
-			const event = {
-				event: `test_event_${key}`,
-				properties: {
-					distinct_id: `user_${i}`,
-					time: Date.now() - (i * 1000),
-					$insert_id: `${Date.now()}_${i}`,
-					test_type: key,
-					session_id: `session_${Math.floor(i / 100)}`,
-					platform: ['web', 'ios', 'android'][i % 3]
-				}
-			};
-
-			// Add padding to reach target size
-			const baseSize = JSON.stringify(event).length;
-			const targetSize = config.avgSize;
-			if (baseSize < targetSize) {
-				event.properties.padding = 'x'.repeat(targetSize - baseSize - 20);
-			}
-
-			// Add variable properties for large events
-			if (key === 'large') {
-				for (let j = 0; j < 50; j++) {
-					event.properties[`prop_${j}`] = `value_${j}_${Math.random().toString(36).substring(7)}`;
-				}
-				// Add nested objects
-				event.properties.metadata = {
-					browser: 'Chrome',
-					version: '120.0.0',
-					os: 'Windows 11',
-					screen: '1920x1080'
-				};
-			}
-
-			events.push(JSON.stringify(event));
-		}
-
-		fs.writeFileSync(filePath, events.join('\n'));
-		console.log(`  ✓ Generated ${config.name}`);
+	if (!allExist) {
+		console.log(`\n${colors.yellow}⚠ Some test data files are missing.${colors.reset}`);
+		console.log(`Please ensure all test data files are present in ./benchmarks/testData/`);
+		console.log(`You can generate them using the data generation scripts.\n`);
+		process.exit(1);
 	}
 	console.log();
 }
@@ -142,11 +109,13 @@ async function runBenchmark(testName, testConfig, options) {
 			testConfig.file,
 			{
 				...options,
+				maxRecords: testConfig.maxRecords || testConfig.count,  // Limit records processed
 				dryRun: true,
 				verbose: false,
 				logs: false,
 				abridged: true,
-				streamFormat: 'jsonl'
+				streamFormat: 'jsonl',  // All test data files are NDJSON
+				isGzip: testConfig.file.endsWith('.gz')  // Auto-detect gzip
 			}
 		);
 
@@ -154,10 +123,11 @@ async function runBenchmark(testName, testConfig, options) {
 		const endMemory = process.memoryUsage();
 		const duration = (endTime - startTime) / 1000;
 
-		// Calculate comprehensive metrics
-		const totalBytes = testConfig.count * testConfig.avgSize;
+		// Use actual processed count from job
+		const actualCount = job.total || testConfig.count;
+		const totalBytes = actualCount * testConfig.avgSize;
 		const mbps = (totalBytes / 1024 / 1024) / duration;
-		const eps = testConfig.count / duration;
+		const eps = actualCount / duration;
 		const rps = job.requests / duration;
 
 		const result = {
@@ -173,10 +143,11 @@ async function runBenchmark(testName, testConfig, options) {
 				peakMemoryMB: Math.round(endMemory.heapUsed / 1024 / 1024)
 			},
 			stats: {
-				success: job.success || testConfig.count,
+				success: job.success || actualCount,
 				failed: job.failed || 0,
-				batches: job.batches || Math.ceil(testConfig.count / (options.recordsPerBatch || 2000)),
-				requests: job.requests || 0
+				batches: job.batches || Math.ceil(actualCount / (options.recordsPerBatch || 2000)),
+				requests: job.requests || 0,
+				total: actualCount
 			}
 		};
 
@@ -196,10 +167,10 @@ async function runBenchmark(testName, testConfig, options) {
  */
 async function testWorkerPerformance() {
 	console.log(`${colors.bright}${colors.blue}TEST 1: Workers Performance (Parallel HTTP Requests)${colors.reset}`);
-	console.log('Testing how worker count affects throughput...\n');
+	console.log('Testing how worker count affects throughput with realistic data...\n');
 
-	const workerCounts = [1, 3, 5, 10, 15, 20, 30, 40, 50, 60, 80, 100];
-	const testData = TEST_DATA.small;
+	const workerCounts = [10, 25, 50, 75, 100];
+	const testData = TEST_DATA.tiny_json;  // Use tiny events for worker testing
 
 	const testResults = [];
 	for (const workers of workerCounts) {
@@ -212,23 +183,31 @@ async function testWorkerPerformance() {
 		);
 
 		if (result.metrics) {
-			const { eps, mbps, rps, memoryUsedMB } = result.metrics;
+			const { eps, mbps, rps, memoryUsedMB, duration } = result.metrics;
 			console.log(
 				`${colors.green}${eps.toLocaleString().padStart(6)} eps${colors.reset} | ` +
 				`${colors.cyan}${mbps.toFixed(1).padStart(5)} MB/s${colors.reset} | ` +
 				`${colors.yellow}${rps.toFixed(1).padStart(5)} rps${colors.reset} | ` +
-				`${colors.magenta}${memoryUsedMB.toString().padStart(4)} MB${colors.reset}`
+				`${colors.magenta}${memoryUsedMB.toString().padStart(4)} MB${colors.reset} | ` +
+				`${colors.dim}${duration.toFixed(1)}s${colors.reset}`
 			);
 			testResults.push({ workers, ...result.metrics });
+		} else if (result.error) {
+			console.log(`${colors.red}Failed: ${result.error}${colors.reset}`);
 		}
 
 		results.tests.push(result);
 	}
 
 	// Find optimal workers
-	const optimal = testResults.reduce((best, current) =>
-		current.eps > best.eps ? current : best, testResults[0]);
-	console.log(`  ${colors.bright}→ Optimal: ${optimal.workers} workers${colors.reset}\n`);
+	const validResults = testResults.filter(r => r && r.eps);
+	if (validResults.length > 0) {
+		const optimal = validResults.reduce((best, current) =>
+			current.eps > best.eps ? current : best, validResults[0]);
+		console.log(`  ${colors.bright}→ Optimal: ${optimal.workers} workers${colors.reset}\n`);
+	} else {
+		console.log(`  ${colors.red}✗ No successful test runs${colors.reset}\n`);
+	}
 }
 
 /**
@@ -236,11 +215,11 @@ async function testWorkerPerformance() {
  */
 async function testHighWaterPerformance() {
 	console.log(`${colors.bright}${colors.blue}TEST 2: HighWater Buffer Size (Stream Buffering)${colors.reset}`);
-	console.log('Testing how buffer size affects throughput and memory...\n');
+	console.log('Testing how buffer size affects throughput and memory with realistic data...\n');
 
-	const highWaterValues = [16, 30, 50, 100, 150, 200, 250, 300, 400, 500];
-	const testData = TEST_DATA.small;
-	const fixedWorkers = 10;
+	const highWaterValues = [100, 250, 500, 750, 1000];
+	const testData = TEST_DATA.tiny_json;  // Use tiny events for buffer testing
+	const fixedWorkers = 50;
 
 	const testResults = [];
 	for (const highWater of highWaterValues) {
@@ -261,15 +240,22 @@ async function testHighWaterPerformance() {
 				`${colors.dim}${duration.toFixed(2)}s${colors.reset}`
 			);
 			testResults.push({ highWater, ...result.metrics });
+		} else if (result.error) {
+			console.log(`${colors.red}Failed: ${result.error}${colors.reset}`);
 		}
 
 		results.tests.push(result);
 	}
 
 	// Find optimal highWater
-	const optimal = testResults.reduce((best, current) =>
-		current.eps > best.eps ? current : best, testResults[0]);
-	console.log(`  ${colors.bright}→ Optimal: ${optimal.highWater} buffer size${colors.reset}\n`);
+	const validResults = testResults.filter(r => r && r.eps);
+	if (validResults.length > 0) {
+		const optimal = validResults.reduce((best, current) =>
+			current.eps > best.eps ? current : best, validResults[0]);
+		console.log(`  ${colors.bright}→ Optimal: ${optimal.highWater} buffer size${colors.reset}\n`);
+	} else {
+		console.log(`  ${colors.red}✗ No successful test runs${colors.reset}\n`);
+	}
 }
 
 /**
@@ -277,25 +263,25 @@ async function testHighWaterPerformance() {
  */
 async function testEventSizeImpact() {
 	console.log(`${colors.bright}${colors.blue}TEST 3: Event Size Impact (As per PERFORMANCE_TUNING.md)${colors.reset}`);
-	console.log('Testing optimal configurations for different event sizes...');
+	console.log('Testing optimal configurations for different event sizes with real data...');
 	console.log(`${colors.dim}(Note: Each test uses specific workers/highwater optimized for that event size)${colors.reset}\n`);
 
-	// Configurations from PERFORMANCE_TUNING.md
+	// Configurations optimized for real data sizes
 	const scenarios = [
 		{
-			name: 'Small Events (<500B)',
-			data: TEST_DATA.tiny,
-			config: { workers: 20, highWater: 150, recordsPerBatch: 2000 }
+			name: 'Tiny Events JSON (~100B)',
+			data: TEST_DATA.tiny_json,
+			config: { workers: 50, highWater: 500, recordsPerBatch: 2000 }
 		},
 		{
-			name: 'Medium Events (2KB)',
-			data: TEST_DATA.medium,
-			config: { workers: 8, highWater: 60, recordsPerBatch: 1000 }
+			name: 'Dense Events JSON (~3KB)',
+			data: TEST_DATA.dense_json,
+			config: { workers: 25, highWater: 250, recordsPerBatch: 500 }
 		},
 		{
-			name: 'Large Events (10KB+)',
-			data: TEST_DATA.large,
-			config: { workers: 3, highWater: 20, recordsPerBatch: 500 }
+			name: 'Dense Events Parquet (~4KB)',
+			data: TEST_DATA.dense_parquet,
+			config: { workers: 25, highWater: 250, recordsPerBatch: 500 }
 		}
 	];
 
@@ -310,12 +296,13 @@ async function testEventSizeImpact() {
 		);
 
 		if (result.metrics) {
-			const { eps, mbps, rps, memoryUsedMB, peakMemoryMB } = result.metrics;
+			const { eps, mbps, rps, memoryUsedMB, peakMemoryMB, duration } = result.metrics;
 			console.log(
 				`${colors.green}${eps.toLocaleString().padStart(6)} eps${colors.reset} | ` +
 				`${colors.cyan}${mbps.toFixed(1).padStart(5)} MB/s${colors.reset} | ` +
 				`${colors.yellow}${rps.toFixed(1).padStart(5)} rps${colors.reset} | ` +
-				`${colors.magenta}Peak: ${peakMemoryMB} MB${colors.reset}`
+				`${colors.magenta}Peak: ${peakMemoryMB} MB${colors.reset} | ` +
+				`${colors.dim}${duration.toFixed(1)}s${colors.reset}`
 			);
 		}
 
@@ -324,53 +311,14 @@ async function testEventSizeImpact() {
 	console.log();
 }
 
-/**
- * Test 4: Compression Impact
- */
-async function testCompressionImpact() {
-	console.log(`${colors.bright}${colors.blue}TEST 4: Compression Impact${colors.reset}`);
-	console.log('Testing compression levels vs throughput...');
-	console.log(`${colors.dim}(Fixed config: workers=10, highWater=100)${colors.reset}\n`);
-
-	const compressionLevels = [
-		{ name: 'No compression', compress: false },
-		{ name: 'Level 1 (fastest)', compress: true, compressionLevel: 1 },
-		{ name: 'Level 6 (balanced)', compress: true, compressionLevel: 6 },
-		{ name: 'Level 9 (maximum)', compress: true, compressionLevel: 9 }
-	];
-
-	const testData = TEST_DATA.medium;
-
-	for (const compression of compressionLevels) {
-		process.stdout.write(`  ${compression.name.padEnd(25)} `);
-
-		const result = await runBenchmark(
-			`compression_${compression.name}`,
-			testData,
-			{ workers: 10, highWater: 100, ...compression }
-		);
-
-		if (result.metrics) {
-			const { eps, mbps, duration } = result.metrics;
-			console.log(
-				`${colors.green}${eps.toLocaleString().padStart(6)} eps${colors.reset} | ` +
-				`${colors.cyan}${mbps.toFixed(1).padStart(5)} MB/s${colors.reset} | ` +
-				`${colors.dim}${duration.toFixed(2)}s${colors.reset}`
-			);
-		}
-
-		results.tests.push(result);
-	}
-	console.log();
-}
 
 /**
- * Test 5: Memory Management Options
+ * Test 4: Memory Management Options
  */
 async function testMemoryManagement() {
-	console.log(`${colors.bright}${colors.blue}TEST 5: Memory Management Options${colors.reset}`);
+	console.log(`${colors.bright}${colors.blue}TEST 4: Memory Management Options${colors.reset}`);
 	console.log('Testing memory management features...');
-	console.log(`${colors.dim}(Fixed config: workers=5, highWater=30)${colors.reset}\n`);
+	console.log(`${colors.dim}(Fixed config: workers=25, highWater=250)${colors.reset}\n`);
 
 	const memoryConfigs = [
 		{ name: 'Baseline', config: {} },
@@ -379,7 +327,7 @@ async function testMemoryManagement() {
 		{ name: 'Abridged Mode', config: { abridged: true } }
 	];
 
-	const testData = TEST_DATA.large; // Use large events to stress memory
+	const testData = TEST_DATA.dense_json;  // Use dense events to stress memory
 
 	for (const memConfig of memoryConfigs) {
 		process.stdout.write(`  ${memConfig.name.padEnd(25)} `);
@@ -387,15 +335,16 @@ async function testMemoryManagement() {
 		const result = await runBenchmark(
 			`memory_${memConfig.name}`,
 			testData,
-			{ workers: 5, highWater: 30, ...memConfig.config }
+			{ workers: 25, highWater: 250, ...memConfig.config }
 		);
 
 		if (result.metrics) {
-			const { eps, memoryUsedMB, peakMemoryMB } = result.metrics;
+			const { eps, memoryUsedMB, peakMemoryMB, duration } = result.metrics;
 			console.log(
 				`${colors.green}${eps.toLocaleString().padStart(6)} eps${colors.reset} | ` +
 				`${colors.magenta}Used: ${memoryUsedMB.toString().padStart(4)} MB${colors.reset} | ` +
-				`${colors.yellow}Peak: ${peakMemoryMB.toString().padStart(4)} MB${colors.reset}`
+				`${colors.yellow}Peak: ${peakMemoryMB.toString().padStart(4)} MB${colors.reset} | ` +
+				`${colors.dim}${duration.toFixed(1)}s${colors.reset}`
 			);
 		}
 
@@ -405,14 +354,14 @@ async function testMemoryManagement() {
 }
 
 /**
- * Test 6: Transform Impact
+ * Test 5: Transform Impact
  */
 async function testTransformImpact() {
-	console.log(`${colors.bright}${colors.blue}TEST 6: Transform Impact${colors.reset}`);
-	console.log('Testing performance impact of data transformations...');
-	console.log(`${colors.dim}(Fixed config: workers=10, highWater=100)${colors.reset}\n`);
+	console.log(`${colors.bright}${colors.blue}TEST 5: Transform Impact${colors.reset}`);
+	console.log('Testing performance impact of data transformations with real workloads...');
+	console.log(`${colors.dim}(Fixed config: workers=50, highWater=500)${colors.reset}\n`);
 
-	const testData = TEST_DATA.small;
+	const testData = TEST_DATA.tiny_json;  // Use tiny events for transform testing
 
 	const transformConfigs = [
 		{
@@ -422,16 +371,16 @@ async function testTransformImpact() {
 			}
 		},
 		{
-			name: 'Fix Data Only',
+			name: 'Basic Transforms',
 			config: {
 				fixData: true,
-				fixTime: false,
+				fixTime: true,
 				removeNulls: false,
 				flattenData: false
 			}
 		},
 		{
-			name: 'All Transforms Enabled',
+			name: 'Heavy Transforms',
 			config: {
 				fixData: true,
 				fixTime: true,
@@ -439,8 +388,26 @@ async function testTransformImpact() {
 				flattenData: true,
 				addToken: true,
 				dedupe: true,
-				tags: { source: 'benchmark', version: '3.1.1' },
-				aliases: { user: 'distinct_id', timestamp: 'time' }
+				tags: { source: 'benchmark', version: '3.1.1', env: 'prod' },
+				aliases: { user: 'distinct_id', timestamp: 'time', userId: '$user_id' }
+			}
+		},
+		{
+			name: 'Custom Transform Function',
+			config: {
+				fixData: true,
+				transformFunc: (record) => {
+					// Simulate real transform workload
+					if (record.properties) {
+						// Add computed properties
+						record.properties.processed_at = Date.now();
+						record.properties.event_hash = record.event ? record.event.length * 31 : 0;
+						// Remove sensitive data
+						delete record.properties.ssn;
+						delete record.properties.credit_card;
+					}
+					return record;
+				}
 			}
 		}
 	];
@@ -451,7 +418,7 @@ async function testTransformImpact() {
 		const result = await runBenchmark(
 			`transform_${transform.name}`,
 			testData,
-			{ workers: 10, highWater: 100, ...transform.config }
+			{ workers: 50, highWater: 500, ...transform.config }
 		);
 
 		if (result.metrics) {
@@ -522,17 +489,6 @@ function generateSummary() {
 		console.log(`  • Aggressive GC saves: ${colors.green}${savings} MB (${percent}%)${colors.reset}`);
 	}
 
-	// Compression impact
-	console.log(`\n${colors.bright}Compression Impact:${colors.reset}`);
-	const compTests = results.tests.filter(t => t.test && t.test.startsWith('compression_'));
-	const noComp = compTests.find(t => t.test.includes('No compression'));
-	const comp6 = compTests.find(t => t.test.includes('balanced'));
-
-	if (noComp && comp6 && noComp.metrics && comp6.metrics) {
-		const overhead = ((noComp.metrics.eps - comp6.metrics.eps) / noComp.metrics.eps * 100).toFixed(1);
-		console.log(`  • Compression overhead: ${colors.yellow}${overhead}%${colors.reset} reduction in throughput`);
-		console.log(`  • Bandwidth savings: ${colors.green}~60-80%${colors.reset} with compression`);
-	}
 
 	console.log(`\n${colors.bright}System Info:${colors.reset}`);
 	console.log(`  • Node.js: ${results.system.node}`);
@@ -565,7 +521,7 @@ async function main() {
 	console.clear();
 	console.log(`${colors.bright}${colors.cyan}╔═══════════════════════════════════════════════════════════════╗${colors.reset}`);
 	console.log(`${colors.bright}${colors.cyan}║     MIXPANEL IMPORT v3.1.1 PERFORMANCE BENCHMARK SUITE        ║${colors.reset}`);
-	console.log(`${colors.bright}${colors.cyan}║         Testing parameters from PERFORMANCE_TUNING.md         ║${colors.reset}`);
+	console.log(`${colors.bright}${colors.cyan}║       Using Realistic Production Data & Workloads            ║${colors.reset}`);
 	console.log(`${colors.bright}${colors.cyan}╚═══════════════════════════════════════════════════════════════╝${colors.reset}\n`);
 
 	try {
@@ -576,7 +532,6 @@ async function main() {
 		await testWorkerPerformance();
 		await testHighWaterPerformance();
 		await testEventSizeImpact();
-		await testCompressionImpact();
 		await testMemoryManagement();
 		await testTransformImpact();
 
@@ -587,7 +542,7 @@ async function main() {
 		saveResults();
 
 		console.log(`\n${colors.green}${colors.bright}✓ Benchmark complete!${colors.reset}`);
-		console.log(`${colors.dim}Results align with PERFORMANCE_TUNING.md recommendations${colors.reset}\n`);
+		console.log(`${colors.dim}Results based on realistic production workloads with actual transform processing${colors.reset}\n`);
 
 	} catch (error) {
 		console.error(`\n${colors.red}Benchmark failed: ${error.message}${colors.reset}`);

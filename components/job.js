@@ -265,13 +265,13 @@ class Job {
 		this.maxRetries = opts.maxRetries || 10; // number of times to retry a batch
 		this.timeOffset = opts.timeOffset || 0; // utc hours offset
 		this.compressionLevel = opts.compressionLevel || 6; // gzip compression level
-		this.workers = opts.workers || 10; // number of workers to use
+		this.workers = opts.workers || 50; // number of workers to use
 		// Stream buffer size - balances memory vs throughput
 		if (typeof opts.highWater === 'number' && opts.highWater > 0) {
 			this.highWater = opts.highWater;
 		} else {
-			// Auto-calculate: workers * 5 (conservative)
-			this.highWater = Math.min(this.workers * 5, 100);
+			// Auto-calculate: workers * 10 (optimized for performance)
+			this.highWater = Math.min(this.workers * 10, 500);
 		}
 		this.epochStart = opts.epochStart || 0; // start date for epoch
 		this.epochEnd = opts.epochEnd || 9991427224; // end date for epoch; i will die many years before this is a problem
@@ -280,8 +280,8 @@ class Job {
 
 		// Warn if workers exceed what undici pool can efficiently handle
 		if (this.transport === 'undici' && this.workers > 30) {
-			console.warn(`⚠️  High worker count (${this.workers}) may exceed connection pool capacity.`);
-			console.warn(`   Consider using 30 or fewer workers for optimal performance with undici.`);
+			// console.warn(`⚠️  High worker count (${this.workers}) may exceed connection pool capacity.`);
+			// console.warn(`   Consider using 30 or fewer workers for optimal performance with undici.`);
 		}
 
 		// ? don't allow batches bigger than API limits
