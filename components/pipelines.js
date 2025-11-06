@@ -13,7 +13,7 @@ const v8 = require('v8');
 // $ networking + filesystem
 const { exportEvents, exportProfiles, deleteProfiles } = require('./exporters');
 const { flushLookupTable, flushToMixpanel, flushToMixpanelWithUndici } = require('./importers.js');
-const { createEventSampler, createMemoryMonitor, applySmartDefaults } = require('./smart-config.js');
+const { createMemoryMonitor } = require('./smart-config.js');
 const { replaceAnnotations, getAnnotations, deleteAnnotations } = require('./meta.js');
 const { createDestinationStream, createTeeStream } = require('./destination-writer.js');
 const fs = require('fs');
@@ -92,7 +92,7 @@ function createVendorTransform(job) {
 		transform(data, encoding, callback) {
 			try {
 				if (job.vendor && job.vendorTransform) {
-					// @ts-ignore - Some vendor transforms (like PostHog) take heavyObjects as second param
+					// @ts-ignore - vendor transforms may take heavyObjects as second param
 					data = job.vendorTransform(data, job.heavyObjects);
 				}
 				// Handle null returns from vendor transforms (e.g., PostHog filtering events)
@@ -254,13 +254,11 @@ function createStringifyCacher(job, jsonCache, bytesCache) {
 				return;
 			}
 
-			// Cache ONLY byte count, not the JSON string itself
-			// This reduces memory usage by ~50% for large files
+			// Cache byte count only to save memory (~50% reduction)
 			const jsonString = JSON.stringify(data);
 			const byteLength = Buffer.byteLength(jsonString, 'utf-8');
 			job.bytesProcessed += byteLength;
 
-			// Only cache byte length (small number), not the full JSON string
 			// jsonCache.set(data, jsonString);  // DISABLED to save memory
 			bytesCache.set(data, byteLength);
 
@@ -435,10 +433,9 @@ function createSizeBatcher(job, bytesCache) {
  * @param {JobConfig} job
  * @param {WeakMap} jsonCache
  * @param {fs.WriteStream} fileStream
- * @param {number} gcThreshold
  * @returns {Transform}
  */
-function createHttpSender(job, jsonCache, fileStream, gcThreshold) {
+function createHttpSender(job, jsonCache, fileStream) {
 	const flush = job.transport === 'undici' ? flushToMixpanelWithUndici : flushToMixpanel;
 	let batchId = 0;
 	let lastLogTime = Date.now();
@@ -459,16 +456,13 @@ function createHttpSender(job, jsonCache, fileStream, gcThreshold) {
 			const throttleThreshold = job.throttlePauseMB || 3000;
 			const now = Date.now();
 
-			// Only log if memory is ABOVE pause threshold (throttle is active) AND 10 seconds elapsed
+			// Log if throttled and 10s elapsed
 			if (job.verbose && heapUsed > throttleThreshold && now - lastLogTime > 10000) {
 				console.log(`    📤 Pipeline draining while paused: Batch #${thisBatchId} sent (heap: ${u.bytesHuman(heapUsed * 1024 * 1024)})`);
 				lastLogTime = now;
 			}
 
-			// Trigger manual GC if enabled and threshold exceeded
-			if (gcThreshold && process.memoryUsage().heapUsed > gcThreshold) {
-				global.gc();
-			}
+			// GC handled by memory monitor if aggressiveGC enabled
 
 			if (job.dryRun) {
 				// Add batch ID for debugging
@@ -559,14 +553,12 @@ async function corePipeline(stream, job, toNodeStream = false) {
 	if (job.recordType === 'delete-annotations') return deleteAnnotations(job);
 	if (job.recordType === 'profile-delete') return deleteProfiles(job);
 
-	// Manual GC setup (if enabled)
-	let gcThreshold = null;
-	if (job.manualGc && global.gc) {
+	// Aggressive GC setup (if enabled)
+	if (job.aggressiveGC && global.gc) {
 		const heapStats = v8.getHeapStatistics();
-		gcThreshold = heapStats.heap_size_limit * 0.85; // Trigger GC at 85% heap usage
-		l(`Manual GC enabled: will trigger at ${(gcThreshold / 1024 / 1024).toFixed(0)} MB (85% of ${(heapStats.heap_size_limit / 1024 / 1024).toFixed(0)} MB heap)`);
-	} else if (job.manualGc && !global.gc) {
-		l(`Manual GC requested but global.gc not available. Start Node with --expose-gc flag.`);
+		l(`Aggressive GC enabled: periodic every 30s + emergency at 90% heap (${(heapStats.heap_size_limit * 0.9 / 1024 / 1024).toFixed(0)} MB)`);
+	} else if (job.aggressiveGC && !global.gc) {
+		l(`Aggressive GC requested but global.gc not available. Start Node with --expose-gc flag.`);
 	}
 
 	let fileStream;
@@ -593,10 +585,8 @@ async function corePipeline(stream, job, toNodeStream = false) {
 	// Create base transform stages
 	const stages = [];
 
-	// Only add adaptive stages if enabled (opt-in)
-	if (job.adaptive === true) {
-		applySmartDefaults(job);
-		stages.push(createEventSampler(job)); // Sample events to determine optimal configuration
+	// Add memory monitoring if verbose mode is enabled
+	if (job.verbose || job.memoryMonitor) {
 		stages.push(createMemoryMonitor(job)); // Monitor memory usage
 	}
 
@@ -605,13 +595,16 @@ async function corePipeline(stream, job, toNodeStream = false) {
 		l('Fast mode enabled - skipping all transformations');
 		stages.push(
 			createExistenceFilter(job),
-			createStringifyCacher(job, jsonCache, bytesCache),
-			createSmartBatcher(job, bytesCache) // Combined count + size batching
+			createStringifyCacher(job, jsonCache, bytesCache)
 		);
 
 		// Add destination tee if needed
 		if (destinationStream && !job.destinationOnly) {
-			stages.push(createTeeStream(destinationStream));
+			// For dual writing (Mixpanel + destination), add batching first
+			stages.push(
+				createSmartBatcher(job, bytesCache), // Combined count + size batching
+				createTeeStream(destinationStream)
+			);
 		}
 
 		// Add HTTP sender or destination-only writer
@@ -621,32 +614,45 @@ async function corePipeline(stream, job, toNodeStream = false) {
 			if (!destinationStream) {
 				throw new Error('destination is required when destinationOnly is true');
 			}
-			// For destination-only, write directly to the destination stream
+			// For destination-only, write directly to the destination stream (no batching needed)
 			stages.push(
 				new Transform({
 					objectMode: true,
 					highWaterMark: job.highWater,
-					transform(batch, encoding, callback) {
-						// Write each record in the batch to destination
-						for (const record of batch) {
-							destinationStream.write(record);
+					transform(record, encoding, callback) {
+						// Write single record to destination (not batched)
+						if (!destinationStream.write(record)) {
+							// Handle backpressure
+							destinationStream.once('drain', () => {
+								const response = { success: 1, failed: 0 };
+								const batch = [record]; // Logger expects a batch array
+								callback(null, [response, batch]);
+							});
+						} else {
+							// Pass through for logging in the expected format [response, batch]
+							const response = { success: 1, failed: 0 };
+							const batch = [record]; // Logger expects a batch array
+							callback(null, [response, batch]);
 						}
-						// Pass through for logging
-						callback(null, { success: batch.length, failed: 0 });
 					},
 					flush(callback) {
 						if (destinationStream) {
-							destinationStream.end();
+							destinationStream.end(callback);
+						} else {
+							callback();
 						}
-						callback();
 					}
 				}),
 				createLogger(job)
 			);
 		} else {
-			// Send to Mixpanel (and optionally to destination via tee)
+			// Send to Mixpanel (batching required)
+			if (!destinationStream) {
+				// Only Mixpanel, add batching
+				stages.push(createSmartBatcher(job, bytesCache));
+			}
 			stages.push(
-				createHttpSender(job, jsonCache, fileStream, gcThreshold),
+				createHttpSender(job, jsonCache, fileStream),
 				createLogger(job)
 			);
 		}
@@ -661,48 +667,59 @@ async function corePipeline(stream, job, toNodeStream = false) {
 			createDedupeTransform(job),
 			createExistenceFilter2(job),
 			createHelperTransforms(job),
-			createStringifyCacher(job, jsonCache, bytesCache),
-			createSmartBatcher(job, bytesCache) // Combined count + size batching
+			createStringifyCacher(job, jsonCache, bytesCache)
 		);
 
-		// Add destination tee if needed
-		if (destinationStream && !job.destinationOnly) {
-			stages.push(createTeeStream(destinationStream));
-		}
-
-		// Add HTTP sender or destination-only writer
+		// Add batching and destination handling based on mode
 		if (job.destinationOnly) {
-			// Write only to destination, skip Mixpanel
+			// Write only to destination, skip Mixpanel and batching
 			l('Destination-only mode - skipping Mixpanel');
 			if (!destinationStream) {
 				throw new Error('destination is required when destinationOnly is true');
 			}
-			// For destination-only, write directly to the destination stream
+			// For destination-only, write directly to the destination stream (no batching)
 			stages.push(
 				new Transform({
 					objectMode: true,
 					highWaterMark: job.highWater,
-					transform(batch, encoding, callback) {
-						// Write each record in the batch to destination
-						for (const record of batch) {
-							destinationStream.write(record);
+					transform(record, encoding, callback) {
+						// Write single record to destination (not batched)
+						if (!destinationStream.write(record)) {
+							// Handle backpressure
+							destinationStream.once('drain', () => {
+								const response = { success: 1, failed: 0 };
+								const batch = [record]; // Logger expects a batch array
+								callback(null, [response, batch]);
+							});
+						} else {
+							// Pass through for logging in the expected format [response, batch]
+							const response = { success: 1, failed: 0 };
+							const batch = [record]; // Logger expects a batch array
+							callback(null, [response, batch]);
 						}
-						// Pass through for logging
-						callback(null, { success: batch.length, failed: 0 });
 					},
 					flush(callback) {
 						if (destinationStream) {
-							destinationStream.end();
+							destinationStream.end(callback);
+						} else {
+							callback();
 						}
-						callback();
 					}
 				}),
 				createLogger(job)
 			);
 		} else {
-			// Send to Mixpanel (and optionally to destination via tee)
+			// Send to Mixpanel (requires batching)
+			stages.push(createSmartBatcher(job, bytesCache)); // Combined count + size batching
+
+			// Add destination tee if needed
+			if (destinationStream) {
+				stages.push(createTeeStream(destinationStream));
+			}
+
+			// Add HTTP sender
 			stages.push(
-				createHttpSender(job, jsonCache, fileStream, gcThreshold),
+				createHttpSender(job, jsonCache, fileStream),
 				createLogger(job)
 			);
 		}

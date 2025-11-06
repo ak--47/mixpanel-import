@@ -50,7 +50,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 		})
 		.option("secondToken", {
 			demandOption: false,
-			describe: 'second project token (for export-import-events)',
+			describe: 'second project token (for export-import-event)',
 			type: 'string'
 		})
 		.option("table", {
@@ -67,7 +67,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			demandOption: false,
 			alias: "recordType",
 			default: 'event',
-			describe: 'event, user, group, table, export, scd, or profile-export, or export-import-events or export-import-profiles',
+			describe: 'event, user, group, table, export, scd, or profile-export, or export-import-event or export-import-profile',
 			type: 'string'
 		})
 		.option("compress", {
@@ -176,6 +176,12 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			type: 'boolean',
 			alias: 'removeNulls'
 		})
+		.option("directive", {
+			demandOption: false,
+			default: '$set',
+			describe: 'profile update operation ($set, $set_once, $add, $union, $append, $remove, $unset)',
+			type: 'string'
+		})
 		.option("abridged", {
 			demandOption: false,
 			default: false,
@@ -191,7 +197,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 		})
 		.option("bytes", {
 			demandOption: false,
-			default: '2MB',
+			default: '9.8MB',
 			describe: 'max size of each request',
 			type: 'number',
 			alias: 'bytesPerBatch'
@@ -247,23 +253,17 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'dedupe records by murmur hash',
 			type: 'boolean'
 		})
-		.options("manualGc", {
+		.options("aggressiveGC", {
 			demandOption: false,
 			default: false,
-			describe: 'enable manual garbage collection when memory usage exceeds 85% of heap limit (requires --expose-gc)',
+			describe: 'enable aggressive garbage collection - periodic every 30s + emergency when memory is high (requires --expose-gc)',
 			type: 'boolean'
 		})
-		.options("adaptive", {
+		.options("memoryMonitor", {
 			demandOption: false,
 			default: false,
-			describe: 'enable adaptive scaling to auto-adjust workers based on event density (prevents OOM)',
+			describe: 'enable memory monitoring even without verbose mode',
 			type: 'boolean'
-		})
-		.options("avg-event-size", {
-			demandOption: false,
-			alias: 'avgEventSize',
-			describe: 'average event size in bytes (hint for adaptive scaling)',
-			type: 'number'
 		})
 		.options('event-whitelist', {
 			demandOption: false,

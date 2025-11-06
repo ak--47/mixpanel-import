@@ -666,7 +666,7 @@ class MixpanelExportUI {
 				document.querySelector('input[name="authMethod"][value="service"]').checked = true;
 				break;
 
-			case 'export-import-events':
+			case 'export-import-event':
 				// Export-import events: project ID + token/secret OR service account + start/end dates + optional destination
 				credentialsDescription.textContent = 'Export-import events require source project credentials (API secret OR service account with project ID) and source data residency. Optionally specify destination token and residency (leave blank to reimport to same project).';
 				document.getElementById('project-group').style.display = 'block';
@@ -679,7 +679,7 @@ class MixpanelExportUI {
 				document.getElementById('secondRegion-group').style.display = 'block';
 				break;
 
-			case 'export-import-profiles':
+			case 'export-import-profile':
 				// Export-import user profiles: project ID + token/secret OR service account + optional destination
 				credentialsDescription.textContent = 'Export-import profiles require source project credentials (API secret OR service account with project ID) and source data residency. Optionally specify destination token and residency (leave blank to reimport to same project).';
 				document.getElementById('project-group').style.display = 'block';
@@ -692,7 +692,7 @@ class MixpanelExportUI {
 				document.getElementById('secondRegion-group').style.display = 'block';
 				break;
 
-			case 'export-import-groups':
+			case 'export-import-group':
 				// Export-import group profiles: project ID + token/secret OR service account + groupKey + dataGroupId + optional destination
 				credentialsDescription.textContent = 'Export-import groups require source project credentials (API secret OR service account with project ID), source data residency, groupKey, and dataGroupId. Optionally specify destination token and residency (leave blank to reimport to same project).';
 				document.getElementById('project-group').style.display = 'block';
@@ -797,8 +797,8 @@ class MixpanelExportUI {
 				break;
 			}
 
-			case 'export-import-events':
-			case 'export-import-profiles': {
+			case 'export-import-event':
+			case 'export-import-profile': {
 				// API secret OR service user/pass and project_id required
 				const eiProject = document.getElementById('project').value;
 				if (!eiProject) {
@@ -821,7 +821,7 @@ class MixpanelExportUI {
 				break;
 			}
 
-			case 'export-import-groups': {
+			case 'export-import-group': {
 				// API secret OR service user/pass and project_id + groupKey + dataGroupId required
 				const eigProject = document.getElementById('project').value;
 				if (!eigProject) {

@@ -113,11 +113,10 @@ async function exportEvents(filename, job) {
 		fileStream = fs.createWriteStream(filename);
 	}
 
-	// Create a unified processing stream that handles both memory and file/cloud output
+	// Processing stream for memory and file/cloud output
 	let buffer = "";
 	const processingStream = new stream.Writable({
 		write(chunk, encoding, callback) {
-			// Convert the chunk to a string and append it to the buffer
 			buffer += chunk.toString();
 
 			// Split the buffer into lines

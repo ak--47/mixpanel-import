@@ -75,8 +75,7 @@ class BufferQueue extends EventEmitter {
 				self.queueSizeBytes += size;
 				self.objectsQueued++;
 
-				// Check ACTUAL HEAP MEMORY, not just queue size
-				// This ensures we pause based on total memory pressure, not just buffered data
+				// Check heap memory and queue size
 				const heapUsedMB = process.memoryUsage().heapUsed / 1024 / 1024;
 				const queueSizeMB = self.queueSizeBytes / 1024 / 1024;
 
@@ -174,7 +173,7 @@ class BufferQueue extends EventEmitter {
 		this.processing = true;
 
 		try {
-			// First check if we should resume pending callbacks even if queue is empty
+			// Check if we should resume pending callbacks
 			if (this.isPaused && this.pendingCallbacks && this.pendingCallbacks.length > 0) {
 				const heapUsedMB = process.memoryUsage().heapUsed / 1024 / 1024;
 				const queueSizeMB = this.queueSizeBytes / 1024 / 1024;
@@ -192,7 +191,7 @@ class BufferQueue extends EventEmitter {
 					if (this.pendingCallbacks.length === 0) {
 						this._resumeSource(queueSizeMB);
 
-						// If we had a final callback waiting and no more pending, mark as ended now
+						// Mark as ended if final callback and no more pending
 						if (this.finalCallback) {
 							if (this.verbose) {
 								console.log(`    ✅ BufferQueue: All pending callbacks processed, now ending source`);
@@ -227,7 +226,7 @@ class BufferQueue extends EventEmitter {
 					const queueSizeMB = this.queueSizeBytes / 1024 / 1024;
 					const heapUsedMB = process.memoryUsage().heapUsed / 1024 / 1024;
 
-					// Resume if BOTH heap memory AND queue size are below resume threshold
+					// Resume if heap and queue below threshold
 					if (heapUsedMB < this.resumeThresholdMB && queueSizeMB < this.resumeThresholdMB) {
 						// Call pending callbacks to resume data flow
 						if (this.pendingCallbacks && this.pendingCallbacks.length > 0) {
@@ -243,7 +242,7 @@ class BufferQueue extends EventEmitter {
 						if (this.isPaused && this.pendingCallbacks && this.pendingCallbacks.length === 0) {
 							this._resumeSource(queueSizeMB);
 
-							// If we had a final callback waiting and no more pending, mark as ended now
+							// Mark as ended if final callback and no more pending
 							if (this.finalCallback) {
 								if (this.verbose) {
 									console.log(`    ✅ BufferQueue: All pending callbacks processed, now ending source`);
@@ -261,7 +260,7 @@ class BufferQueue extends EventEmitter {
 				}
 			}
 
-			// Only end if queue is empty, source ended, AND no pending callbacks
+			// End if queue empty, source ended, no pending callbacks
 			// Pending callbacks mean we're still expecting data once memory pressure reduces
 			if (this.queue.length === 0 && this.sourceEnded &&
 			    (!this.pendingCallbacks || this.pendingCallbacks.length === 0) &&
@@ -299,7 +298,7 @@ class BufferQueue extends EventEmitter {
 		if (this.verbose) {
 			console.log('');
 			console.log(`🛑 BUFFER QUEUE: Pausing GCS input`);
-			// Show both heap memory and queue size, indicating which triggered the pause
+			// Show heap and queue size
 			if (heapUsedMB > this.pauseThresholdMB) {
 				console.log(`    ├─ Heap memory: ${u.bytesHuman(heapUsedMB * 1024 * 1024)} > ${u.bytesHuman(this.pauseThresholdMB * 1024 * 1024)} threshold (TRIGGERED PAUSE)`);
 			} else {

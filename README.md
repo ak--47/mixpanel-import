@@ -393,6 +393,7 @@ npx mixpanel-import messy_data.json \
 | `strict` | `boolean` | `true` | Validate data and fail fast on errors |
 | `scrubProps` | `string[]` | `[]` | Property names to remove from all records |
 | `v2_compat` | `boolean` | `false` | (Events only) Auto-set `distinct_id` from `$user_id` or `$device_id` |
+| `directive` | `string` | `"$set"` | (Profiles only) Operation for profile updates: `$set`, `$set_once`, `$add`, `$union`, `$append`, `$remove`, `$unset` |
 
 ### 🎯 **Filtering Options**
 
@@ -584,6 +585,40 @@ const result = await mpImport(
   }
 }
 ```
+
+---
+
+## 👤 Profile Operations
+
+### **Profile Update Directives**
+
+When importing user or group profiles, use the `directive` parameter to control how properties are updated:
+
+```bash
+# Default: $set - Overwrites existing values
+npx mixpanel-import profiles.json --recordType user --token your-token
+
+# $set_once - Only set if property doesn't exist
+npx mixpanel-import profiles.json --recordType user --token your-token --directive '$set_once'
+
+# $add - Increment numeric properties
+npx mixpanel-import profiles.json --recordType user --token your-token --directive '$add'
+
+# $union - Append unique values to lists
+npx mixpanel-import profiles.json --recordType user --token your-token --directive '$union'
+
+# $unset - Remove properties
+npx mixpanel-import profiles.json --recordType user --token your-token --directive '$unset'
+```
+
+**Available directives:**
+- `$set` (default) - Overwrite existing property values
+- `$set_once` - Only set if property doesn't exist
+- `$add` - Add to numeric properties (increment/decrement)
+- `$union` - Append unique values to list properties
+- `$append` - Append all values to list properties (allows duplicates)
+- `$remove` - Remove specific values from list properties
+- `$unset` - Remove properties entirely
 
 ---
 

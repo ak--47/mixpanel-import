@@ -12,7 +12,61 @@ const { mixpanelEventsToMixpanel } = require('../vendor/mixpanel.js');
 const { juneEventsToMp, juneUserToMp, juneGroupToMp } = require('../vendor/june.js');
 const { buildMapFromPath } = require('./parsers.js');
 
+/**
+ * Simple instance-specific timer to replace ak-tools global timer
+ * Preserves the same API but avoids global state conflicts
+ */
+class SimpleTimer {
+	constructor() {
+		this.startTime = null;
+		this.endTime = null;
+		this.isRunning = false;
+	}
 
+	start() {
+		this.startTime = Date.now();
+		this.endTime = null;
+		this.isRunning = true;
+		return this;
+	}
+
+	stop(verbose = false) {
+		if (this.isRunning) {
+			this.endTime = Date.now();
+			this.isRunning = false;
+		}
+		return this;
+	}
+
+	report(verbose = false) {
+		const end = this.endTime || Date.now();
+		const start = this.startTime || end;
+		const delta = end - start;
+
+		// Format human readable time
+		let human;
+		if (delta < 1000) {
+			human = `${delta}ms`;
+		} else if (delta < 60000) {
+			human = `${(delta / 1000).toFixed(1)}s`;
+		} else if (delta < 3600000) {
+			const minutes = Math.floor(delta / 60000);
+			const seconds = Math.floor((delta % 60000) / 1000);
+			human = `${minutes}m ${seconds}s`;
+		} else {
+			const hours = Math.floor(delta / 3600000);
+			const minutes = Math.floor((delta % 3600000) / 60000);
+			human = `${hours}h ${minutes}m`;
+		}
+
+		return {
+			delta,
+			human,
+			startTime: this.startTime,
+			endTime: this.endTime
+		};
+	}
+}
 
 /** @typedef {import('../index.js').Creds} Creds */
 /** @typedef {import('../index.js').Options} Options */
@@ -37,15 +91,15 @@ class Job {
 		const allowEmptyCredentials = opts.dryRun || opts.writeToFile || opts.fixData;
 		if (!creds && !allowEmptyCredentials) throw new Error('no credentials provided!');
 
-		// Use empty object if creds is null/undefined but operation is allowed without creds
+		// Use empty object if allowed without creds
 		const safeCreds = creds || {};
-		
+
 		/** @type {string} service account username */
 		this.acct = safeCreds.acct || ``;
-		
+
 		/** @type {string} service account secret */
 		this.pass = safeCreds.pass || ``;
-		
+
 		/** @type {string} project id */
 		this.project = safeCreds.project ? String(safeCreds.project) : ``;
 
@@ -54,80 +108,80 @@ class Job {
 
 		/** @type {string} org id */
 		this.org = safeCreds.org ? String(safeCreds.org) : ``;
-		
+
 		/** @type {string} api secret (deprecated auth) */
 		this.secret = safeCreds.secret || ``;
-		
+
 		/** @type {string} bearer token */
 		this.bearer = safeCreds.bearer || ``;
-		
+
 		/** @type {string} project token */
 		this.token = safeCreds.token || ``;
-		
+
 		/** @type {string} second token for export / import */
 		this.secondToken = safeCreds.secondToken || ``;
-		
+
 		/** @type {string} lookup table id */
 		this.lookupTableId = safeCreds.lookupTableId || ``;
-		
+
 		/** @type {string} group key id */
 		this.groupKey = safeCreds.groupKey || (opts.groupKey ? String(opts.groupKey) : '') || ``;
 		/** @type {string} resolved authentication info */
 		this.auth = this.resolveProjInfo();
-		
+
 		/** @type {string} start time of the job */
 		this.startTime = new Date().toISOString();
-		
+
 		/** @type {string|null} end time of the job */
 		this.endTime = null;
-		
+
 		/** @type {Set} used if de-dupe is on */
 		this.hashTable = new Set();
-		
+
 		/** @type {Array} used to calculate memory usage */
 		this.memorySamples = [];
-		
+
 		/** @type {boolean|null} was the data loaded into memory or streamed? */
 		this.wasStream = null;
-		
+
 		/** @type {Array} results of dry run */
 		this.dryRunResults = [];
-		
+
 		/** @type {Object} storage for invalid records */
 		this.badRecords = {};
-		
+
 		/** @type {Array} tuple of keys for insert_id */
 		this.insertIdTuple = opts.insertIdTuple || [];
-		
+
 		/** @type {string} scd label */
 		this.scdLabel = opts.scdLabel || '';
-		
+
 		/** @type {string} scd key */
 		this.scdKey = opts.scdKey || '';
-		
+
 		/** @type {string} scd type */
 		this.scdType = opts.scdType || 'string';
-		
+
 		/** @type {string} scd id */
 		this.scdId = opts.scdId || '';
-		
+
 		/** @type {string} scd prop id */
 		this.scdPropId = opts.scdPropId || '';
 		/** @type {string} transport mechanism to use for sending data (default: undici for better performance) */
 		this.transport = opts.transport || 'undici';
-		
+
 		/** @type {string} Google Cloud project ID for GCS operations */
 		this.gcpProjectId = opts.gcpProjectId || safeCreds.gcpProjectId || 'mixpanel-gtm-training';
-		
+
 		/** @type {string} Path to GCS service account credentials JSON file (optional, defaults to ADC) */
 		this.gcsCredentials = opts.gcsCredentials || safeCreds.gcsCredentials || '';
-		
+
 		/** @type {string} AWS S3 access key ID for S3 operations */
 		this.s3Key = opts.s3Key || safeCreds.s3Key || '';
-		
+
 		/** @type {string} AWS S3 secret access key for S3 operations */
 		this.s3Secret = opts.s3Secret || safeCreds.s3Secret || '';
-		
+
 		/** @type {string} AWS S3 region for S3 operations */
 		this.s3Region = opts.s3Region || safeCreds.s3Region || '';
 
@@ -153,7 +207,7 @@ class Job {
 		if (opts.whereClause) {
 			this.whereClause = opts.whereClause;
 		}
-		
+
 		// ? arbitrary export params
 		this.params = opts.params || {};
 
@@ -185,7 +239,7 @@ class Job {
 		}
 
 		if (opts.dataGroupId) {
-			// this is a hack to PREVENT negative dataGroupId from scd endpoint... which is weird
+			// Hack: prevent negative dataGroupId from scd endpoint
 			if (opts.recordType === "scd") {
 				if (opts.dataGroupId?.startsWith('-')) this.dataGroupId = opts.dataGroupId.split("-")[1];
 				else this.dataGroupId = opts.dataGroupId;
@@ -198,7 +252,7 @@ class Job {
 
 		// ? string options
 		this.recordType = opts.recordType || `event`; // event, user, group or table		
-		this.streamFormat = opts.streamFormat || ""; 
+		this.streamFormat = opts.streamFormat || "";
 		this.region = opts.region || `US`; // US or EU or IN
 		/** @type {import('../index.d.ts').Regions | ''} */
 		this.secondRegion = opts.secondRegion || ''; // US or EU or IN; used for exports => import
@@ -207,22 +261,16 @@ class Job {
 
 		// ? number options
 		this.recordsPerBatch = opts.recordsPerBatch || 2000; // records in each req; max 2000 (200 for groups)
-		this.bytesPerBatch = opts.bytesPerBatch || 10 * 1024 * 1024; // max bytes in each req (10MB = 10485760)
+		this.bytesPerBatch = opts.bytesPerBatch || 9.8 * 1024 * 1024; // max bytes in each req (9.8MB = 10276045, safely below 10MB limit)
 		this.maxRetries = opts.maxRetries || 10; // number of times to retry a batch
 		this.timeOffset = opts.timeOffset || 0; // utc hours offset
 		this.compressionLevel = opts.compressionLevel || 6; // gzip compression level
 		this.workers = opts.workers || 10; // number of workers to use
-		// highWater controls the stream buffer size (number of objects in object mode)
-		// It affects how many records are buffered in memory between pipeline stages
-		// Lower values = less memory usage but potentially lower throughput
-		// Higher values = more memory usage but potentially better throughput
-		// Default: calculated based on workers, but can be overridden explicitly
+		// Stream buffer size - balances memory vs throughput
 		if (typeof opts.highWater === 'number' && opts.highWater > 0) {
 			this.highWater = opts.highWater;
 		} else {
-			// Auto-calculate based on workers for proper backpressure
-			// Keep small enough to prevent OOM, large enough for good throughput
-			// Reduced from 10x to 5x multiplier to be more conservative with memory
+			// Auto-calculate: workers * 5 (conservative)
 			this.highWater = Math.min(this.workers * 5, 100);
 		}
 		this.epochStart = opts.epochStart || 0; // start date for epoch
@@ -234,7 +282,6 @@ class Job {
 		if (this.transport === 'undici' && this.workers > 30) {
 			console.warn(`⚠️  High worker count (${this.workers}) may exceed connection pool capacity.`);
 			console.warn(`   Consider using 30 or fewer workers for optimal performance with undici.`);
-			console.warn(`   Or use --adaptive flag to auto-configure based on event density.`);
 		}
 
 		// ? don't allow batches bigger than API limits
@@ -255,12 +302,11 @@ class Job {
 		this.fixJson = u.isNil(opts.fixJson) ? false : opts.fixJson; //fix json
 		this.removeNulls = u.isNil(opts.removeNulls) ? false : opts.removeNulls; //remove null fields
 		this.flattenData = u.isNil(opts.flattenData) ? false : opts.flattenData; //flatten nested properties
-		this.abridged = u.isNil(opts.abridged) ? true : opts.abridged; //true = don't store HTTP responses (prevents memory leak)
+		this.abridged = u.isNil(opts.abridged) ? false : opts.abridged; //false = store full responses for better debugging
 		this.forceStream = u.isNil(opts.forceStream) ? true : opts.forceStream; //don't ever buffer files into memory
 		this.dedupe = u.isNil(opts.dedupe) ? false : opts.dedupe; //remove duplicate records
 		this.createProfiles = u.isNil(opts.createProfiles) ? false : opts.createProfiles; //remove duplicate records
 		this.dryRun = u.isNil(opts.dryRun) ? false : opts.dryRun; //don't actually send data
-		this.adaptive = u.isNil(opts.adaptive) ? false : opts.adaptive; //enable adaptive scaling
 		this.http2 = u.isNil(opts.http2) ? false : opts.http2; //use http2
 		this.addToken = u.isNil(opts.addToken) ? false : opts.addToken; //add token to each record
 		this.isGzip = u.isNil(opts.isGzip) ? false : opts.isGzip; //force treat input as gzipped (overrides extension detection)
@@ -273,7 +319,8 @@ class Job {
 		this.outputFilePath = opts.outputFilePath || './mixpanel-transform.json'; //where to write the file
 		this.skipWriteToDisk = u.isNil(opts.skipWriteToDisk) ? false : opts.skipWriteToDisk; //don't write to disk
 		this.keepBadRecords = u.isNil(opts.keepBadRecords) ? true : opts.keepBadRecords; //keep bad records
-		this.manualGc = u.isNil(opts.manualGc) ? false : opts.manualGc; //enable manual garbage collection when memory usage is high
+		this.aggressiveGC = u.isNil(opts.aggressiveGC) ? false : opts.aggressiveGC; //enable aggressive garbage collection (periodic + emergency)
+		this.memoryMonitor = u.isNil(opts.memoryMonitor) ? false : opts.memoryMonitor; //enable memory monitoring without verbose mode
 
 		// ? throttling options for cloud storage
 		this.throttleGCS = u.isNil(opts.throttleGCS) ? false : opts.throttleGCS; //enable memory-based throttling for GCS
@@ -288,6 +335,9 @@ class Job {
 		this.fastMode = u.isNil(opts.fastMode) ? false : opts.fastMode; //skip all transformations for pre-processed data
 
 		this.v2_compat = u.isNil(opts.v2_compat) ? false : opts.v2_compat; //automatically set distinct_id from $user_id or $device_id (events only)
+
+		/** @type {string} directive for profile operations ($set, $set_once, $append, $increment, etc.) */
+		this.directive = opts.directive || '$set'; //directive for profile operations (user and group profiles) - defaults to $set
 
 		// ? tagging options
 		this.tags = parse(opts.tags) || {}; //tags for the import		
@@ -427,7 +477,10 @@ class Job {
 		this.batchLengths = [];
 		this.lastBatchLength = 0;
 		this.unparsable = 0;
-		this.timer = u.time('etl');
+
+		// Instance-specific timer to avoid global conflicts
+		this.timer = new SimpleTimer();
+		this.timer.start();
 
 		// Memory management for large jobs
 		this.maxBatchLengths = 1000; // Limit batch length tracking
@@ -441,10 +494,7 @@ class Job {
 		this.contentType = "application/json";
 		this.encoding = "";
 		this.responses = [];
-		this.errors = [];
-
-		// if we're in abridged mode errors is a hash
-		if (this.abridged) this.errors = {};
+		this.errors = {};  // Always an object for counting errors
 
 		// SCD cannot be strict mode -_-
 		if (this.recordType === "scd") this.strict = false;
@@ -467,8 +517,8 @@ class Job {
 		}
 
 		// Validate recordType is one of the allowed values
-		const validRecordTypes = ['event', 'user', 'group', 'table', 'export', 'scd', 'export-import'];
-		if (this.recordType && !validRecordTypes.includes(this.recordType)) {
+		const validRecordTypes = ['event', 'user', 'group', 'table', 'export', 'scd', 'export-import-'];
+		if (this.recordType && !validRecordTypes.some(t => this.recordType.includes(t))) {
 			throw new Error(
 				`Invalid recordType: "${this.recordType}"\n` +
 				`Valid options are: ${validRecordTypes.join(', ')}`
@@ -513,8 +563,8 @@ class Job {
 			table: `https://api.mixpanel.com/lookup-tables/`,
 			export: `https://data.mixpanel.com/api/2.0/export`,
 			"profile-export": `https://mixpanel.com/api/2.0/engage`,
-			"export-import-events": `https://data.mixpanel.com/api/2.0/export`,
-			"export-import-profiles": `https://mixpanel.com/api/2.0/engage`
+			"export-import-event": `https://data.mixpanel.com/api/2.0/export`,
+			"export-import-profile": `https://mixpanel.com/api/2.0/engage`
 		},
 		eu: {
 			event: `https://api-eu.mixpanel.com/import`,
@@ -524,8 +574,8 @@ class Job {
 			table: `https://api-eu.mixpanel.com/lookup-tables/`,
 			export: `https://data-eu.mixpanel.com/api/2.0/export`,
 			"profile-export": `https://eu.mixpanel.com/api/2.0/engage`,
-			"export-import-events": `https://data-eu.mixpanel.com/api/2.0/export`,
-			"export-import-profiles": `https://eu.mixpanel.com/api/2.0/engage`
+			"export-import-event": `https://data-eu.mixpanel.com/api/2.0/export`,
+			"export-import-profile": `https://eu.mixpanel.com/api/2.0/engage`
 		},
 		in: {
 			event: `https://api-in.mixpanel.com/import`,
@@ -535,8 +585,8 @@ class Job {
 			table: `https://api-in.mixpanel.com/lookup-tables/`,
 			export: `https://data-in.mixpanel.com/api/2.0/export`,
 			"profile-export": `https://in.mixpanel.com/api/2.0/engage`,
-			"export-import-events": `https://data-in.mixpanel.com/api/2.0/export`,
-			"export-import-profiles": `https://in.mixpanel.com/api/2.0/engage`
+			"export-import-event": `https://data-in.mixpanel.com/api/2.0/export`,
+			"export-import-profile": `https://in.mixpanel.com/api/2.0/engage`
 		}
 
 	};
@@ -549,7 +599,7 @@ class Job {
 	get type() {
 		return this.recordType;
 	}
-	
+
 	/** 
 	 * Get the Mixpanel API URL for the current record type and region
 	 * @returns {string} The API endpoint URL
@@ -559,7 +609,7 @@ class Job {
 		if (this.recordType === "table") url += this.lookupTableId;
 		return url;
 	}
-	
+
 	/**
 	 * Get the current job options as an object
 	 * @returns {Object} Current job configuration options
@@ -725,28 +775,76 @@ class Job {
 	report() {
 		return Object.assign({}, this);
 	}
-	store(response, success = true) {
-		const isVerbose = !this.abridged;
+	store(response, success = true, batch = null) {
+		// Store full responses if not in abridged mode
+		if (!this.abridged) {
+			this.responses.push(response);
+		}
 
-		// IMPORTANT: When abridged=true (production mode), we don't store responses
-		// This prevents memory leaks from accumulating hundreds of HTTP response objects
-		if (isVerbose) {
-			// Store full responses only in verbose/debug mode
-			if (success) {
-				this.responses.push(response);  // WARNING: Can cause memory leak with large imports!
-			}
-			if (!success) {
-				this.errors.push(response);
-			}
-		} else {
-			// In abridged mode, only summarize errors (no response storage)
-			if (!success && response?.failed_records) {
-				if (Array.isArray(response.failed_records)) {
-					response.failed_records.forEach(failure => {
-						const { message = "unknown error" } = failure;
-						if (!this.errors[message]) this.errors[message] = 1;
-						this.errors[message]++;
-					});
+		// Always count errors (regardless of abridged mode)
+		if (!success) {
+			// Extract error message from various response formats
+			let errorMessage = "unknown error";
+
+			if (response?.failed_records && Array.isArray(response.failed_records)) {
+				// Format 1: failed_records array
+				response.failed_records.forEach(failure => {
+					const message = failure.message || "unknown error";
+					if (!this.errors[message]) this.errors[message] = 0;
+					this.errors[message]++;
+
+					// Store bad records if keepBadRecords is true
+					if (this.keepBadRecords && batch) {
+						if (!this.badRecords[message]) this.badRecords[message] = [];
+						// Find the corresponding record in the batch
+						const index = failure.index || 0;
+						if (batch[index]) {
+							this.badRecords[message].push(batch[index]);
+						}
+					}
+				});
+			} else if (response?.error) {
+				// Format 2: Single error message
+				errorMessage = response.error;
+				if (!this.errors[errorMessage]) this.errors[errorMessage] = 0;
+				this.errors[errorMessage]++;
+
+				// Store all records from batch as bad if keepBadRecords is true
+				if (this.keepBadRecords && batch) {
+					if (!this.badRecords[errorMessage]) this.badRecords[errorMessage] = [];
+					this.badRecords[errorMessage].push(...batch);
+				}
+			} else if (response?.message) {
+				// Format 3: Message field
+				errorMessage = response.message;
+				if (!this.errors[errorMessage]) this.errors[errorMessage] = 0;
+				this.errors[errorMessage]++;
+
+				// Store all records from batch as bad if keepBadRecords is true
+				if (this.keepBadRecords && batch) {
+					if (!this.badRecords[errorMessage]) this.badRecords[errorMessage] = [];
+					this.badRecords[errorMessage].push(...batch);
+				}
+			} else if (typeof response === 'string') {
+				// Format 4: String error
+				errorMessage = response;
+				if (!this.errors[errorMessage]) this.errors[errorMessage] = 0;
+				this.errors[errorMessage]++;
+
+				// Store all records from batch as bad if keepBadRecords is true
+				if (this.keepBadRecords && batch) {
+					if (!this.badRecords[errorMessage]) this.badRecords[errorMessage] = [];
+					this.badRecords[errorMessage].push(...batch);
+				}
+			} else {
+				// Format 5: Unknown error format
+				if (!this.errors["unknown error"]) this.errors["unknown error"] = 0;
+				this.errors["unknown error"]++;
+
+				// Store all records from batch as bad if keepBadRecords is true
+				if (this.keepBadRecords && batch) {
+					if (!this.badRecords["unknown error"]) this.badRecords["unknown error"] = [];
+					this.badRecords["unknown error"].push(...batch);
 				}
 			}
 		}
@@ -899,8 +997,10 @@ class Job {
 	}
 	getRps() {
 		const duration = (Date.now() - dayjs(this.startTime).valueOf()) / 1000;
+		if (duration <= 0 || !this.requests) return '0.00';
 		const rps = this.requests / duration;
-		return u.comma(Math.round(rps));
+		// Format to 2 decimal places for better precision
+		return rps.toFixed(2);
 	}
 	getMbps() {
 		const duration = (Date.now() - dayjs(this.startTime).valueOf()) / 1000;
@@ -914,17 +1014,11 @@ class Job {
 	 * @returns {import('../index.js').ImportResults} `{success, failed, total, requests, duration}`
 	 */
 	summary(includeResponses = true) {
-		// Only stop timer if it was started (avoid "etl has not been started" errors in tests)
-		let delta = 0;
-		let human = '0s';
-		try {
-			this.timer.stop(false);
-			const report = this.timer.report(false);
-			delta = report.delta;
-			human = report.human;
-		} catch (e) {
-			// Timer was never started, use defaults
-		}
+		// Stop timer and get report
+		this.timer.stop(false);
+		const report = this.timer.report(false);
+		const delta = report.delta;
+		const human = report.human;
 		const memoryHuman = this.memPretty();
 		const memory = this.memAvg();
 		/** @type {import('../index.js').ImportResults} */
@@ -965,27 +1059,24 @@ class Job {
 			eps: 0,
 			rps: 0,
 			mbps: 0,
-			errors: [],
-			responses: [],
-			// @ts-ignore
-			badRecords: this.badRecords,
+			errors: this.errors,  // Always include errors object
+			responses: this.responses,  // Include responses (empty if abridged)
 			dryRun: this.dryRunResults,
 			vendor: this.vendor || "",
 			vendorOpts: this.vendorOpts
 		};
+
+		// Only include badRecords if keepBadRecords is true
+		if (this.keepBadRecords && Object.keys(this.badRecords).length > 0) {
+			// @ts-ignore
+			summary.badRecords = this.badRecords;
+		}
 
 		// stats
 		if (summary.total && summary.duration && summary.requests && summary.bytes) {
 			summary.eps = Math.floor(summary.total / summary.duration * 1000);
 			summary.rps = summary.duration > 0 ? u.round(summary.requests / summary.duration * 1000, 3) : 0;
 			summary.mbps = u.round((summary.bytes / 1e+6) / summary.duration * 1000, 3);
-		}
-
-		summary.errors = this.errors;
-
-
-		if (includeResponses && this?.responses?.length) {
-			summary.responses = this.responses;
 		}
 
 		if (this.file) {
@@ -1010,9 +1101,17 @@ class Job {
 				"success",
 				"total",
 				"failed",
+				"empty",
 				"errors",
+				"responses",  // Include responses (will be empty array in abridged mode)
 				"startTime",
-				"endTime"
+				"endTime",
+				// Important skip/filter counts that should always be included
+				"duplicates",
+				"outOfBounds",
+				"whiteListSkipped",
+				"blackListSkipped",
+				"unparsable"
 			];
 			for (const key in summary) {
 				if (!includeOnly.includes(key)) delete summary[key];

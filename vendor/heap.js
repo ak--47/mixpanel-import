@@ -177,7 +177,7 @@ function heapEventsToMp(options) {
 			}
 		}
 		if (!user_id) {
-			// if the event has an identity prop, it's a heap $identify event, so set $user_id too
+			// heap $identify event
 			if (heapEvent.identity) {
 				mixpanelEvent.event = "identity association";
 				const knownId = heapEvent.identity.toString();
@@ -185,7 +185,7 @@ function heapEventsToMp(options) {
 				mixpanelEvent.properties.$user_id = knownId;
 			}
 
-			// if we have a device_id map, look up the device_id in the map and use the mapped value for $user_id
+			// lookup device_id in map for $user_id
 			else if (device_id_map.size) {
 				const knownId = device_id_map.get(device_id) || null;
 				if (knownId) {
