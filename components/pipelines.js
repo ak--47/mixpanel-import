@@ -92,7 +92,7 @@ function createVendorTransform(job) {
 		transform(data, encoding, callback) {
 			try {
 				if (job.vendor && job.vendorTransform) {
-					// @ts-ignore - Some vendor transforms (like PostHog) take heavyObjects as second param
+					// @ts-ignore - vendor transforms may take heavyObjects as second param
 					data = job.vendorTransform(data, job.heavyObjects);
 				}
 				// Handle null returns from vendor transforms (e.g., PostHog filtering events)
@@ -254,13 +254,11 @@ function createStringifyCacher(job, jsonCache, bytesCache) {
 				return;
 			}
 
-			// Cache ONLY byte count, not the JSON string itself
-			// This reduces memory usage by ~50% for large files
+			// Cache byte count only to save memory (~50% reduction)
 			const jsonString = JSON.stringify(data);
 			const byteLength = Buffer.byteLength(jsonString, 'utf-8');
 			job.bytesProcessed += byteLength;
 
-			// Only cache byte length (small number), not the full JSON string
 			// jsonCache.set(data, jsonString);  // DISABLED to save memory
 			bytesCache.set(data, byteLength);
 
@@ -458,13 +456,13 @@ function createHttpSender(job, jsonCache, fileStream) {
 			const throttleThreshold = job.throttlePauseMB || 3000;
 			const now = Date.now();
 
-			// Only log if memory is ABOVE pause threshold (throttle is active) AND 10 seconds elapsed
+			// Log if throttled and 10s elapsed
 			if (job.verbose && heapUsed > throttleThreshold && now - lastLogTime > 10000) {
 				console.log(`    📤 Pipeline draining while paused: Batch #${thisBatchId} sent (heap: ${u.bytesHuman(heapUsed * 1024 * 1024)})`);
 				lastLogTime = now;
 			}
 
-			// GC is now handled by memory monitor stage if aggressiveGC is enabled
+			// GC handled by memory monitor if aggressiveGC enabled
 
 			if (job.dryRun) {
 				// Add batch ID for debugging

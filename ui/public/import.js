@@ -101,7 +101,7 @@ class MixpanelImportUI {
 		}
 	}
 
-	// WebSocket connection methods (legacy - kept for backward compat)
+	// WebSocket connection
 	connectWebSocket(jobId) {
 		try {
 			const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -279,7 +279,7 @@ class MixpanelImportUI {
 	// Fill form with development values for quick testing
 	fillDevValues() {
 		try {
-			// Set record type to event first (to show credentials section)
+			// Set record type to event
 			const recordTypeSelect = document.getElementById('recordType');
 			if (recordTypeSelect) {
 				recordTypeSelect.value = 'event';
@@ -579,7 +579,7 @@ class MixpanelImportUI {
 			'Lean', 'Leap', 'Lease', 'Leash', 'Leather'
 		];
 
-		// Store previously used combinations to avoid immediate repeats
+		// Track used combinations
 		const recentCombos = [];
 		const maxRecent = 20; // Remember last 20 combinations
 
@@ -774,7 +774,7 @@ class MixpanelImportUI {
 			});
 		}
 
-		// See More button - shows different random 5 records from sample
+		// See More button
 		const seeMoreBtn = document.getElementById('see-more-btn');
 		if (seeMoreBtn) {
 			seeMoreBtn.addEventListener('click', () => {
@@ -802,7 +802,7 @@ class MixpanelImportUI {
 			});
 		}
 
-		// Clear transform button - reset to default with helpful template
+		// Clear transform button
 		const clearBtn = document.getElementById('clear-transform');
 		clearBtn.addEventListener('click', () => {
 			if (this.editor) {
@@ -847,7 +847,7 @@ class MixpanelImportUI {
 			resetBtn.addEventListener('click', this.resetForm.bind(this));
 		}
 
-		// Session storage persistence - save form state on input/change
+		// Session storage persistence
 		form.addEventListener('input', this.saveFormState.bind(this));
 		form.addEventListener('change', this.saveFormState.bind(this));
 
@@ -1077,7 +1077,7 @@ class MixpanelImportUI {
 			// Core options
 			command += ` --type ${recordType}`;
 
-			// Credentials - only add if fields are visible and have values
+			// Credentials
 			const projectElement = document.getElementById('project');
 			if (projectElement && projectElement.closest('.form-group').style.display !== 'none' && projectElement.value) {
 				command += ` --project ${projectElement.value}`;

@@ -98,7 +98,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	if (isCLI) global.l = l; // hacky way to make logger available globally
 	l(`\n🚀 MIXPANEL IMPORTER\n`);
 	
-	// Enhanced job creation logging with configuration details
+	// Job created
 	l(`\n✅ JOB CREATED!\n`);
 	if (job.verbose) {
 		l(`╔════════════════════════════════════════════════════════════════╗`);

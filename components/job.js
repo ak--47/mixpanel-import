@@ -91,7 +91,7 @@ class Job {
 		const allowEmptyCredentials = opts.dryRun || opts.writeToFile || opts.fixData;
 		if (!creds && !allowEmptyCredentials) throw new Error('no credentials provided!');
 
-		// Use empty object if creds is null/undefined but operation is allowed without creds
+		// Use empty object if allowed without creds
 		const safeCreds = creds || {};
 
 		/** @type {string} service account username */
@@ -239,7 +239,7 @@ class Job {
 		}
 
 		if (opts.dataGroupId) {
-			// this is a hack to PREVENT negative dataGroupId from scd endpoint... which is weird
+			// Hack: prevent negative dataGroupId from scd endpoint
 			if (opts.recordType === "scd") {
 				if (opts.dataGroupId?.startsWith('-')) this.dataGroupId = opts.dataGroupId.split("-")[1];
 				else this.dataGroupId = opts.dataGroupId;
@@ -266,17 +266,11 @@ class Job {
 		this.timeOffset = opts.timeOffset || 0; // utc hours offset
 		this.compressionLevel = opts.compressionLevel || 6; // gzip compression level
 		this.workers = opts.workers || 10; // number of workers to use
-		// highWater controls the stream buffer size (number of objects in object mode)
-		// It affects how many records are buffered in memory between pipeline stages
-		// Lower values = less memory usage but potentially lower throughput
-		// Higher values = more memory usage but potentially better throughput
-		// Default: calculated based on workers, but can be overridden explicitly
+		// Stream buffer size - balances memory vs throughput
 		if (typeof opts.highWater === 'number' && opts.highWater > 0) {
 			this.highWater = opts.highWater;
 		} else {
-			// Auto-calculate based on workers for proper backpressure
-			// Keep small enough to prevent OOM, large enough for good throughput
-			// Reduced from 10x to 5x multiplier to be more conservative with memory
+			// Auto-calculate: workers * 5 (conservative)
 			this.highWater = Math.min(this.workers * 5, 100);
 		}
 		this.epochStart = opts.epochStart || 0; // start date for epoch

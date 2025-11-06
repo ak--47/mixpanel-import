@@ -97,8 +97,6 @@ function mParticleEventsToMixpanel(options) {
 			}
 		}
 
-		// ! EVENT DEBUGGER
-		// if (mParticleEvents?.events?.find(event => event?.data?.event_id === `-3316258325130631688`))  debugger;
 
 
 		// Initialize with default props

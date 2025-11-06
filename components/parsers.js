@@ -79,7 +79,7 @@ function looksLikeFilePath(data, job) {
 	const hasFileExtension = /\.[a-zA-Z0-9]{1,10}$/.test(data); // Ends with .ext pattern
 	const looksLikeAbsolutePath = data.startsWith('/') || /^[A-Za-z]:/.test(data); // Unix absolute or Windows drive
 
-	// Only consider it a file path if it has path characteristics AND looks intentional
+	// File path if has path separators and looks intentional
 	return hasPathSeparator && (hasFileExtension || looksLikeAbsolutePath);
 }
 
@@ -408,7 +408,7 @@ async function determineDataType(data, job) {
 					}
 				}
 			} else if (typeof data === 'string') {
-				// Only throw file not found error if string looks like a file path
+				// Throw file error if string looks like path
 				if (looksLikeFilePath(data, job)) {
 					throw new Error(`File or directory does not exist: ${data}`);
 				}
@@ -480,10 +480,9 @@ async function determineDataType(data, job) {
 
 
 
-	// data is a string, and we have to guess what it is
+	// String data - guess what it is
 	if (typeof data === 'string') {
-		// If we have a parsing error from file processing and the data looks like a file path,
-		// throw the error instead of trying to parse the path as data
+		// Throw parsing error if data looks like file path
 		if (parsingError && (data.includes('/') || data.includes('\\') || data.includes('.'))) {
 			throw parsingError;
 		}
@@ -730,7 +729,7 @@ function existingStreamInterface(inputStream) {
 	return transform;
 }
 
-// Create a transform stream factory to ensure newline at the end of each file.
+// Transform stream to ensure newline at file end
 function createEnsureNewlineTransform() {
 	return new Transform({
 		transform(chunk, _encoding, callback) {
@@ -1260,20 +1259,18 @@ async function buildMapFromPath(filePath, keyOne, keyTwo, job = {}) {
 async function fetchFromGCS(gcsPath, projectId = 'mixpanel-gtm-training', gcsCredentials = '') {
 
 
-	// Create a storage client using either custom credentials or application default credentials
+	// Create storage client
 	const storageConfig = {
 		projectId
 	};
 
-	// Use custom credentials if provided, otherwise fall back to ADC
 	if (gcsCredentials) {
 		storageConfig.keyFilename = gcsCredentials;
 	}
 
 	const storage = new Storage(storageConfig);
 
-	// Extract bucket and file path from the GCS path
-	// gs://bucket-name/path/to/file.json -> bucket="bucket-name", filePath="path/to/file.json"
+	// Parse: gs://bucket-name/path/to/file.json
 	const matches = gcsPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
 	if (!matches) {
 		throw new Error(`Invalid GCS path: ${gcsPath}`);
@@ -2472,7 +2469,7 @@ async function fetchFromS3(s3Path) {
 	const s3Client = new S3Client({});
 
 	// Extract bucket and key from the S3 path
-	// s3://bucket-name/path/to/file.json -> bucket="bucket-name", key="path/to/file.json"
+	// Parse: s3://bucket-name/path/to/file.json
 	const matches = s3Path.match(/^s3:\/\/([^\/]+)\/(.+)$/);
 	if (!matches) {
 		throw new Error(`Invalid S3 path: ${s3Path}`);

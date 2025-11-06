@@ -17,13 +17,11 @@ process.on('uncaughtException', (error) => {
 	process.exit(1);
 });
 
-// Optimized undici pool settings for high throughput
-// Note: These are shared across all jobs, so we set high defaults
-// Ideal formula: connections = workers * 3-5, pipelining = workers / 2
-// Current settings support up to ~30-50 workers efficiently
+// Undici pool settings - shared across all jobs
+// Formula: connections = workers * 3-5, pipelining = workers / 2
 const poolConfig = {
-	connections: 100, // Supports 20-30 workers with 3-5 connections each
-	pipelining: 20,   // HTTP/2 multiplexing - allows 20 requests per connection
+	connections: 100, // 20-30 workers @ 3-5 connections each
+	pipelining: 20,   // HTTP/2 multiplexing
 	keepAliveTimeout: 30000,
 	keepAliveMaxTimeout: 60000,
 	headersTimeout: 60000,
@@ -223,12 +221,7 @@ async function flushToMixpanel(batch, job) {
 			job.store(null, success, batch);
 		}
 
-		// MEMORY FIX: Return minimal response data, not full response object
-		// The full response object was being stored in parallel-transform's buffer causing memory leaks
-		// We only need success/fail counts for logging, everything else is already handled above
-
-		// Extract only essential data for logging and downstream processing
-		// Include all fields that might be accessed, but with abbreviated data
+		// Return minimal response to prevent memory leaks in parallel-transform buffer
 		const minimalResponse = {
 			num_records_imported: res.num_records_imported || 0,
 			num_good_events: res.num_good_events || 0,
@@ -238,8 +231,7 @@ async function flushToMixpanel(batch, job) {
 			code: res.code || (success ? 200 : 400)
 		};
 
-		// Only return batch if needed (dry run or custom response handler)
-		// This prevents memory accumulation in production imports
+		// Return batch only for dry run or custom handlers
 		if (job.dryRun || job.responseHandler) {
 			return [res, batch];  // Keep full response for dry run/custom handlers
 		}
@@ -254,7 +246,7 @@ async function flushToMixpanel(batch, job) {
 		catch (e) {
 			//noop
 		}
-		// CRITICAL: Must return array even on error to prevent "result is not iterable"
+		// Must return array on error (prevents "result is not iterable")
 		return [{error: e.message || 'Unknown error'}, null];
 	}
 }
@@ -485,12 +477,7 @@ async function flushToMixpanelWithUndici(batch, job) {
 			job.store(null, success, batch);
 		}
 
-		// MEMORY FIX: Return minimal response data, not full response object
-		// The full response object was being stored in parallel-transform's buffer causing memory leaks
-		// We only need success/fail counts for logging, everything else is already handled above
-
-		// Extract only essential data for logging and downstream processing
-		// Include all fields that might be accessed, but with abbreviated data
+		// Return minimal response to prevent memory leaks in parallel-transform buffer
 		const minimalResponse = {
 			num_records_imported: res.num_records_imported || 0,
 			num_good_events: res.num_good_events || 0,
@@ -500,8 +487,7 @@ async function flushToMixpanelWithUndici(batch, job) {
 			code: res.code || (success ? 200 : 400)
 		};
 
-		// Only return batch if needed (dry run or custom response handler)
-		// This prevents memory accumulation in production imports
+		// Return batch only for dry run or custom handlers
 		if (job.dryRun || job.responseHandler) {
 			return [res, batch];  // Keep full response for dry run/custom handlers
 		}

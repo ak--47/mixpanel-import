@@ -19,18 +19,14 @@ async function writeLogs(data) {
 	const path = require('path');
 
 	try {
-		// Generate timestamped filename
 		const dateTime = new Date().toISOString().split('.')[0].replace('T', '--').replace(/:/g, ".");
 		const fileName = `${data.recordType}-import-log-${dateTime}.json`;
 
-		// Ensure logs directory exists (recursive: true creates parent dirs if needed)
 		const logsDir = path.resolve('./logs');
 		await fs.mkdir(logsDir, { recursive: true });
 
-		// Build full file path
 		const filePath = path.join(logsDir, fileName);
 
-		// Write pretty-printed JSON with 2 space indentation
 		const jsonContent = JSON.stringify(data, null, 2);
 		await fs.writeFile(filePath, jsonContent, 'utf8');
 

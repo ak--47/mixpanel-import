@@ -812,7 +812,7 @@ describe("cli", () => {
 	test(
 		"groups",
 		async () => {
-			const output = execSync(`node ./index.js ${groups} --type group --fixData`).toString().trim().split("\n").pop();
+			const output = execSync(`node ./index.js ${groups} --type group --fixData --groupKey company_id`).toString().trim().split("\n").pop();
 			const result = await u.load(output, true);
 			expect(result.success).toBe(1860);
 		},
@@ -1426,10 +1426,9 @@ describe("parquet", () => {
 			Object.keys(job.errors).find(a => a.includes('is invalid'))
 		].filter(a => a);
 
-		// The parquet file should have some errors, but they might not be categorized as expected
-		// Let's check if there are any errors at all
+		// Check for errors
 		if (Object.keys(job.errors).length === 0) {
-			// If no errors, test should still pass if success is high enough
+			// Pass if success count is high enough
 			expect(job.success).toBeGreaterThan(atLeast);
 		} else {
 			// If there are errors, check for specific ones

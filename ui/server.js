@@ -14,7 +14,7 @@ let { NODE_ENV = "" } = process.env;
 if (!NODE_ENV) NODE_ENV = "local";
 if (!NODE_ENV) throw new Error("NODE_ENV not set");
 
-// Configure Pino logger with environment-appropriate configuration
+// Configure Pino logger
 const logLevel = NODE_ENV === "production" ? "info" : NODE_ENV === "test" ? "warn" : "debug";
 
 let logger;
@@ -34,10 +34,9 @@ if (NODE_ENV === "production") {
 		)
 	);
 } else {
-	// Use pino-pretty for better developer experience in non-production (if available)
+	// Use pino-pretty in development (if available)
 	try {
 		require.resolve("pino-pretty");
-		// pino-pretty is available, use it
 		logger = pino({
 			level: logLevel,
 			transport: {
@@ -50,7 +49,7 @@ if (NODE_ENV === "production") {
 			}
 		});
 	} catch (err) {
-		// pino-pretty not available (production npm install), use basic console logger
+		// pino-pretty not available, use basic logger
 		logger = pino({
 			level: logLevel
 		});
@@ -61,24 +60,22 @@ const app = express();
 const server = createServer(app);
 const port = parseInt(process.env.PORT) || 3000;
 
-// WebSocket server for real-time progress updates
+// WebSocket server
 const wss = new WebSocket.Server({ server });
 
-// Job tracking for WebSocket connections
-// WARNING: In-memory storage - not suitable for serverless production deployment
-// TODO: Replace with external storage (Redis/DynamoDB) for serverless compatibility
+// Job tracking (in-memory - not serverless-compatible)
+// TODO: Replace with Redis/DynamoDB
 const activeJobs = new Map(); // jobId -> { ws, startTime, lastUpdate }
 
-// In-memory job status tracking (serverless-unfriendly, but functional for single-instance)
-// TODO: Replace with external job queue and status store for true serverless deployment
+// Job status tracking (in-memory)
 const jobStatuses = new Map(); // jobId -> { status, progress, result, startTime, lastUpdate }
 
-// Memory management configuration
-const MAX_HEAP_PERCENT = 85; // Trigger GC at 85% heap usage
-const JOB_CLEANUP_INTERVAL = 5 * 60 * 1000; // Clean up old jobs every 5 minutes
-const JOB_MAX_AGE = 60 * 60 * 1000; // Delete jobs older than 1 hour
+// Memory management
+const MAX_HEAP_PERCENT = 85;
+const JOB_CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
+const JOB_MAX_AGE = 60 * 60 * 1000; // 1 hour
 
-// Execute job over WebSocket (keeps Cloud Run container alive!)
+// Execute job over WebSocket
 async function executeJobOverWebSocket(ws, jobId, credentials, options, cloudPaths, transformCode, jobLogger) {
 
 	let data;
@@ -89,13 +86,13 @@ async function executeJobOverWebSocket(ws, jobId, credentials, options, cloudPat
 		const creds = JSON.parse(credentials);
 		const opts = JSON.parse(options);
 
-		// Force abridged mode in production if not explicitly set (prevents OOM)
+		// Force abridged mode in production
 		if (NODE_ENV === "production" && opts.abridged === undefined) {
 			opts.abridged = true;
 			jobLogger.info("abridged mode forced (production)");
 		}
 
-		// Force manual GC in production to prevent OOM
+		// Force manual GC in production
 		if (NODE_ENV === "production" && opts.manualGc === undefined) {
 			opts.manualGc = true;
 			jobLogger.info("manual GC enabled (production)");
@@ -345,7 +342,7 @@ function updateJobStatus(jobId, status, progressData = null, result = null) {
 	}
 }
 
-// Function to broadcast progress updates to WebSocket clients (legacy compatibility)
+// Broadcast progress updates to WebSocket clients
 function broadcastProgress(jobId, progressData) {
 	updateJobStatus(jobId, "running", progressData);
 }
@@ -539,7 +536,7 @@ app.use((req, res, next) => {
 	if (rawUser) {
 		let user;
 		try {
-			// URL decode first, then extract email from accounts.google.com:user@domain.com format
+			// Extract email from accounts.google.com:user@domain.com format
 			// @ts-ignore
 			const decodedUser = decodeURIComponent(rawUser);
 			user = decodedUser.includes(':') ? decodedUser.split(':').pop() : decodedUser;
@@ -559,7 +556,7 @@ app.use((req, res, next) => {
 
 
 
-// Explicit routes for import and export (since static middleware doesn't handle these paths)
+// Routes for import and export
 app.get("/import", (req, res) => {
 	serveFile(res, "import.html");
 });
@@ -656,10 +653,10 @@ app.post("/job/prepare", upload.array("files"), handleMulterError, async (req, r
 	}
 });
 
-// Legacy endpoint - keep for backward compatibility but recommend using WebSocket flow
+// Legacy endpoint (backward compatibility)
 // @ts-ignore
 app.post("/job", upload.array("files"), handleMulterError, async (req, res) => {
-	// Extract key parameters for logging without file contents
+	// Extract parameters for logging
 	const logParams = {
 		credentials: req.body.credentials ? "provided" : "missing",
 		options: req.body.options ? JSON.parse(req.body.options || "{}") : {},
@@ -889,7 +886,7 @@ app.post("/sample", upload.array("files"), handleMulterError, async (req, res) =
 		if (NODE_ENV === "production") opts.logs = false;
 
 		// Force sample settings - no transforms, maxRecords=500, dryRun=true
-		// IMPORTANT: Preview should never require credentials and should disable ALL transforms
+		// Preview: no credentials, no transforms
 		opts.dryRun = true;
 		opts.maxRecords = 500;
 		opts.transformFunc = function id(a) {
@@ -999,7 +996,7 @@ app.post("/columns", upload.array("files"), handleMulterError, async (req, res) 
 		if (NODE_ENV === "production") opts.logs = false;
 
 		// Force sample settings - let mixpanel-import handle all parsing
-		// IMPORTANT: Column detection should never require credentials and should disable ALL transforms
+		// Column detection: no credentials, no transforms
 		opts.dryRun = true;
 		opts.maxRecords = 500; // Sample up to 500 records
 		opts.transformFunc = function id(a) {
@@ -1405,7 +1402,7 @@ app.post("/export", async (req, res) => {
 				activeJobs.delete(jobId);
 			}
 		} else {
-			// For stream-to-stream operations (export-import), run synchronously and return result
+			// Stream-to-stream operations run synchronously
 			logger.info({ recordType: opts.recordType }, "export-import started");
 
 			const result = await mixpanelImport(creds, null, opts);
