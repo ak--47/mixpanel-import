@@ -772,7 +772,7 @@ describe("fixing stuff", () => {
 	});
 
 	test("retains bad records", async () => {
-		const data = await mp({}, badData, { ...opts, streamFormat: `jsonl`, fixData: false, strict: true, abridged: false });
+		const data = await mp({}, badData, { ...opts, streamFormat: `jsonl`, fixData: false, strict: true, abridged: false, keepBadRecords: true });
 		const { total, success, failed, errors, badRecords, unparsable } = data;
 		const expected = 5080;
 		const expectedBad = 3;
@@ -914,7 +914,7 @@ describe("options", () => {
 			];
 
 			const data = await mp({}, dataPoint, {
-				...opts, abridged: false, timeOffset: 7,
+				...opts, abridged: false, timeOffset: 7, keepBadRecords: true
 
 			});
 1
