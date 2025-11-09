@@ -161,8 +161,8 @@ async function flushToMixpanel(batch, job) {
 		let res, success;
 		try {
 			// @ts-ignore
-			const req = await got(options);
-			res = JSON.parse(req.body);
+			const { body } = await got(options);
+			res = JSON.parse(body);
 			success = true;
 		}
 
@@ -171,7 +171,14 @@ async function flushToMixpanel(batch, job) {
 				res = JSON.parse(e.response.body);
 			}
 			else {
-				res = e;
+				// Extract minimal error info to prevent memory leak from full error object
+				res = {
+					error: e?.message || e?.code || 'Request failed',
+					status: false,
+					code: e?.response?.statusCode || e?.code || 500,
+					// Include stack trace only in verbose mode for debugging
+					...(process.env.VERBOSE && { stack: e?.stack })
+				};
 			}
 			success = false;
 
@@ -215,10 +222,11 @@ async function flushToMixpanel(batch, job) {
 				status: res.status !== undefined ? res.status : success,
 				code: res.code || (success ? 200 : 400)
 			};
-			job.store(abbreviatedForStorage, success, batch);
+			// Don't pass batch to prevent memory leaks - badRecords feature is opt-in now
+			job.store(abbreviatedForStorage, success, null);
 		} else {
-			// Abridged mode - don't store anything, don't even pass the response
-			job.store(null, success, batch);
+			// Abridged mode - don't store anything
+			job.store(null, success, null);
 		}
 
 		// Return minimal response to prevent memory leaks in parallel-transform buffer
@@ -471,10 +479,11 @@ async function flushToMixpanelWithUndici(batch, job) {
 				status: res.status !== undefined ? res.status : success,
 				code: res.code || (success ? 200 : 400)
 			};
-			job.store(abbreviatedForStorage, success, batch);
+			// Don't pass batch to prevent memory leaks - badRecords feature is opt-in now
+			job.store(abbreviatedForStorage, success, null);
 		} else {
-			// Abridged mode - don't store anything, don't even pass the response
-			job.store(null, success, batch);
+			// Abridged mode - don't store anything
+			job.store(null, success, null);
 		}
 
 		// Return minimal response to prevent memory leaks in parallel-transform buffer

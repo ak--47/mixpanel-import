@@ -318,7 +318,7 @@ class Job {
 		this.writeToFile = u.isNil(opts.writeToFile) ? false : opts.writeToFile; //write to file instead of sending
 		this.outputFilePath = opts.outputFilePath || './mixpanel-transform.json'; //where to write the file
 		this.skipWriteToDisk = u.isNil(opts.skipWriteToDisk) ? false : opts.skipWriteToDisk; //don't write to disk
-		this.keepBadRecords = u.isNil(opts.keepBadRecords) ? true : opts.keepBadRecords; //keep bad records
+		this.keepBadRecords = u.isNil(opts.keepBadRecords) ? false : opts.keepBadRecords; //keep bad records (disabled by default to prevent memory leaks)
 		this.aggressiveGC = u.isNil(opts.aggressiveGC) ? false : opts.aggressiveGC; //enable aggressive garbage collection (periodic + emergency)
 		this.memoryMonitor = u.isNil(opts.memoryMonitor) ? false : opts.memoryMonitor; //enable memory monitoring without verbose mode
 
