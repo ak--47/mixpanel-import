@@ -517,7 +517,7 @@ class Job {
 		}
 
 		// Validate recordType is one of the allowed values
-		const validRecordTypes = ['event', 'user', 'group', 'table', 'export', 'scd', 'export-import-'];
+		const validRecordTypes = ['event', 'user', 'group', 'table', 'export', 'scd', 'export-import-', 'profile-export'];
 		if (this.recordType && !validRecordTypes.some(t => this.recordType.includes(t))) {
 			throw new Error(
 				`Invalid recordType: "${this.recordType}"\n` +
