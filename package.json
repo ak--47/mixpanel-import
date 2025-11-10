@@ -63,7 +63,7 @@
     "@google-cloud/pino-logging-gcp-config": "^1.1.0",
     "@google-cloud/storage": "^7.16.0",
     "ak-fetch": "^2.0.0",
-    "google-auth-library": "^9.16.0",
+    "google-auth-library": "^9.15.1",
     "ak-tools": "^1.1.0",
     "chance": "^1.1.7",
     "cookie-parser": "^1.4.7",
