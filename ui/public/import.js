@@ -859,6 +859,12 @@ class MixpanelImportUI {
 			snowcatRequestBtn.addEventListener('click', this.submitSnowcatJob.bind(this));
 		}
 
+		// Snowcat copy as cURL button
+		const snowcatCurlBtn = document.getElementById('snowcat-curl-btn');
+		if (snowcatCurlBtn) {
+			snowcatCurlBtn.addEventListener('click', this.copySnowcatAsCurl.bind(this));
+		}
+
 		// Update Snowcat button visibility on file source changes
 		form.addEventListener('change', this.updateSnowcatButtonVisibility.bind(this));
 
@@ -2622,7 +2628,7 @@ function transform(row) {
 		if (!snowcatBtn) return;
 
 		// Check for production URL or ?snowcat=true parameter
-		const isProduction = window.location.href === 'https://etl.mixpanel.org/import';
+		const isProduction = window.location.href.startsWith('https://etl.mixpanel.org/import');
 		const urlParams = new URLSearchParams(window.location.search);
 		const hasSnowcatParam = urlParams.get('snowcat') === 'true';
 
@@ -2837,6 +2843,61 @@ function transform(row) {
 				requestBtn.innerHTML = '<span class="btn-icon">📨</span> Request Job';
 				requestBtn.disabled = false;
 			}
+		}
+	}
+
+	// Snowcat: Copy job configuration as cURL command
+	copySnowcatAsCurl() {
+		try {
+			const editor = document.getElementById('snowcat-json-editor');
+			if (!editor) return;
+
+			// Parse the current JSON configuration
+			let jobConfig;
+			try {
+				jobConfig = JSON.parse(editor.value);
+			} catch (parseError) {
+				this.showError('Invalid JSON in Snowcat job configuration: ' + parseError.message);
+				return;
+			}
+
+			// Always set these fields (not user-configurable)
+			jobConfig.auto_govern = false;
+			jobConfig.start_immediately = false;
+
+			// Generate cURL command
+			const snowcatUrl = 'https://snowcat-queuer-lmozz6xkha-uc.a.run.app/import';
+			const jsonData = JSON.stringify(jobConfig, null, 2);
+
+			const curlCommand = `curl -X POST '${snowcatUrl}' \\
+  -H "Authorization: Bearer $(gcloud auth print-identity-token --audiences=https://snowcat-queuer-lmozz6xkha-uc.a.run.app)" \\
+  -H "Content-Type: application/json" \\
+  -d '${jsonData}'`;
+
+			// Copy to clipboard
+			navigator.clipboard.writeText(curlCommand).then(() => {
+				this.showSuccess('cURL command copied to clipboard!');
+			}).catch(err => {
+				// Fallback for older browsers
+				const textArea = document.createElement('textarea');
+				textArea.value = curlCommand;
+				textArea.style.position = 'fixed';
+				textArea.style.left = '-999999px';
+				document.body.appendChild(textArea);
+				textArea.select();
+				try {
+					document.execCommand('copy');
+					this.showSuccess('cURL command copied to clipboard!');
+				} catch (copyErr) {
+					console.error('Failed to copy:', copyErr);
+					this.showError('Failed to copy cURL command');
+				}
+				document.body.removeChild(textArea);
+			});
+
+		} catch (error) {
+			console.error('Copy cURL error:', error);
+			this.showError('Failed to generate cURL command: ' + error.message);
 		}
 	}
 }
