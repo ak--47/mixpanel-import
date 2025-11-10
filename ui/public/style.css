@@ -1488,3 +1488,150 @@ input[type="range"]::-moz-range-thumb {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
+
+/* Snowcat Modal Styles */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+}
+
+.modal-content {
+    position: relative;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    max-width: 800px;
+    width: 90%;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border-primary);
+}
+
+.snowcat-modal-content {
+    max-width: 900px;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24px;
+    border-bottom: 1px solid var(--border-primary);
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 24px;
+    color: var(--text-primary);
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 24px;
+    cursor: pointer;
+    padding: 4px 8px;
+    transition: all 0.2s ease;
+    border-radius: 4px;
+}
+
+.modal-close:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+}
+
+.modal-body {
+    padding: 24px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 20px 24px;
+    border-top: 1px solid var(--border-primary);
+}
+
+.snowcat-editor-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.snowcat-editor-container label {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.snowcat-json-editor {
+    width: 100%;
+    min-height: 400px;
+    font-family: Monaco, Menlo, 'Ubuntu Mono', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 16px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    resize: vertical;
+    tab-size: 2;
+}
+
+.snowcat-json-editor:focus {
+    outline: none;
+    border-color: var(--mp-purple);
+    box-shadow: 0 0 0 3px rgba(123, 97, 255, 0.1);
+}
+
+/* Snowcat button visibility control */
+#snowcat-btn.show {
+    display: inline-flex !important;
+}
+
+/* Snowcat button - darker turquoise styling */
+.btn-snowcat {
+    background: linear-gradient(135deg, #20B2AA 0%, #008B8B 100%);
+    color: white;
+    border: 1px solid #008B8B;
+    font-weight: 600;
+}
+
+.btn-snowcat:hover {
+    background: linear-gradient(135deg, #2DC5BD 0%, #00A0A0 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(32, 178, 170, 0.5);
+    border-color: #00A0A0;
+}
+
+.btn-snowcat:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 6px rgba(32, 178, 170, 0.4);
+}
+
+.btn-snowcat:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(32, 178, 170, 0.3);
+}

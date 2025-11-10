@@ -847,6 +847,21 @@ class MixpanelImportUI {
 			resetBtn.addEventListener('click', this.resetForm.bind(this));
 		}
 
+		// Snowcat button - only in production with GCS paths
+		const snowcatBtn = document.getElementById('snowcat-btn');
+		if (snowcatBtn) {
+			snowcatBtn.addEventListener('click', this.openSnowcatModal.bind(this));
+		}
+
+		// Snowcat request button (in modal)
+		const snowcatRequestBtn = document.getElementById('snowcat-request-btn');
+		if (snowcatRequestBtn) {
+			snowcatRequestBtn.addEventListener('click', this.submitSnowcatJob.bind(this));
+		}
+
+		// Update Snowcat button visibility on file source changes
+		form.addEventListener('change', this.updateSnowcatButtonVisibility.bind(this));
+
 		// Session storage persistence
 		form.addEventListener('input', this.saveFormState.bind(this));
 		form.addEventListener('change', this.saveFormState.bind(this));
@@ -887,6 +902,9 @@ class MixpanelImportUI {
 
 		// Update CLI command when file source changes
 		this.updateCLICommand();
+
+		// Update Snowcat button visibility when file source changes
+		this.updateSnowcatButtonVisibility();
 	}
 
 	updateCloudFilePreview() {
@@ -2042,7 +2060,12 @@ function transform(row) {
 		const resultsTitle = document.getElementById('results-title');
 		const resultsData = document.getElementById('results-data');
 
-		resultsTitle.textContent = isDryRun ? 'Preview Results' : 'Import Complete!';
+		// Check if this is a Snowcat job result
+		if (result.snowcatResponse) {
+			resultsTitle.textContent = 'Job Requested!';
+		} else {
+			resultsTitle.textContent = isDryRun ? 'Preview Results' : 'Import Complete!';
+		}
 
 		// Store results for download
 		this.lastResults = result;
@@ -2592,6 +2615,230 @@ function transform(row) {
 
 		mixpanel.track('import failed', properties);
 	}
+
+	// Snowcat: Update button visibility based on URL and file source
+	updateSnowcatButtonVisibility() {
+		const snowcatBtn = document.getElementById('snowcat-btn');
+		if (!snowcatBtn) return;
+
+		// Check for production URL or ?snowcat=true parameter
+		const isProduction = window.location.href === 'https://etl.mixpanel.org/import';
+		const urlParams = new URLSearchParams(window.location.search);
+		const hasSnowcatParam = urlParams.get('snowcat') === 'true';
+
+		// Only show when using GCS
+		const fileSource = document.querySelector('input[name="fileSource"]:checked')?.value;
+		const isGCS = fileSource === 'gcs';
+
+		// Show button if (production OR snowcat param) AND using GCS
+		if ((isProduction || hasSnowcatParam) && isGCS) {
+			snowcatBtn.style.display = 'inline-flex';
+		} else {
+			snowcatBtn.style.display = 'none';
+		}
+	}
+
+	// Snowcat: Open modal with pre-populated job config
+	openSnowcatModal() {
+		const modal = document.getElementById('snowcat-modal');
+		const editor = document.getElementById('snowcat-json-editor');
+
+		if (!modal || !editor) return;
+
+		// Generate Snowcat job config from current UI state
+		const snowcatJob = this.generateSnowcatJob();
+
+		// Pretty-print JSON in editor
+		editor.value = JSON.stringify(snowcatJob, null, 2);
+
+		// Show modal
+		modal.style.display = 'flex';
+	}
+
+	// Snowcat: Close modal
+	closeSnowcatModal() {
+		const modal = document.getElementById('snowcat-modal');
+		if (modal) {
+			modal.style.display = 'none';
+		}
+	}
+
+	// Snowcat: Generate job configuration from UI state
+	generateSnowcatJob() {
+		const fileSource = document.querySelector('input[name="fileSource"]:checked')?.value;
+
+		// Get GCS paths
+		const gcsPathsInput = document.getElementById('gcsPaths')?.value || '';
+		const paths = gcsPathsInput.split(/[,\n]/).map(p => p.trim()).filter(p => p);
+
+		// Infer cloud_path and filter from first path
+		let cloud_path = '';
+		let filter = '.json.gz';
+
+		if (paths.length > 0) {
+			const firstPath = paths[0];
+			// Extract path and filter
+			// e.g., gs://bucket/path/file.json.gz -> cloud_path: gs://bucket/path, filter: .json.gz
+			const pathParts = firstPath.split('/');
+			const fileName = pathParts[pathParts.length - 1];
+			cloud_path = pathParts.slice(0, -1).join('/');
+
+			// Extract file extension(s)
+			if (fileName.includes('.')) {
+				const parts = fileName.split('.');
+				// Get everything after first dot (e.g., "json.gz" from "file.json.gz")
+				filter = '.' + parts.slice(1).join('.');
+			}
+		}
+
+		// Get credentials from UI
+		const mp_token = this.getElementValue('token');
+		const mp_project = this.getElementValue('project');
+		const mp_secret = this.getElementValue('secret');
+
+		// Get user from cookie
+		const getCookie = (name) => {
+			const value = `; ${document.cookie}`;
+			const parts = value.split(`; ${name}=`);
+			if (parts.length === 2) return parts.pop().split(';').shift();
+			return '';
+		};
+		const who = getCookie('user') || 'unknown';
+
+		// Collect all options from UI
+		const options = this.collectOptions();
+
+		// Handle transform function - base64 encode if present
+		let transform = null;
+		if (this.editor) {
+			const transformCode = this.editor.getValue().trim();
+			const defaultCode = this.getDefaultTransformFunction().trim();
+
+			// Only include if it's different from default
+			if (transformCode && transformCode !== defaultCode) {
+				// Base64 encode the transform function
+				transform = btoa(transformCode);
+			}
+		}
+
+		// Build Snowcat job object
+		const job = {
+			// Snowcat-specific fields (configurable)
+			cloud_path: cloud_path,
+			filter: filter,
+			mp_token: mp_token || '',
+			mp_project: mp_project || '',
+			mp_secret: mp_secret || '',
+			files_per_worker: 1,
+			max_concurrency: 2,
+			who: who,
+			name: 'etl-ui-import',
+
+			// Options object - all UI configuration
+			options: {
+				...options
+			}
+		};
+
+		// Add transform if present (replace transformFunc with base64 transform)
+		if (transform) {
+			// Remove transformFunc from options (it's a function, not serializable)
+			delete job.options.transformFunc;
+			// Add base64-encoded transform
+			job.options.transform = transform;
+		}
+
+		// Remove fields that don't make sense for Snowcat or are overridden by Snowcat
+		delete job.options.progressCallback;
+		delete job.options.showProgress;
+		delete job.options.verbose;
+		delete job.options.abridged;
+		delete job.options.recordsPerBatch;
+
+		return job;
+	}
+
+	// Snowcat: Submit job request to server
+	async submitSnowcatJob() {
+		try {
+			const editor = document.getElementById('snowcat-json-editor');
+			const requestBtn = document.getElementById('snowcat-request-btn');
+
+			if (!editor || !requestBtn) return;
+
+			// Parse the edited JSON
+			let jobConfig;
+			try {
+				jobConfig = JSON.parse(editor.value);
+			} catch (parseError) {
+				this.showError('Invalid JSON in Snowcat job configuration: ' + parseError.message);
+				return;
+			}
+
+			// Always set these fields (not user-configurable)
+			jobConfig.auto_govern = false;
+			jobConfig.start_immediately = false;
+
+			// Disable button and show loading state
+			const originalText = requestBtn.innerHTML;
+			requestBtn.innerHTML = '<span class="btn-icon">⏳</span> Requesting...';
+			requestBtn.disabled = true;
+
+			// Submit to server
+			const response = await fetch('/snowcat/request', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify(jobConfig),
+				credentials: 'include'
+			});
+
+			const result = await response.json();
+
+			// Reset button
+			requestBtn.innerHTML = originalText;
+			requestBtn.disabled = false;
+
+			if (!response.ok || !result.success) {
+				throw new Error(result.error || 'Snowcat job request failed');
+			}
+
+			// Close modal
+			this.closeSnowcatModal();
+
+
+		// Parse snowcatResponse if it's a string
+		let snowcatResponse = result.snowcatResponse;
+		if (typeof snowcatResponse === 'string') {
+			try {
+				snowcatResponse = JSON.parse(snowcatResponse);
+			} catch (parseError) {
+				console.warn('Failed to parse snowcatResponse:', parseError);
+				// Keep as string if parsing fails
+			}
+		}
+			// Show success and display result
+			this.showSuccess('Snowcat job requested successfully! The job will be queued for manual approval.');
+
+			// Display the Snowcat response in results section
+			this.showResults({
+				snowcatResponse: snowcatResponse,
+				jobConfig: jobConfig
+			}, false);
+
+		} catch (error) {
+			console.error('Snowcat request error:', error);
+			this.showError('Failed to request Snowcat job: ' + error.message);
+
+			// Reset button
+			const requestBtn = document.getElementById('snowcat-request-btn');
+			if (requestBtn) {
+				requestBtn.innerHTML = '<span class="btn-icon">📨</span> Request Job';
+				requestBtn.disabled = false;
+			}
+		}
+	}
 }
 
 // Global function for collapsible sections
@@ -2644,5 +2891,10 @@ document.addEventListener('DOMContentLoaded', () => {
 	// Initialize CLI command
 	if (window.app && window.app.updateCLICommand) {
 		window.app.updateCLICommand();
+	}
+
+	// Initialize Snowcat button visibility
+	if (window.app && window.app.updateSnowcatButtonVisibility) {
+		window.app.updateSnowcatButtonVisibility();
 	}
 });

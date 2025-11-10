@@ -9,6 +9,7 @@ const pino = require("pino");
 const { createGcpLoggingPinoConfig } = require("@google-cloud/pino-logging-gcp-config");
 const cookieParser = require('cookie-parser');
 const { validateCloudWriteAccess } = require('../components/parsers.js');
+const { GoogleAuth } = require('google-auth-library');
 
 let { NODE_ENV = "" } = process.env;
 if (!NODE_ENV) NODE_ENV = "local";
@@ -74,6 +75,42 @@ const jobStatuses = new Map(); // jobId -> { status, progress, result, startTime
 const MAX_HEAP_PERCENT = 85;
 const JOB_CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
 const JOB_MAX_AGE = 60 * 60 * 1000; // 1 hour
+
+// Snowcat service configuration
+const SNOWCAT_URL = 'https://snowcat-queuer-lmozz6xkha-uc.a.run.app';
+const SNOWCAT_ENDPOINT = `${SNOWCAT_URL}/import`;
+const auth = new GoogleAuth();
+let cachedSnowcatClient = null;
+
+/**
+ * Gets an authenticated client for making requests to Snowcat service
+ * Uses Application Default Credentials (works in Cloud Run)
+ * @return {Promise<import('google-auth-library').IdTokenClient>}
+ */
+async function getSnowcatClient() {
+	// Return cached client if available
+	if (cachedSnowcatClient) {
+		return cachedSnowcatClient;
+	}
+
+	// Create new authenticated client
+	const maxRetries = 3;
+	for (let i = 0; i < maxRetries; i++) {
+		try {
+			cachedSnowcatClient = await auth.getIdTokenClient(SNOWCAT_URL);
+			logger.info("snowcat client created");
+			return cachedSnowcatClient;
+		} catch (error) {
+			if (i === maxRetries - 1) {
+				logger.error({ err: error }, "failed to create snowcat client");
+				throw error;
+			}
+			// Wait 1 second before retry
+			await new Promise(resolve => setTimeout(resolve, 1000));
+		}
+	}
+	throw new Error("Could not get Snowcat client");
+}
 
 // Execute job over WebSocket
 async function executeJobOverWebSocket(ws, jobId, credentials, options, cloudPaths, transformCode, jobLogger) {
@@ -1220,6 +1257,66 @@ app.post("/dry-run", upload.array("files"), handleMulterError, async (req, res) 
 		res.status(500).json({
 			success: false,
 			error: error.message
+		});
+	}
+});
+
+// Handle Snowcat job requests
+app.post("/snowcat/request", async (req, res) => {
+	try {
+		const jobConfig = req.body;
+
+		logger.info({ jobConfig }, "snowcat request");
+
+		// Validate required fields
+		if (!jobConfig.cloud_path) {
+			return res.status(400).json({
+				success: false,
+				error: "cloud_path is required for Snowcat jobs"
+			});
+		}
+
+		if (!jobConfig.mp_token && !jobConfig.mp_secret) {
+			return res.status(400).json({
+				success: false,
+				error: "Either mp_token or mp_secret is required for Snowcat jobs"
+			});
+		}
+
+		// Make authenticated request to Snowcat service using ADC
+		const client = await getSnowcatClient();
+
+		// Make authenticated request to Snowcat service
+		const response = await client.request({
+			url: SNOWCAT_ENDPOINT,
+			method: 'POST',
+			data: jobConfig,
+			headers: {
+				'Content-Type': 'application/json'
+			}
+		});
+
+		logger.info({ snowcatResponse: response.data }, "snowcat job created");
+
+		// Return Snowcat response to client
+		res.json({
+			success: true,
+			snowcatResponse: response.data,
+			message: "Snowcat job requested successfully"
+		});
+
+	} catch (error) {
+		logger.error({ err: error }, "snowcat request error");
+
+		// Parse error details if available
+		let errorMessage = error.message;
+		if (error.response?.data) {
+			errorMessage = error.response.data.error || error.response.data.message || errorMessage;
+		}
+
+		res.status(500).json({
+			success: false,
+			error: `Snowcat request failed: ${errorMessage}`
 		});
 	}
 });
