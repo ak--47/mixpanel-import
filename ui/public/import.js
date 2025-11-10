@@ -1589,11 +1589,87 @@ function transform(row) {
 			if (directive) options.directive = directive;
 		}
 
+		// Time filtering
+		const epochStart = this.getElementValue('epochStart');
+		const epochEnd = this.getElementValue('epochEnd');
+		const timeOffset = this.getElementValue('timeOffset');
+		if (epochStart) options.epochStart = parseInt(epochStart);
+		if (epochEnd) options.epochEnd = parseInt(epochEnd);
+		if (timeOffset && timeOffset !== '0') options.timeOffset = parseFloat(timeOffset);
+
+		// Event filtering
+		const eventWhitelist = this.getElementValue('eventWhitelist');
+		const eventBlacklist = this.getElementValue('eventBlacklist');
+		if (eventWhitelist) options.eventWhitelist = eventWhitelist.split(',').map(s => s.trim()).filter(s => s);
+		if (eventBlacklist) options.eventBlacklist = eventBlacklist.split(',').map(s => s.trim()).filter(s => s);
+
+		// Property filtering
+		const propKeyWhitelist = this.getElementValue('propKeyWhitelist');
+		const propKeyBlacklist = this.getElementValue('propKeyBlacklist');
+		const propValWhitelist = this.getElementValue('propValWhitelist');
+		const propValBlacklist = this.getElementValue('propValBlacklist');
+		if (propKeyWhitelist) options.propKeyWhitelist = propKeyWhitelist.split(',').map(s => s.trim()).filter(s => s);
+		if (propKeyBlacklist) options.propKeyBlacklist = propKeyBlacklist.split(',').map(s => s.trim()).filter(s => s);
+		if (propValWhitelist) options.propValWhitelist = propValWhitelist.split(',').map(s => s.trim()).filter(s => s);
+		if (propValBlacklist) options.propValBlacklist = propValBlacklist.split(',').map(s => s.trim()).filter(s => s);
+
+		// Property removal and aliases
+		const scrubProps = this.getElementValue('scrubProps');
+		if (scrubProps) options.scrubProps = scrubProps.split(',').map(s => s.trim()).filter(s => s);
+
 		// Add aliases from column mapper (merged with text input, text takes precedence)
 		const currentAliases = this.getCurrentAliases();
 		if (Object.keys(currentAliases).length > 0) {
 			options.aliases = currentAliases;
 		}
+
+		// Insert ID tuple
+		const insertIdTuple = this.getElementValue('insertIdTuple');
+		if (insertIdTuple) options.insertIdTuple = insertIdTuple.split(',').map(s => s.trim()).filter(s => s);
+
+		// Processing options
+		if (this.getElementChecked('fixTime')) options.fixTime = true;
+		if (this.getElementChecked('removeNulls')) options.removeNulls = true;
+		if (this.getElementChecked('flattenData')) options.flattenData = true;
+		if (this.getElementChecked('fixJson')) options.fixJson = true;
+		if (this.getElementChecked('dedupe')) options.dedupe = true;
+
+		// Tags and vendor options (JSON fields)
+		const tags = this.getElementValue('tags');
+		const vendorOpts = this.getElementValue('vendorOpts');
+		if (tags) {
+			try {
+				options.tags = JSON.parse(tags);
+			} catch (e) {
+				console.warn('Invalid tags JSON:', e);
+			}
+		}
+		if (vendorOpts) {
+			try {
+				options.vendorOpts = JSON.parse(vendorOpts);
+			} catch (e) {
+				console.warn('Invalid vendorOpts JSON:', e);
+			}
+		}
+
+		// Performance options
+		const bytesPerBatch = this.getElementValue('bytesPerBatch');
+		const maxRetries = this.getElementValue('maxRetries');
+		const compressionLevel = this.getElementValue('compressionLevel');
+		const streamFormat = this.getElementValue('streamFormat');
+		const transport = this.getElementValue('transport');
+
+		if (bytesPerBatch && bytesPerBatch !== '2000000') options.bytesPerBatch = parseInt(bytesPerBatch);
+		if (maxRetries && maxRetries !== '10') options.maxRetries = parseInt(maxRetries);
+		if (compressionLevel && compressionLevel !== '6') options.compressionLevel = parseInt(compressionLevel);
+		if (streamFormat) options.streamFormat = streamFormat;
+		if (transport && transport !== 'got') options.transport = transport;
+
+		// Advanced options
+		if (this.getElementChecked('forceStream')) options.forceStream = true;
+		if (this.getElementChecked('http2')) options.http2 = true;
+		if (this.getElementChecked('keepBadRecords')) options.keepBadRecords = true;
+		if (this.getElementChecked('manualGc')) options.manualGc = true;
 
 		return options;
 	}

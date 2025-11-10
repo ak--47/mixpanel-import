@@ -976,8 +976,18 @@ app.post("/sample", upload.array("files"), handleMulterError, async (req, res) =
 
 		logger.debug({ maxRecords: opts.maxRecords }, "sampling");
 
+		// For dryRun preview, only need cloud storage credentials (not Mixpanel credentials)
+		// Keep: gcpProjectId, s3Key, s3Secret, s3Region
+		// Remove: token, secret, project, acct, pass, groupKey, lookupTableId, dataGroupId, secondToken
+		const previewCreds = {
+			gcpProjectId: creds.gcpProjectId,
+			s3Key: creds.s3Key,
+			s3Secret: creds.s3Secret,
+			s3Region: creds.s3Region
+		};
+
 		// Run the sample
-		const result = await mixpanelImport(creds, data, opts);
+		const result = await mixpanelImport(previewCreds, data, opts);
 
 		// Clean up temporary files
 		if (req.files && req.files.length > 0) {

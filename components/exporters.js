@@ -342,19 +342,62 @@ async function exportProfiles(folder, job) {
 		options.body = encodedParams.toString();
 	}
 
-	// @ts-ignore
-	let request = await got(options).catch(e => {
+	// Retry logic for initial request - critical for getting session_id
+	let request;
+	let retryCount = 0;
+	const maxRetries = 5;
+	let lastError = null;
+
+	while (retryCount <= maxRetries) {
+		try {
+			// @ts-ignore
+			request = await got(options);
+			break; // Success, exit retry loop
+		} catch (e) {
+			lastError = e;
+			const isRateLimit = e.statusCode === 429;
+			const isServerError = e.statusCode >= 500;
+			const shouldRetry = isRateLimit || isServerError || retryCount < maxRetries;
+
+			if (job.verbose) {
+				console.warn(`Profile export initial request failed (attempt ${retryCount + 1}/${maxRetries + 1}): ${e.message}`);
+			}
+
+			if (!shouldRetry) {
+				job.failed++;
+				job.store({
+					status: e.statusCode,
+					ip: e.ip,
+					url: e.requestUrl,
+					...e.headers,
+					message: e.message
+				}, false);
+				throw e;
+			}
+
+			// Exponential backoff: 1s, 2s, 4s, 8s, 16s
+			const backoffMs = Math.min(1000 * Math.pow(2, retryCount), 30000);
+			if (job.verbose) {
+				console.log(`Retrying in ${backoffMs}ms... (${isRateLimit ? 'rate limit' : isServerError ? 'server error' : 'network error'})`);
+			}
+			await new Promise(resolve => setTimeout(resolve, backoffMs));
+			retryCount++;
+		}
+	}
+
+	// If we exhausted retries, request will still be undefined
+	if (!request) {
 		job.failed++;
-		// Use job.store() to respect abridged mode
 		job.store({
-			status: e.statusCode,
-			ip: e.ip,
-			url: e.requestUrl,
-			...e.headers,
-			message: e.message
+			status: lastError?.statusCode,
+			ip: lastError?.ip,
+			url: lastError?.requestUrl,
+			...lastError?.headers,
+			message: lastError?.message || 'Request failed after retries'
 		}, false);
-		throw e;
-	});
+		throw lastError || new Error('Profile export initial request failed after retries');
+	}
+
 	let response = request.body;
 
 
@@ -417,18 +460,61 @@ async function exportProfiles(folder, job) {
 		// @ts-ignore
 		options.searchParams.session_id = session_id;
 
-		// @ts-ignore
-		request = await got(options).catch(e => {
+		// Retry logic for pagination requests - critical for maintaining session
+		let retryCount = 0;
+		const maxRetries = 5;
+		let lastError = null;
+
+		while (retryCount <= maxRetries) {
+			try {
+				// @ts-ignore
+				request = await got(options);
+				break; // Success, exit retry loop
+			} catch (e) {
+				lastError = e;
+				const isRateLimit = e.statusCode === 429;
+				const isServerError = e.statusCode >= 500;
+				const shouldRetry = isRateLimit || isServerError || retryCount < maxRetries;
+
+				if (job.verbose) {
+					console.warn(`Profile pagination request failed (page ${page}, attempt ${retryCount + 1}/${maxRetries + 1}): ${e.message}`);
+				}
+
+				if (!shouldRetry) {
+					job.failed++;
+					job.store({
+						status: e.statusCode,
+						ip: e.ip,
+						url: e.requestUrl,
+						...e.headers,
+						message: e.message
+					}, false);
+					throw e;
+				}
+
+				// Exponential backoff: 1s, 2s, 4s, 8s, 16s
+				const backoffMs = Math.min(1000 * Math.pow(2, retryCount), 30000);
+				if (job.verbose) {
+					console.log(`Retrying in ${backoffMs}ms... (${isRateLimit ? 'rate limit' : isServerError ? 'server error' : 'network error'})`);
+				}
+				await new Promise(resolve => setTimeout(resolve, backoffMs));
+				retryCount++;
+			}
+		}
+
+		// If we exhausted retries, request will still be undefined
+		if (!request) {
 			job.failed++;
-			// Use job.store() to respect abridged mode
 			job.store({
-				status: e.statusCode,
-				ip: e.ip,
-				url: e.requestUrl,
-				...e.headers,
-				message: e.message
+				status: lastError?.statusCode,
+				ip: lastError?.ip,
+				url: lastError?.requestUrl,
+				...lastError?.headers,
+				message: lastError?.message || 'Request failed after retries'
 			}, false);
-		});
+			throw lastError || new Error('Profile pagination request failed after retries');
+		}
+
 		response = request.body;
 
 		//update config
