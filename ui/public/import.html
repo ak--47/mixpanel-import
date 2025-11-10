@@ -967,6 +967,14 @@
 					<span class="btn-icon">🚀</span>
 					Start Import
 				</button>
+			<button type="button"
+				id="snowcat-btn"
+				class="btn btn-snowcat"
+				style="display: none;"
+				title="Request a Snowcat job for large-scale imports">
+				<span class="btn-icon">❄️🐱</span>
+				Request Snowcat Job
+			</button>
 			</section>
 
 			<!-- Loading State -->
@@ -1001,6 +1009,34 @@
 						class="results-data"></div>
 				</div>
 			</div>
+
+		<!-- Snowcat Job Modal -->
+		<div id="snowcat-modal" class="modal" style="display: none;">
+			<div class="modal-overlay" onclick="window.app.closeSnowcatModal()"></div>
+			<div class="modal-content snowcat-modal-content">
+				<div class="modal-header">
+					<h2>❄️🐱 Request Snowcat Job</h2>
+					<button type="button" class="modal-close" onclick="window.app.closeSnowcatModal()">✕</button>
+				</div>
+				<div class="modal-body">
+					<p class="section-description">
+						Review and edit the Snowcat job configuration below. This will create a managed, large-scale import job with controlled concurrency.
+						<strong>Note:</strong> The job will be queued for manual approval before execution.
+					</p>
+					<div class="snowcat-editor-container">
+						<label for="snowcat-json-editor">Snowcat Job Configuration (JSON)</label>
+						<textarea id="snowcat-json-editor" class="snowcat-json-editor" rows="25"></textarea>
+					</div>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn btn-ghost" onclick="window.app.closeSnowcatModal()">Cancel</button>
+					<button type="button" id="snowcat-request-btn" class="btn btn-primary">
+						<span class="btn-icon">📨</span>
+						Request Job
+					</button>
+				</div>
+			</div>
+		</div>
 		</form>
 	</div>
 
