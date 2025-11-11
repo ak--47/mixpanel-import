@@ -126,8 +126,6 @@ class Job {
 
 		/** @type {string} group key id */
 		this.groupKey = safeCreds.groupKey || (opts.groupKey ? String(opts.groupKey) : '') || ``;
-		/** @type {string} resolved authentication info */
-		this.auth = this.resolveProjInfo();
 
 		/** @type {string} start time of the job */
 		this.startTime = new Date().toISOString();
@@ -307,6 +305,10 @@ class Job {
 		this.dedupe = u.isNil(opts.dedupe) ? false : opts.dedupe; //remove duplicate records
 		this.createProfiles = u.isNil(opts.createProfiles) ? false : opts.createProfiles; //remove duplicate records
 		this.dryRun = u.isNil(opts.dryRun) ? false : opts.dryRun; //don't actually send data
+
+		/** @type {string} resolved authentication info - MUST be set after dryRun to allow empty auth for previews */
+		this.auth = this.resolveProjInfo();
+
 		this.http2 = u.isNil(opts.http2) ? false : opts.http2; //use http2
 		this.addToken = u.isNil(opts.addToken) ? false : opts.addToken; //add token to each record
 		this.isGzip = u.isNil(opts.isGzip) ? false : opts.isGzip; //force treat input as gzipped (overrides extension detection)
