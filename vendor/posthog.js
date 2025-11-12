@@ -53,7 +53,7 @@ function postHogEventsToMp(options, heavyObjects) {
 		personMap = heavyObjects.people;
 	}
 	else {
-		console.warn("heavyObjects.people is empty, id mgmt is not possible");
+		// console.warn("heavyObjects.people is empty, id mgmt is not possible");
 		personMap = new Map();
 	}
 

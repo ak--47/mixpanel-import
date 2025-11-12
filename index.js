@@ -114,7 +114,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 		l(`║   • High Water Mark: ${String(job.highWater).padEnd(43)}║`);
 		l(`║   • Records per Batch: ${u.comma(job.recordsPerBatch).padEnd(41)}║`);
 		l(`║   • Bytes per Batch: ${u.bytesHuman(job.bytesPerBatch).padEnd(43)}║`);
-		l(`║   • Compression: ${job.compress ? 'Enabled' : 'Disabled'.padEnd(47)}║`);
+		l(`║   • Compression: ${(job.compress ? 'Enabled' : 'Disabled').padEnd(47)}║`);
 
 		// Data processing options
 		if (job.vendor || job.transformFunc || job.fixData || job.fixTime || job.removeNulls) {
@@ -135,7 +135,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 		if (job.recordType.includes('export')) {
 			l(`║                                                                  ║`);
 			l(`║ Export Settings:                                                ║`);
-			l(`║   • Export Mode: ${job.where ? (job.where.startsWith('gs://') ? '☁️  GCS' : job.where.startsWith('s3://') ? '☁️  S3' : '💾 Local') : '💾 Local'.padEnd(47)}║`);
+			l(`║   • Export Mode: ${(job.where ? (job.where.startsWith('gs://') ? '☁️  GCS' : job.where.startsWith('s3://') ? '☁️  S3' : '💾 Local') : '💾 Local').padEnd(47)}║`);
 			if (job.params && Object.keys(job.params).length > 0) {
 				const paramCount = Object.keys(job.params).length;
 				l(`║   • Export Params: ${String(paramCount) + ' parameter' + (paramCount > 1 ? 's' : '').padEnd(45)}║`);
