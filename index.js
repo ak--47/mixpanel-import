@@ -105,9 +105,9 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 		l(`║                     CONFIGURATION SUMMARY                       ║`);
 		l(`╠════════════════════════════════════════════════════════════════╣`);
 		l(`║ Pipeline Configuration:                                         ║`);
-		l(`║   • Record Type: ${job.recordType.padEnd(47)}║`);
-		l(`║   • Region: ${job.region.toUpperCase().padEnd(52)}║`);
-		l(`║   • Stream Format: ${job.streamFormat.padEnd(45)}║`);
+		l(`║   • Record Type: ${job.recordType.padEnd(46)}║`);
+		l(`║   • Region: ${job.region.toUpperCase().padEnd(51)}║`);
+		l(`║   • Stream Format: ${job.streamFormat.padEnd(44)}║`);
 		l(`║                                                                  ║`);
 		l(`║ Performance Settings:                                           ║`);
 		l(`║   • Workers: ${String(job.workers).padEnd(51)}║`);
@@ -122,7 +122,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 			l(`║ Data Processing:                                                ║`);
 			if (job.vendor) {
 				const vendorText = `${job.vendor.toUpperCase()} vendor transform`;
-				l(`║   • Vendor: ${vendorText.padEnd(52)}║`);
+				l(`║   • Vendor: ${vendorText.padEnd(51)}║`);
 			}
 			if (job.transformFunc) l(`║   • Custom Transform: Enabled                                   ║`);
 			if (job.fixData) l(`║   • Fix Data: Enabled                                           ║`);
@@ -138,7 +138,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 			l(`║   • Export Mode: ${(job.where ? (job.where.startsWith('gs://') ? '☁️  GCS' : job.where.startsWith('s3://') ? '☁️  S3' : '💾 Local') : '💾 Local').padEnd(47)}║`);
 			if (job.params && Object.keys(job.params).length > 0) {
 				const paramCount = Object.keys(job.params).length;
-				l(`║   • Export Params: ${String(paramCount) + ' parameter' + (paramCount > 1 ? 's' : '').padEnd(45)}║`);
+				l(`║   • Export Params: ${(String(paramCount) + ' parameter' + (paramCount > 1 ? 's' : '')).padEnd(45)}║`);
 			}
 		}
 
