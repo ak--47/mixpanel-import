@@ -69,45 +69,54 @@ class BufferQueue extends EventEmitter {
 			highWaterMark: objectMode ? 16 : 64 * 1024, // 16 objects or 64KB for bytes
 
 			write(chunk, encoding, callback) {
-				// Add to queue
-				const size = self._getObjectSize(chunk);
-				self.queue.push({ data: chunk, size });
-				self.queueSizeBytes += size;
-				self.objectsQueued++;
+				// Catch any errors during queue operations
+				try {
+					// Add to queue
+					const size = self._getObjectSize(chunk);
+					self.queue.push({ data: chunk, size });
+					self.queueSizeBytes += size;
+					self.objectsQueued++;
 
-				// Check heap memory and queue size
-				const heapUsedMB = process.memoryUsage().heapUsed / 1024 / 1024;
-				const queueSizeMB = self.queueSizeBytes / 1024 / 1024;
+					// Check heap memory and queue size
+					const heapUsedMB = process.memoryUsage().heapUsed / 1024 / 1024;
+					const queueSizeMB = self.queueSizeBytes / 1024 / 1024;
 
-				// Pause if EITHER heap memory OR queue size exceeds threshold
-				if (heapUsedMB > self.pauseThresholdMB || queueSizeMB > self.pauseThresholdMB) {
+					// Pause if EITHER heap memory OR queue size exceeds threshold
+					if (heapUsedMB > self.pauseThresholdMB || queueSizeMB > self.pauseThresholdMB) {
+						if (!self.isPaused) {
+							self._pauseSource(heapUsedMB);
+						}
+
+						// Store callback to call later when buffer drains
+						if (!self.pendingCallbacks) {
+							self.pendingCallbacks = [];
+						}
+						self.pendingCallbacks.push(callback);
+
+						if (self.verbose) {
+							console.log(`    🔄 BufferQueue: Storing callback #${self.pendingCallbacks.length}, not calling it (creates backpressure)`);
+						}
+
+						// DON'T call callback yet - this creates backpressure
+						// The callback will be called when the buffer drains
+						// But DO keep processing the queue so pipeline drains to Mixpanel!
+						self._processQueue(); // Keep draining even while paused
+						return; // Return after triggering process
+					} else {
+						// Buffer has space, accept more data
+						callback();
+					}
+
+					// Trigger processing only if we're not paused
 					if (!self.isPaused) {
-						self._pauseSource(heapUsedMB);
+						self._processQueue();
 					}
-
-					// Store callback to call later when buffer drains
-					if (!self.pendingCallbacks) {
-						self.pendingCallbacks = [];
-					}
-					self.pendingCallbacks.push(callback);
-
-					if (self.verbose) {
-						console.log(`    🔄 BufferQueue: Storing callback #${self.pendingCallbacks.length}, not calling it (creates backpressure)`);
-					}
-
-					// DON'T call callback yet - this creates backpressure
-					// The callback will be called when the buffer drains
-					// But DO keep processing the queue so pipeline drains to Mixpanel!
-					self._processQueue(); // Keep draining even while paused
-					return; // Return after triggering process
-				} else {
-					// Buffer has space, accept more data
-					callback();
-				}
-
-				// Trigger processing only if we're not paused
-				if (!self.isPaused) {
-					self._processQueue();
+				} catch (error) {
+					console.error('\n❌ BufferQueue Write Error:');
+					console.error('Error:', error.message);
+					console.error('Stack:', error.stack);
+					// Propagate error to caller
+					callback(error);
 				}
 			},
 
@@ -166,6 +175,7 @@ class BufferQueue extends EventEmitter {
 
 	/**
 	 * Process queue - move data from queue to output
+	 * CRITICAL: This method must be robust against errors to prevent silent failures
 	 */
 	_processQueue() {
 		// Allow re-entrance for resuming pending callbacks
@@ -173,6 +183,7 @@ class BufferQueue extends EventEmitter {
 		this.processing = true;
 
 		try {
+			// Wrapped entire function in try/catch to prevent unhandled errors
 			// Check if we should resume pending callbacks
 			if (this.isPaused && this.pendingCallbacks && this.pendingCallbacks.length > 0) {
 				const heapUsedMB = process.memoryUsage().heapUsed / 1024 / 1024;
@@ -277,6 +288,21 @@ class BufferQueue extends EventEmitter {
 				}
 			}
 
+		} catch (error) {
+			console.error('\n❌ BufferQueue Process Error:');
+			console.error('Error:', error.message);
+			console.error('Stack:', error.stack);
+			console.error('Queue state:', {
+				queueLength: this.queue.length,
+				queueSizeMB: (this.queueSizeBytes / 1024 / 1024).toFixed(2),
+				isPaused: this.isPaused,
+				sourceEnded: this.sourceEnded,
+				pendingCallbacks: this.pendingCallbacks ? this.pendingCallbacks.length : 0
+			});
+			// Try to propagate error to sink
+			if (this.sinkStream && !this.sinkStream.destroyed) {
+				this.sinkStream.destroy(error);
+			}
 		} finally {
 			this.processing = false;
 		}

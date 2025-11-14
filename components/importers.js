@@ -8,13 +8,37 @@ const HTTP_AGENT = new https.Agent({ keepAlive: true, maxSockets: 50 });
 const { Pool } = require('undici');
 
 // Add global error handlers to catch undici issues
+// IMPORTANT: Log but DON'T exit - let the application handle errors gracefully
+let unhandledRejectionCount = 0;
+let uncaughtExceptionCount = 0;
+
 process.on('unhandledRejection', (reason, promise) => {
-	console.error('[UNDICI] Unhandled Rejection at:', promise, 'reason:', reason);
+	unhandledRejectionCount++;
+	console.error(`\n❌ [ERROR #${unhandledRejectionCount}] Unhandled Promise Rejection:`);
+	console.error('Reason:', reason);
+	console.error('Promise:', promise);
+	console.error('Stack:', reason?.stack || 'No stack trace available');
+	console.error('This error was caught but the process will continue.\n');
+
+	// Only exit if we get too many errors in a short time (likely fatal)
+	if (unhandledRejectionCount > 10) {
+		console.error('❌ Too many unhandled rejections (>10). Exiting to prevent corruption.');
+		process.exit(1);
+	}
 });
 
 process.on('uncaughtException', (error) => {
-	console.error('[UNDICI] Uncaught Exception:', error);
-	process.exit(1);
+	uncaughtExceptionCount++;
+	console.error(`\n❌ [ERROR #${uncaughtExceptionCount}] Uncaught Exception:`);
+	console.error('Error:', error);
+	console.error('Stack:', error?.stack || 'No stack trace available');
+	console.error('This error was caught but the process will continue.\n');
+
+	// Only exit if we get too many errors in a short time (likely fatal)
+	if (uncaughtExceptionCount > 10) {
+		console.error('❌ Too many uncaught exceptions (>10). Exiting to prevent corruption.');
+		process.exit(1);
+	}
 });
 
 // Undici pool settings - shared across all jobs

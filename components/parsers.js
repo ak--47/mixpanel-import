@@ -1378,6 +1378,16 @@ async function createGCSJSONStream(gcsPath, job) {
 			// Note: highWaterMark is not a valid option for GCS createReadStream
 		});
 
+		// CRITICAL: Add error handler immediately to prevent unhandled errors
+		gcsReadStream.on('error', (error) => {
+			console.error(`\n❌ GCS Stream Error for ${gcsPath}:`);
+			console.error('Error:', error.message);
+			console.error('Code:', error.code);
+			console.error('Stack:', error.stack);
+			console.error('This error will propagate through the pipeline.\n');
+			// Error will propagate naturally through the pipe chain
+		});
+
 		// Add buffer queue for memory-based throttling if requested
 		if (job.throttleGCS || job.throttleMemory) {
 			const { BufferQueue } = require('./buffer-queue');
@@ -1408,11 +1418,29 @@ async function createGCSJSONStream(gcsPath, job) {
 					level: zlib.constants.Z_DEFAULT_COMPRESSION,
 					memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
 				});
+				// Add error handler to gunzip stream
+				gunzip.on('error', (error) => {
+					console.error(`\n❌ Gunzip Error for ${gcsPath}:`);
+					console.error('Error:', error.message);
+					console.error('This may indicate corrupted gzip data.\n');
+				});
 				outputPipeline = outputPipeline.pipe(gunzip);
 			}
 
 			// Convert to NDJSON object stream
-			return outputPipeline.pipe(new JsonlObjectStream(job));
+			const jsonlStream = new JsonlObjectStream(job);
+			// Add warning listener to catch parse errors
+			jsonlStream.on('warning', (msg) => {
+				if (job.verbose) {
+					console.warn(`⚠️  ${msg}`);
+				}
+			});
+			// Add error handler
+			jsonlStream.on('error', (error) => {
+				console.error(`\n❌ JSONL Parse Error for ${gcsPath}:`);
+				console.error('Error:', error.message);
+			});
+			return outputPipeline.pipe(jsonlStream);
 		}
 
 		// No throttling - standard pipeline
@@ -1426,11 +1454,29 @@ async function createGCSJSONStream(gcsPath, job) {
 				level: zlib.constants.Z_DEFAULT_COMPRESSION,
 				memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
 			});
+			// Add error handler to gunzip stream
+			gunzip.on('error', (error) => {
+				console.error(`\n❌ Gunzip Error for ${gcsPath}:`);
+				console.error('Error:', error.message);
+				console.error('This may indicate corrupted gzip data.\n');
+			});
 			pipeline = pipeline.pipe(gunzip);
 		}
 
 		// Convert to NDJSON object stream with tunable performance (no throttling)
-		return pipeline.pipe(new JsonlObjectStream(job));
+		const jsonlStream = new JsonlObjectStream(job);
+		// Add warning listener to catch parse errors
+		jsonlStream.on('warning', (msg) => {
+			if (job.verbose) {
+				console.warn(`⚠️  ${msg}`);
+			}
+		});
+		// Add error handler
+		jsonlStream.on('error', (error) => {
+			console.error(`\n❌ JSONL Parse Error for ${gcsPath}:`);
+			console.error('Error:', error.message);
+		});
+		return pipeline.pipe(jsonlStream);
 
 	} catch (error) {
 		throw new Error(`Error creating GCS JSON stream: ${error.message}`);
@@ -1481,6 +1527,15 @@ async function createGCSCSVStream(gcsPath, job) {
 			// Note: highWaterMark is not a valid option for GCS createReadStream
 		});
 
+		// CRITICAL: Add error handler immediately to prevent unhandled errors
+		gcsReadStream.on('error', (error) => {
+			console.error(`\n❌ GCS CSV Stream Error for ${gcsPath}:`);
+			console.error('Error:', error.message);
+			console.error('Code:', error.code);
+			console.error('Stack:', error.stack);
+			// Error will propagate naturally through the pipe chain
+		});
+
 		let sourceStream;
 
 		// Add buffer queue for memory-based throttling if requested
@@ -1511,6 +1566,11 @@ async function createGCSCSVStream(gcsPath, job) {
 					level: zlib.constants.Z_DEFAULT_COMPRESSION,
 					memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
 				});
+				// Add error handler to gunzip stream
+				gunzip.on('error', (error) => {
+					console.error(`\n❌ CSV Gunzip Error for ${gcsPath}:`);
+					console.error('Error:', error.message);
+				});
 				sourceStream = queueOutput.pipe(gunzip);
 			} else {
 				sourceStream = queueOutput;
@@ -1526,6 +1586,11 @@ async function createGCSCSVStream(gcsPath, job) {
 					windowBits: GCS_STREAMING_CONFIG.GZIP_WINDOW_BITS,
 					level: zlib.constants.Z_DEFAULT_COMPRESSION,
 					memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
+				});
+				// Add error handler to gunzip stream
+				gunzip.on('error', (error) => {
+					console.error(`\n❌ CSV Gunzip Error for ${gcsPath}:`);
+					console.error('Error:', error.message);
 				});
 				sourceStream = sourceStream.pipe(gunzip);
 			}
@@ -1550,22 +1615,39 @@ async function createGCSCSVStream(gcsPath, job) {
 			objectMode: true,
 			highWaterMark: job.highWater,
 			transform: (chunk, _encoding, callback) => {
-				const { distinct_id = "", $insert_id = "", time = 0, event, ...props } = chunk;
-				const mixpanelEvent = {
-					event,
-					properties: {
-						distinct_id,
-						$insert_id,
-						time: dayjs.utc(time).valueOf(),
-						...props
-					}
-				};
-				if (!distinct_id) delete mixpanelEvent.properties.distinct_id;
-				if (!$insert_id) delete mixpanelEvent.properties.$insert_id;
-				if (!time) delete mixpanelEvent.properties.time;
+				try {
+					const { distinct_id = "", $insert_id = "", time = 0, event, ...props } = chunk;
+					const mixpanelEvent = {
+						event,
+						properties: {
+							distinct_id,
+							$insert_id,
+							time: dayjs.utc(time).valueOf(),
+							...props
+						}
+					};
+					if (!distinct_id) delete mixpanelEvent.properties.distinct_id;
+					if (!$insert_id) delete mixpanelEvent.properties.$insert_id;
+					if (!time) delete mixpanelEvent.properties.time;
 
-				callback(null, mixpanelEvent);
+					callback(null, mixpanelEvent);
+				} catch (error) {
+					console.error(`\n❌ CSV Transform Error for ${gcsPath}:`);
+					console.error('Error:', error.message);
+					console.error('Chunk:', chunk);
+					callback(error);
+				}
 			}
+		});
+
+		// Add error handlers to CSV parser and transformer
+		csvParser.on('error', (error) => {
+			console.error(`\n❌ CSV Parser Error for ${gcsPath}:`);
+			console.error('Error:', error.message);
+		});
+		transformer.on('error', (error) => {
+			console.error(`\n❌ CSV Transformer Error for ${gcsPath}:`);
+			console.error('Error:', error.message);
 		});
 
 		// Pipe: Source Stream -> CSV Parser -> Transform -> Output
@@ -1620,6 +1702,15 @@ async function createGCSParquetStream(gcsPath, job) {
 			// Note: highWaterMark is not a valid option for GCS createReadStream
 		});
 
+		// CRITICAL: Add error handler immediately to prevent unhandled errors
+		gcsReadStream.on('error', (error) => {
+			console.error(`\n❌ GCS Parquet Stream Error for ${gcsPath}:`);
+			console.error('Error:', error.message);
+			console.error('Code:', error.code);
+			console.error('Stack:', error.stack);
+			// Error will propagate naturally through the pipe chain
+		});
+
 		// Handle gzip decompression for .parquet.gz files
 		if (isGzipped) {
 			const gunzip = zlib.createGunzip({
@@ -1627,6 +1718,11 @@ async function createGCSParquetStream(gcsPath, job) {
 				windowBits: GCS_STREAMING_CONFIG.GZIP_WINDOW_BITS,
 				level: zlib.constants.Z_DEFAULT_COMPRESSION,
 				memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
+			});
+			// Add error handler to gunzip stream
+			gunzip.on('error', (error) => {
+				console.error(`\n❌ Parquet Gunzip Error for ${gcsPath}:`);
+				console.error('Error:', error.message);
 			});
 			gcsReadStream = gcsReadStream.pipe(gunzip);
 		}
@@ -1838,24 +1934,40 @@ async function createMultiGCSStream(gcsPaths, job) {
 			// Create stream for this file
 			const fileStream = await createGCSStream(gcsPath, job);
 
-			// Pipe this file's data to our output stream
+			// Pipe this file's data to our output stream with backpressure handling
 			fileStream.on('data', (data) => {
-				output.write(data);
+				// Handle backpressure properly
+				if (!output.write(data)) {
+					fileStream.pause();
+					output.once('drain', () => {
+						fileStream.resume();
+					});
+				}
 			});
 
 			fileStream.on('end', () => {
+				if (job.verbose) {
+					console.log(`✅ Completed ${gcsPath} (${processedCount + 1}/${gcsPaths.length})`);
+				}
 				processedCount++;
 				setImmediate(processNextFile);
 			});
 
 			fileStream.on('error', (error) => {
-				console.warn(`Error reading file ${gcsPath}: ${error.message}`);
+				console.error(`\n❌ Multi-file GCS Error for ${gcsPath}:`);
+				console.error('Error:', error.message);
+				console.error('Code:', error.code);
+				console.error('File:', processedCount + skippedCount + 1, 'of', gcsPaths.length);
+				console.error('Skipping and continuing...\n');
 				skippedCount++;
 				setImmediate(processNextFile);
 			});
 
 		} catch (error) {
-			console.warn(`Error processing file ${gcsPath}: ${error.message}`);
+			console.error(`\n❌ Stream Creation Error for ${gcsPath}:`);
+			console.error('Error:', error.message);
+			console.error('Stack:', error.stack);
+			console.error('Skipping and continuing...\n');
 			skippedCount++;
 			setImmediate(processNextFile);
 		}
