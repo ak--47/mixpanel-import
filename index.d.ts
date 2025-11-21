@@ -37,11 +37,7 @@ declare namespace main {
     | "profile-export"
     | "profile-delete"
     | "group-export"
-    | "group-delete"
-    | "events"
-    | "users"
-    | "groups"
-    | "tables"
+    | "group-delete"   
     | "scd"
     | "annotations"
     | "get-annotations"
@@ -1324,6 +1320,7 @@ declare namespace main {
 	ignore_events?: string[]; // ignore these events
 	ignore_props?: string[]; // strip these properties
 	identify_events?: string[];
+	directive?: ProfileOperation;
   }
 
   /**

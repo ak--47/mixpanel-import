@@ -230,6 +230,16 @@ function postHogEventsToMp(options, heavyObjects) {
 function postHogPersonToMpProfile(options, heavyObjects = {}) {
 	// let personMap;
 
+	const { directive = "$set", ignore_props = ["$creator_event_uuid"] } = options;
+	const deleteKeyPrefixes = [
+		"token",
+		...ignore_props
+	];
+
+	// Build regex pattern for property deletion - compiled ONCE
+	const deletePropPattern = new RegExp(
+		`^(${deleteKeyPrefixes.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`
+	);
 	// if (heavyObjects.people) {
 	// 	personMap = heavyObjects.people;
 	// }
@@ -241,28 +251,60 @@ function postHogPersonToMpProfile(options, heavyObjects = {}) {
 
 	return function transform(postHogPerson) {
 		const {
-			person_id: distinct_id,
+			distinct_id,
 			created_at,
-			team_id,
+			properties: postHogUserProperties,
+			...otherProps
 		} = postHogPerson;
 
 		if (!distinct_id) return {};
-		const postHogProperties = JSON.parse(postHogPerson.properties) || {};
-
+		// if (distinct_id.includes("-")) debugger;
 		const mpProps = {};
 
-		loopProps: for (const key in postHogProperties) {
-			if (key.startsWith("$")) continue loopProps;
-			if (!postHogProperties[key]) continue loopProps;
-			mpProps[`posthog_${key}`] = postHogProperties[key];
+
+		// first loop through defaults
+		for (const [postHogKey, mpKey] of postHogMixProfilePairs) {
+			if (!postHogKey) continue;
+			const value = postHogUserProperties[postHogKey];
+			if (value == null) continue;
+			mpProps[mpKey] = value;
+		}
+
+		// then loop through remaining props
+		for (const key in postHogUserProperties) {
+			// skip already-mapped keys
+			if (postHogMixProfilePairs.some(([phKey, _]) => phKey === key)) continue;
+
+			// delete ignored props w/regex
+			if (deletePropPattern.test(key)) {
+				continue;
+			}
+
+			// add remaining props as-is
+			const value = postHogUserProperties[key];
+			if (value == null) continue;
+			mpProps[key] = value;
 		}
 
 		const mpProfile = {
 			$distinct_id: distinct_id,
-			created_at: dayjs.unix(created_at).toISOString(),
-			team_id,
-			...mpProps
+			[directive]: {
+				$created: dayjs.unix(created_at).toISOString(),
+				...mpProps
+			}
 		};
+
+		// $latitude and $longitude are top level if they exist
+		addIfDefined(mpProfile, "$latitude", postHogUserProperties["$initial_geoip_latitude"]);
+		addIfDefined(mpProfile, "$longitude", postHogUserProperties["$initial_geoip_longitude"]);
+		addIfDefined(mpProfile, "$latitude", postHogUserProperties["$geoip_latitude"]);
+		addIfDefined(mpProfile, "$longitude", postHogUserProperties["$geoip_longitude"]);
+		
+
+		// don't send empty profiles
+		if (Object.keys(mpProfile[directive]).length <= 1) {
+			return null;
+		}
 
 		return mpProfile;
 	};
@@ -275,9 +317,7 @@ RANDOM
 ----
 */
 
-//amp to mp default props
-// ? https://developers.amplitude.com/docs/identify-api
-// ? https://help.mixpanel.com/hc/en-us/articles/115004613766-Default-Properties-Collected-by-Mixpanel
+
 const postHogMixPairs = [
 	["app_version", "$app_version_string"],
 	["os_name", "$os"],
@@ -290,6 +330,49 @@ const postHogMixPairs = [
 	["city", "$city"]
 ];
 
+// mapping of posthog person fields to mixpanel profile fields
+// posthog: https://posthog.com/docs/product-analytics/person-properties
+// mixpanel: https://docs.mixpanel.com/docs/data-structure/property-reference/default-properties
+const postHogMixProfilePairs = [
+	// --- Standard User Data (Manually set in PostHog, but standard keys) ---
+	// ["created_at", "$created"],    // PostHog usually uses "created_at" in the DB, Mixpanel uses "$created"
+	["name", "$name"],             // Convention: Not auto-captured
+	["first_name", "$first_name"], // Convention: Not auto-captured
+	["last_name", "$last_name"],   // Convention: Not auto-captured
+	["email", "$email"],           // Convention: Not auto-captured
+	["phone", "$phone"],           // Convention: Not auto-captured
+	["avatar", "$avatar"],         // Convention: Not auto-captured
+
+	// --- GeoIP / Location Data (Auto-captured by PostHog) ---
+	["$geoip_city_name", "$city"],
+	["$geoip_subdivision_1_name", "$region"], // Maps State/Province to Region
+	["$geoip_country_code", "$country_code"],
+	[null, "$locale"],             // Not auto-captured on PostHog Person Profile
+	[null, "$geo_source"],         // Not a standard PostHog concept
+	["$geoip_time_zone", "$timezone"],
+
+	// --- Tech / System Data ---
+	["$os", "$os"],
+	["$browser", "$browser"],
+	["$browser_version", "$browser_version"],
+
+	// --- Attribution / First Touch (Auto-captured by PostHog) ---
+	["$initial_referrer", "$initial_referrer"],
+	["$initial_referring_domain", "$initial_referring_domain"],
+	["$initial_utm_source", "initial_utm_source"],
+	["$initial_utm_medium", "initial_utm_medium"],
+	["$initial_utm_campaign", "initial_utm_campaign"],
+	["$initial_utm_content", "initial_utm_content"],
+	["$initial_utm_term", "initial_utm_term"], // Note: Not in your doc dump, but is standard PostHog capture
+
+	// --- Mobile Hardware Data ---
+	// PostHog captures these on EVENTS, not usually on the PERSON profile by default.
+	// Use specific event property mapping if needed, otherwise leave null for Profile sync.
+	[null, "$android_manufacturer"],
+	[null, "$android_brand"],
+	[null, "$android_model"],
+	[null, "$ios_device_model"]
+];
 
 function addIfDefined(target, key, value) {
 	if (value != null) target[key] = value;
