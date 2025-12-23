@@ -321,6 +321,10 @@ async function determineDataType(data, job) {
 	// ALL OTHER PARSING
 	let parsingError;
 	try {
+		if (Array.isArray(data) && data.every(item => typeof item === 'object' && item !== null)) {
+			job.wasStream = true;
+			return stream.Readable.from(data, { objectMode: true, highWaterMark: job.highWater });
+		}
 		const { supportedFileExt, streamFormat, forceStream, highWater } = job;
 		let isArrayOfFileNames = false; // !ugh ... so disorganized 
 		//data might be an array of filenames

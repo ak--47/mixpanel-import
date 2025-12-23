@@ -187,6 +187,8 @@ describe("filenames", () => {
 		}
 	);
 
+	
+
 	test(
 		"scd (group)",
 		async () => {
@@ -353,6 +355,16 @@ describe("in memory", () => {
 
 		}, longTimeout
 	);
+
+	test("scd", async () => {
+		const testData = [{"distinct_id":"f199b80b-a017-5f8b-a850-af1f4b691625","role":"admin","startTime":"2025-12-21T05:00:00.000Z","insertTime":"2025-12-21T07:01:42.000Z","time":"2025-12-21T05:00:00.000Z"},{"distinct_id":"f199b80b-a017-5f8b-a850-af1f4b691625","role":"user","startTime":"2025-12-21T03:14:38.000Z","insertTime":"2025-12-21T05:33:08.000Z","time":"2025-12-21T03:14:38.000Z"},{"distinct_id":"f199b80b-a017-5f8b-a850-af1f4b691625","role":"view only","startTime":"2025-12-22T02:40:42.000Z","insertTime":"2025-12-22T03:21:43.000Z","time":"2025-12-22T02:40:42.000Z"},{"distinct_id":"f199b80b-a017-5f8b-a850-af1f4b691625","role":"admin","startTime":"2025-12-22T00:38:50.000Z","insertTime":"2025-12-22T02:46:03.000Z","time":"2025-12-22T00:38:50.000Z"},{"distinct_id":"f199b80b-a017-5f8b-a850-af1f4b691625","role":"admin","startTime":"2025-12-23T00:34:19.000Z","insertTime":"2025-12-23T02:07:44.000Z","time":"2025-12-23T00:34:19.000Z"},{"distinct_id":"59668db3-6b2d-5bbd-8ea1-4d875d05e477","role":"admin","startTime":"2025-12-04T05:00:00.000Z","insertTime":"2025-12-04T07:07:11.000Z","time":"2025-12-04T05:00:00.000Z"},{"distinct_id":"59668db3-6b2d-5bbd-8ea1-4d875d05e477","role":"view only","startTime":"2025-12-05T04:04:25.000Z","insertTime":"2025-12-05T05:19:36.000Z","time":"2025-12-05T04:04:25.000Z"},{"distinct_id":"59668db3-6b2d-5bbd-8ea1-4d875d05e477","role":"collaborator","startTime":"2025-12-21T02:11:36.000Z","insertTime":"2025-12-21T03:22:42.000Z","time":"2025-12-21T02:11:36.000Z"},{"distinct_id":"6dcfcf7a-8121-5704-b551-bd9bae89cebd","role":"admin","startTime":"2025-12-02T05:00:00.000Z","insertTime":"2025-12-02T06:37:34.000Z","time":"2025-12-02T05:00:00.000Z"},{"distinct_id":"6dcfcf7a-8121-5704-b551-bd9bae89cebd","role":"user","startTime":"2025-12-14T03:48:15.000Z","insertTime":"2025-12-14T06:03:30.000Z","time":"2025-12-14T03:48:15.000Z"},{"distinct_id":"6dcfcf7a-8121-5704-b551-bd9bae89cebd","role":"admin","startTime":"2025-12-20T02:06:45.000Z","insertTime":"2025-12-20T04:03:29.000Z","time":"2025-12-20T02:06:45.000Z"},{"distinct_id":"b834459c-c641-54b5-b6c9-361e693df7fc","role":"admin","startTime":"2025-11-28T05:00:00.000Z","insertTime":"2025-11-28T07:26:31.000Z","time":"2025-11-28T05:00:00.000Z"},{"distinct_id":"44c4aa20-6aa0-55b5-859d-02898b0ae3d9","role":"view only","startTime":"2025-12-16T05:00:00.000Z","insertTime":"2025-12-16T05:40:47.000Z","time":"2025-12-16T05:00:00.000Z"},{"distinct_id":"44c4aa20-6aa0-55b5-859d-02898b0ae3d9","role":"no access","startTime":"2025-12-16T03:50:48.000Z","insertTime":"2025-12-16T05:47:37.000Z","time":"2025-12-16T03:50:48.000Z"},{"distinct_id":"44c4aa20-6aa0-55b5-859d-02898b0ae3d9","role":"user","startTime":"2025-12-20T02:12:07.000Z","insertTime":"2025-12-20T03:11:51.000Z","time":"2025-12-20T02:12:07.000Z"},{"distinct_id":"a4edcb10-e681-5f38-815a-1509bad1ecb9","role":"view only","startTime":"2025-12-13T05:00:00.000Z","insertTime":"2025-12-13T07:26:01.000Z","time":"2025-12-13T05:00:00.000Z"},{"distinct_id":"27cf4ac6-b44b-5b15-8532-d145cf0431f9","role":"view only","startTime":"2025-11-28T05:00:00.000Z","insertTime":"2025-11-28T07:28:03.000Z","time":"2025-11-28T05:00:00.000Z"},{"distinct_id":"27cf4ac6-b44b-5b15-8532-d145cf0431f9","role":"admin","startTime":"2025-12-16T04:29:45.000Z","insertTime":"2025-12-16T06:19:14.000Z","time":"2025-12-16T04:29:45.000Z"},{"distinct_id":"94e22157-44c4-5b80-b5cd-630307f37dd8","role":"admin","startTime":"2025-12-12T05:00:00.000Z","insertTime":"2025-12-12T07:08:55.000Z","time":"2025-12-12T05:00:00.000Z"},{"distinct_id":"94e22157-44c4-5b80-b5cd-630307f37dd8","role":"user","startTime":"2025-12-21T02:38:58.000Z","insertTime":"2025-12-21T04:31:57.000Z","time":"2025-12-21T02:38:58.000Z"},{"distinct_id":"146263b0-5de8-5197-bf49-0acb8278d54e","role":"admin","startTime":"2025-11-24T05:00:00.000Z","insertTime":"2025-11-24T06:19:58.000Z","time":"2025-11-24T05:00:00.000Z"},{"distinct_id":"146263b0-5de8-5197-bf49-0acb8278d54e","role":"view only","startTime":"2025-12-07T04:27:36.000Z","insertTime":"2025-12-07T04:41:19.000Z","time":"2025-12-07T04:27:36.000Z"},{"distinct_id":"146263b0-5de8-5197-bf49-0acb8278d54e","role":"collaborator","startTime":"2025-12-22T03:32:23.000Z","insertTime":"2025-12-22T04:49:51.000Z","time":"2025-12-22T03:32:23.000Z"},{"distinct_id":"e62ee45f-a20a-5a4d-b762-d2287dd9cb1e","role":"no access","startTime":"2025-12-02T05:00:00.000Z","insertTime":"2025-12-02T07:06:37.000Z","time":"2025-12-02T05:00:00.000Z"}]
+		const result = await mp({}, testData, { ...opts, recordType: `scd`, scdKey: "role", scdType: "string", scdLabel: 'user-role', fixData: true });
+		const { success, failed, duration, total } = result;
+		expect(success).toBe(24);
+		expect(failed).toBe(0);
+		expect(duration).toBeGreaterThan(0);
+		expect(total).toBe(24);
+	});
 });
 
 describe("inference", () => {
