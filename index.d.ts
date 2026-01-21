@@ -1330,6 +1330,8 @@ declare namespace main {
     user_id?: string;
     group_keys?: string[];
     v2_compat?: boolean; // use v2 api
+	includeExperimentEvents?: boolean; // include experiment events
+	includeExperimentProps?: boolean; // include experiment properties
   };
 
   /**

@@ -702,7 +702,7 @@ app.post("/job", upload.array("files"), handleMulterError, async (req, res) => {
 		fileCount: req.files ? req.files.length : 0,
 		fileNames: req.files ? req.files.map(f => ({ fieldname: f.fieldname, originalname: f.originalname, size: f.size })) : []
 	};
-	
+
 	logger.info(logParams, "job request");
 	try {
 		const { credentials, options, transformCode } = req.body;
@@ -1454,28 +1454,44 @@ app.post("/export", async (req, res) => {
 				const result = await mixpanelImport(creds, null, opts);
 				exportLogger.info({ recordsProcessed: result.total }, "export complete");
 
-				// Find the created file(s) and prepare for download
-				const exportedFiles = [];
-				if (fs.existsSync(jobTmpDir)) {
-					const files = fs.readdirSync(jobTmpDir);
-					for (const file of files) {
-						const filePath = path.join(jobTmpDir, file);
-						const stats = fs.statSync(filePath);
-						if (stats.isFile()) {
-							exportedFiles.push({
-								name: file,
-								path: filePath,
-								size: stats.size
-							});
+				// Check if this was a cloud storage export
+				const destinationType = exportData.destinationType || 'local';
+				const isCloudExport = (destinationType === 'gcs' && exportData.gcsPath) ||
+					(destinationType === 's3' && exportData.s3Path);
+
+				let exportResult;
+				if (isCloudExport) {
+					// For cloud storage exports, include the destination path
+					exportResult = {
+						...result,
+						cloudDestination: destinationType === 'gcs' ? exportData.gcsPath : exportData.s3Path,
+						destinationType: destinationType,
+						message: `Successfully exported ${result.total} records to ${destinationType === 'gcs' ? exportData.gcsPath : exportData.s3Path}`
+					};
+				} else {
+					// For local exports, find the created file(s) and prepare for download
+					const exportedFiles = [];
+					if (fs.existsSync(jobTmpDir)) {
+						const files = fs.readdirSync(jobTmpDir);
+						for (const file of files) {
+							const filePath = path.join(jobTmpDir, file);
+							const stats = fs.statSync(filePath);
+							if (stats.isFile()) {
+								exportedFiles.push({
+									name: file,
+									path: filePath,
+									size: stats.size
+								});
+							}
 						}
 					}
-				}
 
-				const exportResult = {
-					...result,
-					files: exportedFiles,
-					downloadUrl: exportedFiles.length === 1 ? `/download/${jobId}/${exportedFiles[0].name}` : `/download/${jobId}`
-				};
+					exportResult = {
+						...result,
+						files: exportedFiles,
+						downloadUrl: exportedFiles.length === 1 ? `/download/${jobId}/${exportedFiles[0].name}` : `/download/${jobId}`
+					};
+				}
 
 				// Signal job completion via WebSocket with file info
 				signalJobComplete(jobId, exportResult);

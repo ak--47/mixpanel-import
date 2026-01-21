@@ -274,8 +274,8 @@ class BufferQueue extends EventEmitter {
 			// End if queue empty, source ended, no pending callbacks
 			// Pending callbacks mean we're still expecting data once memory pressure reduces
 			if (this.queue.length === 0 && this.sourceEnded &&
-			    (!this.pendingCallbacks || this.pendingCallbacks.length === 0) &&
-			    this.sinkStream) {
+				(!this.pendingCallbacks || this.pendingCallbacks.length === 0) &&
+				this.sinkStream) {
 				this.sinkStream.push(null);
 			}
 

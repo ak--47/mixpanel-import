@@ -17,6 +17,7 @@ process.on('unhandledRejection', (reason, promise) => {
 	console.error(`\n❌ [ERROR #${unhandledRejectionCount}] Unhandled Promise Rejection:`);
 	console.error('Reason:', reason);
 	console.error('Promise:', promise);
+	// @ts-ignore - reason might have a stack property if it's an Error
 	console.error('Stack:', reason?.stack || 'No stack trace available');
 	console.error('This error was caught but the process will continue.\n');
 
@@ -179,8 +180,10 @@ async function flushToMixpanel(batch, job) {
 
 		}
 
+		// Only add project_id if using service account auth (not secret auth)
+		// Secret-based auth doesn't want project_id in the URL
 		// @ts-ignore
-		if (job.project) options.searchParams.project_id = job.project;
+		if (job.project && !job.secret) options.searchParams.project_id = job.project;
 
 		let res, success;
 		try {
@@ -305,7 +308,8 @@ async function flushToMixpanelWithUndici(batch, job) {
 			verbose: '1',
 			strict: Number(job.strict).toString()
 		});
-		if (job.project) {
+		// Only add project_id if using service account auth (not secret auth)
+		if (job.project && !job.secret) {
 			searchParams.set('project_id', String(job.project));
 		}
 

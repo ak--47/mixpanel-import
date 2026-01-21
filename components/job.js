@@ -864,38 +864,55 @@ class Job {
 		return 'unknown';
 	}
 	resolveProjInfo() {
-		//preferred method: service acct
+		// Check if this is an import operation (events, users, groups, lookup tables)
+		const isImport = ['event', 'user', 'group', 'table'].includes(this.type);
+
+		// For imports: prefer token if available (as per Mixpanel docs)
+		if (isImport && this.token) {
+			// Token auth for imports - token as username with empty password
+			return `Basic ${Buffer.from(this.token + ':', 'binary').toString('base64')}`;
+		}
+
+		// For all operations: service account auth (requires acct + pass + project)
 		if (this.acct && this.pass && this.project) {
 			return `Basic ${Buffer.from(this.acct + ':' + this.pass, 'binary').toString('base64')}`;
 		}
 
-		//fallback method: secret auth
-		else if (this.secret) {
+		// API secret auth (works for exports and imports)
+		if (this.secret) {
 			return `Basic ${Buffer.from(this.secret + ':', 'binary').toString('base64')}`;
 		}
 
-		else if (this.token) {
+		// Fallback to token for non-import operations (legacy behavior)
+		if (this.token && !isImport) {
 			return `Basic ${Buffer.from(this.token + ':', 'binary').toString('base64')}`;
 		}
 
-		else if (this.bearer) {
+		// Bearer token if provided
+		if (this.bearer) {
 			return `Bearer ${this.bearer}`;
 		}
 
-		else if (this.type === 'user' || this.type === 'group') {
+		// Special case: user/group imports without token might not need auth
+		if (this.type === 'user' || this.type === 'group') {
 			return ``;
 		}
 
-		else {
-			// Allow empty auth for dry runs and data transformation operations
-			if (this.dryRun || this.writeToFile || this.fixData) {
-				return '';
-			}
-			console.error('no secret or service account + project provided!', { config: this.report() });
-			throw new Error('no secret or service account provided!');
-			// process.exit(0);
+		// Allow empty auth for dry runs and data transformation operations
+		if (this.dryRun || this.writeToFile || this.fixData) {
+			return '';
 		}
 
+		// For exports, we need either secret or service account
+		const isExport = this.type && this.type.includes('export');
+		if (isExport) {
+			console.error('Export operations require either an API secret or service account credentials!', { config: this.report() });
+			throw new Error('Export operations require either an API secret or service account (acct + pass + project)');
+		}
+
+		// Generic error for other cases
+		console.error('No valid authentication provided!', { config: this.report() });
+		throw new Error('No valid authentication method found');
 	}
 
 	// Capture a memory sample with bounded collection

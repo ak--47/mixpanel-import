@@ -1386,6 +1386,7 @@ async function createGCSJSONStream(gcsPath, job) {
 		gcsReadStream.on('error', (error) => {
 			console.error(`\n❌ GCS Stream Error for ${gcsPath}:`);
 			console.error('Error:', error.message);
+			// @ts-ignore - Node.js errors often have a code property
 			console.error('Code:', error.code);
 			console.error('Stack:', error.stack);
 			console.error('This error will propagate through the pipeline.\n');
@@ -1535,6 +1536,7 @@ async function createGCSCSVStream(gcsPath, job) {
 		gcsReadStream.on('error', (error) => {
 			console.error(`\n❌ GCS CSV Stream Error for ${gcsPath}:`);
 			console.error('Error:', error.message);
+			// @ts-ignore - Node.js errors often have a code property
 			console.error('Code:', error.code);
 			console.error('Stack:', error.stack);
 			// Error will propagate naturally through the pipe chain
@@ -1710,6 +1712,7 @@ async function createGCSParquetStream(gcsPath, job) {
 		gcsReadStream.on('error', (error) => {
 			console.error(`\n❌ GCS Parquet Stream Error for ${gcsPath}:`);
 			console.error('Error:', error.message);
+			// @ts-ignore - Node.js errors often have a code property
 			console.error('Code:', error.code);
 			console.error('Stack:', error.stack);
 			// Error will propagate naturally through the pipe chain
@@ -1960,6 +1963,7 @@ async function createMultiGCSStream(gcsPaths, job) {
 			fileStream.on('error', (error) => {
 				console.error(`\n❌ Multi-file GCS Error for ${gcsPath}:`);
 				console.error('Error:', error.message);
+				// @ts-ignore - Node.js errors often have a code property
 				console.error('Code:', error.code);
 				console.error('File:', processedCount + skippedCount + 1, 'of', gcsPaths.length);
 				console.error('Skipping and continuing...\n');

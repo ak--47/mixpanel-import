@@ -64,8 +64,10 @@ async function exportEvents(filename, job) {
 	// @ts-ignore
 	if (whereClause && typeof whereClause === 'string') options.searchParams.where = whereClause;
 
+	// Only add project_id if using service account auth (not secret auth)
+	// Secret-based auth doesn't want project_id in the URL
 	// @ts-ignore
-	if (job.project) options.searchParams.project_id = job.project;
+	if (job.project && !job.secret) options.searchParams.project_id = job.project;
 
 	// @ts-ignore
 	const request = got.stream(options);
@@ -99,8 +101,33 @@ async function exportEvents(filename, job) {
 		downloadProgress(progress.transferred, job);
 	});
 
-	// Define streams upfront
+	// Auto-generate filename if cloud path ends with / or is a bucket/directory without a filename
 	const cloudInfo = detectCloudDestination(filename);
+	if (cloudInfo.isCloud) {
+		// Check if this appears to be a directory (no file extension after the last /)
+		const lastSlashIndex = filename.lastIndexOf('/');
+		const afterLastSlash = filename.substring(lastSlashIndex + 1);
+
+		// If there's no extension or it ends with /, generate a filename
+		if (!afterLastSlash.includes('.') || filename.endsWith('/')) {
+			// Generate filename based on date range
+			const startDate = job.start || 'unknown';
+			const endDate = job.end || 'unknown';
+			const generatedFilename = `events-${startDate}-${endDate}.ndjson`;
+
+			// Add trailing slash if not present and path doesn't end with /
+			if (!filename.endsWith('/')) {
+				filename += '/';
+			}
+
+			filename = filename + generatedFilename;
+			if (job.verbose) {
+				console.log(`Auto-generated filename for cloud export: ${filename}`);
+			}
+		}
+	}
+
+	// Define streams upfront
 	let fileStream;
 
 	if (cloudInfo.isCloud) {
@@ -143,6 +170,7 @@ async function exportEvents(filename, job) {
 										allResults.push(item);
 									} else {
 										fileStream.write(JSON.stringify(item) + '\n');
+										recordCount++;
 									}
 								});
 								return;
@@ -163,6 +191,7 @@ async function exportEvents(filename, job) {
 						allResults.push(row);
 					} else {
 						fileStream.write(JSON.stringify(row) + '\n');
+						recordCount++;
 					}
 				}
 				catch (parseError) {
@@ -192,6 +221,7 @@ async function exportEvents(filename, job) {
 										allResults.push(item);
 									} else {
 										fileStream.write(JSON.stringify(item) + '\n');
+										recordCount++;
 									}
 								});
 								// Ensure cloud streams are properly finalized
@@ -214,6 +244,7 @@ async function exportEvents(filename, job) {
 						allResults.push(row);
 					} else {
 						fileStream.write(JSON.stringify(row) + '\n');
+						recordCount++;
 					}
 				}
 				catch (parseError) {
@@ -232,14 +263,15 @@ async function exportEvents(filename, job) {
 	});
 
 	const allResults = [];
+	let recordCount = 0; // Track record count for cloud storage
 
 	// Choose the appropriate stream based on whether transforms are needed
 	let outputStream;
-	if (skipWriteToDisk || (job.transformFunc && typeof job.transformFunc === 'function')) {
-		// Use processing stream when we need transforms or memory mode
+	if (skipWriteToDisk || (job.transformFunc && typeof job.transformFunc === 'function') || cloudInfo.isCloud) {
+		// Use processing stream when we need transforms, memory mode, or cloud storage (for record counting)
 		outputStream = processingStream;
 	} else {
-		// Use direct file stream when no transforms (more efficient for cloud)
+		// Use direct file stream only for local files with no transforms
 		outputStream = fileStream;
 	}
 
@@ -259,12 +291,11 @@ async function exportEvents(filename, job) {
 	}
 
 	if (cloudInfo.isCloud) {
-		// For cloud storage, we can't easily count lines after upload
-		// Count lines from the memory buffer if available, or estimate
-		const lines = allResults.length || 0;
-		job.recordsProcessed += lines;
-		job.success += lines;
+		// For cloud storage, use the record count we tracked during streaming
+		job.recordsProcessed += recordCount;
+		job.success += recordCount;
 		job.file = filename;
+		if (job.verbose) console.log(`Exported ${recordCount} records to cloud storage: ${filename}`);
 		return filename;
 	} else {
 		// For local files, count lines from the file
@@ -318,8 +349,10 @@ async function exportProfiles(folder, job) {
 		responseType: 'json',
 		retry: { limit: 50 }
 	};
+	// Only add project_id if using service account auth (not secret auth)
+	// Secret-based auth doesn't want project_id in the URL
 	// @ts-ignore
-	if (job.project) options.searchParams.project_id = job.project;
+	if (job.project && !job.secret) options.searchParams.project_id = job.project;
 
 	// Build form data for POST body
 	const encodedParams = new URLSearchParams();
@@ -915,17 +948,23 @@ async function writeCloudJSON(cloudPath, data, job) {
  * @returns {Readable} object-mode stream
  */
 function streamEvents(job) {
+	const searchParams = {
+		from_date: job.start,
+		to_date: job.end,
+		limit: job.limit,
+		where: job.whereClause
+	};
+
+	// Only add project_id if using service account auth (not secret auth)
+	if (job.project && !job.secret) {
+		searchParams.project_id = job.project;
+	}
+
 	/** @type {got.Options} */
 	const options = {
 		url: job.url,
 		method: 'GET',
-		searchParams: {
-			from_date: job.start,
-			to_date: job.end,
-			limit: job.limit,
-			where: job.whereClause,
-			project_id: job.project
-		},
+		searchParams,
 		retry: { limit: 50 },
 		headers: { Authorization: job.auth },
 		agent: { https: new https.Agent({ keepAlive: true }) }
@@ -999,7 +1038,8 @@ function streamProfiles(job) {
 					page: this._page,
 					session_id: this._session_id
 				};
-				if (job.project) searchParams.project_id = job.project;
+				// Only add project_id if using service account auth (not secret auth)
+				if (job.project && !job.secret) searchParams.project_id = job.project;
 				const res = await got({
 					method: 'POST',
 					url,
@@ -1044,4 +1084,4 @@ function streamProfiles(job) {
 }
 
 
-module.exports = { exportEvents, exportProfiles, deleteProfiles, streamEvents, streamProfiles };
+module.exports = { exportEvents, exportProfiles, deleteProfiles, streamEvents, streamProfiles, detectCloudDestination };

@@ -19,7 +19,11 @@ TRANSFORMS
  * @param  {import('../index').amplitudeOpts} options
  */
 function ampEventsToMp(options) {
-	const { user_id = "user_id", v2_compat = true } = options;
+	const { user_id = "user_id",
+		v2_compat = true,
+		includeExperimentEvents = false,
+		includeExperimentProps = false
+	} = options;
 
 	return function transform(ampEvent) {
 		const mixpanelEvent = {
@@ -35,6 +39,12 @@ function ampEventsToMp(options) {
 			}
 		};
 
+		if (!includeExperimentEvents) {
+			if (mixpanelEvent.event?.toLowerCase().includes("[experiment]")) {
+				return null; //skip the event
+			}
+		}
+
 		//insert_id resolution
 		const $insert_id = ampEvent.$insert_id;
 		if ($insert_id) mixpanelEvent.properties.$insert_id = $insert_id;
@@ -46,7 +56,7 @@ function ampEventsToMp(options) {
 
 		//v2 compat requires distinct_id; 
 		if (v2_compat) mixpanelEvent.properties.distinct_id = mixpanelEvent.properties.$user_id || mixpanelEvent.properties.$device_id;
-			
+
 
 		//get all custom props + group props + user props
 		mixpanelEvent.properties = {
@@ -81,6 +91,15 @@ function ampEventsToMp(options) {
 			...ampEvent,
 			...mixpanelEvent.properties
 		};
+
+		//remove experiment props if not included
+		if (!includeExperimentProps) {
+			for (const key in mixpanelEvent.properties) {
+				if (key?.toLowerCase()?.startsWith("[experiment]")) {
+					delete mixpanelEvent.properties[key];
+				}
+			}
+		}
 
 		return mixpanelEvent;
 	};
@@ -139,8 +158,8 @@ function ampGroupToMp(options) {
 		if (!ampEvent.user_id) return {};
 
 		const mixpanelGroup = {
-			$group_key: null, 
-			$group_id: null, 
+			$group_key: null,
+			$group_id: null,
 			$set: groupProps
 		};
 

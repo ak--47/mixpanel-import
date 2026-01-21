@@ -1,6 +1,6 @@
 {
   "name": "mixpanel-import",
-  "version": "3.1.43",
+  "version": "3.2.0",
   "description": "stream and import data to mixpanel from node.js",
   "main": "index.js",
   "types": "index.d.ts",
@@ -25,7 +25,6 @@
     "cli:help": "node index.js --help",
     "typecheck": "npx tsc",
     "lint": "eslint . --ext .js",
-    "lint:fix": "eslint . --ext .js --fix",
     "validate": "npm run typecheck && npm run lint",
     "deploy": "gcloud builds submit --config cloudbuild.yaml --region us-central1",
     "ui:dev": "nodemon --inspect ui/server.js --ignore ./tmp --ignore ./logs"

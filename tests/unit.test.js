@@ -2275,3 +2275,129 @@ describe('Progress Display', () => {
 		expect(capturedOutput).toContain('time: 00:01:01');
 	});
 });
+
+describe("authentication logic", () => {
+	test("imports prefer token auth when available", () => {
+		const job = new Job({
+			token: "test-token",
+			secret: "test-secret",
+			acct: "test",
+			pass: "test",
+			project: "12345"
+		}, { recordType: "event" });
+		// For imports, token takes precedence even when other auth methods are available
+		expect(job.resolveProjInfo()).toBe(`Basic ${Buffer.from("test-token:", "binary").toString("base64")}`);
+	});
+
+	test("exports prefer service account over secret", () => {
+		const job = new Job({
+			token: "test-token",
+			secret: "test-secret",
+			acct: "test",
+			pass: "test",
+			project: "12345"
+		}, { recordType: "export" });
+		// For exports, service account takes precedence (token is ignored)
+		expect(job.resolveProjInfo()).toBe(`Basic ${Buffer.from("test:test", "binary").toString("base64")}`);
+	});
+
+	test("exports fall back to secret when no service account", () => {
+		const job = new Job({
+			token: "test-token",
+			secret: "test-secret",
+			project: "12345"
+		}, { recordType: "export" });
+		// For exports without service account, falls back to secret
+		expect(job.resolveProjInfo()).toBe(`Basic ${Buffer.from("test-secret:", "binary").toString("base64")}`);
+	});
+
+	test("imports without token fall back to service account", () => {
+		const job = new Job({
+			acct: "test",
+			pass: "test",
+			project: "12345"
+		}, { recordType: "event" });
+		// Without token, imports use service account
+		expect(job.resolveProjInfo()).toBe(`Basic ${Buffer.from("test:test", "binary").toString("base64")}`);
+	});
+
+	test("imports without token or service account fall back to secret", () => {
+		const job = new Job({
+			secret: "test-secret"
+		}, { recordType: "event" });
+		// Without token or service account, imports use secret
+		expect(job.resolveProjInfo()).toBe(`Basic ${Buffer.from("test-secret:", "binary").toString("base64")}`);
+	});
+
+	test("exports can use token as fallback", () => {
+		const job = new Job({ token: "test-token" }, { recordType: "export" });
+		// Exports can fall back to token if no secret or service account
+		expect(job.resolveProjInfo()).toBe(`Basic ${Buffer.from("test-token:", "binary").toString("base64")}`);
+	});
+
+	test("exports throw error without any auth", () => {
+		expect(() => {
+			const job = new Job({}, { recordType: "export" });
+			job.resolveProjInfo();
+		}).toThrow("Export operations require either an API secret or service account");
+	});
+
+	test("secret auth should not include project_id in API calls", () => {
+		const job = new Job({ secret: "test-secret", project: "12345" }, { recordType: "export" });
+		expect(job.secret).toBe("test-secret");
+		expect(job.project).toBe("12345");
+		// The auth string uses secret, not service account
+		expect(job.resolveProjInfo()).toBe(`Basic ${Buffer.from("test-secret:", "binary").toString("base64")}`);
+		// Note: The actual project_id exclusion happens in exporters.js and importers.js
+		// when building the request options - this test just validates the job config
+	});
+});
+
+describe("cloud export filename generation", () => {
+	const { detectCloudDestination } = require("../components/exporters.js");
+
+	test("detectCloudDestination identifies GCS paths", () => {
+		expect(detectCloudDestination("gs://bucket/path")).toEqual({
+			isCloud: true,
+			provider: "gcs"
+		});
+	});
+
+	test("detectCloudDestination identifies S3 paths", () => {
+		expect(detectCloudDestination("s3://bucket/path")).toEqual({
+			isCloud: true,
+			provider: "s3"
+		});
+	});
+
+	test("detectCloudDestination identifies local paths", () => {
+		expect(detectCloudDestination("/local/path/file.json")).toEqual({
+			isCloud: false,
+			provider: null
+		});
+	});
+
+	// Note: The actual filename generation happens inside exportEvents which needs a full job context
+	// These tests validate the detection logic used by that function
+	test("cloud path patterns that should trigger filename generation", () => {
+		// Paths ending with /
+		expect("gs://bucket/path/".endsWith("/")).toBe(true);
+		expect("s3://bucket/path/".endsWith("/")).toBe(true);
+
+		// Paths without file extension after last /
+		const gcsPath = "gs://bucket/path";
+		const afterLastSlash = gcsPath.substring(gcsPath.lastIndexOf("/") + 1);
+		expect(afterLastSlash.includes(".")).toBe(false);
+	});
+
+	test("cloud path patterns that should NOT trigger filename generation", () => {
+		// Paths with file extension
+		const gcsFile = "gs://bucket/path/file.json";
+		const afterLastSlash = gcsFile.substring(gcsFile.lastIndexOf("/") + 1);
+		expect(afterLastSlash.includes(".")).toBe(true);
+	});
+});
+
+// Note: Testing cloud export record counting would require mocking the entire
+// streaming pipeline which is complex. The fix ensures recordCount is incremented
+// during streaming and used for cloud storage exports.

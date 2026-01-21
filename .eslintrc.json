@@ -17,6 +17,9 @@
 			"parserOptions": {
 				"ecmaVersion": "latest",
 				"sourceType": "script"
+			},
+			"globals": {
+				"mixpanel": "readonly"
 			}
 		},
 		{
@@ -46,6 +49,7 @@
 		"testData/*",
 		"logs/*",
 		"mixpanel-exports/*",
-		"tmp/*"
+		"tmp/*",
+		"ui/public/analytics.js"
 	]
 }

@@ -78,12 +78,16 @@ class MixpanelExportUI {
 				console.log('Export job completed:', data.result);
 				this.hideLoading();
 				this.showResults(data.result);
-				
-				// If the export produced files, automatically download them
+
+				// Handle file downloads for local exports only
 				if (data.result.downloadUrl) {
+					// Local export - automatically download files
 					this.downloadExportFile(data.result.downloadUrl, data.result.files);
+				} else if (data.result.cloudDestination) {
+					// Cloud storage export - show success message
+					this.showCloudExportSuccess(data.result);
 				}
-				
+
 				this.disconnectWebSocket();
 				break;
 				
@@ -954,6 +958,34 @@ class MixpanelExportUI {
 				command += ` --secondToken [destination-token]`;
 			}
 
+			// Handle secondRegion if present
+			const secondRegion = this.getElementValue('secondRegion');
+			if (secondRegion) {
+				command += ` --secondRegion "${secondRegion}"`;
+			}
+
+			// Cloud destination options
+			const destinationType = document.querySelector('input[name="destinationType"]:checked')?.value || 'local';
+			if (destinationType === 'gcs') {
+				const gcsPath = this.getElementValue('gcsPath');
+				const gcpProjectId = this.getElementValue('gcpProjectId');
+				const gcsCredentials = this.getElementValue('gcsCredentials');
+
+				if (gcsPath) command += ` --gcsPath "${gcsPath}"`;
+				if (gcpProjectId) command += ` --gcpProjectId "${gcpProjectId}"`;
+				if (gcsCredentials) command += ` --gcsCredentials [gcs-credentials]`;
+			} else if (destinationType === 's3') {
+				const s3Path = this.getElementValue('s3Path');
+				const s3Region = this.getElementValue('s3Region');
+				const s3Key = this.getElementValue('s3Key');
+				const s3Secret = this.getElementValue('s3Secret');
+
+				if (s3Path) command += ` --s3Path "${s3Path}"`;
+				if (s3Region) command += ` --s3Region "${s3Region}"`;
+				if (s3Key) command += ` --s3Key "${s3Key}"`;
+				if (s3Secret) command += ` --s3Secret [s3-secret]`;
+			}
+
 			// Boolean flags
 			const booleanFlags = {
 				'logs': '--logs',
@@ -1093,6 +1125,7 @@ class MixpanelExportUI {
 			groupKey: this.getElementValue('groupKey'),
 			dataGroupId: this.getElementValue('dataGroupId'),
 			secondToken: this.getElementValue('secondToken'),
+			secondRegion: this.getElementValue('secondRegion'),
 
 			// Configuration
 			region: this.getElementValue('region', 'US'),
@@ -1117,7 +1150,7 @@ class MixpanelExportUI {
 			outputFilePath: this.getElementValue('outputFilePath'),
 
 			// Cloud destination options
-			destinationType: this.getElementValue('destinationType', 'local'),
+			destinationType: document.querySelector('input[name="destinationType"]:checked')?.value || 'local',
 			gcsPath: this.getElementValue('gcsPath'),
 			gcpProjectId: this.getElementValue('gcpProjectId'),
 			gcsCredentials: this.getElementValue('gcsCredentials'),
@@ -1339,6 +1372,65 @@ class MixpanelExportUI {
 				}
 			}, 300);
 		}, 10000);
+	}
+
+	showCloudExportSuccess(result) {
+		// Create a success message for cloud storage exports
+		const successMsg = document.createElement('div');
+		successMsg.className = 'cloud-export-success-toast';
+
+		// Determine the storage type and icon
+		const isGCS = result.destinationType === 'gcs';
+		const icon = isGCS ? '☁️' : '🪣';
+		const storageName = isGCS ? 'Google Cloud Storage' : 'Amazon S3';
+
+		successMsg.innerHTML = `
+			<div class="toast-content">
+				<span class="toast-icon">${icon}</span>
+				<div class="toast-message">
+					<strong>Export Successful!</strong><br>
+					<span style="font-size: 0.9em;">
+						${result.total.toLocaleString()} records exported to ${storageName}<br>
+						<code style="background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 3px; margin-top: 4px; display: inline-block;">
+							${result.cloudDestination}
+						</code>
+					</span>
+				</div>
+			</div>
+		`;
+
+		successMsg.style.cssText = `
+			position: fixed;
+			top: 20px;
+			right: 20px;
+			background: #4CAF50;
+			color: white;
+			padding: 16px 24px;
+			border-radius: 8px;
+			box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+			z-index: 10000;
+			opacity: 0;
+			transition: opacity 0.3s ease;
+			max-width: 500px;
+			word-break: break-word;
+		`;
+
+		document.body.appendChild(successMsg);
+
+		// Animate in
+		setTimeout(() => {
+			successMsg.style.opacity = '1';
+		}, 10);
+
+		// Auto-remove after 15 seconds
+		setTimeout(() => {
+			successMsg.style.opacity = '0';
+			setTimeout(() => {
+				if (successMsg.parentNode) {
+					document.body.removeChild(successMsg);
+				}
+			}, 300);
+		}, 15000);
 	}
 }
 
