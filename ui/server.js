@@ -78,7 +78,6 @@ const JOB_MAX_AGE = 60 * 60 * 1000; // 1 hour
 
 // Snowcat service configuration
 const SNOWCAT_URL = 'https://snowcat-queuer-lmozz6xkha-uc.a.run.app';
-const SNOWCAT_ENDPOINT = `${SNOWCAT_URL}/import`;
 const auth = new GoogleAuth();
 let cachedSnowcatClient = null;
 
@@ -1271,12 +1270,16 @@ app.post("/dry-run", upload.array("files"), handleMulterError, async (req, res) 
 	}
 });
 
-// Handle Snowcat job requests
+// Handle Snowcat job requests (import and export)
 app.post("/snowcat/request", async (req, res) => {
 	try {
 		const jobConfig = req.body;
+		const jobType = jobConfig.jobType || 'import';  // default to import for backward compat
 
-		logger.info({ jobConfig }, "snowcat request");
+		// Remove jobType from config (not part of Snowcat API)
+		delete jobConfig.jobType;
+
+		logger.info({ jobConfig, jobType }, "snowcat request");
 
 		// Validate required fields
 		if (!jobConfig.cloud_path) {
@@ -1293,12 +1296,25 @@ app.post("/snowcat/request", async (req, res) => {
 			});
 		}
 
+		// Export-specific validation
+		if (jobType === 'export') {
+			if (!jobConfig.options?.start_date || !jobConfig.options?.end_date) {
+				return res.status(400).json({
+					success: false,
+					error: "options.start_date and options.end_date are required for export jobs"
+				});
+			}
+		}
+
+		// Build endpoint URL based on job type
+		const endpoint = `${SNOWCAT_URL}/${jobType}`;
+
 		// Make authenticated request to Snowcat service using ADC
 		const client = await getSnowcatClient();
 
 		// Make authenticated request to Snowcat service
 		const response = await client.request({
-			url: SNOWCAT_ENDPOINT,
+			url: endpoint,
 			method: 'POST',
 			data: jobConfig,
 			headers: {
@@ -1306,13 +1322,13 @@ app.post("/snowcat/request", async (req, res) => {
 			}
 		});
 
-		logger.info({ snowcatResponse: response.data }, "snowcat job created");
+		logger.info({ snowcatResponse: response.data, jobType }, "snowcat job created");
 
 		// Return Snowcat response to client
 		res.json({
 			success: true,
 			snowcatResponse: response.data,
-			message: "Snowcat job requested successfully"
+			message: `Snowcat ${jobType} job requested successfully`
 		});
 
 	} catch (error) {
@@ -1377,7 +1393,8 @@ app.post("/export", async (req, res) => {
 			where: jobTmpDir, // Save files to job-specific temp directory (local default)
 			outputFilePath: exportData.outputFilePath,
 			abridged: exportData.abridged !== undefined ? exportData.abridged : true,  // Default to true for performance
-			compress: true,
+			compress: exportData.compress !== false, // Default true for cloud exports
+			compressionLevel: exportData.compressionLevel || 6,
 
 			// Cloud destination options
 			gcpProjectId: exportData.gcpProjectId,

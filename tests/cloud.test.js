@@ -573,3 +573,271 @@ describe("gcs authentication methods", () => {
 		});
 	}
 });
+
+
+// Cloud export write tests
+const GCS_EXPORT_PREFIX = `gs://ak-bucky/mixpanel-import/exports`;
+const S3_EXPORT_PREFIX = `s3://ak-bucky/mixpanel-import/exports`;
+
+// Generate unique test file names to avoid collisions
+// Note: The actual extension will be normalized by exportEvents based on compress option
+// Convention: .json.gz if compressed, .ndjson if not compressed
+const getUniqueExportPath = (prefix) => {
+	const timestamp = Date.now();
+	// Just use a base name - the code will add the correct extension
+	return `${prefix}/test-export-${timestamp}`;
+};
+
+/** @type {import('../index.d.ts').Options} */
+const exportOpts = {
+	recordType: 'export',
+	region: 'US',
+	logs: false,
+	showProgress: IS_DEBUG_MODE,
+	verbose: IS_DEBUG_MODE,
+};
+
+describe("cloud export writes - GCS", () => {
+	test(
+		"exports events to GCS with compression enabled (default)",
+		async () => {
+			const exportPath = getUniqueExportPath(GCS_EXPORT_PREFIX);
+
+			// Export a small date range of events to GCS
+			// Note: For exports, the destination path goes in `where` option, not as `data` argument
+			const result = await mp(
+				{ acct: MP_ACCT, pass: MP_PASS, project: MP_PROJECT },
+				null, // no data source for exports
+				{
+					...exportOpts,
+					where: exportPath, // destination path for export
+					start: '2024-01-01',
+					end: '2024-01-02',
+					compress: true, // explicitly enable compression
+					limit: 100, // limit to 100 events for test speed
+				}
+			);
+
+			// Verify export completed
+			expect(result.duration).toBeGreaterThan(0);
+			// The file should have been written (result should have file info)
+			expect(result.file).toBeDefined();
+			// Convention: .json.gz if compressed
+			expect(result.file).toContain('.json.gz');
+			expect(result.file).toContain('gs://');
+		},
+		longTimeout
+	);
+
+	test(
+		"exports events to GCS with compression disabled",
+		async () => {
+			const exportPath = getUniqueExportPath(GCS_EXPORT_PREFIX);
+
+			const result = await mp(
+				{ acct: MP_ACCT, pass: MP_PASS, project: MP_PROJECT },
+				null,
+				{
+					...exportOpts,
+					where: exportPath,
+					start: '2024-01-01',
+					end: '2024-01-02',
+					compress: false, // explicitly disable compression
+					limit: 100,
+				}
+			);
+
+			expect(result.duration).toBeGreaterThan(0);
+			expect(result.file).toBeDefined();
+			// Convention: .ndjson if not compressed
+			expect(result.file.endsWith('.ndjson')).toBe(true);
+			expect(result.file.endsWith('.gz')).toBe(false);
+		},
+		longTimeout
+	);
+
+	test(
+		"auto-generates filename with .json.gz extension when path is directory",
+		async () => {
+			const exportDir = `${GCS_EXPORT_PREFIX}/auto-name/`;
+
+			const result = await mp(
+				{ acct: MP_ACCT, pass: MP_PASS, project: MP_PROJECT },
+				null,
+				{
+					...exportOpts,
+					where: exportDir,
+					start: '2024-01-01',
+					end: '2024-01-02',
+					compress: true, // default, should use .json.gz
+					limit: 50,
+				}
+			);
+
+			expect(result.duration).toBeGreaterThan(0);
+			expect(result.file).toBeDefined();
+			// Auto-generated filename should include dates and .json.gz
+			expect(result.file).toContain('events-2024-01-01-2024-01-02');
+			expect(result.file).toContain('.json.gz');
+		},
+		longTimeout
+	);
+
+	test(
+		"round-trip: export compressed to GCS then import back",
+		async () => {
+			const exportPath = getUniqueExportPath(GCS_EXPORT_PREFIX);
+
+			// Step 1: Export events to GCS with compression
+			const exportResult = await mp(
+				{ acct: MP_ACCT, pass: MP_PASS, project: MP_PROJECT },
+				null,
+				{
+					...exportOpts,
+					where: exportPath,
+					start: '2024-01-01',
+					end: '2024-01-02',
+					compress: true,
+					limit: 50,
+				}
+			);
+
+			expect(exportResult.duration).toBeGreaterThan(0);
+			expect(exportResult.file).toBeDefined();
+			expect(exportResult.file).toContain('.json.gz');
+			const writtenFile = exportResult.file;
+
+			// Step 2: Import the compressed file back
+			const importResult = await mp(
+				{ token: MP_TOKEN },
+				writtenFile,
+				{
+					...opts,
+					dryRun: true, // Don't actually send to Mixpanel, just validate
+				}
+			);
+
+			// Verify the file was readable and valid
+			expect(importResult.total).toBeGreaterThan(0);
+			expect(importResult.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
+});
+
+describe("cloud export writes - S3", () => {
+	// Skip S3 tests if credentials are not available
+	const hasS3Creds = S3_KEY && S3_SECRET && S3_REGION;
+
+	const testOrSkip = hasS3Creds ? test : test.skip;
+
+	testOrSkip(
+		"exports events to S3 with compression enabled (default)",
+		async () => {
+			const exportPath = getUniqueExportPath(S3_EXPORT_PREFIX);
+
+			const result = await mp(
+				{ acct: MP_ACCT, pass: MP_PASS, project: MP_PROJECT },
+				null,
+				{
+					...exportOpts,
+					where: exportPath,
+					start: '2024-01-01',
+					end: '2024-01-02',
+					compress: true,
+					limit: 100,
+					s3Key: S3_KEY,
+					s3Secret: S3_SECRET,
+					s3Region: S3_REGION,
+				}
+			);
+
+			expect(result.duration).toBeGreaterThan(0);
+			expect(result.file).toBeDefined();
+			// Convention: .json.gz if compressed
+			expect(result.file).toContain('.json.gz');
+			expect(result.file).toContain('s3://');
+		},
+		longTimeout
+	);
+
+	testOrSkip(
+		"exports events to S3 with compression disabled",
+		async () => {
+			const exportPath = getUniqueExportPath(S3_EXPORT_PREFIX);
+
+			const result = await mp(
+				{ acct: MP_ACCT, pass: MP_PASS, project: MP_PROJECT },
+				null,
+				{
+					...exportOpts,
+					where: exportPath,
+					start: '2024-01-01',
+					end: '2024-01-02',
+					compress: false,
+					limit: 100,
+					s3Key: S3_KEY,
+					s3Secret: S3_SECRET,
+					s3Region: S3_REGION,
+				}
+			);
+
+			expect(result.duration).toBeGreaterThan(0);
+			expect(result.file).toBeDefined();
+			// Convention: .ndjson if not compressed
+			expect(result.file.endsWith('.ndjson')).toBe(true);
+			expect(result.file.endsWith('.gz')).toBe(false);
+		},
+		longTimeout
+	);
+
+	testOrSkip(
+		"round-trip: export compressed to S3 then import back",
+		async () => {
+			const exportPath = getUniqueExportPath(S3_EXPORT_PREFIX);
+
+			// Step 1: Export events to S3 with compression
+			const exportResult = await mp(
+				{ acct: MP_ACCT, pass: MP_PASS, project: MP_PROJECT },
+				null,
+				{
+					...exportOpts,
+					where: exportPath,
+					start: '2024-01-01',
+					end: '2024-01-02',
+					compress: true,
+					limit: 50,
+					s3Key: S3_KEY,
+					s3Secret: S3_SECRET,
+					s3Region: S3_REGION,
+				}
+			);
+
+			expect(exportResult.duration).toBeGreaterThan(0);
+			expect(exportResult.file).toBeDefined();
+			expect(exportResult.file).toContain('.json.gz');
+			const writtenFile = exportResult.file;
+
+			// Step 2: Import the compressed file back
+			const importResult = await mp(
+				{ token: MP_TOKEN },
+				writtenFile,
+				{
+					...s3Opts,
+					dryRun: true, // Don't actually send to Mixpanel
+				}
+			);
+
+			// Verify the file was readable and valid
+			expect(importResult.total).toBeGreaterThan(0);
+			expect(importResult.duration).toBeGreaterThan(0);
+		},
+		longTimeout
+	);
+
+	if (!hasS3Creds) {
+		test("S3 credentials not configured - skipping S3 export tests", () => {
+			console.log('To test S3 exports, set S3_KEY, S3_SECRET, S3_REGION environment variables');
+		});
+	}
+});

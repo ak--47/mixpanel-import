@@ -102,13 +102,13 @@ console.log(`Imported ${results.success} events!`);
 - Programmatic: `await mp(creds, './myfile.json')`
 
 ### ☁️ **Google Cloud Storage**
-- Web UI: Paste `gs://` URLs directly
-- CLI: `npx mixpanel-import gs://bucket/file.json`
-- Supports all formats including compressed files
+- **Import**: `npx mixpanel-import gs://bucket/file.json`
+- **Export**: `npx mixpanel-import --type export --where gs://bucket/exports/ ...`
+- Supports all formats including compressed files (`.json.gz`, `.csv.gz`, etc.)
 
 ### 🪣 **Amazon S3**
-- Web UI: Enter `s3://` URLs with credentials
-- CLI: `npx mixpanel-import s3://bucket/file.json --s3Region us-east-1`
+- **Import**: `npx mixpanel-import s3://bucket/file.json --s3Region us-east-1`
+- **Export**: `npx mixpanel-import --type export --where s3://bucket/exports/ --s3Region us-east-1 ...`
 - Requires S3 credentials (`access key`, `secret`, `region`)
 
 ### 💼 **Common Vendor Formats**
@@ -279,7 +279,8 @@ npx mixpanel-import s3://bucket/dense-data.json \
 - For local files, throttling is not needed (disk I/O is naturally slower)
 
 ### 🏗️ **Enterprise Features**
-- **Cloud Streaming**: Direct streaming from GCS/S3 without local download
+- **Cloud Streaming**: Direct streaming from/to GCS/S3 without local download
+- **Cloud Export**: Export events directly to GCS/S3 with gzip compression
 - **Multi-File Support**: Process entire directories or file lists
 - **Region Support**: US, EU, and India data residency
 - **Service Account Auth**: Secure authentication for production environments
@@ -458,10 +459,33 @@ npx mixpanel-import messy_data.json \
 |--------|------|-------------|
 | `start` | `string` | Start date for exports (YYYY-MM-DD) |
 | `end` | `string` | End date for exports (YYYY-MM-DD) |
+| `where` | `string` | Export destination: local path or cloud (`gs://` or `s3://`) |
+| `compress` | `boolean` | Gzip compression for exports (default: `true` for cloud) |
 | `whereClause` | `string` | Mixpanel where clause for filtering |
 | `limit` | `number` | Maximum records to export |
 | `cohortId` | `string/number` | Cohort ID for profile exports |
 | `dataGroupId` | `string` | Data group ID for group profile exports |
+
+#### ☁️ **Exporting to Cloud Storage**
+
+Export directly to GCS or S3 with optional compression:
+
+```bash
+# Export to Google Cloud Storage (compressed by default)
+npx mixpanel-import --type export --start 2024-01-01 --end 2024-01-31 \
+  --where gs://bucket/exports/ --acct user --pass pass --project 12345
+
+# Export to S3 without compression
+npx mixpanel-import --type export --start 2024-01-01 --end 2024-01-31 \
+  --where s3://bucket/exports/ --compress false \
+  --s3Key AKIA... --s3Secret xxx --s3Region us-east-1
+```
+
+**File Extension Convention:**
+- Compressed (`--compress` or default): `.json.gz`
+- Uncompressed (`--compress false`): `.ndjson`
+
+**Auto-generated filenames:** When `--where` is a directory path (ending with `/`), filenames are auto-generated as `events-{start}-{end}.json.gz` or `events-{start}-{end}.ndjson`.
 
 ### 🔬 **Advanced Options**
 

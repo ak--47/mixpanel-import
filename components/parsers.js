@@ -2631,5 +2631,6 @@ module.exports = {
 	getEnvVars,
 	chunkForSize,
 	analyzeFileFormat,
-	validateCloudWriteAccess
+	validateCloudWriteAccess,
+	COMPRESSION_CONFIG
 };

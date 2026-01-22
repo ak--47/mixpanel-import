@@ -2745,6 +2745,38 @@ function transform(row) {
 		}
 	}
 
+	// Snowcat: Generate unique job name
+	generateSnowcatJobName(projectId) {
+		// Get user identifier from Mixpanel distinct_id
+		let userIdentifier = 'unknown';
+		try {
+			if (typeof mixpanel !== 'undefined' && mixpanel.get_distinct_id) {
+				const distinctId = mixpanel.get_distinct_id();
+				if (distinctId) {
+					if (distinctId.includes('@')) {
+						// It's an email address - use as-is
+						userIdentifier = distinctId;
+					} else if (distinctId.startsWith('$device:')) {
+						// Device ID - grab first 5 chars after "device:"
+						userIdentifier = distinctId.substring(8, 13);
+					} else {
+						// Some other format - grab first 5 chars
+						userIdentifier = distinctId.substring(0, 5);
+					}
+				}
+			}
+		} catch (e) {
+			console.warn('Could not get Mixpanel distinct_id:', e);
+		}
+
+		// Generate 4 random alphanumeric characters
+		const randomChars = Math.random().toString(36).substring(2, 6);
+
+		// Build job name: {user}-etl-ui-job-{project_id}-{random}
+		const projectPart = projectId || 'unknown';
+		return `${userIdentifier}-etl-ui-job-${projectPart}-${randomChars}`;
+	}
+
 	// Snowcat: Generate job configuration from UI state
 	generateSnowcatJob() {
 		const fileSource = document.querySelector('input[name="fileSource"]:checked')?.value;
@@ -2771,6 +2803,16 @@ function transform(row) {
 				// Get everything after first dot (e.g., "json.gz" from "file.json.gz")
 				filter = '.' + parts.slice(1).join('.');
 			}
+		}
+
+		// Infer streamFormat from filter
+		let streamFormat = 'jsonl';  // default
+		if (filter.includes('.json') && !filter.includes('.jsonl')) {
+			streamFormat = 'json';
+		} else if (filter.includes('.csv')) {
+			streamFormat = 'csv';
+		} else if (filter.includes('.parquet')) {
+			streamFormat = 'parquet';
 		}
 
 		// Get credentials from UI
@@ -2803,6 +2845,9 @@ function transform(row) {
 			}
 		}
 
+		// Generate unique job name
+		const jobName = this.generateSnowcatJobName(mp_project);
+
 		// Build Snowcat job object
 		const job = {
 			// Snowcat-specific fields (configurable)
@@ -2814,11 +2859,12 @@ function transform(row) {
 			files_per_worker: 1,
 			max_concurrency: 2,
 			who: who,
-			name: 'etl-ui-import',
+			name: jobName,
 
 			// Options object - all UI configuration
 			options: {
-				...options
+				...options,
+				streamFormat: streamFormat
 			}
 		};
 

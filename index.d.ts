@@ -1433,11 +1433,18 @@ declare module 'stream' {
   interface Transform {
     _buf?: string;
   }
-  
+
   interface Readable {
     _page?: number;
     _session_id?: string | null;
     _buffer?: any[];
+  }
+
+  interface Writable {
+    // Custom properties for cloud storage exports
+    _gcsPath?: string;
+    _s3Path?: string;
+    _underlyingStream?: Writable;
   }
 }
 
@@ -1453,6 +1460,13 @@ declare module 'zlib' {
   interface Gunzip extends import('stream').Transform {
     path?: string | Buffer;
     pending?: boolean;
+  }
+
+  interface Gzip extends import('stream').Transform {
+    // Custom properties for cloud storage exports
+    _gcsPath?: string;
+    _s3Path?: string;
+    _underlyingStream?: import('stream').Writable;
   }
 }
 

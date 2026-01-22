@@ -560,6 +560,26 @@ class MixpanelExportUI {
 
 		// Load saved form state on page load
 		this.loadFormState();
+
+		// Snowcat button
+		const snowcatBtn = document.getElementById('snowcat-btn');
+		if (snowcatBtn) {
+			snowcatBtn.addEventListener('click', this.openSnowcatModal.bind(this));
+		}
+
+		// Snowcat modal buttons
+		const snowcatCurlBtn = document.getElementById('snowcat-curl-btn');
+		if (snowcatCurlBtn) {
+			snowcatCurlBtn.addEventListener('click', this.copySnowcatAsCurl.bind(this));
+		}
+
+		const snowcatRequestBtn = document.getElementById('snowcat-request-btn');
+		if (snowcatRequestBtn) {
+			snowcatRequestBtn.addEventListener('click', this.submitSnowcatJob.bind(this));
+		}
+
+		// Initial snowcat button visibility check
+		this.updateSnowcatButtonVisibility();
 	}
 
 	toggleAuthMethod() {
@@ -603,6 +623,11 @@ class MixpanelExportUI {
 			case 's3':
 				s3Destination.style.display = 'block';
 				break;
+		}
+
+		// Update snowcat button visibility based on destination type
+		if (window.app) {
+			window.app.updateSnowcatButtonVisibility();
 		}
 	}
 
@@ -723,6 +748,9 @@ class MixpanelExportUI {
 
 		// Update CLI command after field visibility changes
 		this.updateCLICommand();
+
+		// Update snowcat button visibility based on record type
+		this.updateSnowcatButtonVisibility();
 	}
 
 	validateRequiredFields(recordType) {
@@ -991,7 +1019,8 @@ class MixpanelExportUI {
 				'logs': '--logs',
 				'verbose': '--verbose',
 				'showProgress': '--showProgress',
-				'writeToFile': '--writeToFile'
+				'writeToFile': '--writeToFile',
+				'compress': '--compress'
 			};
 
 			Object.entries(booleanFlags).forEach(([fieldId, flag]) => {
@@ -1146,6 +1175,7 @@ class MixpanelExportUI {
 			verbose: this.getElementChecked('verbose'),
 			showProgress: this.getElementChecked('showProgress'),
 			writeToFile: this.getElementChecked('writeToFile'),
+			compress: this.getElementChecked('compress'),
 			where: this.getElementValue('where'),
 			outputFilePath: this.getElementValue('outputFilePath'),
 
@@ -1431,6 +1461,297 @@ class MixpanelExportUI {
 				}
 			}, 300);
 		}, 15000);
+	}
+
+	// Snowcat: Update button visibility based on URL and destination type
+	updateSnowcatButtonVisibility() {
+		const snowcatBtn = document.getElementById('snowcat-btn');
+		if (!snowcatBtn) return;
+
+		// Check for production URL or ?snowcat=true parameter
+		const isProduction = window.location.href.startsWith('https://etl.mixpanel.org/export');
+		const urlParams = new URLSearchParams(window.location.search);
+		const hasSnowcatParam = urlParams.get('snowcat') === 'true';
+
+		// Only show when using GCS destination
+		const destinationType = document.querySelector('input[name="destinationType"]:checked')?.value;
+		const isGCS = destinationType === 'gcs';
+
+		// Check record type - only show for export types that snowcat supports
+		const recordType = document.getElementById('recordType')?.value;
+		const supportedTypes = ['export', 'profile-export', 'group-export'];
+		const isSupportedType = supportedTypes.includes(recordType);
+
+		// Show button if (production OR snowcat param) AND using GCS AND supported type
+		if ((isProduction || hasSnowcatParam) && isGCS && isSupportedType) {
+			snowcatBtn.style.display = 'inline-flex';
+		} else {
+			snowcatBtn.style.display = 'none';
+		}
+	}
+
+	// Snowcat: Open modal with pre-populated job config
+	openSnowcatModal() {
+		const modal = document.getElementById('snowcat-modal');
+		const editor = document.getElementById('snowcat-json-editor');
+
+		if (!modal || !editor) return;
+
+		// Generate Snowcat job config from current UI state
+		const snowcatJob = this.generateSnowcatJob();
+
+		// Pretty-print JSON in editor
+		editor.value = JSON.stringify(snowcatJob, null, 2);
+
+		// Show modal
+		modal.style.display = 'flex';
+	}
+
+	// Snowcat: Close modal
+	closeSnowcatModal() {
+		const modal = document.getElementById('snowcat-modal');
+		if (modal) {
+			modal.style.display = 'none';
+		}
+	}
+
+	// Snowcat: Generate unique job name
+	generateSnowcatJobName(projectId) {
+		// Get user identifier from Mixpanel distinct_id
+		let userIdentifier = 'unknown';
+		try {
+			if (typeof mixpanel !== 'undefined' && mixpanel.get_distinct_id) {
+				const distinctId = mixpanel.get_distinct_id();
+				if (distinctId) {
+					if (distinctId.includes('@')) {
+						// It's an email address - use as-is
+						userIdentifier = distinctId;
+					} else if (distinctId.startsWith('$device:')) {
+						// Device ID - grab first 5 chars after "device:"
+						userIdentifier = distinctId.substring(8, 13);
+					} else {
+						// Some other format - grab first 5 chars
+						userIdentifier = distinctId.substring(0, 5);
+					}
+				}
+			}
+		} catch (e) {
+			console.warn('Could not get Mixpanel distinct_id:', e);
+		}
+
+		// Generate 4 random alphanumeric characters
+		const randomChars = Math.random().toString(36).substring(2, 6);
+
+		// Build job name: {user}-lte-ui-job-{project_id}-{random}
+		const projectPart = projectId || 'unknown';
+		return `${userIdentifier}-lte-ui-job-${projectPart}-${randomChars}`;
+	}
+
+	// Snowcat: Generate export job configuration from UI state
+	generateSnowcatJob() {
+		// Get GCS path from destination
+		const gcsPath = this.getElementValue('gcsPath') || '';
+
+		// Get credentials from UI
+		const mp_token = this.getElementValue('token');
+		const mp_project = this.getElementValue('project');
+		const mp_secret = this.getElementValue('secret');
+
+		// Get user from cookie
+		const getCookie = (name) => {
+			const value = `; ${document.cookie}`;
+			const parts = value.split(`; ${name}=`);
+			if (parts.length === 2) return parts.pop().split(';').shift();
+			return '';
+		};
+		const who = getCookie('user') || 'unknown';
+
+		// Get export-specific fields
+		const recordType = this.getElementValue('recordType') || 'export';
+		const start = this.getElementValue('start');
+		const end = this.getElementValue('end');
+		const whereClause = this.getElementValue('whereClause');
+		const dataGroupId = this.getElementValue('dataGroupId');
+		const cohortId = this.getElementValue('cohortId');
+
+		// Generate unique job name
+		const jobName = this.generateSnowcatJobName(mp_project);
+
+		// Build Snowcat export job object
+		const job = {
+			name: jobName,
+			cloud_path: gcsPath,
+			mp_token: mp_token || '',
+			mp_project: mp_project || '',
+			mp_secret: mp_secret || '',
+			who: who,
+			max_concurrency: 5,  // max 10 for exports, default to 5
+			start_immediately: false,
+			auto_govern: false,
+
+			// Options object - export-specific configuration
+			options: {
+				start_date: start,
+				end_date: end,
+				recordType: recordType,
+				days_per_worker: 1
+			}
+		};
+
+		// Add optional fields if they have values
+		if (whereClause) {
+			job.options.whereClause = whereClause;
+		}
+		if (dataGroupId && recordType === 'group-export') {
+			job.options.dataGroupId = dataGroupId;
+		}
+		if (cohortId && recordType === 'profile-export') {
+			job.options.cohortId = cohortId;
+		}
+
+		return job;
+	}
+
+	// Snowcat: Submit export job request to server
+	async submitSnowcatJob() {
+		try {
+			const editor = document.getElementById('snowcat-json-editor');
+			const requestBtn = document.getElementById('snowcat-request-btn');
+
+			if (!editor || !requestBtn) return;
+
+			// Parse the edited JSON
+			let jobConfig;
+			try {
+				jobConfig = JSON.parse(editor.value);
+			} catch (parseError) {
+				this.showError('Invalid JSON in Snowcat job configuration: ' + parseError.message);
+				return;
+			}
+
+			// Always set these fields (not user-configurable)
+			jobConfig.auto_govern = false;
+			jobConfig.start_immediately = false;
+
+			// Add jobType for server to route to correct endpoint
+			jobConfig.jobType = 'export';
+
+			// Disable button and show loading state
+			const originalText = requestBtn.innerHTML;
+			requestBtn.innerHTML = '<span class="btn-icon">⏳</span> Requesting...';
+			requestBtn.disabled = true;
+
+			// Submit to server
+			const response = await fetch('/snowcat/request', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify(jobConfig),
+				credentials: 'include'
+			});
+
+			const result = await response.json();
+
+			// Reset button
+			requestBtn.innerHTML = originalText;
+			requestBtn.disabled = false;
+
+			if (!response.ok || !result.success) {
+				throw new Error(result.error || 'Snowcat job request failed');
+			}
+
+			// Close modal
+			this.closeSnowcatModal();
+
+			// Parse snowcatResponse if it's a string
+			let snowcatResponse = result.snowcatResponse;
+			if (typeof snowcatResponse === 'string') {
+				try {
+					snowcatResponse = JSON.parse(snowcatResponse);
+				} catch (parseError) {
+					console.warn('Failed to parse snowcatResponse:', parseError);
+				}
+			}
+
+			// Show success
+			this.showSuccess('Snowcat export job requested successfully! The job will be queued for manual approval.');
+
+			// Display the Snowcat response in results section
+			this.showResults({
+				snowcatResponse: snowcatResponse,
+				jobConfig: jobConfig
+			}, false);
+
+		} catch (error) {
+			console.error('Snowcat request error:', error);
+			this.showError('Failed to request Snowcat job: ' + error.message);
+
+			// Reset button
+			const requestBtn = document.getElementById('snowcat-request-btn');
+			if (requestBtn) {
+				requestBtn.innerHTML = '<span class="btn-icon">📨</span> Request Job';
+				requestBtn.disabled = false;
+			}
+		}
+	}
+
+	// Snowcat: Copy export job configuration as cURL command
+	copySnowcatAsCurl() {
+		try {
+			const editor = document.getElementById('snowcat-json-editor');
+			if (!editor) return;
+
+			// Parse the current JSON configuration
+			let jobConfig;
+			try {
+				jobConfig = JSON.parse(editor.value);
+			} catch (parseError) {
+				this.showError('Invalid JSON in Snowcat job configuration: ' + parseError.message);
+				return;
+			}
+
+			// Always set these fields (not user-configurable)
+			jobConfig.auto_govern = false;
+			jobConfig.start_immediately = false;
+
+			// Remove jobType from curl command (server-only field)
+			delete jobConfig.jobType;
+
+			// Generate cURL command - use /export endpoint
+			const snowcatUrl = 'https://snowcat-queuer-lmozz6xkha-uc.a.run.app/export';
+			const jsonData = JSON.stringify(jobConfig, null, 2);
+
+			const curlCommand = `curl -X POST '${snowcatUrl}' \\
+  -H "Authorization: Bearer $(gcloud auth print-identity-token --audiences=https://snowcat-queuer-lmozz6xkha-uc.a.run.app)" \\
+  -H "Content-Type: application/json" \\
+  -d '${jsonData}'`;
+
+			// Copy to clipboard
+			navigator.clipboard.writeText(curlCommand).then(() => {
+				this.showSuccess('cURL command copied to clipboard!');
+			}).catch(err => {
+				// Fallback for older browsers
+				const textArea = document.createElement('textarea');
+				textArea.value = curlCommand;
+				textArea.style.position = 'fixed';
+				textArea.style.left = '-999999px';
+				document.body.appendChild(textArea);
+				textArea.select();
+				try {
+					document.execCommand('copy');
+					this.showSuccess('cURL command copied to clipboard!');
+				} catch (copyErr) {
+					console.error('Failed to copy:', copyErr);
+					this.showError('Failed to copy cURL command');
+				}
+				document.body.removeChild(textArea);
+			});
+
+		} catch (error) {
+			console.error('Copy cURL error:', error);
+			this.showError('Failed to generate cURL command: ' + error.message);
+		}
 	}
 }
 

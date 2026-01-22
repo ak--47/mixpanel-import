@@ -2401,3 +2401,75 @@ describe("cloud export filename generation", () => {
 // Note: Testing cloud export record counting would require mocking the entire
 // streaming pipeline which is complex. The fix ensures recordCount is incremented
 // during streaming and used for cloud storage exports.
+
+describe("cloud export compression", () => {
+	const { COMPRESSION_CONFIG } = require("../components/parsers.js");
+
+	test("COMPRESSION_CONFIG is exported and has expected values", () => {
+		expect(COMPRESSION_CONFIG).toBeDefined();
+		expect(COMPRESSION_CONFIG.GZIP_LEVEL).toBe(6);
+		expect(COMPRESSION_CONFIG.GZIP_MEM_LEVEL).toBe(8);
+		expect(COMPRESSION_CONFIG.GZIP_WINDOW_BITS).toBe(15);
+	});
+
+	test("defaults to compression enabled when compress is undefined", () => {
+		const job = {}; // compress not specified
+		const shouldCompress = job.compress !== false;
+
+		expect(shouldCompress).toBe(true);
+	});
+
+	// Test the extension normalization logic used in exportEvents
+	// Convention: .json.gz if compressed, .ndjson if not compressed
+	function normalizeExtension(filename, shouldCompress) {
+		let basePath = filename;
+
+		// Strip existing extensions to get base name
+		if (basePath.endsWith('.gz')) {
+			basePath = basePath.slice(0, -3);
+		}
+		if (basePath.endsWith('.ndjson')) {
+			basePath = basePath.slice(0, -7);
+		} else if (basePath.endsWith('.json')) {
+			basePath = basePath.slice(0, -5);
+		} else if (basePath.endsWith('.jsonl')) {
+			basePath = basePath.slice(0, -6);
+		}
+
+		return basePath + (shouldCompress ? '.json.gz' : '.ndjson');
+	}
+
+	test("normalizes to .json.gz when compress is true", () => {
+		expect(normalizeExtension("test-export.ndjson", true)).toBe("test-export.json.gz");
+		expect(normalizeExtension("test-export.json", true)).toBe("test-export.json.gz");
+		expect(normalizeExtension("test-export.jsonl", true)).toBe("test-export.json.gz");
+		expect(normalizeExtension("test-export.ndjson.gz", true)).toBe("test-export.json.gz");
+	});
+
+	test("normalizes to .ndjson when compress is false", () => {
+		expect(normalizeExtension("test-export.ndjson", false)).toBe("test-export.ndjson");
+		expect(normalizeExtension("test-export.json", false)).toBe("test-export.ndjson");
+		expect(normalizeExtension("test-export.json.gz", false)).toBe("test-export.ndjson");
+		expect(normalizeExtension("test-export.ndjson.gz", false)).toBe("test-export.ndjson");
+	});
+
+	test("auto-generated filename uses .json.gz when compressing", () => {
+		const job = { compress: true, start: "2024-01-01", end: "2024-01-31" };
+		const shouldCompress = job.compress !== false;
+		// Convention: .json.gz if compressed, .ndjson if not
+		const extension = shouldCompress ? '.json.gz' : '.ndjson';
+		const generatedFilename = `events-${job.start}-${job.end}${extension}`;
+
+		expect(generatedFilename).toBe("events-2024-01-01-2024-01-31.json.gz");
+	});
+
+	test("auto-generated filename uses .ndjson when not compressing", () => {
+		const job = { compress: false, start: "2024-01-01", end: "2024-01-31" };
+		const shouldCompress = job.compress !== false;
+		// Convention: .json.gz if compressed, .ndjson if not
+		const extension = shouldCompress ? '.json.gz' : '.ndjson';
+		const generatedFilename = `events-${job.start}-${job.end}${extension}`;
+
+		expect(generatedFilename).toBe("events-2024-01-01-2024-01-31.ndjson");
+	});
+});

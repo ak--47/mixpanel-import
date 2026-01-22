@@ -4,10 +4,12 @@ const got = require('got');
 const https = require('https');
 const path = require('path');
 const fs = require('fs');
+const zlib = require('zlib');
 const { promisify } = require('util');
 const u = require('ak-tools');
 const showProgress = require('./cli').showProgress;
 const { Transform, Readable } = require('stream');
+const { COMPRESSION_CONFIG } = require('./parsers');
 
 const { Storage } = require('@google-cloud/storage');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
@@ -103,6 +105,8 @@ async function exportEvents(filename, job) {
 
 	// Auto-generate filename if cloud path ends with / or is a bucket/directory without a filename
 	const cloudInfo = detectCloudDestination(filename);
+	const shouldCompress = job.compress !== false; // Default true for cloud exports
+
 	if (cloudInfo.isCloud) {
 		// Check if this appears to be a directory (no file extension after the last /)
 		const lastSlashIndex = filename.lastIndexOf('/');
@@ -113,7 +117,10 @@ async function exportEvents(filename, job) {
 			// Generate filename based on date range
 			const startDate = job.start || 'unknown';
 			const endDate = job.end || 'unknown';
-			const generatedFilename = `events-${startDate}-${endDate}.ndjson`;
+
+			// Convention: .json.gz if compressed, .ndjson if not
+			const extension = shouldCompress ? '.json.gz' : '.ndjson';
+			const generatedFilename = `events-${startDate}-${endDate}${extension}`;
 
 			// Add trailing slash if not present and path doesn't end with /
 			if (!filename.endsWith('/')) {
@@ -123,6 +130,30 @@ async function exportEvents(filename, job) {
 			filename = filename + generatedFilename;
 			if (job.verbose) {
 				console.log(`Auto-generated filename for cloud export: ${filename}`);
+			}
+		} else {
+			// User provided a filename - normalize the extension based on compression setting
+			// Remove any existing .gz or compression-related suffixes and apply correct extension
+			let basePath = filename;
+
+			// Strip existing extensions to get base name
+			if (basePath.endsWith('.gz')) {
+				basePath = basePath.slice(0, -3);
+			}
+			if (basePath.endsWith('.ndjson')) {
+				basePath = basePath.slice(0, -7);
+			} else if (basePath.endsWith('.json')) {
+				basePath = basePath.slice(0, -5);
+			} else if (basePath.endsWith('.jsonl')) {
+				basePath = basePath.slice(0, -6);
+			}
+
+			// Apply the correct extension based on compression setting
+			// Convention: .json.gz if compressed, .ndjson if not
+			filename = basePath + (shouldCompress ? '.json.gz' : '.ndjson');
+
+			if (job.verbose) {
+				console.log(`Normalized cloud export filename: ${filename}`);
 			}
 		}
 	}
@@ -224,10 +255,7 @@ async function exportEvents(filename, job) {
 										recordCount++;
 									}
 								});
-								// Ensure cloud streams are properly finalized
-								if (!skipWriteToDisk && cloudInfo.isCloud) {
-									fileStream.end();
-								}
+								// Cloud stream finalization is handled after the pipeline completes
 								callback();
 								return;
 							} else if (transformed) {
@@ -254,10 +282,8 @@ async function exportEvents(filename, job) {
 				}
 			}
 
-			// Ensure cloud streams are properly finalized
-			if (!skipWriteToDisk && cloudInfo.isCloud) {
-				fileStream.end();
-			}
+			// Note: Cloud stream finalization is handled after the pipeline completes
+			// to ensure we properly wait for the upload to finish
 			callback();
 		}
 	});
@@ -291,12 +317,50 @@ async function exportEvents(filename, job) {
 	}
 
 	if (cloudInfo.isCloud) {
+		// Wait for the cloud stream to finish uploading
+		// The fileStream may be a gzip stream piped to a GCS/S3 stream
+		await new Promise((resolve, reject) => {
+			// Get the actual cloud path (may have .gz appended)
+			const actualPath = fileStream._gcsPath || fileStream._s3Path || filename;
+
+			// For GCS with compression, we have a gzip stream piped to a GCS stream
+			// We need to wait for the underlying GCS stream to finish, not just the gzip stream
+			const underlyingStream = fileStream._underlyingStream;
+			const streamToWaitOn = underlyingStream || fileStream;
+
+			// The 'finish' event fires when all data has been flushed to the destination
+			streamToWaitOn.on('finish', () => {
+				if (job.verbose) console.log(`Cloud stream finished: ${actualPath}`);
+				resolve();
+			});
+			streamToWaitOn.on('error', (err) => {
+				if (job.verbose) console.error(`Cloud stream error: ${err.message}`);
+				reject(err);
+			});
+
+			// Also listen on the outer stream for errors
+			if (underlyingStream) {
+				fileStream.on('error', (err) => {
+					if (job.verbose) console.error(`Compression stream error: ${err.message}`);
+					reject(err);
+				});
+			}
+
+			// End the stream if not already ended (triggers flush)
+			if (!fileStream.writableEnded) {
+				fileStream.end();
+			}
+		});
+
+		// Get the actual cloud path (may have .gz appended by createGCSWriteStream/createS3WriteStream)
+		const actualCloudPath = fileStream._gcsPath || fileStream._s3Path || filename;
+
 		// For cloud storage, use the record count we tracked during streaming
 		job.recordsProcessed += recordCount;
 		job.success += recordCount;
-		job.file = filename;
-		if (job.verbose) console.log(`Exported ${recordCount} records to cloud storage: ${filename}`);
-		return filename;
+		job.file = actualCloudPath;
+		if (job.verbose) console.log(`Exported ${recordCount} records to cloud storage: ${actualCloudPath}`);
+		return actualCloudPath;
 	} else {
 		// For local files, count lines from the file
 		const lines = await countFileLines(filename);
@@ -720,6 +784,10 @@ function createGCSWriteStream(gcsPath, job) {
 	const bucketName = matches[1];
 	const filePath = matches[2];
 
+	// Handle compression - default true for cloud exports
+	// Note: Extension normalization is handled in exportEvents, so we use the path as-is
+	const shouldCompress = job.compress !== false;
+
 	const storageConfig = {
 		projectId: job.gcpProjectId
 	};
@@ -731,17 +799,45 @@ function createGCSWriteStream(gcsPath, job) {
 	const storage = new Storage(storageConfig);
 	const file = storage.bucket(bucketName).file(filePath);
 
-	return file.createWriteStream({
+	// Create GCS write stream with appropriate metadata
+	const gcsWriteOptions = {
 		metadata: {
 			contentType: 'application/x-ndjson'
 		},
 		resumable: false
-	});
+	};
+
+	// Add content encoding for gzip
+	if (shouldCompress) {
+		gcsWriteOptions.metadata.contentEncoding = 'gzip';
+	}
+
+	const gcsStream = file.createWriteStream(gcsWriteOptions);
+
+	if (shouldCompress) {
+		// Create gzip transform stream
+		const gzipStream = zlib.createGzip({
+			level: job.compressionLevel || COMPRESSION_CONFIG.GZIP_LEVEL,
+			memLevel: COMPRESSION_CONFIG.GZIP_MEM_LEVEL
+		});
+
+		// Pipe gzip through to GCS
+		gzipStream.pipe(gcsStream);
+
+		// Expose the final path for logging
+		gzipStream._gcsPath = `gs://${bucketName}/${filePath}`;
+		// Store reference to underlying GCS stream for proper finish detection
+		gzipStream._underlyingStream = gcsStream;
+		return gzipStream;
+	}
+
+	gcsStream._gcsPath = `gs://${bucketName}/${filePath}`;
+	return gcsStream;
 }
 
 /**
- * Create a writable stream to S3
- * @param {string} s3Path - s3://bucket/file path  
+ * Create a writable stream to S3 with optional gzip compression
+ * @param {string} s3Path - s3://bucket/file path
  * @param {jobConfig} job - Job configuration
  * @returns {stream.Writable}
  */
@@ -753,6 +849,10 @@ function createS3WriteStream(s3Path, job) {
 
 	const bucketName = matches[1];
 	const key = matches[2];
+
+	// Handle compression - default true for cloud exports
+	// Note: Extension normalization is handled in exportEvents, so we use the path as-is
+	const shouldCompress = job.compress !== false;
 
 	const s3ClientConfig = {
 		region: job.s3Region
@@ -774,7 +874,7 @@ function createS3WriteStream(s3Path, job) {
 	// Create a custom writable stream that buffers data and uploads on end
 	const chunks = [];
 
-	return new stream.Writable({
+	const writeStream = new stream.Writable({
 		write(chunk, encoding, callback) {
 			chunks.push(chunk);
 			callback();
@@ -782,19 +882,38 @@ function createS3WriteStream(s3Path, job) {
 
 		async final(callback) {
 			try {
-				const body = Buffer.concat(chunks);
-				await s3Client.send(new PutObjectCommand({
+				let body = Buffer.concat(chunks);
+
+				// Compress if needed
+				if (shouldCompress) {
+					body = zlib.gzipSync(body, {
+						level: job.compressionLevel || COMPRESSION_CONFIG.GZIP_LEVEL,
+						memLevel: COMPRESSION_CONFIG.GZIP_MEM_LEVEL
+					});
+				}
+
+				const putParams = {
 					Bucket: bucketName,
 					Key: key,
 					Body: body,
 					ContentType: 'application/x-ndjson'
-				}));
+				};
+
+				// Add content encoding for gzip
+				if (shouldCompress) {
+					putParams.ContentEncoding = 'gzip';
+				}
+
+				await s3Client.send(new PutObjectCommand(putParams));
 				callback();
 			} catch (error) {
 				callback(error);
 			}
 		}
 	});
+
+	writeStream._s3Path = `s3://${bucketName}/${key}`;
+	return writeStream;
 }
 
 /**
@@ -856,7 +975,7 @@ async function writeLocalJSONL(filePath, data) {
 }
 
 /**
- * Write data to cloud storage as JSONL (newline-delimited JSON)
+ * Write data to cloud storage as JSONL (newline-delimited JSON) with optional gzip compression
  * @param {string} cloudPath - cloud storage path
  * @param {Array} data - data to write as JSONL
  * @param {jobConfig} job - job configuration
@@ -869,13 +988,31 @@ async function writeCloudJSON(cloudPath, data, job) {
 		throw new Error(`Expected cloud path, got local path: ${cloudPath}`);
 	}
 
+	// Handle compression - default true for cloud exports
+	const shouldCompress = job.compress !== false;
+
+	// Auto-append .gz extension if compressing and not already present
+	let finalPath = cloudPath;
+	if (shouldCompress && !cloudPath.endsWith('.gz')) {
+		finalPath = cloudPath + '.gz';
+	}
+
 	// Convert to JSONL format (newline-delimited JSON) instead of JSON array
 	const jsonlData = data.map(item => JSON.stringify(item)).join('\n') + '\n';
 
+	// Compress if needed
+	let bodyData = Buffer.from(jsonlData);
+	if (shouldCompress) {
+		bodyData = zlib.gzipSync(bodyData, {
+			level: job.compressionLevel || COMPRESSION_CONFIG.GZIP_LEVEL,
+			memLevel: COMPRESSION_CONFIG.GZIP_MEM_LEVEL
+		});
+	}
+
 	if (cloudInfo.provider === 'gcs') {
-		const matches = cloudPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
+		const matches = finalPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
 		if (!matches) {
-			throw new Error(`Invalid GCS path: ${cloudPath}`);
+			throw new Error(`Invalid GCS path: ${finalPath}`);
 		}
 
 		const bucketName = matches[1];
@@ -892,18 +1029,24 @@ async function writeCloudJSON(cloudPath, data, job) {
 		const storage = new Storage(storageConfig);
 		const file = storage.bucket(bucketName).file(filePath);
 
-		await file.save(jsonlData, {
+		const saveOptions = {
 			metadata: {
-				contentType: 'application/json'
+				contentType: 'application/x-ndjson'
 			}
-		});
+		};
 
-		return cloudPath;
+		if (shouldCompress) {
+			saveOptions.metadata.contentEncoding = 'gzip';
+		}
+
+		await file.save(bodyData, saveOptions);
+
+		return finalPath;
 
 	} else if (cloudInfo.provider === 's3') {
-		const matches = cloudPath.match(/^s3:\/\/([^\/]+)\/(.+)$/);
+		const matches = finalPath.match(/^s3:\/\/([^\/]+)\/(.+)$/);
 		if (!matches) {
-			throw new Error(`Invalid S3 path: ${cloudPath}`);
+			throw new Error(`Invalid S3 path: ${finalPath}`);
 		}
 
 		const bucketName = matches[1];
@@ -926,14 +1069,20 @@ async function writeCloudJSON(cloudPath, data, job) {
 
 		const s3Client = new S3Client(s3ClientConfig);
 
-		await s3Client.send(new PutObjectCommand({
+		const putParams = {
 			Bucket: bucketName,
 			Key: key,
-			Body: jsonlData,
-			ContentType: 'application/json'
-		}));
+			Body: bodyData,
+			ContentType: 'application/x-ndjson'
+		};
 
-		return cloudPath;
+		if (shouldCompress) {
+			putParams.ContentEncoding = 'gzip';
+		}
+
+		await s3Client.send(new PutObjectCommand(putParams));
+
+		return finalPath;
 	}
 
 	throw new Error(`Unsupported cloud provider: ${cloudInfo.provider}`);
