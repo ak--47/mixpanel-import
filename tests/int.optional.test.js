@@ -929,7 +929,7 @@ describe("options", () => {
 				...opts, abridged: false, timeOffset: 7, keepBadRecords: true
 
 			});
-1
+
 			expect(data.success).toBe(0);
 			expect(data.failed).toBe(1);
 
