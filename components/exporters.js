@@ -9,7 +9,7 @@ const { promisify } = require('util');
 const u = require('ak-tools');
 const showProgress = require('./cli').showProgress;
 const { Transform, Readable } = require('stream');
-const { COMPRESSION_CONFIG } = require('./parsers');
+const { COMPRESSION_CONFIG } = require('./constants');
 
 const { Storage } = require('@google-cloud/storage');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');

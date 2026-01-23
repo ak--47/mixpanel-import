@@ -2868,12 +2868,13 @@ function transform(row) {
 			}
 		};
 
-		// Add transform if present (replace transformFunc with base64 transform)
+		// Add transformer if present (replace transformFunc with base64 transformer)
+		// Note: Snowcat API uses "transformer" (not "transform")
 		if (transform) {
 			// Remove transformFunc from options (it's a function, not serializable)
 			delete job.options.transformFunc;
-			// Add base64-encoded transform
-			job.options.transform = transform;
+			// Add base64-encoded transformer
+			job.options.transformer = transform;
 		}
 
 		// Remove fields that don't make sense for Snowcat or are overridden by Snowcat

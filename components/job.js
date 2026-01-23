@@ -10,7 +10,15 @@ const { mParticleEventsToMixpanel, mParticleUserToMixpanel, mParticleGroupToMixp
 const { postHogEventsToMp, postHogPersonToMpProfile } = require('../vendor/posthog.js');
 const { mixpanelEventsToMixpanel } = require('../vendor/mixpanel.js');
 const { juneEventsToMp, juneUserToMp, juneGroupToMp } = require('../vendor/june.js');
-const { buildMapFromPath } = require('./parsers.js');
+
+// Lazy load to avoid circular dependency: parsers.js → validators.js → job.js → parsers.js
+let _buildMapFromPath = null;
+function getBuildMapFromPath() {
+	if (!_buildMapFromPath) {
+		_buildMapFromPath = require('./parsers.js').buildMapFromPath;
+	}
+	return _buildMapFromPath;
+}
 
 /**
  * Simple instance-specific timer to replace ak-tools global timer
@@ -190,6 +198,7 @@ class Job {
 			if (Object.keys(this.heavyObjects).length === 0) {
 				for (const keyFilePath of arrayOfKeysAndFilesPaths) {
 					const { filePath, keyOne, keyTwo, label = u.makeName(3, '-') } = keyFilePath;
+					const buildMapFromPath = getBuildMapFromPath();
 					const result = await buildMapFromPath(filePath, keyOne, keyTwo, this);
 					this.heavyObjects[label] = result;
 				}

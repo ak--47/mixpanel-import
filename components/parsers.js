@@ -19,6 +19,7 @@ const { prepareSCD } = require('./validators.js');
 const { console } = require('inspector');
 const { streamEvents, streamProfiles } = require('../components/exporters.js');
 const zlib = require('zlib');
+const { COMPRESSION_CONFIG } = require('./constants');
 // const { logger } = require('../components/logs.js');
 const { NODE_ENV = "unknown" } = process.env;
 
@@ -274,17 +275,7 @@ const CSV_CONFIG = {
 	encoding: 'utf8'              // Default encoding
 };
 
-// Compression Configuration
-const COMPRESSION_CONFIG = {
-	GZIP_LEVEL: 6,                   // Default compression level (1-9, 6 is balanced)
-	GZIP_WINDOW_BITS: 15,            // Standard gzip window
-	GZIP_MEM_LEVEL: 8,               // Memory usage level (1-9)
-	GZIP_CHUNK_SIZE: 16 * 1024,      // 16KB chunks for general gzip operations
-
-	// Detection patterns
-	GZIP_EXTENSIONS: ['.gz', '.gzip'],
-	COMPRESSION_THRESHOLD: 1024       // Minimum bytes to consider compression
-};
+// COMPRESSION_CONFIG is now imported from ./constants.js to avoid circular dependencies
 
 // Error Handling Configuration (prepared for future use)
 const _ERROR_CONFIG = {
