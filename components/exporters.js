@@ -66,10 +66,11 @@ async function exportEvents(filename, job) {
 	// @ts-ignore
 	if (whereClause && typeof whereClause === 'string') options.searchParams.where = whereClause;
 
-	// Only add project_id if using service account auth (not secret auth)
-	// Secret-based auth doesn't want project_id in the URL
+	// Add project_id when using service account auth (acct + pass + project)
+	// Secret-based auth doesn't need project_id in the URL
 	// @ts-ignore
-	if (job.project && !job.secret) options.searchParams.project_id = job.project;
+	if (job.project && job.acct && job.pass) options.searchParams.project_id = job.project;
+	
 
 	// @ts-ignore
 	const request = got.stream(options);
@@ -95,8 +96,8 @@ async function exportEvents(filename, job) {
 			...e.headers,
 			message: e.message
 		}, false);
-		throw e;
-
+		// Don't throw here - the pipeline() will handle stream errors
+		// Throwing inside an event handler causes unhandled exceptions and hangs
 	});
 
 	request.on('downloadProgress', (progress) => {
@@ -362,6 +363,16 @@ async function exportEvents(filename, job) {
 		if (job.verbose) console.log(`Exported ${recordCount} records to cloud storage: ${actualCloudPath}`);
 		return actualCloudPath;
 	} else {
+		// For local files, ensure the file stream is properly closed
+		// This is necessary when using processingStream (transforms enabled)
+		if (outputStream !== fileStream && fileStream && !fileStream.writableEnded) {
+			await new Promise((resolve, reject) => {
+				fileStream.on('finish', resolve);
+				fileStream.on('error', reject);
+				fileStream.end();
+			});
+		}
+
 		// For local files, count lines from the file
 		const lines = await countFileLines(filename);
 		job.recordsProcessed += lines;
@@ -413,10 +424,10 @@ async function exportProfiles(folder, job) {
 		responseType: 'json',
 		retry: { limit: 50 }
 	};
-	// Only add project_id if using service account auth (not secret auth)
-	// Secret-based auth doesn't want project_id in the URL
+	// Add project_id when using service account auth (acct + pass + project)
+	// Secret-based auth doesn't need project_id in the URL
 	// @ts-ignore
-	if (job.project && !job.secret) options.searchParams.project_id = job.project;
+	if (job.project && job.acct && job.pass) options.searchParams.project_id = job.project;
 
 	// Build form data for POST body
 	const encodedParams = new URLSearchParams();
@@ -1104,8 +1115,8 @@ function streamEvents(job) {
 		where: job.whereClause
 	};
 
-	// Only add project_id if using service account auth (not secret auth)
-	if (job.project && !job.secret) {
+	// Add project_id when using service account auth (acct + pass + project)
+	if (job.project && job.acct && job.pass) {
 		searchParams.project_id = job.project;
 	}
 
@@ -1187,8 +1198,8 @@ function streamProfiles(job) {
 					page: this._page,
 					session_id: this._session_id
 				};
-				// Only add project_id if using service account auth (not secret auth)
-				if (job.project && !job.secret) searchParams.project_id = job.project;
+				// Add project_id when using service account auth (acct + pass + project)
+				if (job.project && job.acct && job.pass) searchParams.project_id = job.project;
 				const res = await got({
 					method: 'POST',
 					url,

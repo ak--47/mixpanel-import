@@ -2351,6 +2351,33 @@ describe("authentication logic", () => {
 		// Note: The actual project_id exclusion happens in exporters.js and importers.js
 		// when building the request options - this test just validates the job config
 	});
+
+	test("export with service account but missing project throws clear error", () => {
+		expect(() => {
+			const job = new Job({ acct: "test", pass: "test" }, { recordType: "export" });
+			job.resolveProjInfo();
+		}).toThrow("Export with service account auth requires project_id");
+	});
+
+	test("profile-export with service account but missing project throws clear error", () => {
+		expect(() => {
+			const job = new Job({ acct: "test", pass: "test" }, { recordType: "profile-export" });
+			job.resolveProjInfo();
+		}).toThrow("Export with service account auth requires project_id");
+	});
+
+	test("export-import-event with service account but missing project throws clear error", () => {
+		expect(() => {
+			const job = new Job({ acct: "test", pass: "test" }, { recordType: "export-import-event" });
+			job.resolveProjInfo();
+		}).toThrow("Export with service account auth requires project_id");
+	});
+
+	test("export with full service account credentials works", () => {
+		const job = new Job({ acct: "test", pass: "test", project: "12345" }, { recordType: "export" });
+		// Should not throw, should return valid auth string
+		expect(job.resolveProjInfo()).toBe(`Basic ${Buffer.from("test:test", "binary").toString("base64")}`);
+	});
 });
 
 describe("cloud export filename generation", () => {

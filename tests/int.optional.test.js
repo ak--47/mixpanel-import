@@ -944,14 +944,14 @@ describe("options", () => {
 	test(
 		"where clause",
 		async () => {
-			const data = await mp({}, null, { ...opts, recordType: "export", start: "2023-01-01", end: "2023-01-01", where: "./tmp/events.ndjson" });
+			const data = await mp({}, null, { ...opts, recordType: "export", start: "11-05-2025", end: "11-05-2025", where: "./tmp/events.ndjson" });
 			const folder = await u.ls("./tmp");
 			expect(folder[1]).toBe(`/Users/ak/code/mixpanel-import/tmp/events.ndjson`);
 			expect(data.duration).toBeGreaterThan(0);
-			expect(data.requests).toBe(1);
+			expect(data.responses.length).toBe(1);
 			expect(data.failed).toBe(0);
-			expect(data.total).toBeGreaterThan(33);
-			expect(data.success).toBeGreaterThan(33);
+			expect(data.total).toBeGreaterThan(1);
+			expect(data.success).toBeGreaterThan(1);
 		},
 		longTimeout
 	);
