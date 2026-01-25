@@ -110,7 +110,13 @@
 					class="upload-section"
 					style="display: none;">
 					<div class="form-group">
-						<label for="gcsPaths">Google Cloud Storage Paths</label>
+						<div class="gcs-path-header">
+							<label for="gcsPaths">Google Cloud Storage Paths</label>
+							<button type="button" id="browse-gcs-btn" class="btn btn-ghost btn-sm"
+								style="display: none;" onclick="window.app.openGcsBrowseModal()">
+								📂 Browse Snowcat Storage
+							</button>
+						</div>
 						<textarea id="gcsPaths"
 							name="gcsPaths"
 							rows="4"
@@ -1052,6 +1058,29 @@
 					<button type="button" id="snowcat-request-btn" class="btn btn-primary">
 						<span class="btn-icon">📨</span>
 						Request Job
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- GCS Browse Modal -->
+		<div id="gcs-browse-modal" class="modal" style="display: none;">
+			<div class="modal-overlay" onclick="window.app.closeGcsBrowseModal()"></div>
+			<div class="modal-content gcs-browse-modal-content">
+				<div class="modal-header">
+					<h2>📂 Browse Snowcat Storage</h2>
+					<button type="button" class="modal-close" onclick="window.app.closeGcsBrowseModal()">✕</button>
+				</div>
+				<div class="modal-body">
+					<div class="gcs-browse-breadcrumb" id="gcs-breadcrumb"></div>
+					<div class="gcs-browse-list" id="gcs-file-list-browse">
+						<div class="loading-indicator">Loading...</div>
+					</div>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn btn-ghost" onclick="window.app.closeGcsBrowseModal()">Cancel</button>
+					<button type="button" class="btn btn-primary" id="gcs-select-btn" disabled onclick="window.app.confirmGcsBrowseSelection()">
+						✓ Select Files
 					</button>
 				</div>
 			</div>

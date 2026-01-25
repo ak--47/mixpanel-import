@@ -182,6 +182,14 @@ class MixpanelExportUI {
 	// Fill form with development values for quick testing
 	fillDevValues() {
 		try {
+			// Set destination to GCS
+			const gcsRadio = document.querySelector('input[name="destinationType"][value="gcs"]');
+			if (gcsRadio) {
+				gcsRadio.checked = true;
+				gcsRadio.dispatchEvent(new Event('change'));
+				this.toggleDestinationType();
+			}
+
 			// Set record type to export events
 			const recordTypeSelect = document.getElementById('recordType');
 			if (recordTypeSelect) {
@@ -190,7 +198,7 @@ class MixpanelExportUI {
 			}
 
 			// Set auth method to service account
-			const serviceAccountRadio = document.querySelector('input[name="authMethod"][value="serviceAccount"]');
+			const serviceAccountRadio = document.querySelector('input[name="authMethod"][value="service"]');
 			if (serviceAccountRadio) {
 				serviceAccountRadio.checked = true;
 				serviceAccountRadio.dispatchEvent(new Event('change'));
@@ -200,8 +208,9 @@ class MixpanelExportUI {
 			setTimeout(() => {
 				// Project ID
 				const projectInput = document.getElementById('project');
+				const projectId = '3730336';
 				if (projectInput) {
-					projectInput.value = '3730336';
+					projectInput.value = projectId;
 				}
 
 				// Service account
@@ -215,6 +224,16 @@ class MixpanelExportUI {
 				if (passInput) {
 					passInput.value = 'QwZbu3l4dGXIuiSMHE0cHhIlXK4aGzhq';
 				}
+
+				// Set GCS path with demo folder
+				const gcsPathInput = document.getElementById('gcsPath');
+				if (gcsPathInput) {
+					gcsPathInput.value = `gs://snowcat/etl_ui_jobs/demo/${projectId}/`;
+				}
+
+				// Update CLI command and visibility
+				this.updateCLICommand();
+				this.updateSnowcatButtonVisibility();
 			}, 100);
 
 			// Set date range to 2025-10-01 to 2025-10-01
@@ -893,10 +912,9 @@ class MixpanelExportUI {
 		const destinationType = document.querySelector('input[name="destinationType"]:checked')?.value || 'local';
 		if (destinationType === 'gcs') {
 			const gcsPath = document.getElementById('gcsPath').value;
-			if (!gcsPath) {
-				return { isValid: false, message: 'GCS path is required when using Google Cloud Storage destination.' };
-			}
-			if (!gcsPath.startsWith('gs://')) {
+			// GCS path is optional - if empty, Snowcat default path will be used
+			// If path is provided, it must be valid
+			if (gcsPath && !gcsPath.startsWith('gs://')) {
 				return { isValid: false, message: 'GCS path must start with gs:// (e.g., gs://bucket/path/file.jsonl).' };
 			}
 		} else if (destinationType === 's3') {
@@ -1404,6 +1422,288 @@ class MixpanelExportUI {
 		}, 10000);
 	}
 
+	// Utility: Get cookie value
+	getCookie(name) {
+		const value = `; ${document.cookie}`;
+		const parts = value.split(`; ${name}=`);
+		if (parts.length === 2) return parts.pop().split(';').shift();
+		return '';
+	}
+
+	// Utility: Ensure path is a folder (for profile/group exports that write multiple files)
+	ensureFolderPath(path) {
+		if (!path) return path;
+
+		// Common file extensions that indicate a file, not a folder
+		const fileExtensions = ['.json.gz', '.ndjson.gz', '.jsonl.gz', '.json', '.ndjson', '.jsonl', '.gz'];
+
+		// Check if path ends with a file extension
+		const lowerPath = path.toLowerCase();
+		for (const ext of fileExtensions) {
+			if (lowerPath.endsWith(ext)) {
+				// Strip the filename - find the last / before the extension
+				const lastSlash = path.lastIndexOf('/');
+				if (lastSlash > 0) {
+					path = path.substring(0, lastSlash + 1);
+				}
+				break;
+			}
+		}
+
+		// Ensure path ends with /
+		if (!path.endsWith('/')) {
+			path = path + '/';
+		}
+
+		return path;
+	}
+
+	// Snowcat: Construct default GCS path for exports
+	constructSnowcatDefaultPath() {
+		// Get user_id from cookie, sanitize
+		let userId = 'unknown';
+		const userCookie = this.getCookie('user') || '';
+		if (userCookie) {
+			userId = userCookie
+				.replace(/@mixpanel\.com$/i, '')  // Remove @mixpanel.com
+				.replace(/[^a-zA-Z0-9_-]/g, '_')   // Replace special chars
+				.substring(0, 30);                  // Limit length
+		}
+
+		// Get project or secret for folder
+		const projectId = this.getElementValue('project') || '';
+		const secret = this.getElementValue('secret') || '';
+		const projectPart = projectId || (secret ? secret.substring(0, 8) : 'unknown');
+
+		return `gs://snowcat/etl_ui_jobs/${userId}/exports/${projectPart}/`;
+	}
+
+	// GCS Browse: State
+	gcsBrowseCurrentPath = 'etl_ui_jobs/';
+	gcsBrowseSelectedPath = null;
+	gcsBrowseMode = 'export'; // 'export' or 'import'
+
+	// GCS Browse: Open modal
+	openGcsBrowseModal(mode = 'export') {
+		this.gcsBrowseMode = mode;
+		this.gcsBrowseSelectedPath = null;
+		this.gcsBrowseCurrentPath = 'etl_ui_jobs/';
+
+		const modal = document.getElementById('gcs-browse-modal');
+		const selectBtn = document.getElementById('gcs-select-btn');
+
+		if (!modal) return;
+
+		// Disable select button initially
+		if (selectBtn) selectBtn.disabled = true;
+
+		modal.style.display = 'flex';
+		this.loadGcsBrowseContents('etl_ui_jobs/');
+	}
+
+	// GCS Browse: Close modal
+	closeGcsBrowseModal() {
+		const modal = document.getElementById('gcs-browse-modal');
+		if (modal) {
+			modal.style.display = 'none';
+		}
+		this.gcsBrowseSelectedPath = null;
+	}
+
+	// GCS Browse: Load folder contents
+	async loadGcsBrowseContents(prefix) {
+		const fileListEl = document.getElementById('gcs-file-list-browse');
+		const breadcrumbEl = document.getElementById('gcs-breadcrumb');
+
+		if (!fileListEl) return;
+
+		// Show loading
+		fileListEl.innerHTML = '<div class="loading-indicator">Loading...</div>';
+
+		try {
+			const response = await fetch(`/browse-gcs?prefix=${encodeURIComponent(prefix)}`);
+			const result = await response.json();
+
+			if (!result.success) {
+				throw new Error(result.error || 'Failed to browse GCS');
+			}
+
+			this.gcsBrowseCurrentPath = prefix;
+
+			// Render breadcrumb
+			this.renderBreadcrumb(result.currentPath, breadcrumbEl);
+
+			// Render file list
+			this.renderFileList(result.items, fileListEl);
+
+		} catch (error) {
+			console.error('GCS browse error:', error);
+			fileListEl.innerHTML = `<div class="browse-error">❌ ${error.message}</div>`;
+		}
+	}
+
+	// GCS Browse: Render breadcrumb navigation
+	renderBreadcrumb(currentPath, breadcrumbEl) {
+		if (!breadcrumbEl) return;
+
+		// Parse path: gs://snowcat/etl_ui_jobs/user/exports/
+		const pathParts = currentPath.replace('gs://snowcat/', '').split('/').filter(Boolean);
+
+		let html = '<span class="breadcrumb-item" onclick="window.app.loadGcsBrowseContents(\'etl_ui_jobs/\')">📦 snowcat</span>';
+
+		let accumPath = '';
+		pathParts.forEach((part, index) => {
+			accumPath += part + '/';
+			const isLast = index === pathParts.length - 1;
+			html += ` / <span class="breadcrumb-item${isLast ? ' active' : ''}" onclick="window.app.loadGcsBrowseContents('${accumPath}')">${part}</span>`;
+		});
+
+		breadcrumbEl.innerHTML = html;
+	}
+
+	// GCS Browse: Render file/folder list
+	renderFileList(items, fileListEl) {
+		if (!fileListEl) return;
+
+		if (items.length === 0) {
+			fileListEl.innerHTML = '<div class="browse-empty">📭 This folder is empty</div>';
+			return;
+		}
+
+		// Sort: folders first, then files
+		const sorted = [...items].sort((a, b) => {
+			if (a.type === 'folder' && b.type !== 'folder') return -1;
+			if (a.type !== 'folder' && b.type === 'folder') return 1;
+			return a.name.localeCompare(b.name);
+		});
+
+		const formatSize = (bytes) => {
+			if (!bytes || bytes === 0) return '';
+			const k = 1024;
+			const sizes = ['B', 'KB', 'MB', 'GB'];
+			const i = Math.floor(Math.log(bytes) / Math.log(k));
+			return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+		};
+
+		let html = '';
+		sorted.forEach(item => {
+			const isFolder = item.type === 'folder';
+			const icon = isFolder ? '📁' : '📄';
+			const sizeStr = isFolder ? '' : formatSize(item.size);
+			const selectedClass = this.gcsBrowseSelectedPath === item.path ? ' selected' : '';
+
+			html += `
+				<div class="browse-item${selectedClass}"
+					onclick="window.app.handleBrowseItemClick('${item.path}', '${item.type}')"
+					data-path="${item.path}" data-type="${item.type}">
+					<span class="item-icon">${icon}</span>
+					<span class="item-name">${item.name}</span>
+					<span class="item-size">${sizeStr}</span>
+				</div>
+			`;
+		});
+
+		fileListEl.innerHTML = html;
+	}
+
+	// GCS Browse: Handle item click
+	handleBrowseItemClick(path, type) {
+		if (type === 'folder') {
+			// For folders, either navigate into them or select the folder path
+			// Double-click navigates, single-click selects
+			if (this.gcsBrowseSelectedPath === path) {
+				// Second click - navigate into folder
+				const prefix = path.replace('gs://snowcat/', '');
+				this.loadGcsBrowseContents(prefix);
+			} else {
+				// First click - select folder
+				this.gcsBrowseSelectedPath = path;
+				this.updateBrowseSelection();
+			}
+		} else {
+			// For files, toggle selection
+			if (this.gcsBrowseSelectedPath === path) {
+				this.gcsBrowseSelectedPath = null;
+			} else {
+				this.gcsBrowseSelectedPath = path;
+			}
+			this.updateBrowseSelection();
+		}
+	}
+
+	// GCS Browse: Update selection UI
+	updateBrowseSelection() {
+		const fileListEl = document.getElementById('gcs-file-list-browse');
+		const selectBtn = document.getElementById('gcs-select-btn');
+
+		// Update selected class on items
+		if (fileListEl) {
+			fileListEl.querySelectorAll('.browse-item').forEach(item => {
+				const itemPath = item.getAttribute('data-path');
+				if (itemPath === this.gcsBrowseSelectedPath) {
+					item.classList.add('selected');
+				} else {
+					item.classList.remove('selected');
+				}
+			});
+		}
+
+		// Enable/disable select button
+		if (selectBtn) {
+			selectBtn.disabled = !this.gcsBrowseSelectedPath;
+		}
+	}
+
+	// GCS Browse: Confirm selection
+	confirmGcsBrowseSelection() {
+		if (!this.gcsBrowseSelectedPath) return;
+
+		// For exports, put the selected path in the gcsPath input
+		if (this.gcsBrowseMode === 'export') {
+			const gcsPathInput = document.getElementById('gcsPath');
+			if (gcsPathInput) {
+				gcsPathInput.value = this.gcsBrowseSelectedPath;
+				gcsPathInput.dispatchEvent(new Event('input'));
+			}
+		}
+
+		this.closeGcsBrowseModal();
+	}
+
+	// Show success message toast
+	showSuccess(message) {
+		const successMsg = document.createElement('div');
+		successMsg.innerHTML = `
+			<div class="toast-content">
+				<span class="toast-icon">✅</span>
+				<span class="toast-message">${message}</span>
+			</div>
+		`;
+		successMsg.style.cssText = `
+			position: fixed;
+			top: 20px;
+			right: 20px;
+			background: #4CAF50;
+			color: white;
+			padding: 12px 20px;
+			border-radius: 8px;
+			box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+			z-index: 10000;
+			opacity: 0;
+			transition: opacity 0.3s ease;
+		`;
+
+		document.body.appendChild(successMsg);
+
+		setTimeout(() => { successMsg.style.opacity = '1'; }, 100);
+		setTimeout(() => {
+			successMsg.style.opacity = '0';
+			setTimeout(() => {
+				if (successMsg.parentNode) document.body.removeChild(successMsg);
+			}, 300);
+		}, 3000);
+	}
+
 	showCloudExportSuccess(result) {
 		// Create a success message for cloud storage exports
 		const successMsg = document.createElement('div');
@@ -1463,17 +1763,13 @@ class MixpanelExportUI {
 		}, 15000);
 	}
 
-	// Snowcat: Update button visibility based on URL and destination type
+	// Snowcat: Update button visibility based on export type and destination
 	updateSnowcatButtonVisibility() {
 		const snowcatBtn = document.getElementById('snowcat-btn');
-		if (!snowcatBtn) return;
+		const snowcatNote = document.getElementById('gcs-snowcat-default-note');
+		const browseBtn = document.getElementById('browse-gcs-export-btn');
 
-		// Check for production URL or ?snowcat=true parameter
-		const isProduction = window.location.href.startsWith('https://etl.mixpanel.org/export');
-		const urlParams = new URLSearchParams(window.location.search);
-		const hasSnowcatParam = urlParams.get('snowcat') === 'true';
-
-		// Only show when using GCS destination
+		// Check destination type
 		const destinationType = document.querySelector('input[name="destinationType"]:checked')?.value;
 		const isGCS = destinationType === 'gcs';
 
@@ -1482,11 +1778,32 @@ class MixpanelExportUI {
 		const supportedTypes = ['export', 'profile-export', 'group-export'];
 		const isSupportedType = supportedTypes.includes(recordType);
 
-		// Show button if (production OR snowcat param) AND using GCS AND supported type
-		if ((isProduction || hasSnowcatParam) && isGCS && isSupportedType) {
-			snowcatBtn.style.display = 'inline-flex';
-		} else {
-			snowcatBtn.style.display = 'none';
+		// Show Snowcat button if supported export type is selected
+		// Snowcat jobs ALWAYS use GCS, so we don't require GCS selection
+		if (snowcatBtn) {
+			if (isSupportedType) {
+				snowcatBtn.style.display = 'inline-flex';
+			} else {
+				snowcatBtn.style.display = 'none';
+			}
+		}
+
+		// Show Snowcat default path note when using GCS destination
+		if (snowcatNote) {
+			if (isGCS) {
+				snowcatNote.style.display = 'block';
+			} else {
+				snowcatNote.style.display = 'none';
+			}
+		}
+
+		// Show browse button when using GCS destination
+		if (browseBtn) {
+			if (isGCS) {
+				browseBtn.style.display = 'inline-flex';
+			} else {
+				browseBtn.style.display = 'none';
+			}
 		}
 	}
 
@@ -1549,22 +1866,22 @@ class MixpanelExportUI {
 
 	// Snowcat: Generate export job configuration from UI state
 	generateSnowcatJob() {
-		// Get GCS path from destination
-		const gcsPath = this.getElementValue('gcsPath') || '';
+		// Get GCS path from destination - use default if empty
+		let gcsPath = this.getElementValue('gcsPath') || '';
+		if (!gcsPath.trim()) {
+			// Use default Snowcat path when empty
+			gcsPath = this.constructSnowcatDefaultPath();
+		}
 
-		// Get credentials from UI
+		// Get credentials from UI - support both service account and API secret
 		const mp_token = this.getElementValue('token');
 		const mp_project = this.getElementValue('project');
 		const mp_secret = this.getElementValue('secret');
+		const mp_acct = this.getElementValue('acct');
+		const mp_pass = this.getElementValue('pass');
 
 		// Get user from cookie
-		const getCookie = (name) => {
-			const value = `; ${document.cookie}`;
-			const parts = value.split(`; ${name}=`);
-			if (parts.length === 2) return parts.pop().split(';').shift();
-			return '';
-		};
-		const who = getCookie('user') || 'unknown';
+		const who = this.getCookie('user') || 'unknown';
 
 		// Get export-specific fields
 		const recordType = this.getElementValue('recordType') || 'export';
@@ -1574,6 +1891,12 @@ class MixpanelExportUI {
 		const dataGroupId = this.getElementValue('dataGroupId');
 		const cohortId = this.getElementValue('cohortId');
 
+		// For profile and group exports, ensure path is a folder (not a specific file)
+		// These export types create multiple files (one per batch), so we need a folder path
+		if (recordType === 'profile-export' || recordType === 'group-export') {
+			gcsPath = this.ensureFolderPath(gcsPath);
+		}
+
 		// Generate unique job name
 		const jobName = this.generateSnowcatJobName(mp_project);
 
@@ -1581,9 +1904,7 @@ class MixpanelExportUI {
 		const job = {
 			name: jobName,
 			cloud_path: gcsPath,
-			mp_token: mp_token || '',
 			mp_project: mp_project || '',
-			mp_secret: mp_secret || '',
 			who: who,
 			max_concurrency: 5,  // max 10 for exports, default to 5
 			start_immediately: false,
@@ -1597,6 +1918,19 @@ class MixpanelExportUI {
 				days_per_worker: 1
 			}
 		};
+
+		// Add credentials - prefer service account over API secret
+		if (mp_acct && mp_pass) {
+			job.mp_acct = mp_acct;
+			job.mp_pass = mp_pass;
+		} else if (mp_secret) {
+			job.mp_secret = mp_secret;
+		}
+
+		// Add token if present
+		if (mp_token) {
+			job.mp_token = mp_token;
+		}
 
 		// Add optional fields if they have values
 		if (whereClause) {

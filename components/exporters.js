@@ -402,8 +402,24 @@ async function exportProfiles(folder, job) {
 
 	if (cloudInfo.isCloud) {
 		// For cloud storage, treat 'folder' as a prefix
+		// Profile exports create multiple files, so we need a folder path, not a filename
+		// Strip any filename from the path if user provided one
+		let prefix = folder;
+		const fileExtensions = ['.json.gz', '.ndjson.gz', '.jsonl.gz', '.json', '.ndjson', '.jsonl', '.gz'];
+		const lowerFolder = folder.toLowerCase();
+		for (const ext of fileExtensions) {
+			if (lowerFolder.endsWith(ext)) {
+				// Strip the filename - find the last / before the extension
+				const lastSlash = folder.lastIndexOf('/');
+				if (lastSlash > 0) {
+					prefix = folder.substring(0, lastSlash + 1);
+					if (job.verbose) console.log(`Profile export: converted file path to folder: ${folder} -> ${prefix}`);
+				}
+				break;
+			}
+		}
 		// Ensure it ends with / for proper prefix behavior
-		const prefix = folder.endsWith('/') ? folder : folder + '/';
+		prefix = prefix.endsWith('/') ? prefix : prefix + '/';
 		file = `${prefix}${fileName}`;
 	} else {
 		// For local storage, use path.resolve as before
