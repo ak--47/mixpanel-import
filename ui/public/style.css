@@ -1635,3 +1635,142 @@ input[type="range"]::-moz-range-thumb {
     outline: none;
     box-shadow: 0 0 0 3px rgba(32, 178, 170, 0.3);
 }
+
+/* ==========================================
+   GCS Browse Modal & Snowcat Default Path
+   ========================================== */
+
+/* Snowcat default path note */
+.snowcat-default-note {
+    background: rgba(255, 152, 0, 0.1);
+    border: 1px solid var(--warning);
+    border-radius: var(--radius-md);
+    padding: 10px 14px;
+    margin-top: 8px;
+    font-size: 13px;
+}
+
+.snowcat-default-note code {
+    background: rgba(255, 152, 0, 0.15);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+.snowcat-default-note a {
+    color: var(--mp-purple-light);
+    text-decoration: none;
+}
+
+.snowcat-default-note a:hover {
+    text-decoration: underline;
+}
+
+/* GCS path header with browse button */
+.gcs-path-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.gcs-path-header label {
+    margin-bottom: 0;
+}
+
+/* GCS Browse Modal */
+.gcs-browse-modal-content {
+    max-width: 700px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.gcs-browse-breadcrumb {
+    padding: 12px 16px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    margin-bottom: 16px;
+    font-size: 13px;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.breadcrumb-item {
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: color 0.2s;
+}
+
+.breadcrumb-item:hover {
+    color: var(--mp-purple-light);
+}
+
+.breadcrumb-item.active {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.gcs-browse-list {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
+    background: var(--bg-card);
+}
+
+.browse-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-secondary);
+    cursor: pointer;
+    transition: background 0.15s, border-left 0.15s;
+}
+
+.browse-item:last-child {
+    border-bottom: none;
+}
+
+.browse-item:hover {
+    background: var(--bg-elevated);
+}
+
+.browse-item.selected {
+    background: var(--mp-purple-bg);
+    border-left: 3px solid var(--mp-purple);
+    padding-left: 13px;
+}
+
+.browse-item .item-icon {
+    margin-right: 12px;
+    font-size: 18px;
+}
+
+.browse-item .item-name {
+    flex: 1;
+    font-size: 14px;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.browse-item .item-size {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-left: 12px;
+}
+
+.browse-empty,
+.browse-error {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+.browse-error {
+    color: var(--error);
+}

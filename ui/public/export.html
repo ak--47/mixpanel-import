@@ -60,6 +60,147 @@
 		<!-- Main Form -->
 		<form id="exportForm"
 			class="import-form">
+			<!-- Export Destination Section (at top, like import's Data Files) -->
+			<section class="card">
+				<h2 class="section-title">📁 Export Destination</h2>
+				<p class="section-description">Choose where to save your exported data. Supports local download or cloud storage.</p>
+
+				<!-- Destination Type Toggle -->
+				<div class="file-source-toggle">
+					<label class="toggle-label">
+						<input type="radio"
+							name="destinationType"
+							value="local"
+							checked>
+						💻 Local Download
+					</label>
+					<label class="toggle-label">
+						<input type="radio"
+							name="destinationType"
+							value="gcs">
+						☁️ Google Cloud (gs://)
+					</label>
+					<label class="toggle-label">
+						<input type="radio"
+							name="destinationType"
+							value="s3">
+						🪣 Amazon S3 (s3://)
+					</label>
+				</div>
+
+				<!-- Local Destination Fields -->
+				<div id="local-destination"
+					class="upload-section">
+					<div class="form-row">
+						<div class="form-group">
+							<label for="where">Output Directory</label>
+							<input type="text"
+								id="where"
+								name="where"
+								placeholder="./exports">
+							<small>Directory for exported files and logs</small>
+						</div>
+						<div class="form-group">
+							<label for="outputFilePath">Output File Path</label>
+							<input type="text"
+								id="outputFilePath"
+								name="outputFilePath"
+								placeholder="./export-data.json">
+							<small>Path for exported data file</small>
+						</div>
+					</div>
+				</div>
+
+				<!-- GCS Destination Fields -->
+				<div id="gcs-destination"
+					class="upload-section"
+					style="display: none;">
+					<div class="form-group">
+						<div class="gcs-path-header">
+							<label for="gcsPath">Google Cloud Storage Path</label>
+							<button type="button" id="browse-gcs-export-btn" class="btn btn-ghost btn-sm"
+								style="display: none;" onclick="window.app.openGcsBrowseModal('export')">
+								📂 Browse Snowcat Storage
+							</button>
+						</div>
+						<input type="text"
+							id="gcsPath"
+							name="gcsPath"
+							placeholder="gs://your-bucket/exports/data.jsonl">
+						<small>Google Cloud Storage path (gs://bucket/path/file.jsonl)</small>
+						<div id="gcs-snowcat-default-note" class="snowcat-default-note" style="display: none;">
+							<span style="color: var(--warning);">💡 Leave blank for Snowcat default:
+							<code>gs://snowcat/etl_ui_jobs/{user}/exports/{project}/</code></span>
+							<a href="https://console.cloud.google.com/storage/browser/snowcat/etl_ui_jobs"
+								target="_blank" rel="noopener" style="margin-left: 8px;">View in GCS Console ↗</a>
+						</div>
+					</div>
+					<div id="gcs-path-preview"
+						class="cloud-file-preview"></div>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="gcpProjectId">GCP Project ID</label>
+							<input type="text"
+								id="gcpProjectId"
+								name="gcpProjectId"
+								placeholder="your-gcp-project">
+							<small>Google Cloud Project ID (optional if using ADC)</small>
+						</div>
+						<div class="form-group">
+							<label for="gcsCredentials">GCS Credentials Path</label>
+							<input type="text"
+								id="gcsCredentials"
+								name="gcsCredentials"
+								placeholder="/path/to/service-account.json">
+							<small>Path to service account key file (optional if using ADC)</small>
+						</div>
+					</div>
+				</div>
+
+				<!-- S3 Destination Fields -->
+				<div id="s3-destination"
+					class="upload-section"
+					style="display: none;">
+					<div class="form-group">
+						<label for="s3Path">Amazon S3 Path</label>
+						<input type="text"
+							id="s3Path"
+							name="s3Path"
+							placeholder="s3://your-bucket/exports/data.jsonl">
+						<small>Amazon S3 path (s3://bucket/path/file.jsonl)</small>
+					</div>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="s3Region">S3 Region*</label>
+							<input type="text"
+								id="s3Region"
+								name="s3Region"
+								placeholder="us-east-1">
+							<small>AWS region where your S3 bucket is located</small>
+						</div>
+						<div class="form-group">
+							<label for="s3Key">AWS Access Key ID</label>
+							<input type="text"
+								id="s3Key"
+								name="s3Key"
+								placeholder="AKIA...">
+							<small>AWS Access Key (optional if using IAM roles)</small>
+						</div>
+					</div>
+					<div class="form-group">
+						<label for="s3Secret">AWS Secret Access Key</label>
+						<input type="password"
+							id="s3Secret"
+							name="s3Secret"
+							placeholder="..."
+							autocomplete="off"
+							data-1p-ignore
+							data-lpignore="true">
+						<small>AWS Secret Key (optional if using IAM roles)</small>
+					</div>
+				</div>
+			</section>
+
 			<!-- Export Type Section -->
 			<section class="card">
 				<h2 class="section-title">📋 Type of Export</h2>
@@ -430,145 +571,11 @@
 							</label>
 							<label class="checkbox-label">
 								<input type="checkbox"
-									id="writeToFile"
-									name="writeToFile"
-									checked>
-								Write to Local File
-							</label>
-							<label class="checkbox-label">
-								<input type="checkbox"
 									id="compress"
 									name="compress"
 									checked>
 								Compress Output (gzip)
 							</label>
-						</div>
-
-						<!-- Destination Type Selection -->
-						<div class="form-group">
-							<label>Export Destination</label>
-							<div class="auth-toggle">
-								<label class="toggle-label">
-									<input type="radio"
-										name="destinationType"
-										value="local"
-										checked>
-									💻 Local Download
-								</label>
-								<label class="toggle-label">
-									<input type="radio"
-										name="destinationType"
-										value="gcs">
-									☁️ Google Cloud Storage
-								</label>
-								<label class="toggle-label">
-									<input type="radio"
-										name="destinationType"
-										value="s3">
-									🪣 Amazon S3
-								</label>
-							</div>
-							<small>Choose where to save your exported data</small>
-						</div>
-
-						<!-- Local Destination Fields -->
-						<div id="local-destination"
-							class="destination-section">
-							<div class="form-row">
-								<div class="form-group">
-									<label for="where">Output Directory</label>
-									<input type="text"
-										id="where"
-										name="where"
-										placeholder="./exports">
-									<small>Directory for exported files and logs</small>
-								</div>
-								<div class="form-group">
-									<label for="outputFilePath">Output File Path</label>
-									<input type="text"
-										id="outputFilePath"
-										name="outputFilePath"
-										placeholder="./export-data.json">
-									<small>Path for exported data file</small>
-								</div>
-							</div>
-						</div>
-
-						<!-- GCS Destination Fields -->
-						<div id="gcs-destination"
-							class="destination-section"
-							style="display: none;">
-							<div class="form-row">
-								<div class="form-group">
-									<label for="gcsPath">GCS Path*</label>
-									<input type="text"
-										id="gcsPath"
-										name="gcsPath"
-										placeholder="gs://your-bucket/exports/data.jsonl">
-									<small>Google Cloud Storage path (gs://bucket/path/file.jsonl)</small>
-								</div>
-								<div class="form-group">
-									<label for="gcpProjectId">GCP Project ID</label>
-									<input type="text"
-										id="gcpProjectId"
-										name="gcpProjectId"
-										placeholder="your-gcp-project">
-									<small>Google Cloud Project ID (optional if using ADC)</small>
-								</div>
-							</div>
-							<div class="form-group">
-								<label for="gcsCredentials">GCS Credentials Path</label>
-								<input type="text"
-									id="gcsCredentials"
-									name="gcsCredentials"
-									placeholder="/path/to/service-account.json">
-								<small>Path to GCS service account key file (optional if using ADC)</small>
-							</div>
-						</div>
-
-						<!-- S3 Destination Fields -->
-						<div id="s3-destination"
-							class="destination-section"
-							style="display: none;">
-							<div class="form-row">
-								<div class="form-group">
-									<label for="s3Path">S3 Path*</label>
-									<input type="text"
-										id="s3Path"
-										name="s3Path"
-										placeholder="s3://your-bucket/exports/data.jsonl">
-									<small>Amazon S3 path (s3://bucket/path/file.jsonl)</small>
-								</div>
-								<div class="form-group">
-									<label for="s3Region">S3 Region*</label>
-									<input type="text"
-										id="s3Region"
-										name="s3Region"
-										placeholder="us-east-1">
-									<small>AWS region where your S3 bucket is located</small>
-								</div>
-							</div>
-							<div class="form-row">
-								<div class="form-group">
-									<label for="s3Key">AWS Access Key ID</label>
-									<input type="text"
-										id="s3Key"
-										name="s3Key"
-										placeholder="AKIA...">
-									<small>AWS Access Key (optional if using IAM roles)</small>
-								</div>
-								<div class="form-group">
-									<label for="s3Secret">AWS Secret Access Key</label>
-									<input type="password"
-										id="s3Secret"
-										name="s3Secret"
-										placeholder="..."
-										autocomplete="off"
-										data-1p-ignore
-										data-lpignore="true">
-									<small>AWS Secret Key (optional if using IAM roles)</small>
-								</div>
-							</div>
 						</div>
 					</div>
 				</div>
@@ -674,6 +681,29 @@
 						<button type="button" id="snowcat-request-btn" class="btn btn-primary">
 							<span class="btn-icon">📨</span>
 							Request Job
+						</button>
+					</div>
+				</div>
+			</div>
+
+			<!-- GCS Browse Modal -->
+			<div id="gcs-browse-modal" class="modal" style="display: none;">
+				<div class="modal-overlay" onclick="window.app.closeGcsBrowseModal()"></div>
+				<div class="modal-content gcs-browse-modal-content">
+					<div class="modal-header">
+						<h2>📂 Browse Snowcat Storage</h2>
+						<button type="button" class="modal-close" onclick="window.app.closeGcsBrowseModal()">✕</button>
+					</div>
+					<div class="modal-body">
+						<div class="gcs-browse-breadcrumb" id="gcs-breadcrumb"></div>
+						<div class="gcs-browse-list" id="gcs-file-list-browse">
+							<div class="loading-indicator">Loading...</div>
+						</div>
+					</div>
+					<div class="modal-footer">
+						<button type="button" class="btn btn-ghost" onclick="window.app.closeGcsBrowseModal()">Cancel</button>
+						<button type="button" class="btn btn-primary" id="gcs-select-btn" disabled onclick="window.app.confirmGcsBrowseSelection()">
+							✓ Select Path
 						</button>
 					</div>
 				</div>

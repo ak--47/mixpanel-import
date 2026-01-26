@@ -485,7 +485,7 @@ npx mixpanel-import --type export --start 2024-01-01 --end 2024-01-31 \
 - Compressed (`--compress` or default): `.json.gz`
 - Uncompressed (`--compress false`): `.ndjson`
 
-**Auto-generated filenames:** When `--where` is a directory path (ending with `/`), filenames are auto-generated as `events-{start}-{end}.json.gz` or `events-{start}-{end}.ndjson`.
+**Auto-generated filenames:** When `--where` is a directory path (ending with `/`), filenames are auto-generated as `events-{start}--{end}.json.gz` or `events-{start}--{end}.ndjson`.
 
 ### 🔬 **Advanced Options**
 

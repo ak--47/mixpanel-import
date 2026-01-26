@@ -2698,25 +2698,31 @@ function transform(row) {
 		mixpanel.track('import failed', properties);
 	}
 
-	// Snowcat: Update button visibility based on URL and file source
+	// Snowcat: Update button visibility based on file source
 	updateSnowcatButtonVisibility() {
 		const snowcatBtn = document.getElementById('snowcat-btn');
-		if (!snowcatBtn) return;
+		const browseBtn = document.getElementById('browse-gcs-btn');
 
-		// Check for production URL or ?snowcat=true parameter
-		const isProduction = window.location.href.startsWith('https://etl.mixpanel.org/import');
-		const urlParams = new URLSearchParams(window.location.search);
-		const hasSnowcatParam = urlParams.get('snowcat') === 'true';
-
-		// Only show when using GCS
+		// Check if using GCS source
 		const fileSource = document.querySelector('input[name="fileSource"]:checked')?.value;
 		const isGCS = fileSource === 'gcs';
 
-		// Show button if (production OR snowcat param) AND using GCS
-		if ((isProduction || hasSnowcatParam) && isGCS) {
-			snowcatBtn.style.display = 'inline-flex';
-		} else {
-			snowcatBtn.style.display = 'none';
+		// Show Snowcat button when using GCS source
+		if (snowcatBtn) {
+			if (isGCS) {
+				snowcatBtn.style.display = 'inline-flex';
+			} else {
+				snowcatBtn.style.display = 'none';
+			}
+		}
+
+		// Show browse button when using GCS source
+		if (browseBtn) {
+			if (isGCS) {
+				browseBtn.style.display = 'inline-flex';
+			} else {
+				browseBtn.style.display = 'none';
+			}
 		}
 	}
 
@@ -2743,6 +2749,198 @@ function transform(row) {
 		if (modal) {
 			modal.style.display = 'none';
 		}
+	}
+
+	// GCS Browse: State
+	gcsBrowseCurrentPath = 'etl_ui_jobs/';
+	gcsBrowseSelectedFiles = new Set();
+
+	// GCS Browse: Open modal
+	openGcsBrowseModal() {
+		this.gcsBrowseSelectedFiles = new Set();
+		this.gcsBrowseCurrentPath = 'etl_ui_jobs/';
+
+		const modal = document.getElementById('gcs-browse-modal');
+		const selectBtn = document.getElementById('gcs-select-btn');
+
+		if (!modal) return;
+
+		// Disable select button initially
+		if (selectBtn) selectBtn.disabled = true;
+
+		modal.style.display = 'flex';
+		this.loadGcsBrowseContents('etl_ui_jobs/');
+	}
+
+	// GCS Browse: Close modal
+	closeGcsBrowseModal() {
+		const modal = document.getElementById('gcs-browse-modal');
+		if (modal) {
+			modal.style.display = 'none';
+		}
+		this.gcsBrowseSelectedFiles = new Set();
+	}
+
+	// GCS Browse: Load folder contents
+	async loadGcsBrowseContents(prefix) {
+		const fileListEl = document.getElementById('gcs-file-list-browse');
+		const breadcrumbEl = document.getElementById('gcs-breadcrumb');
+
+		if (!fileListEl) return;
+
+		// Show loading
+		fileListEl.innerHTML = '<div class="loading-indicator">Loading...</div>';
+
+		try {
+			const response = await fetch(`/browse-gcs?prefix=${encodeURIComponent(prefix)}`);
+			const result = await response.json();
+
+			if (!result.success) {
+				throw new Error(result.error || 'Failed to browse GCS');
+			}
+
+			this.gcsBrowseCurrentPath = prefix;
+
+			// Render breadcrumb
+			this.renderBreadcrumb(result.currentPath, breadcrumbEl);
+
+			// Render file list
+			this.renderFileList(result.items, fileListEl);
+
+		} catch (error) {
+			console.error('GCS browse error:', error);
+			fileListEl.innerHTML = `<div class="browse-error">❌ ${error.message}</div>`;
+		}
+	}
+
+	// GCS Browse: Render breadcrumb navigation
+	renderBreadcrumb(currentPath, breadcrumbEl) {
+		if (!breadcrumbEl) return;
+
+		// Parse path: gs://snowcat/etl_ui_jobs/user/exports/
+		const pathParts = currentPath.replace('gs://snowcat/', '').split('/').filter(Boolean);
+
+		let html = '<span class="breadcrumb-item" onclick="window.app.loadGcsBrowseContents(\'etl_ui_jobs/\')">📦 snowcat</span>';
+
+		let accumPath = '';
+		pathParts.forEach((part, index) => {
+			accumPath += part + '/';
+			const isLast = index === pathParts.length - 1;
+			html += ` / <span class="breadcrumb-item${isLast ? ' active' : ''}" onclick="window.app.loadGcsBrowseContents('${accumPath}')">${part}</span>`;
+		});
+
+		breadcrumbEl.innerHTML = html;
+	}
+
+	// GCS Browse: Render file/folder list
+	renderFileList(items, fileListEl) {
+		if (!fileListEl) return;
+
+		if (items.length === 0) {
+			fileListEl.innerHTML = '<div class="browse-empty">📭 This folder is empty</div>';
+			return;
+		}
+
+		// Sort: folders first, then files
+		const sorted = [...items].sort((a, b) => {
+			if (a.type === 'folder' && b.type !== 'folder') return -1;
+			if (a.type !== 'folder' && b.type === 'folder') return 1;
+			return a.name.localeCompare(b.name);
+		});
+
+		const formatSize = (bytes) => {
+			if (!bytes || bytes === 0) return '';
+			const k = 1024;
+			const sizes = ['B', 'KB', 'MB', 'GB'];
+			const i = Math.floor(Math.log(bytes) / Math.log(k));
+			return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+		};
+
+		let html = '';
+		sorted.forEach(item => {
+			const isFolder = item.type === 'folder';
+			const icon = isFolder ? '📁' : '📄';
+			const sizeStr = isFolder ? '' : formatSize(item.size);
+			const selectedClass = this.gcsBrowseSelectedFiles.has(item.path) ? ' selected' : '';
+
+			html += `
+				<div class="browse-item${selectedClass}"
+					onclick="window.app.handleBrowseItemClick('${item.path}', '${item.type}')"
+					data-path="${item.path}" data-type="${item.type}">
+					<span class="item-icon">${icon}</span>
+					<span class="item-name">${item.name}</span>
+					<span class="item-size">${sizeStr}</span>
+				</div>
+			`;
+		});
+
+		fileListEl.innerHTML = html;
+	}
+
+	// GCS Browse: Handle item click
+	handleBrowseItemClick(path, type) {
+		if (type === 'folder') {
+			// Navigate into folder
+			const prefix = path.replace('gs://snowcat/', '');
+			this.loadGcsBrowseContents(prefix);
+		} else {
+			// Toggle file selection for multi-select
+			if (this.gcsBrowseSelectedFiles.has(path)) {
+				this.gcsBrowseSelectedFiles.delete(path);
+			} else {
+				this.gcsBrowseSelectedFiles.add(path);
+			}
+			this.updateBrowseSelection();
+		}
+	}
+
+	// GCS Browse: Update selection UI
+	updateBrowseSelection() {
+		const fileListEl = document.getElementById('gcs-file-list-browse');
+		const selectBtn = document.getElementById('gcs-select-btn');
+
+		// Update selected class on items
+		if (fileListEl) {
+			fileListEl.querySelectorAll('.browse-item').forEach(item => {
+				const itemPath = item.getAttribute('data-path');
+				if (this.gcsBrowseSelectedFiles.has(itemPath)) {
+					item.classList.add('selected');
+				} else {
+					item.classList.remove('selected');
+				}
+			});
+		}
+
+		// Enable/disable select button
+		if (selectBtn) {
+			selectBtn.disabled = this.gcsBrowseSelectedFiles.size === 0;
+		}
+	}
+
+	// GCS Browse: Confirm selection - add files to gcsPaths textarea
+	confirmGcsBrowseSelection() {
+		if (this.gcsBrowseSelectedFiles.size === 0) return;
+
+		const gcsPathsTextarea = document.getElementById('gcsPaths');
+		if (gcsPathsTextarea) {
+			// Get existing paths
+			const existingPaths = gcsPathsTextarea.value.trim();
+
+			// Convert Set to array and join with newlines
+			const newPaths = Array.from(this.gcsBrowseSelectedFiles).join('\n');
+
+			// Append to existing paths (with separator if needed)
+			if (existingPaths) {
+				gcsPathsTextarea.value = existingPaths + '\n' + newPaths;
+			} else {
+				gcsPathsTextarea.value = newPaths;
+			}
+
+			// Trigger input event to update UI
+			gcsPathsTextarea.dispatchEvent(new Event('input'));
+		}
+
+		this.closeGcsBrowseModal();
 	}
 
 	// Snowcat: Generate unique job name
@@ -2815,10 +3013,12 @@ function transform(row) {
 			streamFormat = 'parquet';
 		}
 
-		// Get credentials from UI
+		// Get credentials from UI - support both service account and API secret
 		const mp_token = this.getElementValue('token');
 		const mp_project = this.getElementValue('project');
 		const mp_secret = this.getElementValue('secret');
+		const mp_acct = this.getElementValue('acct');
+		const mp_pass = this.getElementValue('pass');
 
 		// Get user from cookie
 		const getCookie = (name) => {
@@ -2855,11 +3055,12 @@ function transform(row) {
 			filter: filter,
 			mp_token: mp_token || '',
 			mp_project: mp_project || '',
-			mp_secret: mp_secret || '',
 			files_per_worker: 1,
 			max_concurrency: 2,
 			who: who,
 			name: jobName,
+			start_immediately: false,
+			auto_govern: false,
 
 			// Options object - all UI configuration
 			options: {
@@ -2867,6 +3068,14 @@ function transform(row) {
 				streamFormat: streamFormat
 			}
 		};
+
+		// Add credentials - prefer service account over API secret
+		if (mp_acct && mp_pass) {
+			job.mp_acct = mp_acct;
+			job.mp_pass = mp_pass;
+		} else if (mp_secret) {
+			job.mp_secret = mp_secret;
+		}
 
 		// Add transformer if present (replace transformFunc with base64 transformer)
 		// Note: Snowcat API uses "transformer" (not "transform")

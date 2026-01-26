@@ -10,6 +10,7 @@ const { createGcpLoggingPinoConfig } = require("@google-cloud/pino-logging-gcp-c
 const cookieParser = require('cookie-parser');
 const { validateCloudWriteAccess } = require('../components/parsers.js');
 const { GoogleAuth } = require('google-auth-library');
+const { Storage } = require('@google-cloud/storage');
 
 let { NODE_ENV = "" } = process.env;
 if (!NODE_ENV) NODE_ENV = "local";
@@ -1289,10 +1290,15 @@ app.post("/snowcat/request", async (req, res) => {
 			});
 		}
 
-		if (!jobConfig.mp_token && !jobConfig.mp_secret) {
+		// Validate authentication - need either: token, secret, or service account (acct+pass)
+		const hasToken = !!jobConfig.mp_token;
+		const hasSecret = !!jobConfig.mp_secret;
+		const hasServiceAccount = !!(jobConfig.mp_acct && jobConfig.mp_pass);
+
+		if (!hasToken && !hasSecret && !hasServiceAccount) {
 			return res.status(400).json({
 				success: false,
-				error: "Either mp_token or mp_secret is required for Snowcat jobs"
+				error: "Authentication required: provide mp_token, mp_secret, or service account (mp_acct + mp_pass)"
 			});
 		}
 
@@ -2015,6 +2021,64 @@ app.get("/memory", (req, res) => {
 			threshold: `${MAX_HEAP_PERCENT}%`
 		}
 	});
+});
+
+// Browse GCS bucket contents for Snowcat (only snowcat bucket allowed)
+app.get("/browse-gcs", async (req, res) => {
+	try {
+		/** @type {string} */
+		const prefix = typeof req.query.prefix === 'string' ? req.query.prefix : 'etl_ui_jobs/';
+		const bucketName = 'snowcat';
+
+		// Validate prefix stays within etl_ui_jobs/
+		if (!prefix.startsWith('etl_ui_jobs/') && prefix !== 'etl_ui_jobs/') {
+			return res.status(400).json({
+				success: false,
+				error: "Browse is only allowed within etl_ui_jobs/"
+			});
+		}
+
+		const storage = new Storage();
+		const result = await storage.bucket(bucketName).getFiles({
+			prefix: prefix,
+			delimiter: '/',
+			maxResults: 100
+		});
+		const files = result[0];
+		/** @type {{ prefixes?: string[] }} */
+		const apiResponse = result[2] || {};
+
+		// Extract folders from prefixes
+		const folders = (apiResponse.prefixes || []).map(p => ({
+			name: p.split('/').filter(Boolean).pop(),
+			path: `gs://${bucketName}/${p}`,
+			type: 'folder'
+		}));
+
+		// Extract files (skip the prefix itself if it appears as a file)
+		const filesList = files
+			.filter(file => file.name !== prefix && file.name.split('/').pop())
+			.map(file => ({
+				name: file.name.split('/').pop(),
+				path: `gs://${bucketName}/${file.name}`,
+				size: parseInt(String(file.metadata.size || 0)),
+				type: 'file'
+			}));
+
+		logger.debug({ prefix, folderCount: folders.length, fileCount: filesList.length }, "gcs browse");
+
+		res.json({
+			success: true,
+			currentPath: `gs://${bucketName}/${prefix}`,
+			items: [...folders, ...filesList]
+		});
+	} catch (error) {
+		logger.error({ err: error }, "gcs browse error");
+		res.status(500).json({
+			success: false,
+			error: `Failed to browse GCS: ${error.message}`
+		});
+	}
 });
 
 // Start server
