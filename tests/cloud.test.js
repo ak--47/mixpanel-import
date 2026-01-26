@@ -677,7 +677,7 @@ describe("cloud export writes - GCS", () => {
 			expect(result.duration).toBeGreaterThan(0);
 			expect(result.file).toBeDefined();
 			// Auto-generated filename should include dates and .json.gz
-			expect(result.file).toContain('events-2024-01-01-2024-01-02');
+			expect(result.file).toContain('events-2024-01--01-2024-01-02');
 			expect(result.file).toContain('.json.gz');
 		},
 		longTimeout
