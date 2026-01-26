@@ -3013,10 +3013,12 @@ function transform(row) {
 			streamFormat = 'parquet';
 		}
 
-		// Get credentials from UI
+		// Get credentials from UI - support both service account and API secret
 		const mp_token = this.getElementValue('token');
 		const mp_project = this.getElementValue('project');
 		const mp_secret = this.getElementValue('secret');
+		const mp_acct = this.getElementValue('acct');
+		const mp_pass = this.getElementValue('pass');
 
 		// Get user from cookie
 		const getCookie = (name) => {
@@ -3053,11 +3055,12 @@ function transform(row) {
 			filter: filter,
 			mp_token: mp_token || '',
 			mp_project: mp_project || '',
-			mp_secret: mp_secret || '',
 			files_per_worker: 1,
 			max_concurrency: 2,
 			who: who,
 			name: jobName,
+			start_immediately: false,
+			auto_govern: false,
 
 			// Options object - all UI configuration
 			options: {
@@ -3065,6 +3068,14 @@ function transform(row) {
 				streamFormat: streamFormat
 			}
 		};
+
+		// Add credentials - prefer service account over API secret
+		if (mp_acct && mp_pass) {
+			job.mp_acct = mp_acct;
+			job.mp_pass = mp_pass;
+		} else if (mp_secret) {
+			job.mp_secret = mp_secret;
+		}
 
 		// Add transformer if present (replace transformFunc with base64 transformer)
 		// Note: Snowcat API uses "transformer" (not "transform")
