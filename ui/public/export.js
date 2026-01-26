@@ -216,13 +216,13 @@ class MixpanelExportUI {
 				// Service account
 				const acctInput = document.getElementById('acct');
 				if (acctInput) {
-					acctInput.value = 'quicktest.0a627b.mp-service-account';
+					acctInput.value = 'etl-second-test-acct.10a27a.mp-service-account';
 				}
 
 				// Service account password
 				const passInput = document.getElementById('pass');
 				if (passInput) {
-					passInput.value = 'QwZbu3l4dGXIuiSMHE0cHhIlXK4aGzhq';
+					passInput.value = 'zqdR04wkQ6dxSQsXKvBPX1q6vf3GLQ7m';
 				}
 
 				// Set GCS path with demo folder
@@ -240,8 +240,8 @@ class MixpanelExportUI {
 			const startInput = document.getElementById('start');
 			const endInput = document.getElementById('end');
 			if (startInput && endInput) {
-				startInput.value = '2025-10-01';
-				endInput.value = '2025-10-01';
+				startInput.value = '2026-01-20';
+				endInput.value = '2026-01-20';
 			}
 
 			// Enable show progress

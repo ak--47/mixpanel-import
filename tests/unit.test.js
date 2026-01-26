@@ -2485,9 +2485,9 @@ describe("cloud export compression", () => {
 		const shouldCompress = job.compress !== false;
 		// Convention: .json.gz if compressed, .ndjson if not
 		const extension = shouldCompress ? '.json.gz' : '.ndjson';
-		const generatedFilename = `events-${job.start}-${job.end}${extension}`;
+		const generatedFilename = `events-${job.start}--${job.end}${extension}`;
 
-		expect(generatedFilename).toBe("events-2024-01-01-2024-01-31.json.gz");
+		expect(generatedFilename).toBe("events-2024-01-01--2024-01-31.json.gz");
 	});
 
 	test("auto-generated filename uses .ndjson when not compressing", () => {
@@ -2495,8 +2495,8 @@ describe("cloud export compression", () => {
 		const shouldCompress = job.compress !== false;
 		// Convention: .json.gz if compressed, .ndjson if not
 		const extension = shouldCompress ? '.json.gz' : '.ndjson';
-		const generatedFilename = `events-${job.start}-${job.end}${extension}`;
+		const generatedFilename = `events-${job.start}--${job.end}${extension}`;
 
-		expect(generatedFilename).toBe("events-2024-01-01-2024-01-31.ndjson");
+		expect(generatedFilename).toBe("events-2024-01-01--2024-01-31.ndjson");
 	});
 });

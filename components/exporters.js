@@ -121,7 +121,7 @@ async function exportEvents(filename, job) {
 
 			// Convention: .json.gz if compressed, .ndjson if not
 			const extension = shouldCompress ? '.json.gz' : '.ndjson';
-			const generatedFilename = `events-${startDate}-${endDate}${extension}`;
+			const generatedFilename = `events-${startDate}--${endDate}${extension}`;
 
 			// Add trailing slash if not present and path doesn't end with /
 			if (!filename.endsWith('/')) {
