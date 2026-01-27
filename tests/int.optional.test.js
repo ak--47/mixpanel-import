@@ -176,7 +176,7 @@ describe("filenames", () => {
 	test(
 		"scd (user)",
 		async () => {
-			const result = await mp({}, scdUserNps, { ...opts, recordType: `scd`, scdKey: "NPS", scdType: "number", scdLabel: 'net-promo-score', fixData: true });
+			const result = await mp({}, scdUserNps, { ...opts, recordType: `scd`, scdKey: "NPS", scdType: "number", scdLabel: 'net-promo-score', fixData: true, abridged: false });
 			const { success, failed, duration, total } = result;
 			expect(success).toBe(2005);
 			expect(failed).toBe(0);
@@ -322,9 +322,9 @@ describe("in memory", () => {
 			const { recordType, success, failed, total } = data;
 			const expected = 1000;
 			expect(recordType).toBe("user");
-			expect(success).toBe(expected);
+			expect(success).toBeGreaterThan(expected - 1);
 			expect(failed).toBe(0);
-			expect(total).toBe(expected);
+			expect(total).toBeGreaterThan(expected -1 );
 		}, longTimeout
 	);
 

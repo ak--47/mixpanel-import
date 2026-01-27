@@ -282,7 +282,7 @@ async function flushToMixpanel(batch, job) {
 			//noop
 		}
 		// Must return array on error (prevents "result is not iterable")
-		return [{error: e.message || 'Unknown error'}, null];
+		return [{ error: e.message || 'Unknown error' }, null];
 	}
 }
 
@@ -311,6 +311,13 @@ async function flushToMixpanelWithUndici(batch, job) {
 		// Only add project_id if using service account auth (not secret auth)
 		if (job.project && !job.secret) {
 			searchParams.set('project_id', String(job.project));
+		}
+
+		if (job.project && job.acct && job.secret) {
+			if (atob(job.auth.split("Basic ")?.pop())?.split(":")?.pop().length > 2) {
+				//probably service account auth; need project_id
+				searchParams.set('project_id', String(job.project));
+			}
 		}
 
 		// Build headers
@@ -374,7 +381,7 @@ async function flushToMixpanelWithUndici(batch, job) {
 
 				// Read response body
 				const responseBody = await response.body.text();
-				
+
 				// Parse JSON response
 				if (u.isJSONStr(responseBody)) {
 					res = JSON.parse(responseBody);
@@ -391,10 +398,10 @@ async function flushToMixpanelWithUndici(batch, job) {
 					} catch (e) {
 						// noop
 					}
-					
+
 					job.retries++;
 					job.requests++;
-					
+
 					if (response.statusCode === 429) {
 						job.rateLimited++;
 					} else if (response.statusCode >= 500) {
@@ -402,7 +409,7 @@ async function flushToMixpanelWithUndici(batch, job) {
 					} else {
 						job.clientErrors++;
 					}
-					
+
 					retryCount++;
 					continue;
 				}
@@ -412,7 +419,7 @@ async function flushToMixpanelWithUndici(batch, job) {
 
 			} catch (error) {
 				lastError = error;
-				
+
 				// Enhanced error logging for debugging
 				console.error(`[UNDICI ERROR] ${error.message}`, {
 					code: error.code,
@@ -420,10 +427,10 @@ async function flushToMixpanelWithUndici(batch, job) {
 					retryCount,
 					batchSize: Array.isArray(batch) ? batch.length : 'unknown'
 				});
-				
+
 				// Check if we should retry based on error code
 				const shouldRetry = retryConfig.retryErrorCodes.has(error.code) && retryCount < retryConfig.maxRetries;
-				
+
 				if (shouldRetry) {
 					// Handle retry logging and stats
 					try {
@@ -432,13 +439,13 @@ async function flushToMixpanelWithUndici(batch, job) {
 					} catch (e) {
 						// noop
 					}
-					
+
 					job.retries++;
 					job.requests++;
 					job.clientErrors++;
-					
+
 					retryCount++;
-					
+
 					// Add exponential backoff for retries
 					await new Promise(resolve => setTimeout(resolve, Math.min(1000 * Math.pow(2, retryCount), 5000)));
 					continue;

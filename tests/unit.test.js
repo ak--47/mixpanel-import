@@ -41,6 +41,7 @@ const { getEnvVars,
 	itemStream,
 	analyzeFileFormat
 } = require("../components/parsers.js");
+const { ampUserToMp } = require("../vendor/amplitude.js");
 const exp = require("constants");
 const fakeCreds = { acct: "test", pass: "test", project: "test" };
 
@@ -649,6 +650,50 @@ describe("transforms", () => {
 		expect($city).toBe("Phoenix");
 
 
+	});
+
+	test("user profile: vendor transform output preserved through ezTransforms", () => {
+		// Sample Amplitude user export data (simplified)
+		const amplitudeUserExport = {
+			user_id: "166029",
+			amplitude_id: 123456789012345,
+			ip_address: "114.122.116.110",
+			user_properties: {
+				appVersion: "4.72.1",
+				language: "ID",
+				deviceId: "2b5a7a750daebddd",
+				platform: "Android",
+				country: "Indonesia"
+			}
+		};
+
+		// Apply Amplitude vendor transform
+		const vendorTransformed = ampUserToMp({})(amplitudeUserExport);
+
+		// Verify vendor transform output structure
+		expect(vendorTransformed.$distinct_id).toBe("166029");
+		expect(vendorTransformed.$ip).toBe("114.122.116.110");
+		expect(vendorTransformed.$set).toBeDefined();
+		expect(vendorTransformed.$set.appVersion).toBe("4.72.1");
+
+		// Apply ezTransforms with default directive (simulating UI behavior)
+		const config = { recordType: "user", token: "testToken", directive: "$set" };
+		const finalTransformed = ezTransforms(config)(vendorTransformed);
+
+		// Critical assertions: $distinct_id and $ip must be at root level, NOT inside $set
+		expect(finalTransformed.$distinct_id).toBe("166029");
+		expect(finalTransformed.$ip).toBe("114.122.116.110");
+		expect(finalTransformed.$token).toBe("testToken");
+		expect(finalTransformed.$set).toBeDefined();
+
+		// User properties should be inside $set
+		expect(finalTransformed.$set.appVersion).toBe("4.72.1");
+		expect(finalTransformed.$set.language).toBe("ID");
+		expect(finalTransformed.$set.deviceId).toBe("2b5a7a750daebddd");
+
+		// $ip should NOT be inside $set (this was the bug)
+		expect(finalTransformed.$set.$ip).toBeUndefined();
+		expect(finalTransformed.$set.$distinct_id).toBeUndefined();
 	});
 
 	test("event: whitelist", () => {

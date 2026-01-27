@@ -121,13 +121,20 @@ function ezTransforms(job) {
 			const directive = (job.directive && validOperations.includes(job.directive)) ? job.directive : null;
 
 			// 1. Fix "wrong shape" into {$directive: {...}} or default to {$set: {...}}
-			// Skip if record already has correct vendor-transform structure
-			// (has a valid operation AND has $distinct_id at root - means vendor already processed it)
-			const hasVendorTransformStructure = validOperations.some((op) => op in user) &&
-				('$distinct_id' in user || 'distinct_id' in user);
+			// Check if record already has complete vendor-transform structure:
+			// - has a valid operation ($set, $set_once, etc.)
+			// - has $distinct_id at root
+			// - has NO loose properties at root that need wrapping
+			const hasOperation = validOperations.some((op) => op in user);
+			const hasDistinctId = '$distinct_id' in user || 'distinct_id' in user;
+			const specialRootKeys = ['$distinct_id', 'distinct_id', '$token', '$ip', '$ignore_time', '$ignore_alias', ...validOperations];
+			const hasLooseProperties = Object.keys(user).some(key => !specialRootKeys.includes(key));
 
-			// Only apply fix if: record doesn't have vendor structure AND (directive specified OR no valid operation)
-			if (!hasVendorTransformStructure && (directive || !validOperations.some((op) => op in user))) {
+			// Skip only if record has complete vendor structure (no loose properties to wrap)
+			const hasCompleteVendorStructure = hasOperation && hasDistinctId && !hasLooseProperties;
+
+			// Apply fix if: no complete vendor structure AND (directive specified OR no valid operation)
+			if (!hasCompleteVendorStructure && (directive || !hasOperation)) {
 				const uuidKey = user.$distinct_id
 					? "$distinct_id"
 					: user.distinct_id
