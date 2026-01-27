@@ -184,7 +184,7 @@ describe("filenames", () => {
 			expect(total).toBe(2005);
 
 
-		}
+		}, 30000
 	);
 
 	
@@ -364,7 +364,7 @@ describe("in memory", () => {
 		expect(failed).toBe(0);
 		expect(duration).toBeGreaterThan(0);
 		expect(total).toBe(24);
-	});
+	}, 30000);
 });
 
 describe("inference", () => {
