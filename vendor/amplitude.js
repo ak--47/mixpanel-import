@@ -110,7 +110,7 @@ function ampEventsToMp(options) {
  * @param  {import('../index').amplitudeOpts} options
  */
 function ampUserToMp(options) {
-	const { user_id = "user_id" } = options;
+	const { user_id = "user_id" , includeExperimentProps = false } = options;
 
 	return function transform(ampEvent) {
 		const userProps = ampEvent.user_properties;
@@ -136,6 +136,14 @@ function ampUserToMp(options) {
 		for (let ampMixPair of ampMixPairs) {
 			if (ampEvent[ampMixPair[0]]) {
 				mixpanelProfile.$set[ampMixPair[1]] = ampEvent[ampMixPair[0]];
+			}
+		}
+
+		if (!includeExperimentProps) {
+			for (const key in mixpanelProfile.$set) {
+				if (key?.toLowerCase()?.startsWith("[experiment]")) {
+					delete mixpanelProfile.$set[key];
+				}
 			}
 		}
 
