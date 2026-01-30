@@ -110,7 +110,9 @@ class MixpanelExportUI {
 			const { recordType, processed, requests, eps, memory, bytesProcessed, downloadMessage } = progressData;
 
 			const formatNumber = (num) => {
-				const parsed = typeof num === 'number' ? num : parseFloat(num);
+				// Strip commas from string before parsing (eps comes pre-formatted as "13,939")
+				const cleaned = typeof num === 'string' ? num.replace(/,/g, '') : num;
+				const parsed = typeof cleaned === 'number' ? cleaned : parseFloat(cleaned);
 				if (!isNaN(parsed)) {
 					return Math.round(parsed).toLocaleString();
 				}
