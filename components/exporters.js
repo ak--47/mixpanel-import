@@ -43,20 +43,12 @@ async function exportEvents(filename, job) {
 			...job.params
 		},
 		method: job.reqMethod,
-		retry: { limit: 50 },
+		retry: { limit: 0 }, // we handle retries manually for proper 429 handling
 		headers: {
 			"Authorization": `${job.auth}`
 		},
 		agent: {
 			https: new https.Agent({ keepAlive: true })
-		},
-		hooks: {
-			// @ts-ignore
-			beforeRetry: [(err, count) => {
-				// @ts-ignore
-				l(`retrying request...#${count}`);
-				job.retries++;
-			}]
 		},
 
 	};
@@ -71,38 +63,6 @@ async function exportEvents(filename, job) {
 	// @ts-ignore
 	if (job.project && job.acct && job.pass) options.searchParams.project_id = job.project;
 	
-
-	// @ts-ignore
-	const request = got.stream(options);
-
-	request.on('response', (res) => {
-		job.requests++;
-		// Use job.store() to respect abridged mode
-		job.store({
-			status: res.statusCode,
-			ip: res.ip,
-			url: res.requestUrl,
-			...res.headers
-		}, true);
-	});
-
-	request.on('error', (e) => {
-		job.failed++;
-		// Use job.store() to respect abridged mode
-		job.store({
-			status: e.statusCode,
-			ip: e.ip,
-			url: e.requestUrl,
-			...e.headers,
-			message: e.message
-		}, false);
-		// Don't throw here - the pipeline() will handle stream errors
-		// Throwing inside an event handler causes unhandled exceptions and hangs
-	});
-
-	request.on('downloadProgress', (progress) => {
-		downloadProgress(progress.transferred, job);
-	});
 
 	// Auto-generate filename if cloud path ends with / or is a bucket/directory without a filename
 	const cloudInfo = detectCloudDestination(filename);
@@ -159,156 +119,192 @@ async function exportEvents(filename, job) {
 		}
 	}
 
-	// Define streams upfront
-	let fileStream;
-
-	if (cloudInfo.isCloud) {
-		if (cloudInfo.provider === 'gcs') {
-			fileStream = createGCSWriteStream(filename, job);
-		} else if (cloudInfo.provider === 's3') {
-			fileStream = createS3WriteStream(filename, job);
-		}
-	} else {
-		fileStream = fs.createWriteStream(filename);
-	}
-
-	// Processing stream for memory and file/cloud output
-	let buffer = "";
-	const processingStream = new stream.Writable({
-		write(chunk, encoding, callback) {
-			buffer += chunk.toString();
-
-			// Split the buffer into lines
-			const lines = buffer.split("\n");
-
-			// Keep the last partial line in the buffer (if any)
-			buffer = lines.pop() || "";
-
-			// Process each complete line
-			lines.forEach(line => {
-				if (!line.trim()) return;
-
-				try {
-					let row = JSON.parse(line.trim());
-
-					// Apply transform function if provided
-					if (job.transformFunc && typeof job.transformFunc === 'function') {
-						try {
-							const transformed = job.transformFunc(row);
-							// Handle case where transform returns array (explosion)
-							if (Array.isArray(transformed)) {
-								transformed.forEach(item => {
-									if (skipWriteToDisk) {
-										allResults.push(item);
-									} else {
-										fileStream.write(JSON.stringify(item) + '\n');
-										recordCount++;
-									}
-								});
-								return;
-							} else if (transformed) {
-								row = transformed;
-							}
-						} catch (transformError) {
-							// Log transform error but continue processing
-							if (job.verbose) {
-								console.warn(`Transform error on record: ${transformError.message}`);
-							}
-							// Use original row if transform fails
-						}
-					}
-
-					// Write the (possibly transformed) record
-					if (skipWriteToDisk) {
-						allResults.push(row);
-					} else {
-						fileStream.write(JSON.stringify(row) + '\n');
-						recordCount++;
-					}
-				}
-				catch (parseError) {
-					// Skip malformed lines
-					if (job.verbose) {
-						console.warn(`Parse error on line: ${parseError.message}`);
-					}
-				}
-			});
-
-			callback();
-		},
-
-		final(callback) {
-			// Process the remaining data in the buffer as the last line
-			if (buffer.trim()) {
-				try {
-					let row = JSON.parse(buffer.trim());
-
-					// Apply transform function if provided
-					if (job.transformFunc && typeof job.transformFunc === 'function') {
-						try {
-							const transformed = job.transformFunc(row);
-							if (Array.isArray(transformed)) {
-								transformed.forEach(item => {
-									if (skipWriteToDisk) {
-										allResults.push(item);
-									} else {
-										fileStream.write(JSON.stringify(item) + '\n');
-										recordCount++;
-									}
-								});
-								// Cloud stream finalization is handled after the pipeline completes
-								callback();
-								return;
-							} else if (transformed) {
-								row = transformed;
-							}
-						} catch (transformError) {
-							if (job.verbose) {
-								console.warn(`Transform error on final record: ${transformError.message}`);
-							}
-						}
-					}
-
-					if (skipWriteToDisk) {
-						allResults.push(row);
-					} else {
-						fileStream.write(JSON.stringify(row) + '\n');
-						recordCount++;
-					}
-				}
-				catch (parseError) {
-					if (job.verbose) {
-						console.warn(`Parse error on final line: ${parseError.message}`);
-					}
-				}
-			}
-
-			// Note: Cloud stream finalization is handled after the pipeline completes
-			// to ensure we properly wait for the upload to finish
-			callback();
-		}
-	});
-
 	const allResults = [];
 	let recordCount = 0; // Track record count for cloud storage
 
-	// Choose the appropriate stream based on whether transforms are needed
-	let outputStream;
-	if (skipWriteToDisk || (job.transformFunc && typeof job.transformFunc === 'function') || cloudInfo.isCloud) {
-		// Use processing stream when we need transforms, memory mode, or cloud storage (for record counting)
-		outputStream = processingStream;
-	} else {
-		// Use direct file stream only for local files with no transforms
-		outputStream = fileStream;
+	// Helper to create fresh writable streams (needed for retries since pipeline destroys streams)
+	function createOutputStreams() {
+		let fileStr;
+
+		if (cloudInfo.isCloud) {
+			if (cloudInfo.provider === 'gcs') {
+				fileStr = createGCSWriteStream(filename, job);
+			} else if (cloudInfo.provider === 's3') {
+				fileStr = createS3WriteStream(filename, job);
+			}
+		} else {
+			fileStr = fs.createWriteStream(filename);
+		}
+
+		let buf = "";
+		const processingStr = new stream.Writable({
+			write(chunk, encoding, callback) {
+				buf += chunk.toString();
+				const lines = buf.split("\n");
+				buf = lines.pop() || "";
+
+				lines.forEach(line => {
+					if (!line.trim()) return;
+					try {
+						let row = JSON.parse(line.trim());
+						if (job.transformFunc && typeof job.transformFunc === 'function') {
+							try {
+								const transformed = job.transformFunc(row);
+								if (Array.isArray(transformed)) {
+									transformed.forEach(item => {
+										if (skipWriteToDisk) {
+											allResults.push(item);
+										} else {
+											fileStr.write(JSON.stringify(item) + '\n');
+											recordCount++;
+										}
+									});
+									return;
+								} else if (transformed) {
+									row = transformed;
+								}
+							} catch (transformError) {
+								if (job.verbose) console.warn(`Transform error on record: ${transformError.message}`);
+							}
+						}
+						if (skipWriteToDisk) {
+							allResults.push(row);
+						} else {
+							fileStr.write(JSON.stringify(row) + '\n');
+							recordCount++;
+						}
+					} catch (parseError) {
+						if (job.verbose) console.warn(`Parse error on line: ${parseError.message}`);
+					}
+				});
+				callback();
+			},
+
+			final(callback) {
+				if (buf.trim()) {
+					try {
+						let row = JSON.parse(buf.trim());
+						if (job.transformFunc && typeof job.transformFunc === 'function') {
+							try {
+								const transformed = job.transformFunc(row);
+								if (Array.isArray(transformed)) {
+									transformed.forEach(item => {
+										if (skipWriteToDisk) {
+											allResults.push(item);
+										} else {
+											fileStr.write(JSON.stringify(item) + '\n');
+											recordCount++;
+										}
+									});
+									callback();
+									return;
+								} else if (transformed) {
+									row = transformed;
+								}
+							} catch (transformError) {
+								if (job.verbose) console.warn(`Transform error on final record: ${transformError.message}`);
+							}
+						}
+						if (skipWriteToDisk) {
+							allResults.push(row);
+						} else {
+							fileStr.write(JSON.stringify(row) + '\n');
+							recordCount++;
+						}
+					} catch (parseError) {
+						if (job.verbose) console.warn(`Parse error on final line: ${parseError.message}`);
+					}
+				}
+				callback();
+			}
+		});
+
+		let outStream;
+		if (skipWriteToDisk || (job.transformFunc && typeof job.transformFunc === 'function') || cloudInfo.isCloud) {
+			outStream = processingStr;
+		} else {
+			outStream = fileStr;
+		}
+
+		return { fileStream: fileStr, outputStream: outStream };
 	}
 
-	// Use the chosen stream in the pipeline
-	try {
-		await pipeline(request, outputStream);
+	// Use the chosen stream in the pipeline with retry logic for 429 rate limits
+	const maxRetries = job.maxRetries || 5;
+	let retryCount = 0;
+	let lastError = null;
+	let fileStream;
+
+	while (retryCount <= maxRetries) {
+		// Create fresh streams for each attempt (pipeline destroys streams on error)
+		const streams = createOutputStreams();
+		fileStream = streams.fileStream;
+		const outputStream = streams.outputStream;
+
+		try {
+			const currentRequest = got.stream(options);
+
+			currentRequest.on('response', (res) => {
+				job.requests++;
+				job.store({
+					status: res.statusCode,
+					ip: res.ip,
+					url: res.requestUrl,
+					...res.headers
+				}, true);
+			});
+
+			currentRequest.on('error', (e) => {
+				job.failed++;
+				job.store({
+					status: e.statusCode,
+					ip: e.ip,
+					url: e.requestUrl,
+					...e.headers,
+					message: e.message
+				}, false);
+			});
+
+			currentRequest.on('downloadProgress', (progress) => {
+				downloadProgress(progress.transferred, job);
+			});
+
+			await pipeline(currentRequest, outputStream);
+			break; // Success, exit retry loop
+		}
+		catch (e) {
+			lastError = e;
+			const statusCode = e?.response?.statusCode || e?.statusCode;
+			const isRateLimit = statusCode === 429;
+
+			if (isRateLimit) {
+				job.rateLimited++;
+
+				if (retryCount < maxRetries) {
+					const backoffMs = Math.min(30000 * Math.pow(2, retryCount), 300000); // 30s, 60s, 120s, 240s, 300s cap
+					if (job.verbose) console.warn(`Export rate limited (429). Retrying in ${backoffMs / 1000}s... (attempt ${retryCount + 1}/${maxRetries})`);
+					await new Promise(resolve => setTimeout(resolve, backoffMs));
+					retryCount++;
+
+					// Reset output state for retry
+					allResults.length = 0;
+					recordCount = 0;
+
+					continue;
+				}
+
+				// All retries exhausted
+				const rateLimitError = new Error(`Export failed: rate limited by Mixpanel API after ${maxRetries} retries. Try again later or reduce export frequency.`);
+				rateLimitError.statusCode = 429;
+				throw rateLimitError;
+			}
+
+			// Non-429 errors: keep existing behavior (warn and continue with 0 results)
+			if (job.verbose) console.warn(`Pipeline error: ${e.message}`);
+			break;
+		}
 	}
-	catch (e) {
-		if (job.verbose) console.warn(`Pipeline error: ${e.message}`);
-	}
+
 	if (job.verbose) console.log('\n\ndownload finished\n\n');
 	if (skipWriteToDisk) {
 		job.recordsProcessed += allResults.length;
@@ -365,7 +361,8 @@ async function exportEvents(filename, job) {
 	} else {
 		// For local files, ensure the file stream is properly closed
 		// This is necessary when using processingStream (transforms enabled)
-		if (outputStream !== fileStream && fileStream && !fileStream.writableEnded) {
+		const usedProcessingStream = skipWriteToDisk || (job.transformFunc && typeof job.transformFunc === 'function') || cloudInfo.isCloud;
+		if (usedProcessingStream && fileStream && !fileStream.writableEnded) {
 			await new Promise((resolve, reject) => {
 				fileStream.on('finish', resolve);
 				fileStream.on('error', reject);
@@ -438,7 +435,7 @@ async function exportProfiles(folder, job) {
 			...job.params || {}
 		},
 		responseType: 'json',
-		retry: { limit: 50 }
+		retry: { limit: 0 } // we handle retries manually for proper 429 handling
 	};
 	// Add project_id when using service account auth (acct + pass + project)
 	// Secret-based auth doesn't need project_id in the URL
@@ -469,7 +466,7 @@ async function exportProfiles(folder, job) {
 	// Retry logic for initial request - critical for getting session_id
 	let request;
 	let retryCount = 0;
-	const maxRetries = 5;
+	const maxRetries = job.maxRetries || 5;
 	let lastError = null;
 
 	while (retryCount <= maxRetries) {
@@ -481,7 +478,9 @@ async function exportProfiles(folder, job) {
 			lastError = e;
 			const isRateLimit = e.statusCode === 429;
 			const isServerError = e.statusCode >= 500;
-			const shouldRetry = isRateLimit || isServerError || retryCount < maxRetries;
+			const shouldRetry = (isRateLimit || isServerError) && retryCount < maxRetries;
+
+			if (isRateLimit) job.rateLimited++;
 
 			if (job.verbose) {
 				console.warn(`Profile export initial request failed (attempt ${retryCount + 1}/${maxRetries + 1}): ${e.message}`);
@@ -496,13 +495,18 @@ async function exportProfiles(folder, job) {
 					...e.headers,
 					message: e.message
 				}, false);
+				if (isRateLimit) {
+					const rateLimitError = new Error(`Profile export failed: rate limited by Mixpanel API after ${maxRetries} retries. Try again later or reduce export frequency.`);
+					rateLimitError.statusCode = 429;
+					throw rateLimitError;
+				}
 				throw e;
 			}
 
-			// Exponential backoff: 1s, 2s, 4s, 8s, 16s
-			const backoffMs = Math.min(1000 * Math.pow(2, retryCount), 30000);
+			// Exponential backoff: 30s, 60s, 120s, 240s, 300s cap
+			const backoffMs = Math.min(30000 * Math.pow(2, retryCount), 300000);
 			if (job.verbose) {
-				console.log(`Retrying in ${backoffMs}ms... (${isRateLimit ? 'rate limit' : isServerError ? 'server error' : 'network error'})`);
+				console.log(`Retrying in ${backoffMs / 1000}s... (${isRateLimit ? 'rate limit' : isServerError ? 'server error' : 'network error'})`);
 			}
 			await new Promise(resolve => setTimeout(resolve, backoffMs));
 			retryCount++;
@@ -586,10 +590,10 @@ async function exportProfiles(folder, job) {
 
 		// Retry logic for pagination requests - critical for maintaining session
 		let retryCount = 0;
-		const maxRetries = 5;
+		const paginationMaxRetries = job.maxRetries || 5;
 		let lastError = null;
 
-		while (retryCount <= maxRetries) {
+		while (retryCount <= paginationMaxRetries) {
 			try {
 				// @ts-ignore
 				request = await got(options);
@@ -598,10 +602,12 @@ async function exportProfiles(folder, job) {
 				lastError = e;
 				const isRateLimit = e.statusCode === 429;
 				const isServerError = e.statusCode >= 500;
-				const shouldRetry = isRateLimit || isServerError || retryCount < maxRetries;
+				const shouldRetry = (isRateLimit || isServerError) && retryCount < paginationMaxRetries;
+
+				if (isRateLimit) job.rateLimited++;
 
 				if (job.verbose) {
-					console.warn(`Profile pagination request failed (page ${page}, attempt ${retryCount + 1}/${maxRetries + 1}): ${e.message}`);
+					console.warn(`Profile pagination request failed (page ${page}, attempt ${retryCount + 1}/${paginationMaxRetries + 1}): ${e.message}`);
 				}
 
 				if (!shouldRetry) {
@@ -613,13 +619,18 @@ async function exportProfiles(folder, job) {
 						...e.headers,
 						message: e.message
 					}, false);
+					if (isRateLimit) {
+						const rateLimitError = new Error(`Profile export failed: rate limited by Mixpanel API after ${paginationMaxRetries} retries (page ${page}). Try again later or reduce export frequency.`);
+						rateLimitError.statusCode = 429;
+						throw rateLimitError;
+					}
 					throw e;
 				}
 
-				// Exponential backoff: 1s, 2s, 4s, 8s, 16s
-				const backoffMs = Math.min(1000 * Math.pow(2, retryCount), 30000);
+				// Exponential backoff: 30s, 60s, 120s, 240s, 300s cap
+				const backoffMs = Math.min(30000 * Math.pow(2, retryCount), 300000);
 				if (job.verbose) {
-					console.log(`Retrying in ${backoffMs}ms... (${isRateLimit ? 'rate limit' : isServerError ? 'server error' : 'network error'})`);
+					console.log(`Retrying in ${backoffMs / 1000}s... (${isRateLimit ? 'rate limit' : isServerError ? 'server error' : 'network error'})`);
 				}
 				await new Promise(resolve => setTimeout(resolve, backoffMs));
 				retryCount++;
