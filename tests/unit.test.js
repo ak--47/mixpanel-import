@@ -146,6 +146,45 @@ describe("transforms", () => {
 		expect(transformed.time).toBeUndefined();
 	});
 
+	test("uses event_name as event (flat)", () => {
+		const config = { recordType: "event" };
+		const record = {
+			event_name: "PageView",
+			time: dayjs().toString(),
+			distinct_id: "123"
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.event).toBe("PageView");
+		expect(transformed.properties.event_name).toBeUndefined();
+		expect(transformed.properties.$insert_id).toBeTruthy();
+	});
+
+	test("uses event_name as event (in properties)", () => {
+		const config = { recordType: "event" };
+		const record = {
+			properties: {
+				event_name: "PageView",
+				time: dayjs().toString(),
+				distinct_id: "123"
+			}
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.event).toBe("PageView");
+		expect(transformed.properties.event_name).toBeUndefined();
+	});
+
+	test("event_name does not overwrite existing event", () => {
+		const config = { recordType: "event" };
+		const record = {
+			event: "RealEvent",
+			event_name: "ShouldBeIgnored",
+			time: dayjs().toString(),
+			distinct_id: "123"
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.event).toBe("RealEvent");
+	});
+
 	test("gets user_id", () => {
 		const config = { recordType: "event" };
 		const record = {

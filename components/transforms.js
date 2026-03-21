@@ -37,6 +37,12 @@ function ezTransforms(job) {
 	// EVENT RECORDS
 	if (job.recordType?.startsWith("event") || job.recordType === "export-import-event") {
 		return function transformEvent(record) {
+			// 0. Use “event_name” as “event” if present and event is missing
+			if (!record.event && typeof record.event_name === 'string') {
+				record.event = record.event_name;
+				delete record.event_name;
+			}
+
 			// 1. Fix “wrong shape”: ensure record.properties exists
 			if (!record.properties) {
 				record.properties = { ...record };
@@ -45,6 +51,12 @@ function ezTransforms(job) {
 						delete record[key];
 					}
 				}
+			}
+
+			// 1a. Use "event_name" from properties as "event" if still missing
+			if (!record.event && typeof record.properties.event_name === 'string') {
+				record.event = record.properties.event_name;
+				delete record.properties.event_name;
 			}
 
 			// 2. Normalize time to UNIX epoch (ms)

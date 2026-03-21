@@ -1910,7 +1910,7 @@ class MixpanelExportUI {
 			who: who,
 			max_concurrency: 5,  // max 10 for exports, default to 5
 			start_immediately: false,
-			auto_govern: false,
+			auto_govern: true,
 
 			// Options object - export-specific configuration
 			options: {
@@ -1966,7 +1966,7 @@ class MixpanelExportUI {
 			}
 
 			// Always set these fields (not user-configurable)
-			jobConfig.auto_govern = false;
+			jobConfig.auto_govern = true;
 			jobConfig.start_immediately = false;
 
 			// Add jobType for server to route to correct endpoint
@@ -2048,7 +2048,7 @@ class MixpanelExportUI {
 			}
 
 			// Always set these fields (not user-configurable)
-			jobConfig.auto_govern = false;
+			jobConfig.auto_govern = true;
 			jobConfig.start_immediately = false;
 
 			// Remove jobType from curl command (server-only field)
