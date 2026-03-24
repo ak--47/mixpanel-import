@@ -960,7 +960,7 @@ class MixpanelExportUI {
 
 			const tokenElement = document.getElementById('token');
 			if (tokenElement && tokenElement.closest('.form-group').style.display !== 'none' && tokenElement.value) {
-				command += ` --token [project-token]`;
+				command += ` --token ${tokenElement.value}`;
 			}
 
 			// Auth credentials (redact secrets for security)

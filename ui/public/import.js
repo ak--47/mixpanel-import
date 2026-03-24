@@ -1111,7 +1111,7 @@ class MixpanelImportUI {
 
 			const tokenElement = document.getElementById('token');
 			if (tokenElement && tokenElement.closest('.form-group').style.display !== 'none' && tokenElement.value) {
-				command += ` --token [project-token]`;
+				command += ` --token ${tokenElement.value}`;
 			}
 
 			const groupKeyElement = document.getElementById('groupKey');
@@ -1253,7 +1253,7 @@ class MixpanelImportUI {
 
 			// Legacy and additional authentication
 			const secretElement = document.getElementById('secret');
-			if (secretElement && secretElement.value) command += ` --secret ${secretElement.value}`;
+			if (secretElement && secretElement.value) command += ` --secret [api-secret]`;
 
 			const bearerElement = document.getElementById('bearer');
 			if (bearerElement && bearerElement.value) command += ` --bearer ${bearerElement.value}`;
@@ -2945,36 +2945,13 @@ function transform(row) {
 		this.closeGcsBrowseModal();
 	}
 
-	// Snowcat: Generate unique job name
-	generateSnowcatJobName(projectId) {
-		// Get user identifier from Mixpanel distinct_id
-		let userIdentifier = 'unknown';
-		try {
-			if (typeof mixpanel !== 'undefined' && mixpanel.get_distinct_id) {
-				const distinctId = mixpanel.get_distinct_id();
-				if (distinctId) {
-					if (distinctId.includes('@')) {
-						// It's an email address - use as-is
-						userIdentifier = distinctId;
-					} else if (distinctId.startsWith('$device:')) {
-						// Device ID - grab first 5 chars after "device:"
-						userIdentifier = distinctId.substring(8, 13);
-					} else {
-						// Some other format - grab first 5 chars
-						userIdentifier = distinctId.substring(0, 5);
-					}
-				}
-			}
-		} catch (e) {
-			console.warn('Could not get Mixpanel distinct_id:', e);
-		}
-
-		// Generate 4 random alphanumeric characters
-		const randomChars = Math.random().toString(36).substring(2, 6);
-
-		// Build job name: {user}-etl-ui-job-{project_id}-{random}
-		const projectPart = projectId || 'unknown';
-		return `${userIdentifier}-etl-ui-job-${projectPart}-${randomChars}`;
+	// Snowcat: Generate job name from cloud path
+	generateSnowcatJobName(cloudPath) {
+		if (!cloudPath) return 'unknown';
+		// Strip protocol prefix (gs://, s3://, etc.)
+		const withoutProtocol = cloudPath.replace(/^[a-z0-9]+:\/\//, '');
+		// Replace slashes with ---
+		return withoutProtocol.replace(/\//g, '---');
 	}
 
 	// Snowcat: Generate job configuration from UI state
@@ -3005,7 +2982,7 @@ function transform(row) {
 			}
 		}
 
-		// Infer streamFormat from filter
+		// Infer streamFormat from filter, but prefer explicit UI selection
 		let streamFormat = 'jsonl';  // default
 		if (filter.includes('.json') && !filter.includes('.jsonl')) {
 			streamFormat = 'json';
@@ -3013,6 +2990,10 @@ function transform(row) {
 			streamFormat = 'csv';
 		} else if (filter.includes('.parquet')) {
 			streamFormat = 'parquet';
+		}
+		const uiStreamFormat = this.getElementValue('streamFormat');
+		if (uiStreamFormat) {
+			streamFormat = uiStreamFormat;
 		}
 
 		// Get credentials from UI - support both service account and API secret
@@ -3047,8 +3028,8 @@ function transform(row) {
 			}
 		}
 
-		// Generate unique job name
-		const jobName = this.generateSnowcatJobName(mp_project);
+		// Generate job name from cloud path
+		const jobName = this.generateSnowcatJobName(cloud_path);
 
 		// Build Snowcat job object
 		const job = {
