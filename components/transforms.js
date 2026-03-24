@@ -59,7 +59,18 @@ function ezTransforms(job) {
 				delete record.properties.event_name;
 			}
 
-			// 2. Normalize time to UNIX epoch (ms)
+			// 2a. Resolve time field aliases (priority order)
+			if (!record.properties.time) {
+				for (const alias of ["timestamp", "event_time", "ts_utc", "ts"]) {
+					if (record.properties[alias] != null) {
+						record.properties.time = record.properties[alias];
+						delete record.properties[alias];
+						break;
+					}
+				}
+			}
+
+			// 2b. Normalize time to UNIX epoch (ms)
 			if (
 				record.properties.time &&
 				Number.isNaN(Number(record.properties.time))

@@ -185,6 +185,79 @@ describe("transforms", () => {
 		expect(transformed.event).toBe("RealEvent");
 	});
 
+	test("uses 'timestamp' as time", () => {
+		const config = { recordType: "event" };
+		const record = {
+			event: "TestEvent",
+			timestamp: "2024-06-15T12:00:00Z",
+			distinct_id: "123"
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.properties.time).toBeNumber();
+		expect(transformed.properties.timestamp).toBeUndefined();
+	});
+
+	test("uses 'event_time' as time", () => {
+		const config = { recordType: "event" };
+		const record = {
+			event: "TestEvent",
+			event_time: "2024-06-15T12:00:00Z",
+			distinct_id: "123"
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.properties.time).toBeNumber();
+		expect(transformed.properties.event_time).toBeUndefined();
+	});
+
+	test("uses 'ts_utc' as time", () => {
+		const config = { recordType: "event" };
+		const record = {
+			event: "TestEvent",
+			ts_utc: 1718452800000,
+			distinct_id: "123"
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.properties.time).toBe(1718452800000);
+		expect(transformed.properties.ts_utc).toBeUndefined();
+	});
+
+	test("uses 'ts' as time", () => {
+		const config = { recordType: "event" };
+		const record = {
+			event: "TestEvent",
+			ts: "2024-06-15T12:00:00Z",
+			distinct_id: "123"
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.properties.time).toBeNumber();
+		expect(transformed.properties.ts).toBeUndefined();
+	});
+
+	test("time alias priority: timestamp wins over ts", () => {
+		const config = { recordType: "event" };
+		const record = {
+			event: "TestEvent",
+			timestamp: "2024-06-15T12:00:00Z",
+			ts: "2024-01-01T00:00:00Z",
+			distinct_id: "123"
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.properties.time).toBe(dayjs.utc("2024-06-15T12:00:00Z").valueOf());
+		expect(transformed.properties.timestamp).toBeUndefined();
+	});
+
+	test("time aliases do not overwrite existing time", () => {
+		const config = { recordType: "event" };
+		const record = {
+			event: "TestEvent",
+			time: "2024-06-15T12:00:00Z",
+			timestamp: "2024-01-01T00:00:00Z",
+			distinct_id: "123"
+		};
+		const transformed = ezTransforms(config)(record);
+		expect(transformed.properties.time).toBe(dayjs.utc("2024-06-15T12:00:00Z").valueOf());
+	});
+
 	test("gets user_id", () => {
 		const config = { recordType: "event" };
 		const record = {
