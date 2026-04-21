@@ -922,10 +922,12 @@ declare namespace main {
     s3Region?: string;
 
     /**
-     * Enable v2 compatibility mode for ID management
+     * Enable v2 compatibility mode for ID management. On events, sets `distinct_id`
+     * from `$user_id`/`user_id` or `$device_id`/`device_id` (prefixed forms win),
+     * falling back to `""` when none are present. Existing `distinct_id` values are preserved.
      * @default false
      * @example
-     * { v2_compat: true }  // Auto-set distinct_id from $user_id or $device_id
+     * { v2_compat: true }
      */
     v2_compat?: boolean;
 

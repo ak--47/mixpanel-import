@@ -2122,7 +2122,7 @@ describe('v2_compat', () => {
 		expect(result.dryRun[0].properties.distinct_id).toBe('existing123'); // Unchanged
 	});
 
-	test('does nothing when neither $user_id nor $device_id exists', async () => {
+	test('sets distinct_id to "" when neither user_id nor device_id exists', async () => {
 		const testData = [{
 			event: 'Test Event',
 			properties: {
@@ -2137,7 +2137,75 @@ describe('v2_compat', () => {
 			dryRun: true
 		});
 
-		expect(result.dryRun[0].properties.distinct_id).toBeUndefined();
+		expect(result.dryRun[0].properties.distinct_id).toBe('');
+	});
+
+	test('sets distinct_id from unprefixed user_id', async () => {
+		const testData = [{
+			event: 'Test Event',
+			properties: {
+				user_id: 'u1',
+				time: Date.now()
+			}
+		}];
+
+		const result = await mpImport(fakeCreds, testData, {
+			recordType: 'event',
+			v2_compat: true,
+			dryRun: true
+		});
+
+		expect(result.dryRun[0].properties.distinct_id).toBe('u1');
+		expect(result.dryRun[0].properties.user_id).toBe('u1');
+	});
+
+	test('sets distinct_id from unprefixed device_id when no user_id', async () => {
+		const testData = [{
+			event: 'Test Event',
+			properties: {
+				device_id: 'd1',
+				time: Date.now()
+			}
+		}];
+
+		const result = await mpImport(fakeCreds, testData, {
+			recordType: 'event',
+			v2_compat: true,
+			dryRun: true
+		});
+
+		expect(result.dryRun[0].properties.distinct_id).toBe('d1');
+		expect(result.dryRun[0].properties.device_id).toBe('d1');
+	});
+
+	test('prefers $-prefixed over unprefixed forms', async () => {
+		const testData = [
+			{
+				event: 'Event A',
+				properties: {
+					$user_id: 'a',
+					user_id: 'b',
+					time: Date.now()
+				}
+			},
+			{
+				event: 'Event B',
+				properties: {
+					$device_id: 'a',
+					device_id: 'b',
+					time: Date.now()
+				}
+			}
+		];
+
+		const result = await mpImport(fakeCreds, testData, {
+			recordType: 'event',
+			v2_compat: true,
+			dryRun: true
+		});
+
+		expect(result.dryRun[0].properties.distinct_id).toBe('a');
+		expect(result.dryRun[1].properties.distinct_id).toBe('a');
 	});
 
 	test('only applies to events, not user profiles', async () => {

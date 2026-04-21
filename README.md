@@ -189,7 +189,7 @@ npx mixpanel-import s3://bucket/events.parquet.gz --token your-token --s3Region 
 - **Timestamp Conversion**: Handles ISO dates, Unix timestamps, and various formats
 - **ID Generation**: Creates `$insert_id` for deduplication
 - **Type Conversion**: Ensures distinct_ids are strings, fixes data types
-- **V2 Compatibility**: Automatically sets `distinct_id` from `$user_id` or `$device_id` (enable with `v2_compat: true`)
+- **V2 Compatibility**: Automatically sets `distinct_id` from `user_id` or `device_id` (prefixed or unprefixed); falls back to `""` (enable with `v2_compat: true`)
 
 ### 🧹 **Data Cleaning**
 - **Remove Empty Values**: Strip null, empty string, empty arrays/objects
@@ -393,7 +393,7 @@ npx mixpanel-import messy_data.json \
 | `dedupe` | `boolean` | `false` | Remove duplicate records using content hash |
 | `strict` | `boolean` | `true` | Validate data and fail fast on errors |
 | `scrubProps` | `string[]` | `[]` | Property names to remove from all records |
-| `v2_compat` | `boolean` | `false` | (Events only) Auto-set `distinct_id` from `$user_id` or `$device_id` |
+| `v2_compat` | `boolean` | `false` | (Events only) Auto-set `distinct_id` from `$user_id`/`user_id` or `$device_id`/`device_id`; falls back to `""` |
 | `directive` | `string` | `"$set"` | (Profiles only) Operation for profile updates: `$set`, `$set_once`, `$add`, `$union`, `$append`, `$remove`, `$unset` |
 
 ### 🎯 **Filtering Options**
@@ -565,7 +565,7 @@ function transform(record) {
 
 ### 🆔 **V2 Compatibility Mode**
 
-The `v2_compat` option automatically sets `distinct_id` from Mixpanel's ID Management v2 properties:
+The `v2_compat` option automatically sets `distinct_id` from Mixpanel's ID Management v2 properties. Use it when you don't know in advance whether the destination project is on original or simplified ID merge — original merge expects `distinct_id` on every event, so this guarantees the field is present.
 
 ```javascript
 // Enable v2_compat in your import
@@ -574,17 +574,18 @@ const result = await mpImport(
   './data.json',
   {
     recordType: 'event',
-    v2_compat: true  // Auto-set distinct_id from $user_id or $device_id
+    v2_compat: true  // Auto-set distinct_id from user_id or device_id
   }
 );
 ```
 
 **How it works:**
-- If event has `$user_id`, sets `distinct_id = $user_id`
-- Otherwise, if event has `$device_id`, sets `distinct_id = $device_id`
-- Never overwrites existing `distinct_id` values
+- Picks a source value in this order: `$user_id`, `user_id`, `$device_id`, `device_id`
+- If a source value is found, sets `distinct_id` to that value
+- If none of those keys are present, sets `distinct_id` to `""` (empty string) so original-merge identity logic still has a field to attach to
+- Never overwrites an existing `distinct_id` value
 - Only applies to events (not user/group profiles)
-- Original `$user_id` and `$device_id` are preserved
+- Original `$user_id` / `user_id` / `$device_id` / `device_id` are preserved
 
 **Example:**
 ```javascript
