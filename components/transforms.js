@@ -8,6 +8,133 @@ const validOperations = ["$set", "$set_once", "$add", "$union", "$append", "$rem
 // ? https://docs.mixpanel.com/docs/data-structure/user-profiles#reserved-profile-properties
 const specialProps = ["name", "first_name", "last_name", "email", "phone", "avatar", "created", "insert_id", "city", "region", "lib_version", "os", "os_version", "browser", "browser_version", "app_build_number", "app_version_string", "device", "screen_height", "screen_width", "screen_dpi", "current_url", "initial_referrer", "initial_referring_domain", "referrer", "referring_domain", "search_engine", "manufacturer", "brand", "model", "watch_model", "carrier", "radio", "wifi", "bluetooth_enabled", "bluetooth_version", "has_nfc", "has_telephone", "google_play_services", "duration", "country", "country_code"];
 const outsideProps = ["distinct_id", "group_id", "token", "group_key", "ip"]; //these are the props that are outside of the $set
+
+// ? https://docs.mixpanel.com/docs/data-structure/property-reference/reserved-properties
+// Full canonical list of Mixpanel reserved/default properties, by record type.
+// Used by the optional matchMixpanelDefaults transform to rename warehouse-style
+// keys (e.g. "current_url", "_browser", "browserVersion") to their Mixpanel
+// canonical form (e.g. "$current_url", "$browser", "$browser_version").
+const RESERVED_EVENT_PROPS = [
+	// Web / browser
+	"$browser", "$browser_version", "mp_browser", "$current_url", "$pathname", "$host",
+	"$referrer", "$referring_domain", "$initial_referrer", "$initial_referring_domain",
+	"mp_referrer", "mp_keyword", "$search_engine", "$user_agent",
+	"current_domain", "current_page_title", "current_url_path", "current_url_protocol", "current_url_search",
+	"$title", "$target", "$elements", "$el_attr__href", "$el_classes", "$el_id", "$el_tag_name", "$el_text",
+	"$mp_replay_id", "replay_length_ms", "replay_env", "replay_region", "replay_start_time", "replay_version", "replay_start_url", "$captured_for_heatmap",
+	// Coordinates / viewport
+	"$clientX", "$clientY", "$pageX", "$pageY", "$screenX", "$screenY", "$x", "$y", "$offsetX", "$offsetY",
+	"$pageHeight", "$pageWidth", "$viewportHeight", "$viewportWidth",
+	"$scroll_height", "$scroll_top", "$scroll_percentage", "$scroll_checkpoint",
+	// Device / OS
+	"$os", "$os_version", "mp_platform", "$device", "$brand", "$manufacturer", "$model", "mp_device_model",
+	"$carrier", "$radio", "$screen_dpi", "$screen_height", "$screen_width", "$watch_model",
+	"$bluetooth_enabled", "$bluetooth_version", "$wifi", "$has_nfc", "has_nfc", "$has_telephone",
+	"$google_play_services", "$android_app_version", "$android_app_version_code", "$android_brand",
+	"$android_manufacturer", "$android_model", "$android_notification_id", "$android_os", "$android_os_version",
+	"$android_push_error", "$ios_app_release", "$ios_app_version", "$ios_device_model", "$ios_ifa",
+	"$ios_notification_id", "$ios_version", "$app_build_number", "$app_release", "$app_version",
+	"$app_version_string", "$from_binding",
+	// Auto-events / app lifecycle
+	"$ae_crashed_reason", "$ae_first_app_open_date", "$ae_iap_name", "$ae_iap_price", "$ae_iap_quantity",
+	"$ae_notif_message", "$ae_session_length", "$ae_updated_version",
+	// Messaging / surveys / taps
+	"$button_id", "$button_label", "$tap_action_type", "$tap_action_uri", "$tap_target",
+	"$from_preview", "$bounced", "$bounce_category", "$bounce_notification", "$bounced_reason",
+	"$marked_spam", "$cancelled", "sent_to", "survey_id", "$survey_shown", "$survey_responses",
+	"$survey_collections", "$surveys", "$answers", "$answer_count", "$responses",
+	// Experiments
+	"$experiment_id", "$experiments",
+	// Geo
+	"$city", "$region", "$country_code", "mp_country_code", "$timezone", "$neighborhood",
+	// Ads / attribution
+	"$ad_platform", "$ad_cost", "$ad_clicks", "$ad_impressions",
+	"utm_source", "utm_medium", "utm_campaign", "utm_campaign_id", "utm_content", "utm_creative_format",
+	"utm_id", "utm_marketing_tactic", "utm_source_platform", "utm_term",
+	"initial_utm_source", "initial_utm_medium", "initial_utm_campaign", "initial_utm_content", "initial_utm_term",
+	"gclid", "fbclid", "dclid", "ko_click_id", "li_fat_id", "msclkid", "sccid", "ttclid", "twclid", "wbraid"
+];
+
+const RESERVED_USER_PROPS = [
+	"$email", "$first_name", "$last_name", "$name", "$username", "$phone", "$avatar",
+	"$ip", "$created", "$last_seen", "$last_login", "$unsubscribed", "$notifications",
+	"$transactions", "$android_devices", "$ios_devices",
+	"$city", "$region", "$country_code", "$timezone",
+	// Partner IDs
+	"$braze_external_id", "$iterable_user_id", "$moengage_user_id", "$leanplum_user_id",
+	"$onesignal_user_id", "$kameleoon_mapping_id", "$vwo_user_id", "$abtasty_user_id",
+	"$airship_named_user", "$ios_urban_airship_channel_id", "$android_urban_airship_channel_id",
+	"$xtremepush_user_id", "$apptimize_user_id", "$CleverTap_user_id", "$pushwoosh_user_id",
+	"$flagship_user_id"
+];
+
+const RESERVED_GROUP_PROPS = ["$name"];
+
+/**
+ * Normalize a property key for matching against Mixpanel reserved names.
+ * Lowercases, strips leading "$" and surrounding underscores, converts
+ * camelCase and kebab-case to snake_case.
+ * @param {string} key
+ * @returns {string}
+ */
+function normalizeReservedKey(key) {
+	if (typeof key !== "string" || !key) return "";
+	let s = key;
+	if (s.startsWith("$")) s = s.slice(1);
+	s = s.replace(/([a-z0-9])([A-Z])/g, "$1_$2"); // camelCase → snake_case
+	s = s.replace(/-/g, "_");
+	s = s.toLowerCase();
+	s = s.replace(/^_+|_+$/g, "");
+	return s;
+}
+
+/**
+ * Build a normalized→canonical lookup. When two reserved names collapse to the
+ * same normalized form (e.g. "$has_nfc" and "has_nfc"), prefer the $-prefixed.
+ * @param {string[]} reserved
+ * @returns {Map<string,string>}
+ */
+function buildReservedMap(reserved) {
+	const map = new Map();
+	for (const canonical of reserved) {
+		const n = normalizeReservedKey(canonical);
+		if (!n) continue;
+		const existing = map.get(n);
+		if (!existing) {
+			map.set(n, canonical);
+		} else if (canonical.startsWith("$") && !existing.startsWith("$")) {
+			map.set(n, canonical);
+		}
+	}
+	return map;
+}
+
+const RESERVED_MAP_EVENT = buildReservedMap(RESERVED_EVENT_PROPS);
+const RESERVED_MAP_USER = buildReservedMap(RESERVED_USER_PROPS);
+const RESERVED_MAP_GROUP = buildReservedMap(RESERVED_GROUP_PROPS);
+
+/**
+ * Rename keys in an object in place to their Mixpanel canonical form when they
+ * match a reserved property. Skips keys already starting with "$" or "mp_",
+ * keys already canonical, and keys whose canonical target already exists.
+ * @param {Object} obj
+ * @param {Map<string,string>} map
+ */
+function renameToReserved(obj, map) {
+	if (!obj || typeof obj !== "object" || Array.isArray(obj)) return;
+	for (const key of Object.keys(obj)) {
+		if (key.startsWith("$")) continue;
+		if (key.startsWith("mp_")) continue;
+		const normalized = normalizeReservedKey(key);
+		if (!normalized) continue;
+		const target = map.get(normalized);
+		if (!target) continue;
+		if (target === key) continue;
+		if (Object.prototype.hasOwnProperty.call(obj, target)) continue; // conflict: keep both
+		obj[target] = obj[key];
+		delete obj[key];
+	}
+}
 const badUserIds = ["-1", "0", "00000000-0000-0000-0000-000000000000", "<nil>", "[]", "anon", "anonymous", "false", "lmy47d", "n/a", "na", "nil", "none", "null", "true", "undefined", "unknown", "{}", null, undefined]
 const MAX_STR_LEN = 255;
 
@@ -28,6 +155,47 @@ function noop(a) { return a; }
  */
 function truncate(s) {
 	return s.length > MAX_STR_LEN ? s.slice(0, MAX_STR_LEN) : s;
+}
+
+/**
+ * Optional transform that maps warehouse-style property names to Mixpanel's
+ * canonical reserved/default property names. Pattern-matches keys (case-
+ * insensitive, leading "_" stripped, camelCase/kebab-case normalized) against
+ * the reserved set for the current recordType. Skips keys that already start
+ * with "$" or "mp_" and skips renames whose target key already exists.
+ * @param  {JobConfig} job
+ */
+function matchMixpanelDefaults(job) {
+	const type = job.recordType;
+	let map;
+	let isEvent = false;
+	if (type === "event" || type?.startsWith("event") || type === "export-import-event" || type === "scd") {
+		map = RESERVED_MAP_EVENT;
+		isEvent = true;
+	} else if (type === "user" || (type === "export-import-profile" && !job.groupKey)) {
+		map = RESERVED_MAP_USER;
+	} else if (type === "group" || (type === "export-import-profile" && job.groupKey)) {
+		map = RESERVED_MAP_GROUP;
+	} else {
+		return noop;
+	}
+
+	return function matchDefaults(record) {
+		if (!record || typeof record !== "object") return record;
+		if (isEvent) {
+			if (record.properties && typeof record.properties === "object") {
+				renameToReserved(record.properties, map);
+			}
+			return record;
+		}
+		// user / group: rename inside each operation bucket
+		for (const op of validOperations) {
+			if (record[op] && typeof record[op] === "object" && !Array.isArray(record[op])) {
+				renameToReserved(record[op], map);
+			}
+		}
+		return record;
+	};
 }
 
 /**
@@ -1017,6 +1185,7 @@ function scdTransform(job) {
 
 module.exports = {
 	ezTransforms,
+	matchMixpanelDefaults,
 	removeNulls,
 	UTCoffset,
 	addTags,
@@ -1034,7 +1203,12 @@ module.exports = {
 	addToken,
 	setDistinctIdFromV2Props,
 	scdTransform,
-	fixTime
+	fixTime,
+	// exported for tests
+	normalizeReservedKey,
+	RESERVED_EVENT_PROPS,
+	RESERVED_USER_PROPS,
+	RESERVED_GROUP_PROPS
 };
 
 

@@ -307,6 +307,7 @@ class Job {
 		this.fixData = u.isNil(opts.fixData) ? false : opts.fixData; //apply transforms on the data
 		this.fixTime = u.isNil(opts.fixTime) ? false : opts.fixTime; //fix time to utc
 		this.fixJson = u.isNil(opts.fixJson) ? false : opts.fixJson; //fix json
+		this.matchMixpanelDefaults = u.isNil(opts.matchMixpanelDefaults) ? false : opts.matchMixpanelDefaults; //rename warehouse-style keys to Mixpanel reserved/default property names
 		this.removeNulls = u.isNil(opts.removeNulls) ? false : opts.removeNulls; //remove null fields
 		this.flattenData = u.isNil(opts.flattenData) ? false : opts.flattenData; //flatten nested properties
 		this.abridged = u.isNil(opts.abridged) ? false : opts.abridged; //false = store full responses for better debugging
@@ -391,6 +392,7 @@ class Job {
 		this.v2CompatTransform = noop;
 		this.scdTransform = noop;
 		this.timeTransform = noop;
+		this.mixpanelDefaultsMatcher = noop;
 
 		// ? transform conditions
 		if (this.fixData || this.recordType?.includes('export-import')) this.ezTransform = transforms.ezTransforms(this);
@@ -403,6 +405,7 @@ class Job {
 		if (this.v2_compat && this.recordType === 'event') this.v2CompatTransform = transforms.setDistinctIdFromV2Props();
 		if (this.recordType === 'scd') this.scdTransform = transforms.scdTransform(this);
 		if (this.recordType === 'event' && this.fixTime) this.timeTransform = transforms.fixTime();
+		if (this.matchMixpanelDefaults) this.mixpanelDefaultsMatcher = transforms.matchMixpanelDefaults(this);
 
 		if (this.insertIdTuple.length > 0 && this.recordType === 'event') {
 			this.shouldCreateInsertId = true;
@@ -452,6 +455,7 @@ class Job {
 		if (this.shouldApplyAliases) this.activeTransforms.push({ name: 'applyAliases', fn: this.applyAliases });
 		if (this.recordType === "scd") this.activeTransforms.push({ name: 'scdTransform', fn: this.scdTransform, mutates: false });
 		if (this.fixData) this.activeTransforms.push({ name: 'ezTransform', fn: this.ezTransform, mutates: false });
+		if (this.matchMixpanelDefaults) this.activeTransforms.push({ name: 'matchMixpanelDefaults', fn: this.mixpanelDefaultsMatcher, mutates: false });
 		if (this.v2_compat) this.activeTransforms.push({ name: 'v2CompatTransform', fn: this.v2CompatTransform, mutates: false });
 		if (this.removeNulls) this.activeTransforms.push({ name: 'nullRemover', fn: this.nullRemover });
 		if (this.timeOffset) this.activeTransforms.push({ name: 'UTCoffset', fn: this.UTCoffset });

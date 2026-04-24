@@ -437,6 +437,21 @@ declare namespace main {
     fixData?: boolean;
 
     /**
+     * Rename warehouse-style property keys to Mixpanel's reserved/default
+     * property names (e.g. `current_url` → `$current_url`, `_browser` → `$browser`,
+     * `browserVersion` → `$browser_version`). Pattern matches case-insensitively,
+     * strips leading underscores, and normalizes camelCase / kebab-case to
+     * snake_case. Skips keys already starting with `$` or `mp_`, and skips any
+     * rename whose target key already exists on the record. The reserved set is
+     * record-type aware (event vs user vs group). Independent of `fixData`;
+     * runs after `fixData` when both are enabled.
+     * @default false
+     * @example
+     * { matchMixpanelDefaults: true }
+     */
+    matchMixpanelDefaults?: boolean;
+
+    /**
      * Fix and validate timestamp formats to UNIX epoch
      * @default false
      * @example

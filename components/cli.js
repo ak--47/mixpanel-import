@@ -355,6 +355,13 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'attempt to fix malformed json',
 			alias: 'fixJson'
 		})
+		.options('match-defaults', {
+			demandOption: false,
+			default: false,
+			type: 'boolean',
+			describe: 'rename warehouse-style keys to Mixpanel reserved/default property names ($browser, $current_url, utm_*, etc.); record-type aware',
+			alias: 'matchMixpanelDefaults'
+		})
 		.options('add-token', {
 			demandOption: false,
 			default: false,

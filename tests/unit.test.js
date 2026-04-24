@@ -30,7 +30,9 @@ const { UTCoffset,
 	resolveFallback,
 	scrubProperties,
 	dropColumns,
-	addToken
+	addToken,
+	matchMixpanelDefaults,
+	normalizeReservedKey
 } = require("../components/transforms.js");
 
 const { getEnvVars,
@@ -2723,5 +2725,227 @@ describe("cloud export compression", () => {
 		const generatedFilename = `events-${job.start}--${job.end}${extension}`;
 
 		expect(generatedFilename).toBe("events-2024-01-01--2024-01-31.ndjson");
+	});
+});
+
+describe("matchMixpanelDefaults", () => {
+	test("normalizeReservedKey: lowercase + strip $ + camel/kebab → snake_case + trim _", () => {
+		expect(normalizeReservedKey("browser")).toBe("browser");
+		expect(normalizeReservedKey("Browser")).toBe("browser");
+		expect(normalizeReservedKey("BROWSER")).toBe("browser");
+		expect(normalizeReservedKey("$browser")).toBe("browser");
+		expect(normalizeReservedKey("_browser")).toBe("browser");
+		expect(normalizeReservedKey("__browser__")).toBe("browser");
+		expect(normalizeReservedKey("browserVersion")).toBe("browser_version");
+		expect(normalizeReservedKey("browser-version")).toBe("browser_version");
+		expect(normalizeReservedKey("BrowserVersion")).toBe("browser_version");
+		expect(normalizeReservedKey("clientX")).toBe("client_x");
+		expect(normalizeReservedKey("")).toBe("");
+		expect(normalizeReservedKey(null)).toBe("");
+	});
+
+	test("event: renames common reserved props to $-prefixed canonicals", () => {
+		const transform = matchMixpanelDefaults({ recordType: "event" });
+		const record = {
+			event: "page view",
+			properties: {
+				current_url: "https://example.com/a",
+				browser: "Chrome",
+				browser_version: 130,
+				os: "macOS",
+				referrer: "https://google.com",
+				time: 1700000000
+			}
+		};
+		const out = transform(record);
+		expect(out.properties.$current_url).toBe("https://example.com/a");
+		expect(out.properties.$browser).toBe("Chrome");
+		expect(out.properties.$browser_version).toBe(130);
+		expect(out.properties.$os).toBe("macOS");
+		expect(out.properties.$referrer).toBe("https://google.com");
+		expect(out.properties.current_url).toBeUndefined();
+		expect(out.properties.browser).toBeUndefined();
+		expect(out.properties.time).toBe(1700000000); // non-reserved untouched
+	});
+
+	test("event: matches leading underscore + camelCase + kebab-case + uppercase", () => {
+		const transform = matchMixpanelDefaults({ recordType: "event" });
+		const record = {
+			event: "x",
+			properties: {
+				_browser: "Firefox",
+				browserVersion: "120.0",
+				"current-url": "https://example.com",
+				CITY: "Brooklyn",
+				clientX: 42
+			}
+		};
+		const out = transform(record);
+		expect(out.properties.$browser).toBe("Firefox");
+		expect(out.properties.$browser_version).toBe("120.0");
+		expect(out.properties.$current_url).toBe("https://example.com");
+		expect(out.properties.$city).toBe("Brooklyn");
+		expect(out.properties.$clientX).toBe(42);
+		// originals removed
+		expect(out.properties._browser).toBeUndefined();
+		expect(out.properties.browserVersion).toBeUndefined();
+		expect(out.properties["current-url"]).toBeUndefined();
+		expect(out.properties.CITY).toBeUndefined();
+		expect(out.properties.clientX).toBeUndefined();
+	});
+
+	test("event: skips when target $-prefixed key already exists (no overwrite, both kept)", () => {
+		const transform = matchMixpanelDefaults({ recordType: "event" });
+		const record = {
+			event: "x",
+			properties: {
+				current_url: "raw.com",
+				$current_url: "canonical.com"
+			}
+		};
+		const out = transform(record);
+		expect(out.properties.$current_url).toBe("canonical.com");
+		expect(out.properties.current_url).toBe("raw.com");
+	});
+
+	test("event: leaves keys already starting with $ or mp_ alone", () => {
+		const transform = matchMixpanelDefaults({ recordType: "event" });
+		const record = {
+			event: "x",
+			properties: {
+				$browser: "Chrome",
+				mp_country_code: "US",
+				mp_browser: "Chrome"
+			}
+		};
+		const out = transform(record);
+		expect(out.properties.$browser).toBe("Chrome");
+		expect(out.properties.mp_country_code).toBe("US");
+		expect(out.properties.mp_browser).toBe("Chrome");
+	});
+
+	test("event: utm_* and other non-$ reserved props normalize to literal canonical name", () => {
+		const transform = matchMixpanelDefaults({ recordType: "event" });
+		const record = {
+			event: "x",
+			properties: {
+				UTM_Source: "google",
+				utmCampaign: "spring",
+				GCLID: "abc123",
+				utm_source: "already-canonical"
+			}
+		};
+		const out = transform(record);
+		// utm_source already canonical → no rename, no overwrite
+		expect(out.properties.utm_source).toBe("already-canonical");
+		expect(out.properties.UTM_Source).toBeUndefined();
+		expect(out.properties.utm_campaign).toBe("spring");
+		expect(out.properties.utmCampaign).toBeUndefined();
+		expect(out.properties.gclid).toBe("abc123");
+		expect(out.properties.GCLID).toBeUndefined();
+	});
+
+	test("event: leaves non-reserved keys untouched", () => {
+		const transform = matchMixpanelDefaults({ recordType: "event" });
+		const record = {
+			event: "x",
+			properties: {
+				my_custom_prop: "hello",
+				revenue: 9.99,
+				someInternal: "value"
+			}
+		};
+		const out = transform(record);
+		expect(out.properties.my_custom_prop).toBe("hello");
+		expect(out.properties.revenue).toBe(9.99);
+		expect(out.properties.someInternal).toBe("value");
+	});
+
+	test("user: renames inside $set bucket only", () => {
+		const transform = matchMixpanelDefaults({ recordType: "user" });
+		const record = {
+			$distinct_id: "u1",
+			$token: "tok",
+			$set: {
+				email: "a@b.com",
+				first_name: "Alice",
+				braze_external_id: "brz1",
+				custom_thing: "keep"
+			}
+		};
+		const out = transform(record);
+		expect(out.$set.$email).toBe("a@b.com");
+		expect(out.$set.$first_name).toBe("Alice");
+		expect(out.$set.$braze_external_id).toBe("brz1");
+		expect(out.$set.custom_thing).toBe("keep");
+		expect(out.$set.email).toBeUndefined();
+		expect(out.$distinct_id).toBe("u1");
+	});
+
+	test("user: renames inside multiple operation buckets ($set, $set_once)", () => {
+		const transform = matchMixpanelDefaults({ recordType: "user" });
+		const record = {
+			$distinct_id: "u1",
+			$set: { lastSeen: "2024-01-01" },
+			$set_once: { created: "2023-01-01" }
+		};
+		const out = transform(record);
+		expect(out.$set.$last_seen).toBe("2024-01-01");
+		expect(out.$set.lastSeen).toBeUndefined();
+		expect(out.$set_once.$created).toBe("2023-01-01");
+		expect(out.$set_once.created).toBeUndefined();
+	});
+
+	test("group: renames $name inside $set", () => {
+		const transform = matchMixpanelDefaults({ recordType: "group", groupKey: "company" });
+		const record = {
+			$group_id: "co1",
+			$group_key: "company",
+			$set: { name: "Acme Corp", arbitrary: "x" }
+		};
+		const out = transform(record);
+		expect(out.$set.$name).toBe("Acme Corp");
+		expect(out.$set.arbitrary).toBe("x");
+		expect(out.$set.name).toBeUndefined();
+	});
+
+	test("user: does NOT use event-only reserved props (e.g. $browser is not a profile prop)", () => {
+		const transform = matchMixpanelDefaults({ recordType: "user" });
+		const record = {
+			$distinct_id: "u1",
+			$set: { browser: "Chrome", email: "a@b.com" }
+		};
+		const out = transform(record);
+		// browser is not in user reserved set → leave alone
+		expect(out.$set.browser).toBe("Chrome");
+		expect(out.$set.$browser).toBeUndefined();
+		expect(out.$set.$email).toBe("a@b.com");
+	});
+
+	test("unknown recordType: returns no-op (record unchanged)", () => {
+		const transform = matchMixpanelDefaults({ recordType: "table" });
+		const record = { properties: { current_url: "x" } };
+		const out = transform(record);
+		expect(out.properties.current_url).toBe("x");
+		expect(out.properties.$current_url).toBeUndefined();
+	});
+
+	test("event with no properties object: returns record unchanged", () => {
+		const transform = matchMixpanelDefaults({ recordType: "event" });
+		const record = { event: "x" };
+		const out = transform(record);
+		expect(out).toEqual({ event: "x" });
+	});
+
+	test("integration: Job with matchMixpanelDefaults=true wires the transform", () => {
+		const job = new Job(fakeCreds, { recordType: "event", matchMixpanelDefaults: true });
+		expect(job.matchMixpanelDefaults).toBe(true);
+		expect(job.activeTransforms.some(t => t.name === "matchMixpanelDefaults")).toBe(true);
+	});
+
+	test("integration: Job defaults matchMixpanelDefaults=false (transform NOT wired)", () => {
+		const job = new Job(fakeCreds, { recordType: "event" });
+		expect(job.matchMixpanelDefaults).toBe(false);
+		expect(job.activeTransforms.some(t => t.name === "matchMixpanelDefaults")).toBe(false);
 	});
 });

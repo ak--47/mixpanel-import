@@ -531,6 +531,20 @@
 								<div class="processing-option">
 									<label class="checkbox-label">
 										<input type="checkbox"
+											id="matchMixpanelDefaults"
+											name="matchMixpanelDefaults">
+										Match Mixpanel Default Properties
+									</label>
+									<div class="example">
+										<code>{"current_url": "...", "browserVersion": "130", "_browser": "Chrome"}</code> →
+										<code>{"$current_url": "...", "$browser_version": "130", "$browser": "Chrome"}</code>
+										<small>Renames warehouse-style keys to Mixpanel reserved names ($browser, $current_url, utm_*, etc.). Case-insensitive, strips leading "_", normalizes camelCase/kebab-case. Skips keys already starting with "$" or "mp_". Record-type aware (event/user/group).</small>
+									</div>
+								</div>
+
+								<div class="processing-option">
+									<label class="checkbox-label">
+										<input type="checkbox"
 											id="dedupe"
 											name="dedupe">
 										Deduplicate Records

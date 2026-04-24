@@ -117,7 +117,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 		l(`║   • Compression: ${(job.compress ? 'Enabled' : 'Disabled').padEnd(47)}║`);
 
 		// Data processing options
-		if (job.vendor || job.transformFunc || job.fixData || job.fixTime || job.removeNulls) {
+		if (job.vendor || job.transformFunc || job.fixData || job.fixTime || job.removeNulls || job.matchMixpanelDefaults) {
 			l(`║                                                                  ║`);
 			l(`║ Data Processing:                                                ║`);
 			if (job.vendor) {
@@ -128,6 +128,7 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 			if (job.fixData) l(`║   • Fix Data: Enabled                                           ║`);
 			if (job.fixTime) l(`║   • Fix Time: Enabled                                           ║`);
 			if (job.removeNulls) l(`║   • Remove Nulls: Enabled                                       ║`);
+			if (job.matchMixpanelDefaults) l(`║   • Match MP Defaults: Enabled                                  ║`);
 			if (job.dedupe) l(`║   • Deduplication: Enabled                                      ║`);
 		}
 

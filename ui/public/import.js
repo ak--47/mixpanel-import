@@ -1163,6 +1163,7 @@ class MixpanelImportUI {
 				['removeNulls', 'clean'],
 				['flattenData', 'flatten'],
 				['fixJson', 'fix-json'],
+				['matchMixpanelDefaults', 'match-defaults'],
 				['dedupe', 'dedupe'],
 				['forceStream', 'stream'],
 				['verbose', 'verbose'],
@@ -1634,6 +1635,7 @@ function transform(row) {
 		if (this.getElementChecked('removeNulls')) options.removeNulls = true;
 		if (this.getElementChecked('flattenData')) options.flattenData = true;
 		if (this.getElementChecked('fixJson')) options.fixJson = true;
+		if (this.getElementChecked('matchMixpanelDefaults')) options.matchMixpanelDefaults = true;
 		if (this.getElementChecked('dedupe')) options.dedupe = true;
 
 		// Tags and vendor options (JSON fields)
