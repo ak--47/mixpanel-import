@@ -508,22 +508,23 @@ function addToken(jobConfig) {
 }
 
 /**
- * set distinct_id from $user_id or $device_id (for v2 compatibility)
- * only applies to events, only sets if distinct_id doesn't exist
- * prefers $user_id, falls back to $device_id
+ * set distinct_id from $user_id/user_id or $device_id/device_id (for v2 compatibility)
+ * prefers $-prefixed forms; falls back to "" when no source key is present
+ * only applies to events, only sets if distinct_id doesn't already exist
  * @returns {function}
  */
 function setDistinctIdFromV2Props() {
 	return function (record) {
-		// Only for events with properties
 		if (record?.properties) {
-			// Only set if distinct_id doesn't exist
 			if (!record.properties.distinct_id) {
-				// Prefer $user_id, fallback to $device_id
-				if (record.properties.$user_id) {
-					record.properties.distinct_id = record.properties.$user_id;
-				} else if (record.properties.$device_id) {
-					record.properties.distinct_id = record.properties.$device_id;
+				const userId = record.properties.$user_id || record.properties.user_id;
+				const deviceId = record.properties.$device_id || record.properties.device_id;
+				if (userId) {
+					record.properties.distinct_id = userId;
+				} else if (deviceId) {
+					record.properties.distinct_id = deviceId;
+				} else {
+					record.properties.distinct_id = "";
 				}
 			}
 		}
