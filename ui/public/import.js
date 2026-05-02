@@ -2627,11 +2627,14 @@ function transform(row) {
 	}
 
 	// Method to get the current aliases (combining text input + mapper)
+	// columnMappings is stored as { mixpanelField: sourceColumn } for UI ergonomics,
+	// but the engine expects { sourceColumn: mixpanelField } (source -> target).
+	// Invert before emitting.
 	getCurrentAliases() {
 		// Get aliases from text input (if it exists)
 		const aliasesInput = document.getElementById('aliases');
 		let textAliases = {};
-		
+
 		if (aliasesInput && aliasesInput.value.trim()) {
 			try {
 				textAliases = JSON.parse(aliasesInput.value.trim());
@@ -2640,8 +2643,13 @@ function transform(row) {
 			}
 		}
 
-		// Merge with column mapper aliases (text input takes precedence)
-		return { ...this.columnMappings, ...textAliases };
+		const mapperAliases = {};
+		for (const [mixpanelField, sourceColumn] of Object.entries(this.columnMappings)) {
+			if (sourceColumn) mapperAliases[sourceColumn] = mixpanelField;
+		}
+
+		// Merge with text input (text takes precedence)
+		return { ...mapperAliases, ...textAliases };
 	}
 
 	// Mixpanel tracking for import started

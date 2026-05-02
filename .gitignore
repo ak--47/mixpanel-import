@@ -30,3 +30,4 @@ benchmarks/results/*
 !benchmarks/results/.gitkeep
 credentials.json
 customers/*
+.playwright*

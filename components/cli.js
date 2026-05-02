@@ -108,8 +108,8 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 		.option("format", {
 			demandOption: false,
 			alias: 'streamFormat',
-			default: 'jsonl',
-			describe: 'either json, jsonl, or csv',
+			default: undefined,
+			describe: 'override stream format (json, jsonl, csv, parquet); auto-detected from file extension when omitted',
 			type: 'string'
 		})
 		.option("stream", {
@@ -197,8 +197,8 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 		})
 		.option("bytes", {
 			demandOption: false,
-			default: '9.8MB',
-			describe: 'max size of each request',
+			default: 9_800_000,
+			describe: 'max bytes per request (default 9.8MB)',
 			type: 'number',
 			alias: 'bytesPerBatch'
 		})
