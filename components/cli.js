@@ -391,7 +391,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 		.wrap(null)
 		.argv;
 	// @ts-ignore
-	if (args._.length === 0 && !args.type?.toLowerCase()?.includes('export') && !args.ui) {
+	if (args._.length === 0 && !args.type?.toLowerCase()?.includes('export') && !args.type?.toLowerCase()?.includes('delete') && !args.ui) {
 		// @ts-ignore
 		yargs.showHelp();
 		process.exit();

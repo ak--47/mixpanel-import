@@ -3,6 +3,7 @@
 *.gz
 scratchpad.js
 scratch.js
+scratch-*
 .vscode/*
 .DS_Store
 .env
@@ -18,6 +19,7 @@ test.js
 quick.js
 benchmarks/testData/*
 !benchmarks/testData/.gitkeep
+benchmarks/archives/*
 todos
 tmp/*
 !tmp/.gitkeep

@@ -894,9 +894,9 @@ class Job {
 		// Validate: service account auth for exports REQUIRES project_id in the API URL
 		// If user has acct + pass but no project, throw early with a clear error
 		const exportTypes = ['export', 'profile-export', 'group-export', 'profile-delete',
-		                     'export-import-event', 'export-import-profile'];
+			'export-import-event', 'export-import-profile'];
 		const isExportType = exportTypes.includes(this.type) ||
-		                     (this.type && this.type.includes('export'));
+			(this.type && this.type.includes('export'));
 		if (isExportType && this.acct && this.pass && !this.project) {
 			throw new Error('Export with service account auth requires project_id. Set MP_PROJECT env var or pass project in credentials.');
 		}
