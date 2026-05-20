@@ -605,6 +605,11 @@ async function handleSpecialRecordTypes(data, job) {
 		if (job.secondToken) {
 			job.token = job.secondToken;
 			job.secret = "";
+			// Source project id must not leak into destination /import URL — it would
+			// mismatch the destination token and Mixpanel silently rejects the batch.
+			// With token auth, project_id is not required.
+			// @ts-ignore
+			job.project = job.secondProject || "";
 			job.auth = job.resolveProjInfo();
 		}
 
@@ -622,6 +627,8 @@ async function handleSpecialRecordTypes(data, job) {
 		if (job.secondToken) {
 			job.token = job.secondToken;
 			job.secret = "";
+			// @ts-ignore
+			job.project = job.secondProject || "";
 			job.auth = job.resolveProjInfo();
 		}
 		// @ts-ignore

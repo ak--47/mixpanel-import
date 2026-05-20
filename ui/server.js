@@ -180,7 +180,37 @@ async function executeJobOverWebSocket(ws, jobId, credentials, options, cloudPat
 		// Run the import (this keeps the WebSocket connection active!)
 		const result = await mixpanelImport(creds, data, opts);
 		const { total, success, failed, empty } = result;
-		jobLogger.info({ total, success, failed, empty }, "job complete");
+		jobLogger.info({
+			total,
+			success,
+			failed,
+			empty,
+			outOfBounds: result.outOfBounds,
+			duplicates: result.duplicates,
+			requests: result.requests,
+			retries: result.retries,
+			rateLimit: result.rateLimit,
+			eps: result.eps,
+			rps: result.rps,
+			mbps: result.mbps,
+			durationHuman: result.durationHuman,
+			bytesHuman: result.bytesHuman,
+			recordType: opts.recordType
+		}, "job complete");
+
+		// Detect silent destination failures: events flowed through but Mixpanel
+		// counted none as success or failure. Usually invalid token or
+		// project_id/token mismatch on /import URL.
+		if (total > 0 && success === 0 && failed === 0) {
+			jobLogger.warn({
+				total,
+				requests: result.requests,
+				recordType: opts.recordType,
+				region: opts.region,
+				errors: result.errors,
+				responses: result.responses
+			}, "silent destination failure: records flowed but Mixpanel accepted 0 — check token / project_id / region");
+		}
 
 		// Filter result for client
 		const filteredResult = filterResultForClient(result);
@@ -828,7 +858,34 @@ app.post("/job", upload.array("files"), handleMulterError, async (req, res) => {
 
 			const result = await mixpanelImport(creds, data, opts);
 			const { total, success, failed, empty } = result;
-			jobLogger.info({ total, success, failed, empty, jobId }, "job complete");
+			jobLogger.info({
+				total,
+				success,
+				failed,
+				empty,
+				outOfBounds: result.outOfBounds,
+				duplicates: result.duplicates,
+				requests: result.requests,
+				retries: result.retries,
+				rateLimit: result.rateLimit,
+				eps: result.eps,
+				rps: result.rps,
+				mbps: result.mbps,
+				durationHuman: result.durationHuman,
+				bytesHuman: result.bytesHuman,
+				recordType: opts.recordType
+			}, "job complete");
+
+			if (total > 0 && success === 0 && failed === 0) {
+				jobLogger.warn({
+					total,
+					requests: result.requests,
+					recordType: opts.recordType,
+					region: opts.region,
+					errors: result.errors,
+					responses: result.responses
+				}, "silent destination failure: records flowed but Mixpanel accepted 0 — check token / project_id / region");
+			}
 
 			// Signal job completion via WebSocket (for real-time UI updates)
 			signalJobComplete(jobId, result);
@@ -1463,7 +1520,21 @@ app.post("/export", async (req, res) => {
 
 			// Create child logger with jobId for correlation
 			const exportLogger = logger.child({ jobId });
-			exportLogger.info({ recordType: opts.recordType }, "export started");
+			exportLogger.info({
+				recordType: opts.recordType,
+				region: opts.region,
+				project: creds.project || null,
+				authType: creds.acct ? "service-account" : (creds.secret ? "api-secret" : "other"),
+				start: opts.start,
+				end: opts.end,
+				epochStart: opts.epochStart,
+				epochEnd: opts.epochEnd,
+				limit: opts.limit,
+				whereClause: opts.whereClause || null,
+				destinationType: exportData.destinationType || 'local',
+				destinationPath: exportData.gcsPath || exportData.s3Path || null,
+				compress: opts.compress
+			}, "export started");
 
 			// Send jobId immediately so client can connect WebSocket
 			res.json({
@@ -1475,7 +1546,32 @@ app.post("/export", async (req, res) => {
 			// Run the export asynchronously (WebSocket keeps container alive)
 			try {
 				const result = await mixpanelImport(creds, null, opts);
-				exportLogger.info({ recordsProcessed: result.total }, "export complete");
+				exportLogger.info({
+					total: result.total,
+					success: result.success,
+					failed: result.failed,
+					empty: result.empty,
+					requests: result.requests,
+					retries: result.retries,
+					rateLimit: result.rateLimit,
+					eps: result.eps,
+					rps: result.rps,
+					mbps: result.mbps,
+					durationHuman: result.durationHuman,
+					bytesHuman: result.bytesHuman,
+					file: result.file || null
+				}, "export complete");
+
+				// Detect zero-record exports — usually means wrong date range,
+				// wrong filter (where), or auth scoped to a project with no data.
+				if (result.total === 0) {
+					exportLogger.warn({
+						recordType: opts.recordType,
+						start: opts.start,
+						end: opts.end,
+						whereClause: opts.whereClause || null
+					}, "export returned 0 records — check date range, where clause, and project scope");
+				}
 
 				// Check if this was a cloud storage export
 				const destinationType = exportData.destinationType || 'local';
@@ -1548,24 +1644,98 @@ app.post("/export", async (req, res) => {
 				activeJobs.delete(jobId);
 			}
 		} else {
-			// Stream-to-stream operations run synchronously
-			logger.info({ recordType: opts.recordType }, "export-import started");
+			// Stream-to-stream operations (export-import-*) — run async,
+			// signal progress + completion via WebSocket to match file-producing flow.
+			const eiLogger = logger.child({ jobId });
 
-			const result = await mixpanelImport(creds, null, opts);
-			logger.info({ recordsProcessed: result.total }, "export-import complete");
+			// Wire progress updates to WebSocket
+			opts.progressCallback = createProgressCallback(jobId);
 
+			eiLogger.info({
+				recordType: opts.recordType,
+				sourceProject: creds.project,
+				sourceRegion: opts.region,
+				destRegion: exportData.secondRegion || opts.region,
+				hasSecondToken: Boolean(creds.secondToken),
+				secondProject: exportData.secondProject || null,
+				start: opts.start,
+				end: opts.end,
+				whereClause: opts.whereClause || null
+			}, "export-import started");
+
+			// Send jobId immediately so client can connect WebSocket
 			res.json({
 				success: true,
-				result: result,
-				message: "Export-import operation completed"
+				jobId: jobId,
+				message: "Export-import started - connect WebSocket for progress"
 			});
+
+			try {
+				const result = await mixpanelImport(creds, null, opts);
+
+				eiLogger.info({
+					total: result.total,
+					success: result.success,
+					failed: result.failed,
+					empty: result.empty,
+					outOfBounds: result.outOfBounds,
+					duplicates: result.duplicates,
+					requests: result.requests,
+					retries: result.retries,
+					rateLimit: result.rateLimit,
+					eps: result.eps,
+					rps: result.rps,
+					mbps: result.mbps,
+					durationHuman: result.durationHuman,
+					bytesHuman: result.bytesHuman
+				}, "export-import complete");
+
+				// Detect silent destination failures: source returned records
+				// but destination imported 0 with no per-record failures recorded.
+				// Common causes: invalid/truncated destination token, wrong destination
+				// region, or token belonging to a different project than expected.
+				if (result.total > 0 && result.success === 0 && result.failed === 0) {
+					eiLogger.warn({
+						total: result.total,
+						requests: result.requests,
+						recordType: opts.recordType,
+						destRegion: exportData.secondRegion || opts.region,
+						errors: result.errors,
+						responses: result.responses
+					}, "silent destination failure: source returned records but destination imported 0 — check destination token / region / project mapping");
+				}
+
+				signalJobComplete(jobId, result);
+			} catch (eiError) {
+				eiLogger.error({ err: eiError }, "export-import failed");
+				updateJobStatus(jobId, "failed", null, { error: eiError.message });
+
+				const jobData = activeJobs.get(jobId);
+				if (jobData && jobData.ws.readyState === WebSocket.OPEN) {
+					try {
+						jobData.ws.send(
+							JSON.stringify({
+								type: "job-error",
+								jobId: jobId,
+								error: eiError.message,
+								timestamp: Date.now()
+							})
+						);
+					} catch (wsError) {
+						eiLogger.error({ err: wsError }, "ws error send failed");
+					}
+				}
+				activeJobs.delete(jobId);
+			}
 		}
 	} catch (error) {
-		logger.error({ err: error }, "export error");
-		res.status(500).json({
-			success: false,
-			error: error.message
-		});
+		logger.error({ err: error }, "export handler error");
+		if (!res.headersSent) {
+			res.status(500).json({
+				success: false,
+				error: error.message
+			});
+		}
 	}
 });
 
