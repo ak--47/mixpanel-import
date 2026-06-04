@@ -2503,6 +2503,48 @@ describe('Progress Display', () => {
 	});
 });
 
+describe('progressCallback independence', () => {
+	const outFile = path.resolve(__dirname, '../tmp/progress-cb-test.ndjson');
+
+	afterEach(() => {
+		// clean up the file written by writeToFile mode
+		try { fs.unlinkSync(outFile); } catch (e) { /* ignore */ }
+	});
+
+	test('fires progressCallback with verbose:false and showProgress:false', async () => {
+		// non-dryRun import (writeToFile avoids network) so the logger stage runs
+		const data = Array.from({ length: 50 }, (_, i) => ({
+			event: 'test event',
+			properties: { distinct_id: `user-${i}`, time: 1666488875497 + i }
+		}));
+
+		const calls = [];
+		const progressCallback = (...args) => calls.push(args);
+
+		await mpImport(fakeCreds, data, {
+			recordType: 'event',
+			verbose: false,        // no stdout spam
+			showProgress: false,   // no stdout spam
+			logs: false,
+			writeToFile: true,     // process the full pipeline without hitting the network
+			outputFilePath: outFile,
+			progressCallback
+		});
+
+		// the callback must fire independently of console verbosity
+		expect(calls.length).toBeGreaterThanOrEqual(1);
+
+		// contract: (recordType, processed, requests, eps, bytesProcessed)
+		const [recordType, processed, requests, eps, bytesProcessed] = calls[0];
+		expect(calls[0].length).toBe(5);
+		expect(recordType).toBe('event');
+		expect(typeof processed).toBe('number');
+		expect(typeof requests).toBe('number');
+		expect(typeof eps).toBe('string'); // getEps() returns a formatted string
+		expect(typeof bytesProcessed).toBe('number');
+	});
+});
+
 describe("authentication logic", () => {
 	test("imports prefer token auth when available", () => {
 		const job = new Job({

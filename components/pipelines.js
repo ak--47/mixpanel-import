@@ -518,13 +518,28 @@ function createLogger(job, LOG_INTERVAL = 100) {
 				}
 			} else {
 				const now = Date.now();
-				if ((job.verbose || job.showProgress) && (now - lastLogUpdate >= LOG_INTERVAL)) {
-					counter(job.recordType, job.recordsProcessed, job.requests, job.getEps(), job.success, job.failed, job.bytesProcessed, job.progressCallback, job.empty, job.startTime, job.getRps(), job.getMbps());
+				if (now - lastLogUpdate >= LOG_INTERVAL) {
+					// console progress bar — only when verbose/showProgress (writes to stdout)
+					if (job.verbose || job.showProgress) {
+						counter(job.recordType, job.recordsProcessed, job.requests, job.getEps(), job.success, job.failed, job.bytesProcessed, null, job.empty, job.startTime, job.getRps(), job.getMbps());
+					}
+					// progress callback (UI/programmatic) — fire whenever provided,
+					// independent of console verbosity
+					if (typeof job.progressCallback === 'function') {
+						job.progressCallback(job.recordType, job.recordsProcessed, job.requests, job.getEps(), job.bytesProcessed);
+					}
 					lastLogUpdate = now;
 				}
 			}
 
 			callback(null, result);
+		},
+		flush(callback) {
+			// emit one final progress tick so UI/programmatic consumers can render a terminal 100%
+			if (typeof job.progressCallback === 'function') {
+				job.progressCallback(job.recordType, job.recordsProcessed, job.requests, job.getEps(), job.bytesProcessed);
+			}
+			callback();
 		}
 	});
 }
