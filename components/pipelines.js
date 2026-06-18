@@ -221,6 +221,12 @@ function createHelperTransforms(job) {
 					// Some transforms mutate data, others return new data
 					if (transform.mutates === false) {
 						data = transform.fn(data);
+						// Filters (e.g. epochFilter) return null to drop a record.
+						// Stop processing so later transforms (fixTime, insertIdAdder,
+						// jsonFixer) don't throw on the null. callback(null, null) emits
+						// no output (Node's transform uses a `!= null` check), so the
+						// record is dropped here; the filter already tallied it (outOfBounds).
+						if (data == null) break;
 					} else {
 						transform.fn(data);
 					}

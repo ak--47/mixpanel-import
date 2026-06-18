@@ -2878,9 +2878,10 @@ describe("matchMixpanelDefaults", () => {
 			}
 		};
 		const out = transform(record);
-		// utm_source already canonical → no rename, no overwrite
+		// utm_source already canonical → no rename, no overwrite, and the
+		// conflicting variant is kept as-is (renameToReserved keeps both)
 		expect(out.properties.utm_source).toBe("already-canonical");
-		expect(out.properties.UTM_Source).toBeUndefined();
+		expect(out.properties.UTM_Source).toBe("google");
 		expect(out.properties.utm_campaign).toBe("spring");
 		expect(out.properties.utmCampaign).toBeUndefined();
 		expect(out.properties.gclid).toBe("abc123");
@@ -2989,5 +2990,69 @@ describe("matchMixpanelDefaults", () => {
 		const job = new Job(fakeCreds, { recordType: "event" });
 		expect(job.matchMixpanelDefaults).toBe(false);
 		expect(job.activeTransforms.some(t => t.name === "matchMixpanelDefaults")).toBe(false);
+	});
+});
+
+describe("epochFilter out-of-bounds regression", () => {
+	// Regression for a production crash: flat events (no `properties`) whose
+	// timestamp falls after `epochEnd`. ezTransforms wraps them into `properties`,
+	// then epochFilter returns null to drop them. epochFilter runs BEFORE fixTime
+	// in the helper-transform chain, so before the fix that null reached fixTime,
+	// which threw "Record has no properties object, cannot fix time" and killed
+	// the ENTIRE job. The fix short-circuits the chain when a filter returns null.
+
+	// generic flat record shape: no `properties`, ISO-string `time`, `event_name`
+	const makeFlatEvent = (isoTime, id) => ({
+		insert_id: `ins-${id}`,
+		time: isoTime,
+		distinct_id: `user-${id}`,
+		device_id: `dev-${id}`,
+		event_name: "Page View",
+		some_prop: `val-${id}`,
+		nested: { a: 1 },
+	});
+
+	const epochEnd = dayjs.utc("2020-06-01T12:00:00Z").unix(); // cutoff at noon
+
+	const inBounds = [
+		makeFlatEvent("2020-06-01T00:00:00Z", 1),
+		makeFlatEvent("2020-06-01T06:00:00Z", 2),
+		makeFlatEvent("2020-06-01T11:59:00Z", 3),
+	];
+	const outOfBounds = [
+		makeFlatEvent("2020-06-01T13:00:00Z", 4),
+		makeFlatEvent("2020-06-01T23:00:00Z", 5),
+	];
+	const testData = [...inBounds, ...outOfBounds];
+
+	const opts = {
+		recordType: "event",
+		fixData: true,
+		fixTime: true,
+		matchMixpanelDefaults: true,
+		removeNulls: true,
+		epochEnd,
+		dryRun: true, // exercises the full transform pipeline without hitting the API
+	};
+
+	test("does not throw when epochFilter drops records before fixTime runs", async () => {
+		await expect(mpImport(fakeCreds, [...testData], opts)).resolves.toBeDefined();
+	});
+
+	test("out-of-bounds records are tallied in outOfBounds and dropped", async () => {
+		const result = await mpImport(fakeCreds, [...testData], opts);
+		expect(result.outOfBounds).toBe(outOfBounds.length); // 2 counted as OOB
+		expect(result.dryRun.length).toBe(inBounds.length);  // 3 survive the pipeline
+		// dropped records emit no output (callback(null, null)) so they are NOT
+		// double-counted as empty; the filter is the sole tally point.
+		expect(result.empty).toBe(0);
+	});
+
+	test("surviving records are normalized into Mixpanel shape (fixTime ran)", async () => {
+		const result = await mpImport(fakeCreds, [...testData], opts);
+		for (const rec of result.dryRun) {
+			expect(rec.properties).toBeDefined();
+			expect(typeof rec.properties.time).toBe("number"); // ISO string -> epoch ms
+		}
 	});
 });
