@@ -364,6 +364,25 @@ declare namespace main {
      * { throttleMaxBufferMB: 2000 }  // 2GB max buffer
      */
     throttleMaxBufferMB?: number;
+
+    /**
+     * Idle-read watchdog (ms) for cloud source streams (GCS/S3).
+     * If no bytes arrive for this long, the read is aborted with an error so the
+     * job fails fast instead of hanging forever on a stalled/half-open socket.
+     * Set to 0 to disable the watchdog.
+     * @default 120000 (2 minutes)
+     * @example
+     * { cloudReadIdleTimeout: 60000 }  // abort a stalled read after 60s
+     */
+    cloudReadIdleTimeout?: number;
+
+    /**
+     * Request-level timeout (ms) passed to GCS `createReadStream`.
+     * 0 leaves the storage client default in place and relies on
+     * `cloudReadIdleTimeout` instead. (S3 already uses its own request timeout.)
+     * @default 0 (rely on idle watchdog)
+     */
+    cloudReadRequestTimeout?: number;
     // ═══════════════════════════════════════════════════════════════
     // DATA COMPRESSION & STREAMING
     // ═══════════════════════════════════════════════════════════════

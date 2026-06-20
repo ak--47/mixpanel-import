@@ -341,6 +341,10 @@ class Job {
 		this.throttleResumeMB = opts.throttleResumeMB || 1000; //memory threshold to resume cloud downloads (MB)
 		this.throttleMaxBufferMB = opts.throttleMaxBufferMB || 2000; //max buffer size for BufferQueue (MB)
 
+		// Cloud source read failure handling (prevents indefinite hangs on stalled/reset sockets)
+		this.cloudReadIdleTimeout = u.isNil(opts.cloudReadIdleTimeout) ? 120000 : opts.cloudReadIdleTimeout; //abort a cloud read after N ms with zero bytes (0 = disable)
+		this.cloudReadRequestTimeout = u.isNil(opts.cloudReadRequestTimeout) ? 0 : opts.cloudReadRequestTimeout; //GCS createReadStream request timeout (0 = client default)
+
 		// ? destination options for writing output
 		this.destination = opts.destination || null; //path to write output (local file or gs://bucket/path or s3://bucket/path)
 		this.destinationOnly = u.isNil(opts.destinationOnly) ? false : opts.destinationOnly; //skip Mixpanel, only write to destination

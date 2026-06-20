@@ -202,7 +202,11 @@ const GCS_STREAMING_CONFIG = {
 
 	// GCS-specific optimizations
 	DISABLE_VALIDATION: false,       // Set to true for maximum speed on trusted files
-	DECOMPRESS: false                // Let us handle compression manually
+	DECOMPRESS: false,               // Let us handle compression manually
+
+	// Read failure handling (prevents indefinite hangs on stalled/half-open sockets)
+	READ_IDLE_TIMEOUT_MS: 120000,    // 2 min with zero bytes => treat as dead, abort + reject
+	READ_REQUEST_TIMEOUT_MS: 0       // 0 = rely on idle watchdog; >0 = hard per-file ceiling
 };
 
 // S3 Streaming Configuration
@@ -221,9 +225,61 @@ const S3_STREAMING_CONFIG = {
 	MAX_RETRY_ATTEMPTS: 3,           // Number of retry attempts for failed requests
 	PART_SIZE: 5 * 1024 * 1024,      // 5MB part size for streaming
 
+	// Read failure handling (prevents indefinite hangs on stalled/half-open sockets)
+	READ_IDLE_TIMEOUT_MS: 120000,    // 2 min with zero bytes => treat as dead, abort + reject
+
 	// Default region (can be overridden)
 	DEFAULT_REGION: 'us-east-1'      // Default AWS region if none specified
 };
+
+/**
+ * Wire `source -> ...transforms -> destination` so that ANY stage error reaches
+ * `destination` (it emits 'error') and EVERY stage is destroyed on failure (no
+ * leaked fds/sockets/memory). Returns the destination stream for the caller to
+ * consume. This replaces `.pipe()` chains, which do NOT forward source errors
+ * downstream and therefore leave the returned stream hanging forever.
+ * @param {import('stream').Stream[]} stages
+ * @returns {any} the last stage (destination)
+ */
+function wireCloudPipeline(stages) {
+	const destination = /** @type {any} */ (stages[stages.length - 1]);
+	// @ts-ignore - variadic stream.pipeline with a stage array + completion callback
+	stream.pipeline(...stages, (err) => {
+		// pipeline() already destroys all stages on error; this guarantees the
+		// consumer sees the failure even if it attaches late.
+		if (err && !destination.destroyed) destination.destroy(err);
+	});
+	return destination;
+}
+
+/**
+ * Transport-agnostic idle watchdog: if no bytes arrive for `ms`, destroy the
+ * stream with an error. Catches silent half-open / stalled cloud downloads
+ * (TCP connection that stops delivering bytes but never sends FIN/RST) that a
+ * request-level `timeout` can miss. Because the stream is part of a pipeline,
+ * destroy(err) propagates cleanly to the destination.
+ * @param {import('stream').Readable} readable
+ * @param {number} ms idle threshold in milliseconds (<=0 disables)
+ * @param {string} label included in the error message for diagnosis
+ * @returns {import('stream').Readable} the same stream (for chaining)
+ */
+function armIdleTimeout(readable, ms, label) {
+	if (!ms || ms <= 0) return readable;
+	let timer;
+	const reset = () => {
+		clearTimeout(timer);
+		timer = setTimeout(() => {
+			readable.destroy(new Error(`cloud read stalled: no data for ${ms}ms (${label})`));
+		}, ms);
+	};
+	const clear = () => clearTimeout(timer);
+	readable.on('data', reset);
+	readable.once('end', clear);
+	readable.once('close', clear);
+	readable.once('error', clear);
+	reset();
+	return readable;
+}
 
 // Memory Management Configuration
 const MEMORY_CONFIG = {
@@ -1373,23 +1429,38 @@ async function createGCSJSONStream(gcsPath, job) {
 		}
 
 		// Create read stream with tunable settings for high throughput
-		const gcsReadStream = gcsFile.createReadStream({
+		const requestTimeout = job.cloudReadRequestTimeout ?? GCS_STREAMING_CONFIG.READ_REQUEST_TIMEOUT_MS;
+		const readOpts = {
 			// Use configurable compression and validation settings
 			decompress: GCS_STREAMING_CONFIG.DECOMPRESS,
 			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION
 			// Note: highWaterMark is not a valid option for GCS createReadStream
+		};
+		// Only set a request-level timeout when explicitly configured (>0), so the
+		// happy path keeps @google-cloud/storage's default behavior.
+		if (requestTimeout > 0) readOpts.timeout = requestTimeout;
+		const gcsReadStream = gcsFile.createReadStream(readOpts);
+
+		// Idle watchdog: abort with an error if bytes stop arriving (half-open stall).
+		// Errors now PROPAGATE to the returned stream via stream.pipeline below.
+		const idleTimeout = job.cloudReadIdleTimeout ?? GCS_STREAMING_CONFIG.READ_IDLE_TIMEOUT_MS;
+		armIdleTimeout(gcsReadStream, idleTimeout, gcsPath);
+
+		const makeGunzip = () => zlib.createGunzip({
+			chunkSize: GCS_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
+			windowBits: GCS_STREAMING_CONFIG.GZIP_WINDOW_BITS,
+			level: zlib.constants.Z_DEFAULT_COMPRESSION,
+			memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
 		});
 
-		// CRITICAL: Add error handler immediately to prevent unhandled errors
-		gcsReadStream.on('error', (error) => {
-			console.error(`\n❌ GCS Stream Error for ${gcsPath}:`);
-			console.error('Error:', error.message);
-			// @ts-ignore - Node.js errors often have a code property
-			console.error('Code:', error.code);
-			console.error('Stack:', error.stack);
-			console.error('This error will propagate through the pipeline.\n');
-			// Error will propagate naturally through the pipe chain
-		});
+		const makeJsonlStream = () => {
+			const jsonlStream = new JsonlObjectStream(job);
+			// Surface parse warnings (non-fatal) in verbose mode
+			jsonlStream.on('warning', (msg) => {
+				if (job.verbose) console.warn(`⚠️  ${msg}`);
+			});
+			return jsonlStream;
+		};
 
 		// Add buffer queue for memory-based throttling if requested
 		if (job.throttleGCS || job.throttleMemory) {
@@ -1412,74 +1483,26 @@ async function createGCSJSONStream(gcsPath, job) {
 			// Connect GCS directly to buffer queue FIRST (before any transformations)
 			gcsReadStream.pipe(queueInput);
 
-			// Apply gunzip AFTER the buffer queue if needed
-			let outputPipeline = queueOutput;
-			if (isGzipped) {
-				const gunzip = zlib.createGunzip({
-					chunkSize: GCS_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
-					windowBits: GCS_STREAMING_CONFIG.GZIP_WINDOW_BITS,
-					level: zlib.constants.Z_DEFAULT_COMPRESSION,
-					memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
-				});
-				// Add error handler to gunzip stream
-				gunzip.on('error', (error) => {
-					console.error(`\n❌ Gunzip Error for ${gcsPath}:`);
-					console.error('Error:', error.message);
-					console.error('This may indicate corrupted gzip data.\n');
-				});
-				outputPipeline = outputPipeline.pipe(gunzip);
-			}
+			// pipeline() cannot span the custom BufferQueue; wire the post-queue
+			// chain with the helper so gunzip/parse errors propagate to the consumer.
+			const postQueueStages = [queueOutput];
+			if (isGzipped) postQueueStages.push(makeGunzip());
+			postQueueStages.push(makeJsonlStream());
+			const out = wireCloudPipeline(postQueueStages);
 
-			// Convert to NDJSON object stream
-			const jsonlStream = new JsonlObjectStream(job);
-			// Add warning listener to catch parse errors
-			jsonlStream.on('warning', (msg) => {
-				if (job.verbose) {
-					console.warn(`⚠️  ${msg}`);
-				}
+			// Forward a GCS source failure (ECONNRESET / idle-abort) into the
+			// returned stream — the BufferQueue does not do this on its own.
+			gcsReadStream.on('error', (error) => {
+				if (!out.destroyed) out.destroy(error);
 			});
-			// Add error handler
-			jsonlStream.on('error', (error) => {
-				console.error(`\n❌ JSONL Parse Error for ${gcsPath}:`);
-				console.error('Error:', error.message);
-			});
-			return outputPipeline.pipe(jsonlStream);
+			return out;
 		}
 
-		// No throttling - standard pipeline
-		let pipeline = gcsReadStream;
-
-		// Handle gzip compression with tunable parameters
-		if (isGzipped) {
-			const gunzip = zlib.createGunzip({
-				chunkSize: GCS_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
-				windowBits: GCS_STREAMING_CONFIG.GZIP_WINDOW_BITS,
-				level: zlib.constants.Z_DEFAULT_COMPRESSION,
-				memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
-			});
-			// Add error handler to gunzip stream
-			gunzip.on('error', (error) => {
-				console.error(`\n❌ Gunzip Error for ${gcsPath}:`);
-				console.error('Error:', error.message);
-				console.error('This may indicate corrupted gzip data.\n');
-			});
-			pipeline = pipeline.pipe(gunzip);
-		}
-
-		// Convert to NDJSON object stream with tunable performance (no throttling)
-		const jsonlStream = new JsonlObjectStream(job);
-		// Add warning listener to catch parse errors
-		jsonlStream.on('warning', (msg) => {
-			if (job.verbose) {
-				console.warn(`⚠️  ${msg}`);
-			}
-		});
-		// Add error handler
-		jsonlStream.on('error', (error) => {
-			console.error(`\n❌ JSONL Parse Error for ${gcsPath}:`);
-			console.error('Error:', error.message);
-		});
-		return pipeline.pipe(jsonlStream);
+		// No throttling - compose with stream.pipeline so source errors propagate
+		const stages = [gcsReadStream];
+		if (isGzipped) stages.push(makeGunzip());
+		stages.push(makeJsonlStream());
+		return wireCloudPipeline(stages);
 
 	} catch (error) {
 		throw new Error(`Error creating GCS JSON stream: ${error.message}`);
@@ -1524,26 +1547,33 @@ async function createGCSCSVStream(gcsPath, job) {
 		}
 
 		// Create read stream with throttling
-		const gcsReadStream = gcsFile.createReadStream({
+		const requestTimeout = job.cloudReadRequestTimeout ?? GCS_STREAMING_CONFIG.READ_REQUEST_TIMEOUT_MS;
+		const readOpts = {
 			decompress: GCS_STREAMING_CONFIG.DECOMPRESS,
 			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION
 			// Note: highWaterMark is not a valid option for GCS createReadStream
+		};
+		if (requestTimeout > 0) readOpts.timeout = requestTimeout;
+		const gcsReadStream = gcsFile.createReadStream(readOpts);
+
+		// Idle watchdog (errors propagate via stream.pipeline below)
+		const idleTimeout = job.cloudReadIdleTimeout ?? GCS_STREAMING_CONFIG.READ_IDLE_TIMEOUT_MS;
+		armIdleTimeout(gcsReadStream, idleTimeout, gcsPath);
+
+		const makeGunzip = () => zlib.createGunzip({
+			chunkSize: GCS_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
+			windowBits: GCS_STREAMING_CONFIG.GZIP_WINDOW_BITS,
+			level: zlib.constants.Z_DEFAULT_COMPRESSION,
+			memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
 		});
 
-		// CRITICAL: Add error handler immediately to prevent unhandled errors
-		gcsReadStream.on('error', (error) => {
-			console.error(`\n❌ GCS CSV Stream Error for ${gcsPath}:`);
-			console.error('Error:', error.message);
-			// @ts-ignore - Node.js errors often have a code property
-			console.error('Code:', error.code);
-			console.error('Stack:', error.stack);
-			// Error will propagate naturally through the pipe chain
-		});
-
-		let sourceStream;
-
-		// Add buffer queue for memory-based throttling if requested
+		// Byte-level stages feeding the CSV parser. When throttling, route bytes
+		// through the BufferQueue (which pipeline() cannot span) and apply gunzip
+		// after the queue; otherwise gunzip directly after the GCS stream.
+		let throttled = false;
+		const leadingStages = [];
 		if (job.throttleGCS || job.throttleMemory) {
+			throttled = true;
 			const { BufferQueue } = require('./buffer-queue');
 			const bufferQueue = new BufferQueue({
 				maxSizeMB: job.throttleMaxBufferMB || 2000,     // Max 2GB buffer
@@ -1555,49 +1585,15 @@ async function createGCSCSVStream(gcsPath, job) {
 			// CRITICAL: BufferQueue must be the FIRST consumer of GCS stream
 			bufferQueue.setSourceStream(gcsReadStream);
 
-			// Create input/output streams (false = byte mode, since GCS outputs Buffers)
 			const queueInput = bufferQueue.createInputStream(false);
 			const queueOutput = bufferQueue.createOutputStream(false);
-
-			// Connect GCS directly to buffer queue FIRST
 			gcsReadStream.pipe(queueInput);
 
-			// Apply gunzip AFTER the buffer queue if needed
-			if (isGzipped) {
-				const gunzip = zlib.createGunzip({
-					chunkSize: GCS_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
-					windowBits: GCS_STREAMING_CONFIG.GZIP_WINDOW_BITS,
-					level: zlib.constants.Z_DEFAULT_COMPRESSION,
-					memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
-				});
-				// Add error handler to gunzip stream
-				gunzip.on('error', (error) => {
-					console.error(`\n❌ CSV Gunzip Error for ${gcsPath}:`);
-					console.error('Error:', error.message);
-				});
-				sourceStream = queueOutput.pipe(gunzip);
-			} else {
-				sourceStream = queueOutput;
-			}
+			leadingStages.push(queueOutput);
+			if (isGzipped) leadingStages.push(makeGunzip());
 		} else {
-			// No throttling - standard pipeline
-			sourceStream = gcsReadStream;
-
-			// Handle gzip compression
-			if (isGzipped) {
-				const gunzip = zlib.createGunzip({
-					chunkSize: GCS_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
-					windowBits: GCS_STREAMING_CONFIG.GZIP_WINDOW_BITS,
-					level: zlib.constants.Z_DEFAULT_COMPRESSION,
-					memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
-				});
-				// Add error handler to gunzip stream
-				gunzip.on('error', (error) => {
-					console.error(`\n❌ CSV Gunzip Error for ${gcsPath}:`);
-					console.error('Error:', error.message);
-				});
-				sourceStream = sourceStream.pipe(gunzip);
-			}
+			leadingStages.push(gcsReadStream);
+			if (isGzipped) leadingStages.push(makeGunzip());
 		}
 
 		// Parse CSV using Papa Parse
@@ -1636,26 +1632,22 @@ async function createGCSCSVStream(gcsPath, job) {
 
 					callback(null, mixpanelEvent);
 				} catch (error) {
-					console.error(`\n❌ CSV Transform Error for ${gcsPath}:`);
-					console.error('Error:', error.message);
-					console.error('Chunk:', chunk);
 					callback(error);
 				}
 			}
 		});
 
-		// Add error handlers to CSV parser and transformer
-		csvParser.on('error', (error) => {
-			console.error(`\n❌ CSV Parser Error for ${gcsPath}:`);
-			console.error('Error:', error.message);
-		});
-		transformer.on('error', (error) => {
-			console.error(`\n❌ CSV Transformer Error for ${gcsPath}:`);
-			console.error('Error:', error.message);
-		});
+		// Compose Source -> CSV Parser -> Transform with error propagation + cleanup
+		const out = wireCloudPipeline([...leadingStages, csvParser, transformer]);
 
-		// Pipe: Source Stream -> CSV Parser -> Transform -> Output
-		return sourceStream.pipe(csvParser).pipe(transformer);
+		// In throttled mode the GCS source sits outside the pipeline; forward its
+		// failures so a reset/stall fails the returned stream instead of hanging.
+		if (throttled) {
+			gcsReadStream.on('error', (error) => {
+				if (!out.destroyed) out.destroy(error);
+			});
+		}
+		return out;
 
 	} catch (error) {
 		throw new Error(`Error creating GCS CSV stream: ${error.message}`);
@@ -1700,23 +1692,23 @@ async function createGCSParquetStream(gcsPath, job) {
 		}
 
 		// Create GCS read stream with throttling
-		let gcsReadStream = gcsFile.createReadStream({
+		const requestTimeout = job.cloudReadRequestTimeout ?? GCS_STREAMING_CONFIG.READ_REQUEST_TIMEOUT_MS;
+		const readOpts = {
 			decompress: GCS_STREAMING_CONFIG.DECOMPRESS,
 			validation: !GCS_STREAMING_CONFIG.DISABLE_VALIDATION
 			// Note: highWaterMark is not a valid option for GCS createReadStream
-		});
+		};
+		if (requestTimeout > 0) readOpts.timeout = requestTimeout;
+		const gcsReadStream = gcsFile.createReadStream(readOpts);
 
-		// CRITICAL: Add error handler immediately to prevent unhandled errors
-		gcsReadStream.on('error', (error) => {
-			console.error(`\n❌ GCS Parquet Stream Error for ${gcsPath}:`);
-			console.error('Error:', error.message);
-			// @ts-ignore - Node.js errors often have a code property
-			console.error('Code:', error.code);
-			console.error('Stack:', error.stack);
-			// Error will propagate naturally through the pipe chain
-		});
+		// Idle watchdog: abort a stalled download so the for-await below rejects
+		// instead of hanging forever.
+		const idleTimeout = job.cloudReadIdleTimeout ?? GCS_STREAMING_CONFIG.READ_IDLE_TIMEOUT_MS;
+		armIdleTimeout(gcsReadStream, idleTimeout, gcsPath);
 
-		// Handle gzip decompression for .parquet.gz files
+		// For gzipped parquet, compose via stream.pipeline so a GCS source error
+		// reaches the iterated stream (a raw .pipe() would strand the for-await).
+		let parquetSource = gcsReadStream;
 		if (isGzipped) {
 			const gunzip = zlib.createGunzip({
 				chunkSize: GCS_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
@@ -1724,17 +1716,12 @@ async function createGCSParquetStream(gcsPath, job) {
 				level: zlib.constants.Z_DEFAULT_COMPRESSION,
 				memLevel: GCS_STREAMING_CONFIG.GZIP_MEM_LEVEL
 			});
-			// Add error handler to gunzip stream
-			gunzip.on('error', (error) => {
-				console.error(`\n❌ Parquet Gunzip Error for ${gcsPath}:`);
-				console.error('Error:', error.message);
-			});
-			gcsReadStream = gcsReadStream.pipe(gunzip);
+			parquetSource = wireCloudPipeline([gcsReadStream, gunzip, new stream.PassThrough()]);
 		}
 
 		// Collect stream data into buffer for hyparquet
 		const chunks = [];
-		for await (const chunk of gcsReadStream) {
+		for await (const chunk of parquetSource) {
 			chunks.push(chunk);
 		}
 		const buffer = Buffer.concat(chunks);
@@ -1959,14 +1946,14 @@ async function createMultiGCSStream(gcsPaths, job) {
 			});
 
 			fileStream.on('error', (error) => {
-				console.error(`\n❌ Multi-file GCS Error for ${gcsPath}:`);
-				console.error('Error:', error.message);
+				// A mid-stream read failure (ECONNRESET / idle-abort / corrupt gzip)
+				// is FATAL. Skipping here would silently drop the remainder of a
+				// partially-read file = data loss reported as success. Fail the whole
+				// job so the caller can retry the entire (idempotent) task.
 				// @ts-ignore - Node.js errors often have a code property
-				console.error('Code:', error.code);
-				console.error('File:', processedCount + skippedCount + 1, 'of', gcsPaths.length);
-				console.error('Skipping and continuing...\n');
-				skippedCount++;
-				setImmediate(processNextFile);
+				const code = error.code ? ` (${error.code})` : '';
+				const fatal = new Error(`Multi-file GCS read failed for ${gcsPath}${code}: ${error.message}`);
+				if (!output.destroyed) output.destroy(fatal);
 			});
 
 		} catch (error) {
@@ -2073,19 +2060,23 @@ async function createS3JSONStream(s3Path, job) {
 		// @ts-ignore - AWS SDK stream conversion
 		const s3Stream = stream.Readable.from(response.Body);
 
-		// Handle gzip compression with tunable parameters
+		// Idle watchdog so a stalled S3 download aborts (with an error) instead of
+		// hanging. Errors PROPAGATE to the returned stream via stream.pipeline.
+		const idleTimeout = job.cloudReadIdleTimeout ?? S3_STREAMING_CONFIG.READ_IDLE_TIMEOUT_MS;
+		armIdleTimeout(s3Stream, idleTimeout, s3Path);
+
+		// Compose with stream.pipeline so source/gunzip errors reach the consumer
+		const stages = [s3Stream];
 		if (isGzipped) {
-			const gunzip = zlib.createGunzip({
+			stages.push(zlib.createGunzip({
 				chunkSize: S3_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
 				windowBits: S3_STREAMING_CONFIG.GZIP_WINDOW_BITS,
 				level: zlib.constants.Z_DEFAULT_COMPRESSION,
 				memLevel: S3_STREAMING_CONFIG.GZIP_MEM_LEVEL
-			});
-			return s3Stream.pipe(gunzip).pipe(new JsonlObjectStream(job));
+			}));
 		}
-
-		// Convert to NDJSON object stream with tunable performance
-		return s3Stream.pipe(new JsonlObjectStream(job));
+		stages.push(new JsonlObjectStream(job));
+		return wireCloudPipeline(stages);
 
 	} catch (error) {
 		throw new Error(`Error creating S3 JSON stream: ${error.message}`);
@@ -2144,16 +2135,19 @@ async function createS3CSVStream(s3Path, job) {
 		// @ts-ignore - AWS SDK stream conversion
 		const s3Stream = stream.Readable.from(response.Body);
 
-		// Handle gzip compression
-		let processedStream = s3Stream;
+		// Idle watchdog (errors propagate via stream.pipeline below)
+		const idleTimeout = job.cloudReadIdleTimeout ?? S3_STREAMING_CONFIG.READ_IDLE_TIMEOUT_MS;
+		armIdleTimeout(s3Stream, idleTimeout, s3Path);
+
+		// Byte stages feeding the CSV parser
+		const leadingStages = [s3Stream];
 		if (isGzipped) {
-			const gunzip = zlib.createGunzip({
+			leadingStages.push(zlib.createGunzip({
 				chunkSize: S3_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
 				windowBits: S3_STREAMING_CONFIG.GZIP_WINDOW_BITS,
 				level: zlib.constants.Z_DEFAULT_COMPRESSION,
 				memLevel: S3_STREAMING_CONFIG.GZIP_MEM_LEVEL
-			});
-			processedStream = s3Stream.pipe(gunzip);
+			}));
 		}
 
 		// Parse CSV using Papa Parse
@@ -2193,8 +2187,8 @@ async function createS3CSVStream(s3Path, job) {
 			}
 		});
 
-		// Pipe: S3 Stream -> CSV Parser -> Transform -> Output
-		return processedStream.pipe(csvParser).pipe(transformer);
+		// Compose S3 Stream -> CSV Parser -> Transform with error propagation + cleanup
+		return wireCloudPipeline([...leadingStages, csvParser, transformer]);
 
 	} catch (error) {
 		throw new Error(`Error creating S3 CSV stream: ${error.message}`);
@@ -2252,7 +2246,16 @@ async function createS3ParquetStream(s3Path, job) {
 		// Convert AWS SDK stream to Node.js stream and collect chunks
 		const chunks = [];
 
-		// Handle gzip decompression for .parquet.gz files
+		// @ts-ignore - AWS SDK stream conversion
+		const s3Stream = stream.Readable.from(response.Body);
+
+		// Idle watchdog so a stalled download aborts the for-await below
+		const idleTimeout = job.cloudReadIdleTimeout ?? S3_STREAMING_CONFIG.READ_IDLE_TIMEOUT_MS;
+		armIdleTimeout(s3Stream, idleTimeout, s3Path);
+
+		// For gzipped parquet, compose via stream.pipeline so an S3 source error
+		// reaches the iterated stream (a raw .pipe() would strand the for-await).
+		let parquetSource = s3Stream;
 		if (isGzipped) {
 			const gunzip = zlib.createGunzip({
 				chunkSize: S3_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
@@ -2260,21 +2263,11 @@ async function createS3ParquetStream(s3Path, job) {
 				level: zlib.constants.Z_DEFAULT_COMPRESSION,
 				memLevel: S3_STREAMING_CONFIG.GZIP_MEM_LEVEL
 			});
+			parquetSource = wireCloudPipeline([s3Stream, gunzip, new stream.PassThrough()]);
+		}
 
-			// Convert AWS SDK stream to Node.js stream and pipe through gunzip
-			// @ts-ignore - AWS SDK stream conversion
-			const s3Stream = stream.Readable.from(response.Body);
-			const decompressedStream = s3Stream.pipe(gunzip);
-
-			for await (const chunk of decompressedStream) {
-				chunks.push(chunk);
-			}
-		} else {
-			// Direct processing without compression
-			// @ts-ignore - AWS SDK stream iteration
-			for await (const chunk of response.Body) {
-				chunks.push(chunk);
-			}
+		for await (const chunk of parquetSource) {
+			chunks.push(chunk);
 		}
 		const buffer = Buffer.concat(chunks);
 
@@ -2435,9 +2428,12 @@ async function createMultiS3Stream(s3Paths, job) {
 			});
 
 			fileStream.on('error', (error) => {
-				console.warn(`Error reading file ${s3Path}: ${error.message}`);
-				skippedCount++;
-				setImmediate(processNextFile);
+				// Mid-stream read failure is FATAL (see createMultiGCSStream): never
+				// silently skip the remainder of a partially-read file.
+				// @ts-ignore - Node.js errors often have a code property
+				const code = error.code ? ` (${error.code})` : '';
+				const fatal = new Error(`Multi-file S3 read failed for ${s3Path}${code}: ${error.message}`);
+				if (!output.destroyed) output.destroy(fatal);
 			});
 
 		} catch (error) {

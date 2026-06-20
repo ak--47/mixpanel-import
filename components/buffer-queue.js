@@ -170,6 +170,14 @@ class BufferQueue extends EventEmitter {
 	 */
 	setSourceStream(stream) {
 		this.sourceStream = stream;
+		// Forward a source failure to the output sink. Without this, a source
+		// error (e.g. ECONNRESET / idle-abort on a cloud download) would leave
+		// the output stream never emitting 'error' or 'end' → consumer hangs.
+		stream.on('error', (err) => {
+			if (this.sinkStream && !this.sinkStream.destroyed) {
+				this.sinkStream.destroy(err);
+			}
+		});
 		return this;
 	}
 
