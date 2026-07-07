@@ -176,6 +176,16 @@ describe("GCS source failures", () => {
 		}
 	});
 
+	test("multi-file: fatal error preserves the original error code (so callers can retry)", async () => {
+		const paths = ["gs://bucket/part-0000.jsonl", "gs://bucket/part-0001.jsonl"];
+		mockGcs.createReadStream = () => makeErroringStream(8);
+
+		await expect(mp(CREDS, paths, BASE_OPTS)).rejects.toMatchObject({
+			message: expect.stringMatching(/Multi-file GCS read failed/),
+			code: "ECONNRESET",
+		});
+	});
+
 	test("multi-file: a genuinely-absent file is skipped (not fatal)", async () => {
 		const paths = [
 			"gs://bucket/part-0000.jsonl",
@@ -208,6 +218,22 @@ describe("S3 source failures", () => {
 		const res = await mp(CREDS, "s3://bucket/part-0001.jsonl", S3_OPTS);
 		expect(res).toBeDefined();
 		expect(res.failed).toBe(0);
+	});
+
+	test("multi-file: fatal error preserves the original error code", async () => {
+		const paths = ["s3://bucket/part-0.jsonl", "s3://bucket/part-1.jsonl"];
+		const counts = {};
+		mockS3.impl = async (command) => {
+			const key = command.input.Key;
+			counts[key] = (counts[key] || 0) + 1;
+			if (counts[key] === 1) return { Body: goodBody(0) }; // existence probe
+			return { Body: erroringBody(8) };
+		};
+
+		await expect(mp(CREDS, paths, S3_OPTS)).rejects.toMatchObject({
+			message: expect.stringMatching(/Multi-file S3 read failed/),
+			code: "ECONNRESET",
+		});
 	});
 
 	test("multi-file: a mid-stream read error fails the job", async () => {

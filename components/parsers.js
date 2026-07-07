@@ -1953,10 +1953,22 @@ async function createMultiGCSStream(gcsPaths, job) {
 				// @ts-ignore - Node.js errors often have a code property
 				const code = error.code ? ` (${error.code})` : '';
 				const fatal = new Error(`Multi-file GCS read failed for ${gcsPath}${code}: ${error.message}`);
+				// Preserve the transport error code (ECONNRESET etc.) so callers'
+				// retry logic can recognize the failure as transient.
+				// @ts-ignore
+				if (error.code) fatal.code = error.code;
 				if (!output.destroyed) output.destroy(fatal);
 			});
 
 		} catch (error) {
+			// TODO(in-library resilience): a transient network error here (e.g.
+			// ECONNRESET during file.exists() or stream open) currently skips the
+			// file — silent data loss reported as success. Retrying creation-time
+			// steps is safe (no bytes have entered the pipeline yet): wrap exists()
+			// + createGCSStream() in a bounded retry (3 attempts, backoff) before
+			// falling through to skip. Mid-stream failures must stay fatal (see
+			// the 'error' handler above); only whole-task retry by the caller is
+			// safe once data has flowed.
 			console.error(`\n❌ Stream Creation Error for ${gcsPath}:`);
 			console.error('Error:', error.message);
 			console.error('Stack:', error.stack);
@@ -2433,6 +2445,10 @@ async function createMultiS3Stream(s3Paths, job) {
 				// @ts-ignore - Node.js errors often have a code property
 				const code = error.code ? ` (${error.code})` : '';
 				const fatal = new Error(`Multi-file S3 read failed for ${s3Path}${code}: ${error.message}`);
+				// Preserve the transport error code (ECONNRESET etc.) so callers'
+				// retry logic can recognize the failure as transient.
+				// @ts-ignore
+				if (error.code) fatal.code = error.code;
 				if (!output.destroyed) output.destroy(fatal);
 			});
 

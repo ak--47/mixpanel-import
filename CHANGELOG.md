@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.4.1
+
+### Fixed
+- **Wrapped multi-file cloud read failures now expose the original transport error code.** The
+  fatal errors produced by mid-stream read failures in multi-file GCS/S3 imports
+  (`Multi-file GCS read failed ...` / `Multi-file S3 read failed ...`) now carry the original
+  error's `code` property (e.g. `ECONNRESET`), so callers' retry logic can classify them as
+  transient. Message text and failure semantics are unchanged.
+
 ## 3.3.2
 
 ### Changed
