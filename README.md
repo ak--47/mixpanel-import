@@ -430,6 +430,10 @@ npx mixpanel-import messy_data.json \
 | `s3Key` | `string` | AWS S3 access key ID |
 | `s3Secret` | `string` | AWS S3 secret access key |
 | `s3Region` | `string` | AWS S3 region (required for S3 access) |
+| `resumeOnStall` | `boolean` | Resume stalled GCS reads at the last-received byte offset (default `false`; JSONL/NDJSON only) |
+| `cloudResumeAttempts` | `number` | Max consecutive no-progress resume attempts (default `3`) |
+| `cloudRetryBackoffMs` | `number` | Base backoff for cloud open/resume retries (default `1000`) |
+| `cloudStreamCallback` | `function` | Receives per-file stall/resume telemetry events |
 
 ### 📊 **Output & Logging Options**
 
