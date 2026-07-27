@@ -68,6 +68,13 @@ const { createMpStream } = require("../index.js");
 const { createReadStream } = require("fs");
 const { Readable, Transform, Writable, PassThrough } = require("stream");
 const u = require("ak-tools");
+const dayjs = require("dayjs");
+
+// Mixpanel rejects event timestamps older than ~730 days (or in the future),
+// so inline fixtures must compute times relative to "now".
+const RECENT = dayjs().subtract(3, "d");
+const RECENT_MS = RECENT.valueOf();
+const RECENT_SEC = RECENT.unix();
 
 // Small test data files
 const events = `./testData/events-small.ndjson`;
@@ -78,8 +85,8 @@ const table = `./testData/table-small.csv`;
 
 // Small in-memory test data
 const smallEvents = [
-	{ "event": "test event", "properties": { "distinct_id": "user-1", "time": 1666488875497, "$source": "sanity test" } },
-	{ "event": "another event", "properties": { "distinct_id": "user-2", "time": 1666488876497, "$source": "sanity test" } }
+	{ "event": "test event", "properties": { "distinct_id": "user-1", "time": RECENT_MS, "$source": "sanity test" } },
+	{ "event": "another event", "properties": { "distinct_id": "user-2", "time": RECENT_MS + 1000, "$source": "sanity test" } }
 ];
 
 const smallPeople = [
@@ -309,8 +316,8 @@ describe("sanity: transform", () => {
 		"can use custom transform",
 		async () => {
 			const testData = [
-				{ "event": "test", "time": "2023-01-01", "distinct_id": "user-1" },
-				{ "event": "test2", "time": "2023-01-02", "distinct_id": "user-2" }
+				{ "event": "test", "time": RECENT.subtract(1, "d").format("YYYY-MM-DD"), "distinct_id": "user-1" },
+				{ "event": "test2", "time": RECENT.format("YYYY-MM-DD"), "distinct_id": "user-2" }
 			];
 			const data = await mp({}, testData, {
 				...opts,
@@ -334,12 +341,12 @@ describe("sanity: transform", () => {
 		async () => {
 			const data = [
 				{ event: false },
-				{ event: "foo", properties: { distinct_id: "bar", time: 1681750925188, $insert_id: "1234" } }
+				{ event: "foo", properties: { distinct_id: "bar", time: RECENT_MS, $insert_id: "1234" } }
 			];
 			const func = o => {
 				if (!o.event) {
 					const results = [];
-					const template = { event: "foo", properties: { distinct_id: "bar", time: 1681750925188, $insert_id: "1234" } };
+					const template = { event: "foo", properties: { distinct_id: "bar", time: RECENT_MS, $insert_id: "1234" } };
 					for (let i = 0; i < 3; i++) { // Reduced from 100
 						results.push(template);
 					}
@@ -451,7 +458,7 @@ describe("sanity: fixing stuff", () => {
 	test(
 		"filter out {} /import",
 		async () => {
-			const data = [{ event: "foo", properties: { distinct_id: "bar", time: 1681750925188, $insert_id: "1234" } }, {}, {}];
+			const data = [{ event: "foo", properties: { distinct_id: "bar", time: RECENT_MS, $insert_id: "1234" } }, {}, {}];
 			const job = await mp({}, data, { ...opts, recordType: "event", fixData: false });
 			expect(job.success).toBe(1);
 			expect(job.failed).toBe(0);
@@ -580,7 +587,7 @@ describe("sanity: fixing stuff", () => {
 			event: "test_event",
 			properties: {
 				distinct_id: "user-1",
-				time: "2023-06-09 11:25:31",
+				time: RECENT.format("YYYY-MM-DD HH:mm:ss"),
 				$insert_id: "test-1"
 			}
 		}];
@@ -594,7 +601,7 @@ describe("sanity: fixing stuff", () => {
 		const data = [{
 			event: "test_event",
 			distinct_id: "user-1",
-			time: "2023-06-09 11:25:31",
+			time: RECENT.format("YYYY-MM-DD HH:mm:ss"),
 			$insert_id: "test-1"
 		}];
 		const job = await mp({}, data, { ...opts, recordType: "event", fixData: true });
@@ -609,14 +616,14 @@ describe("sanity: white + blacklist", () => {
 		{
 			event: "foo",
 			distinct_id: "user-1",
-			time: 1691429413,
+			time: RECENT_SEC,
 			$insert_id: "321",
 			happy: "kinda"
 		},
 		{
 			event: "bar",
 			distinct_id: "user-2",
-			time: 1691429414,
+			time: RECENT_SEC + 1,
 			$insert_id: "123",
 			sad: "sorta"
 		}
@@ -768,7 +775,7 @@ describe("sanity: options", () => {
 				[{
 					event: "nullTester",
 					properties: {
-						time: 1678931922817,
+						time: RECENT_MS,
 						distinct_id: "foo",
 						$insert_id: "bar",
 						actual_null: null,
@@ -792,7 +799,7 @@ describe("sanity: options", () => {
 			const dataPoint = [{
 				event: "test event",
 				properties: {
-					time: 1678865417,
+					time: RECENT_SEC,
 					distinct_id: "user-1"
 				}
 			}];

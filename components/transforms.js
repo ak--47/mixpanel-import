@@ -707,9 +707,13 @@ function setDistinctIdFromV2Props() {
 function UTCoffset(timeOffset = 0) {
 	return function (record) {
 		if (record?.properties?.time) {
-			const oldTime = dayjs.unix(record.properties.time);
-			const newTime = oldTime.add(timeOffset, "h").valueOf();
-			record.properties.time = newTime;
+			const raw = record.properties.time;
+			const numeric = Number(raw);
+			let oldTime;
+			if (Number.isNaN(numeric)) oldTime = dayjs.utc(raw); // ISO strings et al.
+			else if (Math.abs(numeric) > 9999999999) oldTime = dayjs(numeric); // 11+ digits = milliseconds
+			else oldTime = dayjs.unix(numeric); // unix seconds
+			record.properties.time = oldTime.add(timeOffset, "h").valueOf();
 		}
 		return record;
 	};

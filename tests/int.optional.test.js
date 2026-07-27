@@ -33,7 +33,9 @@ const {
 	MP_PROFILE_EXPORT_TOKEN = "",
 	MP_PROFILE_EXPORT_SECRET = "",
 	MP_PROFILE_EXPORT_GROUP_KEY = "",
-	MP_PROFILE_EXPORT_DATAGROUP_ID = ""
+	MP_PROFILE_EXPORT_DATAGROUP_ID = "",
+	MP_EXPORT_PROJECT = "",
+	MP_EXPORT_SECRET = ""
 } = process.env;
 
 if (!MP_PROJECT || !MP_ACCT || !MP_PASS || !MP_SECRET || !MP_TOKEN || !MP_TABLE_ID) {
@@ -87,6 +89,21 @@ const twoFiftyK = `./testData/big.ndjson`;
 const needTransform = `./testData/needDateTransform.ndjson`;
 const dayjs = require("dayjs");
 const badData = `./testData/bad_data.jsonl`;
+
+// Mixpanel rejects event timestamps older than ~730 days (or in the future),
+// so inline fixtures must compute times relative to "now".
+const RECENT = dayjs().subtract(3, "d");
+const RECENT_MS = RECENT.valueOf();
+const RECENT_SEC = RECENT.unix();
+
+// Export tests need a project with recent event data (Mixpanel's 730-day
+// retention window applies to raw exports too, so dates must be relative).
+// The export project holds a LOT of data, so always pass `limit` when
+// exporting from it in tests.
+const EXPORT_PROJECT = MP_EXPORT_PROJECT || MP_PROJECT;
+const EXPORT_SECRET = MP_EXPORT_SECRET || MP_SECRET;
+const EXPORT_START = dayjs().subtract(3, "d").format("YYYY-MM-DD");
+const EXPORT_END = dayjs().subtract(1, "d").format("YYYY-MM-DD");
 const eventsCSV = `./testData/eventAsTable.csv`;
 const dupePeople = `./testData/pplWithDupes.ndjson`;
 const heapParseError = `./testData/heap-parse-error.jsonl`;
@@ -301,13 +318,18 @@ describe("in memory", () => {
 	test(
 		"export-import-event",
 		async () => {
-			const data = await mp({}, null, { ...opts, recordType: "export-import-event", start: "2023-01-01", end: "2023-01-01", skipWriteToDisk: true });
+			// round trip: export recent events from the export project, re-import
+			// them into it (same $insert_id, so the server dedupes)
+			const data = await mp(
+				{ secret: EXPORT_SECRET, project: EXPORT_PROJECT },
+				null,
+				{ ...opts, recordType: "export-import-event", start: EXPORT_START, end: EXPORT_END, limit: 500, skipWriteToDisk: true }
+			);
 			const { success, failed, total } = data;
 			const expectedSuccess = 200;
-			const expectedFailed = 70;
 			const expectedTotal = 200;
 			expect(success).toBeGreaterThan(expectedSuccess);
-			expect(failed).toBeGreaterThan(expectedFailed);
+			expect(failed).toBe(0);
 			expect(total).toBeGreaterThan(expectedTotal);
 		}, longTimeout
 	);
@@ -459,13 +481,13 @@ describe("transform", () => {
 		async () => {
 			const data = [
 				{ event: false },
-				{ event: "foo", properties: { distinct_id: "bar", time: 1681750925188, $insert_id: "1234" } },
-				{ event: "foo", properties: { distinct_id: "naz", time: 1681750925148, $insert_id: "4321" } }
+				{ event: "foo", properties: { distinct_id: "bar", time: RECENT_MS, $insert_id: "1234" } },
+				{ event: "foo", properties: { distinct_id: "naz", time: RECENT_MS - 40, $insert_id: "4321" } }
 			];
 			const func = o => {
 				if (!o.event) {
 					const results = [];
-					const template = { event: "foo", properties: { distinct_id: "bar", time: 1681750925188, $insert_id: "1234" } };
+					const template = { event: "foo", properties: { distinct_id: "bar", time: RECENT_MS, $insert_id: "1234" } };
 					for (let i = 0; i < 100; i++) {
 						results.push(template);
 					}
@@ -703,7 +725,11 @@ describe("exports", () => {
 	test(
 		"export event data to file",
 		async () => {
-			const data = await mp({}, null, { ...opts, recordType: "export", start: "2023-01-01", end: "2023-01-01" });
+			const data = await mp(
+				{ secret: EXPORT_SECRET, project: EXPORT_PROJECT },
+				null,
+				{ ...opts, recordType: "export", start: EXPORT_START, end: EXPORT_END, limit: 500 }
+			);
 			expect(data.duration).toBeGreaterThan(0);
 			expect(data.requests).toBe(1);
 			expect(data.failed).toBe(0);
@@ -716,7 +742,11 @@ describe("exports", () => {
 	test(
 		"export event data in memory",
 		async () => {
-			const data = await mp({}, null, { ...opts, skipWriteToDisk: true, recordType: "export", start: "2023-01-01", end: "2023-01-01" });
+			const data = await mp(
+				{ secret: EXPORT_SECRET, project: EXPORT_PROJECT },
+				null,
+				{ ...opts, skipWriteToDisk: true, recordType: "export", start: EXPORT_START, end: EXPORT_END, limit: 500 }
+			);
 			const { dryRun, success, total } = data;
 			const numberOfRecords = 180;
 			expect(dryRun.length).toBeGreaterThan(numberOfRecords);
@@ -887,7 +917,7 @@ describe("options", () => {
 					{
 						event: "nullTester",
 						properties: {
-							time: 1678931922817,
+							time: RECENT_MS,
 							distinct_id: "foo",
 							$insert_id: "bar",
 							actual_null: null,
@@ -1021,7 +1051,7 @@ describe("data fixes", () => {
 	test(
 		"filter out {} /import",
 		async () => {
-			const data = [{ event: "foo", properties: { distinct_id: "bar", time: 1681750925188, $insert_id: "1234" } }, {}, {}, {}];
+			const data = [{ event: "foo", properties: { distinct_id: "bar", time: RECENT_MS, $insert_id: "1234" } }, {}, {}, {}];
 			const job = await mp({}, data, { ...opts, recordType: "event", fixData: false });
 			expect(job.success).toBe(1);
 			expect(job.failed).toBe(0);
@@ -1097,8 +1127,8 @@ describe("data fixes", () => {
 			const data = [
 				{ event: "me" },
 				{ event: "you" },
-				{ event: "foo", properties: { distinct_id: "bar", time: 1681750925188, $insert_id: "1234" } },
-				{ event: "foo", properties: { distinct_id: "naz", time: 1681750925148, $insert_id: "4321" } }
+				{ event: "foo", properties: { distinct_id: "bar", time: RECENT_MS, $insert_id: "1234" } },
+				{ event: "foo", properties: { distinct_id: "naz", time: RECENT_MS - 40, $insert_id: "4321" } }
 			];
 			const func = o => {
 				if (!o.properties) return {};
@@ -1119,7 +1149,7 @@ describe("data fixes", () => {
 				event: "watch_video",
 				properties: {
 					distinct_id: "24377a8a-8096-55d4-be61-54010bc27adf",
-					time: "2023-06-09 11:25:31",
+					time: RECENT.format("YYYY-MM-DD HH:mm:ss"),
 					$insert_id: null
 				}
 			},
@@ -1127,7 +1157,7 @@ describe("data fixes", () => {
 				event: "page_view",
 				properties: {
 					distinct_id: "24377a8a-8096-55d4-be61-54010bc27adf",
-					time: "2023-06-09 11:25:31",
+					time: RECENT.format("YYYY-MM-DD HH:mm:ss"),
 					$insert_id: null
 				}
 			}
@@ -1146,13 +1176,13 @@ describe("data fixes", () => {
 			{
 				event: "watch_video",
 				distinct_id: "24377a8a-8096-55d4-be61-54010bc27adf",
-				time: "2023-06-09 11:25:31",
+				time: RECENT.format("YYYY-MM-DD HH:mm:ss"),
 				$insert_id: null
 			},
 			{
 				event: "page_view",
 				distinct_id: "24377a8a-8096-55d4-be61-54010bc27adf",
-				time: "2023-06-09 11:25:31",
+				time: RECENT.format("YYYY-MM-DD HH:mm:ss"),
 				$insert_id: null
 			}
 		];
@@ -1170,36 +1200,36 @@ describe("data fixes", () => {
 			{
 				event: "foo",
 				distinct_id: "24377a8a-8096-55d4-be61-54010bc27adf",
-				time: 1691429413,
+				time: RECENT_SEC,
 				$insert_id: "321"
 			},
 			{
 				event: "foo",
 				distinct_id: "24377a8a-8096-55d4-be61-54010bc27adf",
-				time: 1691429414,
+				time: RECENT_SEC + 1,
 				$insert_id: "123"
 			},
 			{
 				event: "foo",
 				distinct_id: "24377a8a-8096-55d4-be61-54010bc27adf",
-				time: 1691429415,
+				time: RECENT_SEC + 2,
 				$insert_id: "456"
 			},
 			{
 				event: "foo",
 				distinct_id: "24377a8a-8096-55d4-be61-54010bc27adf",
-				time: 1691429416,
+				time: RECENT_SEC + 3,
 				$insert_id: "789"
 			},
 			{
 				event: "foo",
 				distinct_id: "24377a8a-8096-55d4-be61-54010bc27adf",
-				time: 1691429417,
+				time: RECENT_SEC + 4,
 				$insert_id: "012"
 			}
 		];
 
-		const job = await mp({}, data, { ...opts, recordType: "event", epochStart: 1691429414, epochEnd: 1691429416 });
+		const job = await mp({}, data, { ...opts, recordType: "event", epochStart: RECENT_SEC + 1, epochEnd: RECENT_SEC + 3 });
 		expect(job.success).toBe(3);
 		expect(job.failed).toBe(0);
 		expect(job.total).toBe(5);
@@ -1251,35 +1281,35 @@ describe("white + blacklist", () => {
 		{
 			event: "foo",
 			distinct_id: "24377a8a-8096-55d4-be61-54010bc27adf",
-			time: 1691429413,
+			time: RECENT_SEC,
 			$insert_id: "321",
 			happy: "kinda"
 		},
 		{
 			event: "bar",
 			distinct_id: "24377a8a-8096-55d4-be61-54010bc27adf",
-			time: 1691429414,
+			time: RECENT_SEC + 1,
 			$insert_id: "123",
 			sad: "sorta"
 		},
 		{
 			event: "baz",
 			distinct_id: "24377a8a-8096-55d4-be61-54010bc27adf",
-			time: 1691429415,
+			time: RECENT_SEC + 2,
 			$insert_id: "456",
 			maybe: "cool"
 		},
 		{
 			event: "qux",
 			distinct_id: "24377a8a-8096-55d4-be61-54010bc27adf",
-			time: 1691429416,
+			time: RECENT_SEC + 3,
 			$insert_id: "789",
 			deal: "with it"
 		},
 		{
 			event: "mux",
 			distinct_id: "24377a8a-8096-55d4-be61-54010bc27adf",
-			time: 1691429417,
+			time: RECENT_SEC + 4,
 			$insert_id: "012",
 			because: "why",
 			happy: "nope"
@@ -1420,14 +1450,38 @@ allowNotification,set,App Navigation,,app:#/OnBoardingSurveyView/welcome/introdu
 describe("parquet", () => {
 
 	test('events', async () => {
+		// reviews.parquet carries fixed historical timestamps and hyparquet is
+		// read-only, so we can't freshen the file itself. Probe with a dry run
+		// to find the newest timestamp, then shift everything into Mixpanel's
+		// 730-day retention window via timeOffset (hours).
+		const probe = await mp({}, './testData/parquet/reviews.parquet', {
+			recordType: "event",
+			streamFormat: "parquet",
+			fixData: true,
+			dryRun: true
+		});
+		const timesMs = probe.dryRun
+			.map(r => r?.properties?.time)
+			.filter(t => Number.isFinite(t))
+			.map(t => (Math.abs(t) > 9999999999 ? t : t * 1000));
+		const maxMs = Math.max(...timesMs);
+		const targetMs = Date.now() - 3 * 86400000;
+		const timeOffset = Math.max(0, Math.floor((targetMs - maxMs) / 3600000));
+
 		const job = await mp({}, './testData/parquet/reviews.parquet', {
 			recordType: "event",
 			streamFormat: "parquet",
 			fixData: true,
-			abridged: false
+			abridged: false,
+			timeOffset
 		});
 		const total = 14925;
-		const atLeast = 999;
+		// reviews.parquet spans several years, so even after the offset only the
+		// records within 730 days of the newest one can land. Compute that count
+		// from the probe and allow a small margin for boundary drift.
+		const windowMs = 727 * 86400000;
+		const expectedInWindow = timesMs.filter(t => t >= maxMs - windowMs).length;
+		const atLeast = Math.floor(expectedInWindow * 0.9);
 
 		// Debug output to see what errors we're getting
 		// console.log('Errors object:', job.errors);
