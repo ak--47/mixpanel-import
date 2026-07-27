@@ -7,6 +7,11 @@ MP_PASS=password
 MP_SECRET=secret
 MP_TOKEN=token
 
+optionally, for export tests (a project that always has recent event + user data):
+
+MP_EXPORT_PROJECT=project
+MP_EXPORT_SECRET=secret
+
 and then download the test data here:
 
 unzip it in ./testData
@@ -61,6 +66,8 @@ const {
 	MP_PROFILE_EXPORT_SECRET = "",
 	MP_PROFILE_EXPORT_GROUP_KEY = "",
 	MP_PROFILE_EXPORT_DATAGROUP_ID = "",
+	MP_EXPORT_PROJECT = "",
+	MP_EXPORT_SECRET = "",
 	S3_KEY = "",
 	S3_SECRET = "",
 	S3_REGION = ""
@@ -345,7 +352,9 @@ const s3Opts = {
 	
 };
 
-describe("amazon s3", () => {
+// S3 test resources were deliberately deleted (cost); real-bucket S3 tests are
+// skipped until they are recreated. Mocked S3 coverage lives in cloud-failure.test.js.
+describe.skip("amazon s3", () => {
 	test(
 		"json: single file",
 		async () => {
@@ -579,6 +588,14 @@ describe("gcs authentication methods", () => {
 const GCS_EXPORT_PREFIX = `gs://ak-bucky/mixpanel-import/exports`;
 const S3_EXPORT_PREFIX = `s3://ak-bucky/mixpanel-import/exports`;
 
+// Export tests need a project with recent event data (Mixpanel's 730-day
+// retention window applies to raw exports too, so dates must be relative).
+const dayjs = require('dayjs');
+const EXPORT_PROJECT = MP_EXPORT_PROJECT || MP_PROJECT;
+const EXPORT_SECRET = MP_EXPORT_SECRET || MP_SECRET;
+const EXPORT_START = dayjs().subtract(3, 'd').format('YYYY-MM-DD');
+const EXPORT_END = dayjs().subtract(1, 'd').format('YYYY-MM-DD');
+
 // Generate unique test file names to avoid collisions
 // Note: The actual extension will be normalized by exportEvents based on compress option
 // Convention: .json.gz if compressed, .ndjson if not compressed
@@ -606,13 +623,13 @@ describe("cloud export writes - GCS", () => {
 			// Export a small date range of events to GCS
 			// Note: For exports, the destination path goes in `where` option, not as `data` argument
 			const result = await mp(
-				{ acct: MP_ACCT, pass: MP_PASS, project: MP_PROJECT },
+				{ secret: EXPORT_SECRET, project: EXPORT_PROJECT },
 				null, // no data source for exports
 				{
 					...exportOpts,
 					where: exportPath, // destination path for export
-					start: '2024-01-01',
-					end: '2024-01-02',
+					start: EXPORT_START,
+					end: EXPORT_END,
 					compress: true, // explicitly enable compression
 					limit: 100, // limit to 100 events for test speed
 				}
@@ -635,13 +652,13 @@ describe("cloud export writes - GCS", () => {
 			const exportPath = getUniqueExportPath(GCS_EXPORT_PREFIX);
 
 			const result = await mp(
-				{ acct: MP_ACCT, pass: MP_PASS, project: MP_PROJECT },
+				{ secret: EXPORT_SECRET, project: EXPORT_PROJECT },
 				null,
 				{
 					...exportOpts,
 					where: exportPath,
-					start: '2024-01-01',
-					end: '2024-01-02',
+					start: EXPORT_START,
+					end: EXPORT_END,
 					compress: false, // explicitly disable compression
 					limit: 100,
 				}
@@ -662,13 +679,13 @@ describe("cloud export writes - GCS", () => {
 			const exportDir = `${GCS_EXPORT_PREFIX}/auto-name/`;
 
 			const result = await mp(
-				{ acct: MP_ACCT, pass: MP_PASS, project: MP_PROJECT },
+				{ secret: EXPORT_SECRET, project: EXPORT_PROJECT },
 				null,
 				{
 					...exportOpts,
 					where: exportDir,
-					start: '2024-01-01',
-					end: '2024-01-02',
+					start: EXPORT_START,
+					end: EXPORT_END,
 					compress: true, // default, should use .json.gz
 					limit: 50,
 				}
@@ -677,7 +694,7 @@ describe("cloud export writes - GCS", () => {
 			expect(result.duration).toBeGreaterThan(0);
 			expect(result.file).toBeDefined();
 			// Auto-generated filename should include dates and .json.gz
-			expect(result.file).toBe(`${exportDir}events-2024-01-01--2024-01-02.json.gz`);
+			expect(result.file).toBe(`${exportDir}events-${EXPORT_START}--${EXPORT_END}.json.gz`);
 			expect(result.file).toContain('.json.gz');
 		},
 		longTimeout
@@ -690,13 +707,13 @@ describe("cloud export writes - GCS", () => {
 
 			// Step 1: Export events to GCS with compression
 			const exportResult = await mp(
-				{ acct: MP_ACCT, pass: MP_PASS, project: MP_PROJECT },
+				{ secret: EXPORT_SECRET, project: EXPORT_PROJECT },
 				null,
 				{
 					...exportOpts,
 					where: exportPath,
-					start: '2024-01-01',
-					end: '2024-01-02',
+					start: EXPORT_START,
+					end: EXPORT_END,
 					compress: true,
 					limit: 50,
 				}
@@ -725,7 +742,8 @@ describe("cloud export writes - GCS", () => {
 	);
 });
 
-describe("cloud export writes - S3", () => {
+// Skipped: S3 test resources deliberately deleted (see note above).
+describe.skip("cloud export writes - S3", () => {
 	// Skip S3 tests if credentials are not available
 	const hasS3Creds = S3_KEY && S3_SECRET && S3_REGION;
 
@@ -737,13 +755,13 @@ describe("cloud export writes - S3", () => {
 			const exportPath = getUniqueExportPath(S3_EXPORT_PREFIX);
 
 			const result = await mp(
-				{ acct: MP_ACCT, pass: MP_PASS, project: MP_PROJECT },
+				{ secret: EXPORT_SECRET, project: EXPORT_PROJECT },
 				null,
 				{
 					...exportOpts,
 					where: exportPath,
-					start: '2024-01-01',
-					end: '2024-01-02',
+					start: EXPORT_START,
+					end: EXPORT_END,
 					compress: true,
 					limit: 100,
 					s3Key: S3_KEY,
@@ -767,13 +785,13 @@ describe("cloud export writes - S3", () => {
 			const exportPath = getUniqueExportPath(S3_EXPORT_PREFIX);
 
 			const result = await mp(
-				{ acct: MP_ACCT, pass: MP_PASS, project: MP_PROJECT },
+				{ secret: EXPORT_SECRET, project: EXPORT_PROJECT },
 				null,
 				{
 					...exportOpts,
 					where: exportPath,
-					start: '2024-01-01',
-					end: '2024-01-02',
+					start: EXPORT_START,
+					end: EXPORT_END,
 					compress: false,
 					limit: 100,
 					s3Key: S3_KEY,
@@ -798,13 +816,13 @@ describe("cloud export writes - S3", () => {
 
 			// Step 1: Export events to S3 with compression
 			const exportResult = await mp(
-				{ acct: MP_ACCT, pass: MP_PASS, project: MP_PROJECT },
+				{ secret: EXPORT_SECRET, project: EXPORT_PROJECT },
 				null,
 				{
 					...exportOpts,
 					where: exportPath,
-					start: '2024-01-01',
-					end: '2024-01-02',
+					start: EXPORT_START,
+					end: EXPORT_END,
 					compress: true,
 					limit: 50,
 					s3Key: S3_KEY,
