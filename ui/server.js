@@ -8,6 +8,7 @@ const mixpanelImport = require("../index.js");
 const pino = require("pino");
 const { createGcpLoggingPinoConfig } = require("@google-cloud/pino-logging-gcp-config");
 const cookieParser = require('cookie-parser');
+const csurf = require('csurf');
 const { validateCloudWriteAccess } = require('../components/parsers.js');
 const { GoogleAuth } = require('google-auth-library');
 const { Storage } = require('@google-cloud/storage');
@@ -598,6 +599,7 @@ function serveFile(res, filename) {
 app.use(express.static(path.join(__dirname, "public")));
 // @ts-ignore
 app.use(cookieParser());
+
 app.use((req, res, next) => {
 	//for idmgmt: https://cloud.google.com/iap/docs/identity-howto
 	const rawUser = req.headers['x-goog-authenticated-user-email'];
