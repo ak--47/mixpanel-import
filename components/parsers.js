@@ -20,6 +20,7 @@ const { console } = require('inspector');
 const { streamEvents, streamProfiles } = require('../components/exporters.js');
 const zlib = require('zlib');
 const { COMPRESSION_CONFIG } = require('./constants');
+const { armIdleTimeout, retryCloudOp, classifyCloudError, emitCloudEvent, createResilientGCSSource } = require('./resilient-source');
 // const { logger } = require('../components/logs.js');
 const { NODE_ENV = "unknown" } = process.env;
 
@@ -252,33 +253,28 @@ function wireCloudPipeline(stages) {
 	return destination;
 }
 
+// armIdleTimeout (idle watchdog) now lives in ./resilient-source.js alongside
+// the retry/resume primitives; it is imported at the top of this file.
+
 /**
- * Transport-agnostic idle watchdog: if no bytes arrive for `ms`, destroy the
- * stream with an error. Catches silent half-open / stalled cloud downloads
- * (TCP connection that stops delivering bytes but never sends FIN/RST) that a
- * request-level `timeout` can miss. Because the stream is part of a pipeline,
- * destroy(err) propagates cleanly to the destination.
- * @param {import('stream').Readable} readable
- * @param {number} ms idle threshold in milliseconds (<=0 disables)
- * @param {string} label included in the error message for diagnosis
- * @returns {import('stream').Readable} the same stream (for chaining)
+ * Wait for a Writable to drain, resolving false if it is destroyed first.
+ * Racing 'close' is load-bearing: a naive once('drain') wait deadlocks the
+ * multi-file concatenation loop if downstream tears down mid-write.
+ * @param {import('stream').Writable} writable
+ * @returns {Promise<boolean>} true = drained and still open; false = destroyed
  */
-function armIdleTimeout(readable, ms, label) {
-	if (!ms || ms <= 0) return readable;
-	let timer;
-	const reset = () => {
-		clearTimeout(timer);
-		timer = setTimeout(() => {
-			readable.destroy(new Error(`cloud read stalled: no data for ${ms}ms (${label})`));
-		}, ms);
-	};
-	const clear = () => clearTimeout(timer);
-	readable.on('data', reset);
-	readable.once('end', clear);
-	readable.once('close', clear);
-	readable.once('error', clear);
-	reset();
-	return readable;
+function waitForDrain(writable) {
+	return new Promise((resolve) => {
+		if (writable.destroyed) return resolve(false);
+		const onDrain = () => { cleanup(); resolve(true); };
+		const onClose = () => { cleanup(); resolve(false); };
+		const cleanup = () => {
+			writable.removeListener('drain', onDrain);
+			writable.removeListener('close', onClose);
+		};
+		writable.once('drain', onDrain);
+		writable.once('close', onClose);
+	});
 }
 
 // Memory Management Configuration
@@ -605,6 +601,13 @@ async function handleCloudStorage(data, job) {
 	// Handle array of Google Cloud Storage URLs
 	if (Array.isArray(data) && data.every(item => typeof item === 'string' && item.startsWith('gs://'))) {
 		job.wasStream = true;
+		// A 1-element array is a single-file read: skip the multi-file wrapper's
+		// object-mode PassThrough re-copy and duplicate existence probe.
+		// Note: a missing file therefore fails loudly (single-file semantics)
+		// instead of resolving as an empty success.
+		if (data.length === 1) {
+			return await createGCSStream(data[0], job);
+		}
 		return await createMultiGCSStream(data, job);
 	}
 
@@ -824,6 +827,7 @@ function itemStream(filePath, type = "jsonl", job, isGzipped = false) {
 	 * @returns {stream.Readable | stream.Transform} - processed stream
 	 */
 	const createStreamWithGzipSupport = (file) => {
+		/** @type {stream.Readable} */
 		let fileStream = fs.createReadStream(file, streamOpts);
 
 		// Add gzip decompression if needed
@@ -1051,6 +1055,7 @@ function csvStreamArray(filePaths, jobConfig, isGzipped = false) {
  * @returns {stream.Readable}
  */
 function csvStreamer(filePath, jobConfig, isGzipped = false) {
+	/** @type {stream.Readable} */
 	let fileStream = fs.createReadStream(path.resolve(filePath));
 
 	// Add gzip decompression if needed
@@ -1421,13 +1426,6 @@ async function createGCSJSONStream(gcsPath, job) {
 	const isGzipped = COMPRESSION_CONFIG.GZIP_EXTENSIONS.some(ext => filePath.endsWith(ext));
 
 	try {
-		// Check if file exists
-		const gcsFile = storage.bucket(bucketName).file(filePath);
-		const [exists] = await gcsFile.exists();
-		if (!exists) {
-			throw new Error(`File not found: ${gcsPath}`);
-		}
-
 		// Create read stream with tunable settings for high throughput
 		const requestTimeout = job.cloudReadRequestTimeout ?? GCS_STREAMING_CONFIG.READ_REQUEST_TIMEOUT_MS;
 		const readOpts = {
@@ -1439,12 +1437,39 @@ async function createGCSJSONStream(gcsPath, job) {
 		// Only set a request-level timeout when explicitly configured (>0), so the
 		// happy path keeps @google-cloud/storage's default behavior.
 		if (requestTimeout > 0) readOpts.timeout = requestTimeout;
-		const gcsReadStream = gcsFile.createReadStream(readOpts);
-
-		// Idle watchdog: abort with an error if bytes stop arriving (half-open stall).
-		// Errors now PROPAGATE to the returned stream via stream.pipeline below.
 		const idleTimeout = job.cloudReadIdleTimeout ?? GCS_STREAMING_CONFIG.READ_IDLE_TIMEOUT_MS;
-		armIdleTimeout(gcsReadStream, idleTimeout, gcsPath);
+
+		let gcsReadStream;
+		if (job.resumeOnStall) {
+			// Resilient source: reconnects on stalls/resets via range reads at the
+			// last-received compressed byte offset. Drop-in replacement for the raw
+			// stream (includes its own probe, generation pinning, and watchdog).
+			gcsReadStream = await createResilientGCSSource({
+				storage, bucketName, filePath, gcsPath, readOpts,
+				idleMs: idleTimeout, job
+			});
+		}
+		else {
+			// Check if file exists — bounded retry so a transient network blip
+			// during the probe doesn't kill (or worse, skip) the file (R1).
+			const gcsFile = storage.bucket(bucketName).file(filePath);
+			const [exists] = await retryCloudOp(() => gcsFile.exists(), {
+				baseMs: job.cloudRetryBackoffMs,
+				label: gcsPath,
+				onRetry: (err, attempt) => emitCloudEvent(job, { type: 'open-retry', file: gcsPath, byteOffset: 0, attempt, error: { message: err.message, code: err.code } })
+			});
+			if (!exists) {
+				const notFound = new Error(`File not found: ${gcsPath}`);
+				// @ts-ignore - ENOENT is the skip-vs-fatal discriminator downstream
+				notFound.code = 'ENOENT';
+				throw notFound;
+			}
+			gcsReadStream = gcsFile.createReadStream(readOpts);
+
+			// Idle watchdog: abort with an error if bytes stop arriving (half-open stall).
+			// Errors now PROPAGATE to the returned stream via stream.pipeline below.
+			armIdleTimeout(gcsReadStream, idleTimeout, gcsPath, job);
+		}
 
 		const makeGunzip = () => zlib.createGunzip({
 			chunkSize: GCS_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
@@ -1495,6 +1520,13 @@ async function createGCSJSONStream(gcsPath, job) {
 			gcsReadStream.on('error', (error) => {
 				if (!out.destroyed) out.destroy(error);
 			});
+			// And the reverse: downstream teardown (gunzip/parse error, maxRecords
+			// abort) must abort the source too. BufferQueue never destroys its
+			// source, so without this the download keeps running — and a resilient
+			// source would keep resuming — on a job that already failed.
+			out.once('close', () => {
+				if (!gcsReadStream.destroyed) gcsReadStream.destroy();
+			});
 			return out;
 		}
 
@@ -1505,7 +1537,12 @@ async function createGCSJSONStream(gcsPath, job) {
 		return wireCloudPipeline(stages);
 
 	} catch (error) {
-		throw new Error(`Error creating GCS JSON stream: ${error.message}`);
+		const wrapped = new Error(`Error creating GCS JSON stream: ${error.message}`);
+		// Preserve the transport error code (ECONNRESET / ENOENT etc.) so callers'
+		// retry/skip logic can classify the failure.
+		// @ts-ignore
+		if (error.code) wrapped.code = error.code;
+		throw wrapped;
 	}
 }
 
@@ -1539,11 +1576,19 @@ async function createGCSCSVStream(gcsPath, job) {
 	const isGzipped = filePath.endsWith('.csv.gz');
 
 	try {
-		// Check if file exists
+		// Check if file exists — bounded retry so a transient network blip
+		// during the probe doesn't kill (or worse, skip) the file (R1).
 		const gcsFile = storage.bucket(bucketName).file(filePath);
-		const [exists] = await gcsFile.exists();
+		const [exists] = await retryCloudOp(() => gcsFile.exists(), {
+			baseMs: job.cloudRetryBackoffMs,
+			label: gcsPath,
+			onRetry: (err, attempt) => emitCloudEvent(job, { type: 'open-retry', file: gcsPath, byteOffset: 0, attempt, error: { message: err.message, code: err.code } })
+		});
 		if (!exists) {
-			throw new Error(`File not found: ${gcsPath}`);
+			const notFound = new Error(`File not found: ${gcsPath}`);
+			// @ts-ignore - ENOENT is the skip-vs-fatal discriminator downstream
+			notFound.code = 'ENOENT';
+			throw notFound;
 		}
 
 		// Create read stream with throttling
@@ -1558,7 +1603,7 @@ async function createGCSCSVStream(gcsPath, job) {
 
 		// Idle watchdog (errors propagate via stream.pipeline below)
 		const idleTimeout = job.cloudReadIdleTimeout ?? GCS_STREAMING_CONFIG.READ_IDLE_TIMEOUT_MS;
-		armIdleTimeout(gcsReadStream, idleTimeout, gcsPath);
+		armIdleTimeout(gcsReadStream, idleTimeout, gcsPath, job);
 
 		const makeGunzip = () => zlib.createGunzip({
 			chunkSize: GCS_STREAMING_CONFIG.GZIP_CHUNK_SIZE,
@@ -1641,16 +1686,24 @@ async function createGCSCSVStream(gcsPath, job) {
 		const out = wireCloudPipeline([...leadingStages, csvParser, transformer]);
 
 		// In throttled mode the GCS source sits outside the pipeline; forward its
-		// failures so a reset/stall fails the returned stream instead of hanging.
+		// failures so a reset/stall fails the returned stream instead of hanging,
+		// and abort the source on downstream teardown (BufferQueue never destroys
+		// its source on its own).
 		if (throttled) {
 			gcsReadStream.on('error', (error) => {
 				if (!out.destroyed) out.destroy(error);
+			});
+			out.once('close', () => {
+				if (!gcsReadStream.destroyed) gcsReadStream.destroy();
 			});
 		}
 		return out;
 
 	} catch (error) {
-		throw new Error(`Error creating GCS CSV stream: ${error.message}`);
+		const wrapped = new Error(`Error creating GCS CSV stream: ${error.message}`);
+		// @ts-ignore - preserve transport error code for caller classification
+		if (error.code) wrapped.code = error.code;
+		throw wrapped;
 	}
 }
 
@@ -1684,11 +1737,19 @@ async function createGCSParquetStream(gcsPath, job) {
 	const isGzipped = filePath.endsWith('.parquet.gz');
 
 	try {
-		// Check if file exists
+		// Check if file exists — bounded retry so a transient network blip
+		// during the probe doesn't kill (or worse, skip) the file (R1).
 		const gcsFile = storage.bucket(bucketName).file(filePath);
-		const [exists] = await gcsFile.exists();
+		const [exists] = await retryCloudOp(() => gcsFile.exists(), {
+			baseMs: job.cloudRetryBackoffMs,
+			label: gcsPath,
+			onRetry: (err, attempt) => emitCloudEvent(job, { type: 'open-retry', file: gcsPath, byteOffset: 0, attempt, error: { message: err.message, code: err.code } })
+		});
 		if (!exists) {
-			throw new Error(`File not found: ${gcsPath}`);
+			const notFound = new Error(`File not found: ${gcsPath}`);
+			// @ts-ignore - ENOENT is the skip-vs-fatal discriminator downstream
+			notFound.code = 'ENOENT';
+			throw notFound;
 		}
 
 		// Create GCS read stream with throttling
@@ -1704,7 +1765,7 @@ async function createGCSParquetStream(gcsPath, job) {
 		// Idle watchdog: abort a stalled download so the for-await below rejects
 		// instead of hanging forever.
 		const idleTimeout = job.cloudReadIdleTimeout ?? GCS_STREAMING_CONFIG.READ_IDLE_TIMEOUT_MS;
-		armIdleTimeout(gcsReadStream, idleTimeout, gcsPath);
+		armIdleTimeout(gcsReadStream, idleTimeout, gcsPath, job);
 
 		// For gzipped parquet, compose via stream.pipeline so a GCS source error
 		// reaches the iterated stream (a raw .pipe() would strand the for-await).
@@ -1777,7 +1838,10 @@ async function createGCSParquetStream(gcsPath, job) {
 		});
 
 	} catch (error) {
-		throw new Error(`Error creating GCS Parquet stream: ${error.message}`);
+		const wrapped = new Error(`Error creating GCS Parquet stream: ${error.message}`);
+		// @ts-ignore - preserve transport error code for caller classification
+		if (error.code) wrapped.code = error.code;
+		throw wrapped;
 	}
 }
 
@@ -1852,7 +1916,9 @@ class JsonlObjectStream extends Transform {
 
 /**
  * Create a stream that handles multiple GCS files
- * Gracefully skips files that don't exist
+ * Skips files that cleanly don't exist (counted in job.filesSkippedMissing);
+ * any other creation-time failure is retried with bounded backoff and then
+ * FAILS the whole job — a partial import must never resolve as success.
  * Validates that all files have the same format
  * @param {string[]} gcsPaths Array of GCS paths (gs://bucket/file)
  * @param {JobConfig} job Job configuration
@@ -1875,111 +1941,78 @@ async function createMultiGCSStream(gcsPaths, job) {
 	// Create a passthrough stream that will be our final output
 	const output = new PassThrough({ objectMode: true });
 
-	// Process files sequentially to avoid overwhelming GCS
-	let processedCount = 0;
-	let skippedCount = 0;
-
-	const processNextFile = async () => {
-		if (processedCount + skippedCount >= gcsPaths.length) {
-			// All files processed, end the stream
-			output.end();
-			return;
-		}
-
-		const gcsPath = gcsPaths[processedCount + skippedCount];
-
-		try {
-			// Check if file exists first
-			// Create a storage client using either custom credentials or application default credentials
-			const storageConfig = {
-				projectId: job.gcpProjectId
-			};
-
-			// Use custom credentials if provided, otherwise fall back to ADC
-			if (job.gcsCredentials) {
-				storageConfig.keyFilename = job.gcsCredentials;
-			}
-
-			const storage = new Storage(storageConfig);
-
-			const matches = gcsPath.match(/^gs:\/\/([^\/]+)\/(.+)$/);
-			if (!matches) {
-				console.warn(`Skipping invalid GCS path: ${gcsPath}`);
-				skippedCount++;
-				setImmediate(processNextFile);
-				return;
-			}
-
-			const bucketName = matches[1];
-			const filePath = matches[2];
-			const file = storage.bucket(bucketName).file(filePath);
-
-			// Check if file exists
-			const [exists] = await file.exists();
-			if (!exists) {
-				console.warn(`Skipping non-existent file: ${gcsPath}`);
-				skippedCount++;
-				setImmediate(processNextFile);
-				return;
-			}
-
-			// Create stream for this file
-			const fileStream = await createGCSStream(gcsPath, job);
-
-			// Pipe this file's data to our output stream with backpressure handling
-			fileStream.on('data', (data) => {
-				// Handle backpressure properly
-				if (!output.write(data)) {
-					fileStream.pause();
-					output.once('drain', () => {
-						fileStream.resume();
-					});
-				}
-			});
-
-			fileStream.on('end', () => {
-				if (job.verbose) {
-					console.log(`✅ Completed ${gcsPath} (${processedCount + 1}/${gcsPaths.length})`);
-				}
-				processedCount++;
-				setImmediate(processNextFile);
-			});
-
-			fileStream.on('error', (error) => {
-				// A mid-stream read failure (ECONNRESET / idle-abort / corrupt gzip)
-				// is FATAL. Skipping here would silently drop the remainder of a
-				// partially-read file = data loss reported as success. Fail the whole
-				// job so the caller can retry the entire (idempotent) task.
-				// @ts-ignore - Node.js errors often have a code property
-				const code = error.code ? ` (${error.code})` : '';
-				const fatal = new Error(`Multi-file GCS read failed for ${gcsPath}${code}: ${error.message}`);
-				// Preserve the transport error code (ECONNRESET etc.) so callers'
-				// retry logic can recognize the failure as transient.
-				// @ts-ignore
-				if (error.code) fatal.code = error.code;
-				if (!output.destroyed) output.destroy(fatal);
-			});
-
-		} catch (error) {
-			// TODO(in-library resilience): a transient network error here (e.g.
-			// ECONNRESET during file.exists() or stream open) currently skips the
-			// file — silent data loss reported as success. Retrying creation-time
-			// steps is safe (no bytes have entered the pipeline yet): wrap exists()
-			// + createGCSStream() in a bounded retry (3 attempts, backoff) before
-			// falling through to skip. Mid-stream failures must stay fatal (see
-			// the 'error' handler above); only whole-task retry by the caller is
-			// safe once data has flowed.
-			console.error(`\n❌ Stream Creation Error for ${gcsPath}:`);
-			console.error('Error:', error.message);
-			console.error('Stack:', error.stack);
-			console.error('Skipping and continuing...\n');
-			skippedCount++;
-			setImmediate(processNextFile);
-		}
+	const wrapFatal = (gcsPath, error) => {
+		// A failure once a file is in play is FATAL. Skipping would silently
+		// drop data = loss reported as success. Fail the whole job so the
+		// caller can retry the entire (idempotent) task.
+		// @ts-ignore - Node.js errors often have a code property
+		const code = error.code ? ` (${error.code})` : '';
+		const fatal = new Error(`Multi-file GCS read failed for ${gcsPath}${code}: ${error.message}`);
+		// Preserve the transport error code (ECONNRESET etc.) so callers'
+		// retry logic can recognize the failure as transient.
+		// @ts-ignore
+		if (error.code) fatal.code = error.code;
+		return fatal;
 	};
 
-	// Start processing the first file
-	setImmediate(processNextFile);
+	// Process files sequentially to avoid overwhelming GCS
+	const consumeAll = async () => {
+		let processedCount = 0;
+
+		for (const gcsPath of gcsPaths) {
+			if (output.destroyed) return;
+
+			if (!/^gs:\/\/[^/]+\/.+$/.test(gcsPath)) {
+				console.warn(`Skipping invalid GCS path: ${gcsPath}`);
+				continue;
+			}
+
+			// Creation-time probes are retried with bounded backoff INSIDE
+			// createGCSStream (exists/getMetadata for every format) — no outer
+			// retry here, or the layers would multiply into attempts² probes
+			// and duplicate open-retry telemetry.
+			let fileStream;
+			try {
+				fileStream = await createGCSStream(gcsPath, job);
+			} catch (error) {
+				if (classifyCloudError(error) === 'not-found') {
+					// The one legitimate skip: the object cleanly does not exist.
+					// Surfaced in results (filesSkippedMissing), not just console.
+					console.warn(`Skipping non-existent file: ${gcsPath}`);
+					job.filesSkippedMissing++;
+					emitCloudEvent(job, { type: 'file-skip-missing', file: gcsPath, byteOffset: 0, attempt: 0 });
+					continue;
+				}
+				throw wrapFatal(gcsPath, error);
+			}
+
+			// Concatenate with real backpressure; exiting this loop early (throw or
+			// destroyed output) destroys fileStream via the async iterator's return().
+			try {
+				for await (const chunk of fileStream) {
+					// exiting via return invokes the iterator's return() → fileStream destroyed
+					if (output.destroyed) return;
+					if (!output.write(chunk)) {
+						const stillOpen = await waitForDrain(output);
+						if (!stillOpen) return;
+					}
+				}
+			} catch (error) {
+				throw wrapFatal(gcsPath, error);
+			}
+
+			processedCount++;
+			if (job.verbose) {
+				console.log(`✅ Completed ${gcsPath} (${processedCount}/${gcsPaths.length})`);
+			}
+		}
+
+		output.end();
+	};
+
+	consumeAll().catch((error) => {
+		if (!output.destroyed) output.destroy(error);
+	});
 
 	return output;
 }
@@ -2075,7 +2108,7 @@ async function createS3JSONStream(s3Path, job) {
 		// Idle watchdog so a stalled S3 download aborts (with an error) instead of
 		// hanging. Errors PROPAGATE to the returned stream via stream.pipeline.
 		const idleTimeout = job.cloudReadIdleTimeout ?? S3_STREAMING_CONFIG.READ_IDLE_TIMEOUT_MS;
-		armIdleTimeout(s3Stream, idleTimeout, s3Path);
+		armIdleTimeout(s3Stream, idleTimeout, s3Path, job);
 
 		// Compose with stream.pipeline so source/gunzip errors reach the consumer
 		const stages = [s3Stream];
@@ -2091,7 +2124,10 @@ async function createS3JSONStream(s3Path, job) {
 		return wireCloudPipeline(stages);
 
 	} catch (error) {
-		throw new Error(`Error creating S3 JSON stream: ${error.message}`);
+		const wrapped = new Error(`Error creating S3 JSON stream: ${error.message}`);
+		// @ts-ignore - preserve transport error code for caller classification
+		if (error.code) wrapped.code = error.code;
+		throw wrapped;
 	}
 }
 
@@ -2149,7 +2185,7 @@ async function createS3CSVStream(s3Path, job) {
 
 		// Idle watchdog (errors propagate via stream.pipeline below)
 		const idleTimeout = job.cloudReadIdleTimeout ?? S3_STREAMING_CONFIG.READ_IDLE_TIMEOUT_MS;
-		armIdleTimeout(s3Stream, idleTimeout, s3Path);
+		armIdleTimeout(s3Stream, idleTimeout, s3Path, job);
 
 		// Byte stages feeding the CSV parser
 		const leadingStages = [s3Stream];
@@ -2203,7 +2239,10 @@ async function createS3CSVStream(s3Path, job) {
 		return wireCloudPipeline([...leadingStages, csvParser, transformer]);
 
 	} catch (error) {
-		throw new Error(`Error creating S3 CSV stream: ${error.message}`);
+		const wrapped = new Error(`Error creating S3 CSV stream: ${error.message}`);
+		// @ts-ignore - preserve transport error code for caller classification
+		if (error.code) wrapped.code = error.code;
+		throw wrapped;
 	}
 }
 
@@ -2263,7 +2302,7 @@ async function createS3ParquetStream(s3Path, job) {
 
 		// Idle watchdog so a stalled download aborts the for-await below
 		const idleTimeout = job.cloudReadIdleTimeout ?? S3_STREAMING_CONFIG.READ_IDLE_TIMEOUT_MS;
-		armIdleTimeout(s3Stream, idleTimeout, s3Path);
+		armIdleTimeout(s3Stream, idleTimeout, s3Path, job);
 
 		// For gzipped parquet, compose via stream.pipeline so an S3 source error
 		// reaches the iterated stream (a raw .pipe() would strand the for-await).
@@ -2334,7 +2373,10 @@ async function createS3ParquetStream(s3Path, job) {
 		});
 
 	} catch (error) {
-		throw new Error(`Error creating S3 Parquet stream: ${error.message}`);
+		const wrapped = new Error(`Error creating S3 Parquet stream: ${error.message}`);
+		// @ts-ignore - preserve transport error code for caller classification
+		if (error.code) wrapped.code = error.code;
+		throw wrapped;
 	}
 }
 
@@ -2385,82 +2427,90 @@ async function createMultiS3Stream(s3Paths, job) {
 
 	const s3Client = new S3Client(s3ClientConfig);
 
+	const wrapFatal = (s3Path, error) => {
+		// A failure once a file is in play is FATAL. Skipping would silently
+		// drop data = loss reported as success. Fail the whole job so the
+		// caller can retry the entire (idempotent) task.
+		// @ts-ignore - Node.js errors often have a code property
+		const code = error.code ? ` (${error.code})` : '';
+		const fatal = new Error(`Multi-file S3 read failed for ${s3Path}${code}: ${error.message}`);
+		// Preserve the transport error code (ECONNRESET etc.) so callers'
+		// retry logic can recognize the failure as transient.
+		// @ts-ignore
+		if (error.code) fatal.code = error.code;
+		return fatal;
+	};
+
 	// Process files sequentially to avoid overwhelming S3
-	let processedCount = 0;
-	let skippedCount = 0;
+	const consumeAll = async () => {
+		let processedCount = 0;
 
-	const processNextFile = async () => {
-		if (processedCount + skippedCount >= s3Paths.length) {
-			// All files processed, end the stream
-			output.end();
-			return;
-		}
+		for (const s3Path of s3Paths) {
+			if (output.destroyed) return;
 
-		const s3Path = s3Paths[processedCount + skippedCount];
-
-		try {
-			// Check if file exists first
 			const matches = s3Path.match(/^s3:\/\/([^\/]+)\/(.+)$/);
 			if (!matches) {
 				console.warn(`Skipping invalid S3 path: ${s3Path}`);
-				skippedCount++;
-				setImmediate(processNextFile);
-				return;
+				continue;
 			}
-
 			const bucketName = matches[1];
 			const key = matches[2];
 
-			// Check if file exists with a head request
-			const headCommand = new GetObjectCommand({
-				Bucket: bucketName,
-				Key: key
-			});
-
+			// Existence probe with bounded retry (R1): a transient network blip
+			// must never become a silent skip. Only a clean not-found may skip,
+			// and it is counted in results (filesSkippedMissing).
 			try {
-				await s3Client.send(headCommand);
+				await retryCloudOp(() => s3Client.send(new GetObjectCommand({ Bucket: bucketName, Key: key })), {
+					baseMs: job.cloudRetryBackoffMs,
+					label: s3Path,
+					onRetry: (err, attempt) => emitCloudEvent(job, { type: 'open-retry', file: s3Path, byteOffset: 0, attempt, error: { message: err.message, code: err.code } })
+				});
 			} catch (error) {
-				console.warn(`Skipping non-existent file: ${s3Path}`);
-				skippedCount++;
-				setImmediate(processNextFile);
-				return;
+				if (classifyCloudError(error) === 'not-found') {
+					console.warn(`Skipping non-existent file: ${s3Path}`);
+					job.filesSkippedMissing++;
+					emitCloudEvent(job, { type: 'file-skip-missing', file: s3Path, byteOffset: 0, attempt: 0 });
+					continue;
+				}
+				throw wrapFatal(s3Path, error);
 			}
 
-			// Create stream for this file
-			const fileStream = await createS3Stream(s3Path, job);
+			let fileStream;
+			try {
+				fileStream = await createS3Stream(s3Path, job);
+			} catch (error) {
+				throw wrapFatal(s3Path, error);
+			}
 
-			// Pipe this file's data to our output stream
-			fileStream.on('data', (data) => {
-				output.write(data);
-			});
-
-			fileStream.on('end', () => {
-				processedCount++;
-				setImmediate(processNextFile);
-			});
-
-			fileStream.on('error', (error) => {
+			// Concatenate with real backpressure (the old data-handler ignored
+			// output.write()'s return value → unbounded memory on slow sinks).
+			try {
+				for await (const chunk of fileStream) {
+					// exiting via return invokes the iterator's return() → fileStream destroyed
+					if (output.destroyed) return;
+					if (!output.write(chunk)) {
+						const stillOpen = await waitForDrain(output);
+						if (!stillOpen) return;
+					}
+				}
+			} catch (error) {
 				// Mid-stream read failure is FATAL (see createMultiGCSStream): never
 				// silently skip the remainder of a partially-read file.
-				// @ts-ignore - Node.js errors often have a code property
-				const code = error.code ? ` (${error.code})` : '';
-				const fatal = new Error(`Multi-file S3 read failed for ${s3Path}${code}: ${error.message}`);
-				// Preserve the transport error code (ECONNRESET etc.) so callers'
-				// retry logic can recognize the failure as transient.
-				// @ts-ignore
-				if (error.code) fatal.code = error.code;
-				if (!output.destroyed) output.destroy(fatal);
-			});
+				throw wrapFatal(s3Path, error);
+			}
 
-		} catch (error) {
-			console.warn(`Error processing file ${s3Path}: ${error.message}`);
-			skippedCount++;
-			setImmediate(processNextFile);
+			processedCount++;
+			if (job.verbose) {
+				console.log(`✅ Completed ${s3Path} (${processedCount}/${s3Paths.length})`);
+			}
 		}
+
+		output.end();
 	};
 
-	// Start processing the first file
-	setImmediate(processNextFile);
+	consumeAll().catch((error) => {
+		if (!output.destroyed) output.destroy(error);
+	});
 
 	return output;
 }

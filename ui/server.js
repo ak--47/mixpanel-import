@@ -420,7 +420,8 @@ function filterResultForClient(result) {
 		'recordType', 'total', 'success', 'failed', 'empty', 'outOfBounds',
 		'duplicates', 'startTime', 'endTime', 'durationHuman', 'bytesHuman',
 		'requests', 'retries', 'rateLimit', 'wasStream', 'eps', 'rps', 'mbps',
-		'badRecords', 'vendor', 'vendorOpts', 'errors', 'responses', 'files', 'downloadUrl'
+		'badRecords', 'vendor', 'vendorOpts', 'errors', 'responses', 'files', 'downloadUrl',
+		'stallsDetected', 'resumesAttempted', 'resumesSucceeded', 'filesSkippedMissing', 'bytesResumed'
 	];
 
 	const filtered = {};
