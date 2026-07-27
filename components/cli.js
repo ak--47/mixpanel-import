@@ -132,6 +132,12 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			type: 'number',
 			alias: "maxRetries"
 		})
+		.option("resumeOnStall", {
+			demandOption: false,
+			default: false,
+			describe: 'resume stalled GCS reads via range requests (JSON/JSONL only)',
+			type: 'boolean'
+		})
 		.option("region", {
 			demandOption: false,
 			default: 'US',

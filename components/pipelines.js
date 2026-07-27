@@ -778,8 +778,8 @@ async function corePipeline(stream, job, toNodeStream = false) {
 		// });
 
 		// Use the promise-based pipeline for proper error handling and completion
+		// @ts-ignore - TypeScript doesn't understand the spread correctly
 		await pipelinePromise(
-			// @ts-ignore - TypeScript doesn't understand the spread correctly
 			stream,
 			...stages
 		);

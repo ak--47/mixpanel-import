@@ -345,6 +345,14 @@ class Job {
 		this.cloudReadIdleTimeout = u.isNil(opts.cloudReadIdleTimeout) ? 120000 : opts.cloudReadIdleTimeout; //abort a cloud read after N ms with zero bytes (0 = disable)
 		this.cloudReadRequestTimeout = u.isNil(opts.cloudReadRequestTimeout) ? 0 : opts.cloudReadRequestTimeout; //GCS createReadStream request timeout (0 = client default)
 
+		// Best-effort stall resume for GCS reads (see components/resilient-source.js):
+		// reopen the object at the last-received compressed byte offset via a range
+		// read; on any uncertainty, fall back to failing the job exactly as today.
+		this.resumeOnStall = u.isNil(opts.resumeOnStall) ? false : opts.resumeOnStall; //attempt GCS range-read resume on stalled/reset reads (JSON/JSONL only)
+		this.cloudResumeAttempts = u.isNil(opts.cloudResumeAttempts) ? 3 : opts.cloudResumeAttempts; //max consecutive no-progress resume attempts per file
+		this.cloudRetryBackoffMs = u.isNil(opts.cloudRetryBackoffMs) ? 1000 : opts.cloudRetryBackoffMs; //base backoff for cloud open-retry + resume attempts
+		this.cloudStreamCallback = opts.cloudStreamCallback || null; //optional callback for cloud stream lifecycle events (stall/resume-attempt/resume-success/resume-fail/file-skip-missing/open-retry)
+
 		// ? destination options for writing output
 		this.destination = opts.destination || null; //path to write output (local file or gs://bucket/path or s3://bucket/path)
 		this.destinationOnly = u.isNil(opts.destinationOnly) ? false : opts.destinationOnly; //skip Mixpanel, only write to destination
@@ -496,6 +504,15 @@ class Job {
 		this.batchLengths = [];
 		this.lastBatchLength = 0;
 		this.unparsable = 0;
+
+		// Cloud read resilience telemetry (mutated by components/resilient-source.js
+		// and the multi-file cloud loops in components/parsers.js).
+		// Reserved for a future design: filesRestarted (nothing restarts from zero today).
+		this.stallsDetected = 0;
+		this.resumesAttempted = 0;
+		this.resumesSucceeded = 0;
+		this.filesSkippedMissing = 0;
+		this.bytesResumed = 0;
 
 		// Instance-specific timer to avoid global conflicts
 		this.timer = new SimpleTimer();
@@ -1095,6 +1112,12 @@ class Job {
 			serverErrors: this.serverErrors,
 			clientErrors: this.clientErrors,
 
+			stallsDetected: this.stallsDetected || 0,
+			resumesAttempted: this.resumesAttempted || 0,
+			resumesSucceeded: this.resumesSucceeded || 0,
+			filesSkippedMissing: this.filesSkippedMissing || 0,
+			bytesResumed: this.bytesResumed || 0,
+
 			version: this.version,
 			workers: this.workers,
 			memory,
@@ -1157,7 +1180,13 @@ class Job {
 				"outOfBounds",
 				"whiteListSkipped",
 				"blackListSkipped",
-				"unparsable"
+				"unparsable",
+				// Cloud read resilience telemetry (R4)
+				"stallsDetected",
+				"resumesAttempted",
+				"resumesSucceeded",
+				"filesSkippedMissing",
+				"bytesResumed"
 			];
 			for (const key in summary) {
 				if (!includeOnly.includes(key)) delete summary[key];

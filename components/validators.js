@@ -347,6 +347,7 @@ async function loadLocalFile(filePath, isJson) {
 	
 	// Check if file is gzipped
 	const isGzipped = filePath.endsWith('.gz');
+	/** @type {import('stream').Readable} */
 	let stream = fs.createReadStream(filePath);
 	
 	if (isGzipped) {

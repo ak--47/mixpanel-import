@@ -383,6 +383,48 @@ declare namespace main {
      * @default 0 (rely on idle watchdog)
      */
     cloudReadRequestTimeout?: number;
+
+    /**
+     * Best-effort stall resume for GCS reads (JSON/JSONL sources only).
+     * On an idle-watchdog stall or retriable transport error (ECONNRESET etc.),
+     * reopen the object at the last-received compressed byte offset via a range
+     * read and keep feeding the same decompress/parse pipeline — no duplicate
+     * records, no restart. The object generation is pinned on open, so a file
+     * overwritten mid-read fails instead of resuming against different bytes.
+     * On any offset uncertainty the job fails exactly as it does today.
+     * Note: ranged reopens skip the GCS client's checksum validation; for
+     * gzipped sources the gzip trailer CRC is the integrity net. Objects
+     * stored with `contentEncoding: gzip` (decompressive transcoding) cannot
+     * be range-resumed and fall back to fail-fast.
+     * @default false
+     * @example
+     * { resumeOnStall: true }
+     */
+    resumeOnStall?: boolean;
+
+    /**
+     * Max consecutive no-progress resume attempts per file when
+     * `resumeOnStall` is enabled. The counter resets after a resumed
+     * connection delivers ~10MB, so large files on flaky links can complete.
+     * @default 3
+     */
+    cloudResumeAttempts?: number;
+
+    /**
+     * Base backoff (ms) for cloud open retries and stall-resume attempts
+     * (exponential: 1x/2x/4x).
+     * @default 1000
+     */
+    cloudRetryBackoffMs?: number;
+
+    /**
+     * Callback fired on cloud stream lifecycle events (all fields are
+     * JSON-serializable): stalls, resume attempts/successes/failures,
+     * files skipped as missing, and creation-time open retries.
+     * @example
+     * { cloudStreamCallback: (evt) => log.warn(evt, 'cloud stream event') }
+     */
+    cloudStreamCallback?: (event: CloudStreamEvent) => void;
     // ═══════════════════════════════════════════════════════════════
     // DATA COMPRESSION & STREAMING
     // ═══════════════════════════════════════════════════════════════
@@ -1050,6 +1092,30 @@ declare namespace main {
    * - default is  `(a) => { return {} }}`
    */
   type ErrorHandler = (err: Error, record: Object, reviver: any) => any;
+
+  /**
+   * a serializable cloud stream lifecycle event, delivered to
+   * `cloudStreamCallback` (stall/resume telemetry for cloud reads)
+   */
+  type CloudStreamEvent = {
+    /** what happened */
+    type:
+      | "stall"           // idle watchdog fired: no bytes for cloudReadIdleTimeout ms
+      | "resume-attempt"  // reopening the object at byteOffset via range read
+      | "resume-success"  // ranged reopen delivered data; pipeline continues
+      | "resume-fail"     // resume budget exhausted; job will fail
+      | "file-skip-missing" // multi-file read: object cleanly does not exist
+      | "open-retry";     // creation-time step (probe/open) failed transiently; retrying
+    /** the gs:// or s3:// path this event concerns */
+    file: string;
+    /** compressed (wire) bytes received so far for this file */
+    byteOffset: number;
+    /** attempt number (resume attempts per file / open retries) */
+    attempt: number;
+    /** the triggering error, when there is one */
+    error?: { message: string; code?: string | number };
+  };
+
   /**
    * a summary of the import
    */
@@ -1180,6 +1246,28 @@ declare namespace main {
      * data points skipped due to parsing errors
      */
     unparsable?: number;
+    /**
+     * cloud reads: stalls detected by the idle watchdog
+     */
+    stallsDetected?: number;
+    /**
+     * cloud reads: range-read resume attempts (resumeOnStall)
+     */
+    resumesAttempted?: number;
+    /**
+     * cloud reads: resume attempts that reconnected and delivered data
+     */
+    resumesSucceeded?: number;
+    /**
+     * multi-file cloud reads: files skipped because they cleanly do not exist
+     */
+    filesSkippedMissing?: number;
+    /**
+     * cloud reads: compressed bytes delivered over resumed connections —
+     * counts every byte after a file's first resume (not just re-fetched
+     * bytes), so one early blip on a large file yields a large number
+     */
+    bytesResumed?: number;
     /**
      * event exports only: path to exported file
      */
