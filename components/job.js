@@ -269,9 +269,9 @@ class Job {
 		// ? number options
 		this.recordsPerBatch = opts.recordsPerBatch || 2000; // records in each req; max 2000 (200 for groups)
 		this.bytesPerBatch = opts.bytesPerBatch || 9.8 * 1024 * 1024; // max bytes in each req (9.8MB = 10276045, safely below 10MB limit)
-		this.maxRetries = opts.maxRetries || 10; // number of times to retry a batch
+		this.maxRetries = opts.maxRetries ?? 10; // number of times to retry a batch; ?? so 0 disables retries
 		this.timeOffset = opts.timeOffset || 0; // utc hours offset
-		this.compressionLevel = opts.compressionLevel || 6; // gzip compression level
+		this.compressionLevel = opts.compressionLevel ?? 6; // gzip compression level; ?? so 0 (store, no compression) is honored
 		this.workers = opts.workers || 50; // number of workers to use
 		// Stream buffer size - balances memory vs throughput
 		if (typeof opts.highWater === 'number' && opts.highWater > 0) {
@@ -615,7 +615,7 @@ class Job {
 		},
 		in: {
 			event: `https://api-in.mixpanel.com/import`,
-			scd: `https://api-eu.mixpanel.com/import`,
+			scd: `https://api-in.mixpanel.com/import`,
 			user: `https://api-in.mixpanel.com/engage`,
 			group: `https://api-in.mixpanel.com/groups`,
 			table: `https://api-in.mixpanel.com/lookup-tables/`,

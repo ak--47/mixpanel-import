@@ -101,6 +101,30 @@ describe("job config", () => {
 		const job = new Job(fakeCreds);
 		expect(job.maxRecords).toBeNull();
 	});
+
+	// these numeric options used `||` defaults, so an explicit 0 was falsy and silently replaced
+	// by the default. 0 is a meaningful value for both: no retries, and no compression.
+	test("maxRetries: 0 is honored, not replaced by the default", () => {
+		expect(new Job(fakeCreds, { maxRetries: 0 }).maxRetries).toBe(0);
+		expect(new Job(fakeCreds, { maxRetries: 3 }).maxRetries).toBe(3);
+		expect(new Job(fakeCreds).maxRetries).toBe(10);
+	});
+
+	test("compressionLevel: 0 is honored, not replaced by the default", () => {
+		expect(new Job(fakeCreds, { compressionLevel: 0 }).compressionLevel).toBe(0);
+		expect(new Job(fakeCreds, { compressionLevel: 9 }).compressionLevel).toBe(9);
+		expect(new Job(fakeCreds).compressionLevel).toBe(6);
+	});
+
+	test("scd endpoints stay within their region", () => {
+		// the `in` region's scd endpoint pointed at api-eu, which would have sent India-region
+		// SCD batches to the EU host — wrong data residency
+		const regions = { us: "https://api.mixpanel.com", eu: "https://api-eu.mixpanel.com", in: "https://api-in.mixpanel.com" };
+		for (const [region, host] of Object.entries(regions)) {
+			const job = new Job(fakeCreds, { recordType: "scd", region });
+			expect(job.url).toBe(`${host}/import`);
+		}
+	});
 });
 
 describe("transforms", () => {

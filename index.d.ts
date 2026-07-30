@@ -20,6 +20,18 @@ declare namespace main {
     opts: Options,
     finish?: Function
   ): import("stream").Transform;
+  /**
+   * release all shared HTTP connection pools held by the module.
+   *
+   * long-lived processes (servers, workers) that import occasionally may call this between jobs to
+   * free sockets. NOT required for CLI use or short-lived scripts. Safe to call repeatedly, and
+   * safe to call before further imports — pools are re-created on demand.
+   * @example
+   * const mp = require('mixpanel-import');
+   * await mp(creds, data, opts);
+   * await mp.destroy();
+   */
+  function destroy(): Promise<void>;
   async function validateToken(token: string): Promise<{
     token: string;
     valid: boolean;
@@ -291,6 +303,7 @@ declare namespace main {
      * @example
      * { maxRetries: 10 }  // Default with exponential backoff
      * { maxRetries: 3 }   // Quick fail for testing
+     * { maxRetries: 0 }   // Never retry; fail on the first error
      * { maxRetries: 50 }  // Persistent retry for critical data
      */
     maxRetries?: number;
@@ -444,6 +457,7 @@ declare namespace main {
      * @range 0-9 (0=no compression, 9=maximum)
      * @default 6
      * @example
+     * { compressionLevel: 0 }  // Store only; gzip framing, no compression
      * { compressionLevel: 1 }  // Fast compression
      * { compressionLevel: 6 }  // Balanced (default)
      * { compressionLevel: 9 }  // Maximum compression

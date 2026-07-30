@@ -340,6 +340,7 @@ EXPORTS
 main.validateToken = validateToken;
 const mpImport = module.exports = main;
 mpImport.createMpStream = pipeInterface;
+mpImport.destroy = require('./components/importers.js').destroy;
 
 // this is for CLI
 if (require.main === module) {
@@ -356,6 +357,16 @@ if (require.main === module) {
 		});
 	} else {
 		// Regular CLI import
+		// process-level policy lives here, in the CLI branch ONLY; the library must never install
+		// process-global handlers on behalf of an embedding application. note the --ui branch above
+		// deliberately gets none of this, so ui/server.js can own its own graceful shutdown.
+		for (const signal of ['SIGINT', 'SIGTERM']) {
+			process.on(signal, () => {
+				console.log(`\nreceived ${signal}; aborting import...`);
+				process.exit(130);
+			});
+		}
+
 		// @ts-ignore
 		main(undefined, undefined, undefined, true).then(() => {
 			//noop

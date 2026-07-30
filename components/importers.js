@@ -7,40 +7,9 @@ const HTTP_AGENT = new https.Agent({ keepAlive: true, maxSockets: 100 });
 // Undici imports for high-performance HTTP
 const { Pool } = require('undici');
 
-// Add global error handlers to catch undici issues
-// IMPORTANT: Log but DON'T exit - let the application handle errors gracefully
-let unhandledRejectionCount = 0;
-let uncaughtExceptionCount = 0;
-
-process.on('unhandledRejection', (reason, promise) => {
-	unhandledRejectionCount++;
-	console.error(`\n❌ [ERROR #${unhandledRejectionCount}] Unhandled Promise Rejection:`);
-	console.error('Reason:', reason);
-	console.error('Promise:', promise);
-	// @ts-ignore - reason might have a stack property if it's an Error
-	console.error('Stack:', reason?.stack || 'No stack trace available');
-	console.error('This error was caught but the process will continue.\n');
-
-	// Only exit if we get too many errors in a short time (likely fatal)
-	if (unhandledRejectionCount > 10) {
-		console.error('❌ Too many unhandled rejections (>10). Exiting to prevent corruption.');
-		process.exit(1);
-	}
-});
-
-process.on('uncaughtException', (error) => {
-	uncaughtExceptionCount++;
-	console.error(`\n❌ [ERROR #${uncaughtExceptionCount}] Uncaught Exception:`);
-	console.error('Error:', error);
-	console.error('Stack:', error?.stack || 'No stack trace available');
-	console.error('This error was caught but the process will continue.\n');
-
-	// Only exit if we get too many errors in a short time (likely fatal)
-	if (uncaughtExceptionCount > 10) {
-		console.error('❌ Too many uncaught exceptions (>10). Exiting to prevent corruption.');
-		process.exit(1);
-	}
-});
+// NOTE: this module registers NO process-global handlers (uncaughtException,
+// unhandledRejection, exit, SIGINT, SIGTERM). It is a library; process-level policy belongs to
+// the application embedding it. See tests/handlers.test.js for the regression guard.
 
 // Undici pool settings - shared across all jobs
 // Formula: connections = workers * 3-5, pipelining = workers / 2
@@ -54,35 +23,71 @@ const poolConfig = {
 	connectTimeout: 10000
 };
 
-// Shared undici pool for maximum connection reuse and performance
-const UNDICI_POOL = new Pool('https://api.mixpanel.com', poolConfig);
+// Shared undici pools, keyed by origin; created lazily on first use so that requiring this
+// module allocates nothing, and so destroy() can be followed by further imports.
+/** @type {Map<string, Pool>} */
+const UNDICI_POOLS = new Map();
 
-// Shared undici pool for EU region
-const UNDICI_POOL_EU = new Pool('https://api-eu.mixpanel.com', poolConfig);
+/**
+ * resolve a mixpanel API url to the origin its pool should target.
+ *
+ * only ingest urls reach this function: corePipeline diverts export/annotation/table record types
+ * to exporters.js (which uses `got`) before the undici sender runs, and export-import reassigns
+ * recordType to event/user/group first. so in practice this yields exactly the three ingest
+ * origins the module used to hardcode — us, eu, in.
+ *
+ * deriving the origin from the url instead of pattern-matching two hostnames is simply less to get
+ * wrong: a pool is always pointed at the host its requests are addressed to, with no default-case
+ * assumption to revisit if a new endpoint is ever routed through this transport.
+ * @param  {string} url
+ * @returns {string}
+ */
+function originFor(url) {
+	try {
+		return new URL(url).origin;
+	} catch (e) {
+		return 'https://api.mixpanel.com';
+	}
+}
 
-// Shared undici pool for IN region
-const UNDICI_POOL_IN = new Pool('https://api-in.mixpanel.com', poolConfig);
+/**
+ * get (or lazily create) the shared undici pool for a given mixpanel API url
+ * @param  {string} url
+ * @returns {Pool}
+ */
+function getPool(url) {
+	const origin = originFor(url);
+	let pool = UNDICI_POOLS.get(origin);
+	if (!pool) {
+		pool = new Pool(origin, poolConfig);
+		// scoped replacement for the process-global handlers this module used to install;
+		// surfaces socket-level failures without touching process-wide crash semantics
+		pool.on('connectionError', (_origin, _targets, error) => {
+			try {
+				// @ts-ignore
+				l(`undici connection error to ${origin}: ${error?.message || error}`);
+			} catch (e) {
+				// noop; l() is only global in CLI mode
+			}
+		});
+		UNDICI_POOLS.set(origin, pool);
+	}
+	return pool;
+}
 
-// Cleanup pools on process exit
-process.on('exit', () => {
-	UNDICI_POOL.close();
-	UNDICI_POOL_EU.close();
-	UNDICI_POOL_IN.close();
-});
-
-process.on('SIGINT', () => {
-	UNDICI_POOL.close();
-	UNDICI_POOL_EU.close();
-	UNDICI_POOL_IN.close();
-	process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-	UNDICI_POOL.close();
-	UNDICI_POOL_EU.close();
-	UNDICI_POOL_IN.close();
-	process.exit(0);
-});
+/**
+ * release all shared HTTP connection pools.
+ *
+ * long-lived processes that import occasionally may call this to free sockets between jobs; it is
+ * NOT required for CLI use or short-lived scripts. safe to call repeatedly, and safe to call
+ * before further imports (pools are re-created on demand).
+ * @returns {Promise<void>}
+ */
+async function destroy() {
+	const pools = [...UNDICI_POOLS.values()];
+	UNDICI_POOLS.clear();
+	await Promise.all(pools.map(pool => pool.close()));
+}
 
 /** @typedef {import('./job')} JobConfig */
 
@@ -112,7 +117,7 @@ async function flushToMixpanel(batch, job) {
 			},
 			method: job.reqMethod || 'POST',
 			retry: {
-				limit: job.maxRetries || 10,
+				limit: job.maxRetries ?? 10,
 				statusCodes: [429, 500, 501, 503, 524, 502, 408, 504],
 				errorCodes: [
 					`ETIMEDOUT`,
@@ -337,13 +342,8 @@ async function flushToMixpanelWithUndici(batch, job) {
 			headers["Connection"] = "keep-alive";
 		}
 
-		// Select appropriate pool based on job URL (more efficient)
-		let pool = UNDICI_POOL; // Default to US
-		if (job.url.includes('api-eu.mixpanel.com')) {
-			pool = UNDICI_POOL_EU;
-		} else if (job.url.includes('api-in.mixpanel.com')) {
-			pool = UNDICI_POOL_IN;
-		}
+		// Select appropriate pool based on job URL (lazily created, keyed by origin)
+		const pool = getPool(job.url);
 
 		// Get pathname from job URL efficiently
 		const url = new URL(job.url);
@@ -351,7 +351,7 @@ async function flushToMixpanelWithUndici(batch, job) {
 
 		// Retry configuration matching original
 		const retryConfig = {
-			maxRetries: job.maxRetries || 10,
+			maxRetries: job.maxRetries ?? 10,
 			retryStatusCodes: new Set([429, 500, 501, 503, 524, 502, 408, 504]),
 			retryErrorCodes: new Set([
 				'ETIMEDOUT', 'ECONNRESET', 'EADDRINUSE', 'ECONNREFUSED',
@@ -565,5 +565,6 @@ async function flushLookupTable(csvString, config) {
 module.exports = {
 	flushToMixpanel,
 	flushToMixpanelWithUndici,
-	flushLookupTable
+	flushLookupTable,
+	destroy
 };

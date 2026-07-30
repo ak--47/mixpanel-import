@@ -81,6 +81,30 @@ const results = await mp(
 console.log(`Imported ${results.success} events!`);
 ```
 
+#### 🧹 Embedding in a long-lived process
+
+`mixpanel-import` is a well-behaved library: **requiring it registers no process-global handlers**
+(no `uncaughtException`, `unhandledRejection`, `exit`, `SIGINT`, or `SIGTERM` listeners). Your
+application keeps full control over crash semantics and graceful shutdown.
+
+Servers and workers that run occasional imports can release the shared HTTP connection pools
+between jobs with `mp.destroy()`:
+
+```javascript
+const mp = require('mixpanel-import');
+
+await mp(creds, data, opts);
+await mp.destroy();   // release undici connection pools
+```
+
+`destroy()` is optional — it is not needed for CLI use or short-lived scripts. It is safe to call
+repeatedly, and safe to call before further imports (pools are re-created on demand).
+
+> **Upgrading from ≤ 3.5.0?** Those versions installed global `uncaughtException` and
+> `unhandledRejection` handlers that logged and continued, suppressing Node's default crash. As of
+> **3.5.1** your process crashes on those errors again. The errors were always occurring — only the
+> reporting changed. See the [changelog](CHANGELOG.md#351).
+
 ---
 
 ## 🎯 What Can You Import?

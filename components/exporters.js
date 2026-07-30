@@ -230,7 +230,7 @@ async function exportEvents(filename, job) {
 	}
 
 	// Use the chosen stream in the pipeline with retry logic for 429 rate limits
-	const maxRetries = job.maxRetries || 5;
+	const maxRetries = job.maxRetries ?? 5;
 	let retryCount = 0;
 	let lastError = null;
 	let fileStream;
@@ -466,7 +466,7 @@ async function exportProfiles(folder, job) {
 	// Retry logic for initial request - critical for getting session_id
 	let request;
 	let retryCount = 0;
-	const maxRetries = job.maxRetries || 5;
+	const maxRetries = job.maxRetries ?? 5;
 	let lastError = null;
 
 	while (retryCount <= maxRetries) {
@@ -590,7 +590,7 @@ async function exportProfiles(folder, job) {
 
 		// Retry logic for pagination requests - critical for maintaining session
 		let retryCount = 0;
-		const paginationMaxRetries = job.maxRetries || 5;
+		const paginationMaxRetries = job.maxRetries ?? 5;
 		let lastError = null;
 
 		while (retryCount <= paginationMaxRetries) {
