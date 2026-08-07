@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.5.2
+
+### Fixed
+
+- **CLI: `--data-group-id` no longer corrupts large IDs.** The flag was declared `type: 'number'`,
+  so yargs coerced the value through a JavaScript double. Mixpanel data group IDs are 19-digit
+  integers — above `Number.MAX_SAFE_INTEGER` — so any real-world ID lost precision (e.g.
+  `3928097563762691601` became `3928097563762691600`) and group profile exports silently queried a
+  nonexistent group. The flag is now `type: 'string'`, which `JobConfig` already handled. Library
+  callers passing `dataGroupId` as a string were never affected; pass a string there too.
+
 ## 3.5.1
 
 ### Removed — please read before upgrading

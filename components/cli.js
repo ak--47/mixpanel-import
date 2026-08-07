@@ -384,7 +384,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 		.options('data-group-id', {
 			demandOption: false,
 			alias: 'dataGroupId',
-			type: 'number',
+			type: 'string',
 			describe: 'data group id for group profile exports'
 		})
 		.option('ui', {
