@@ -678,9 +678,10 @@ async function handleSpecialRecordTypes(data, job) {
 		return exportStream;
 	}
 
-	if (job.recordType === 'export-import-profile') {
+	if (job.recordType === 'export-import-profile' || job.recordType === 'export-import-group') {
+		const wasGroupType = job.recordType === 'export-import-group';
 		const exportStream = streamProfiles(job);
-		if (job.dataGroupId || job.groupKey) job.recordType = 'group';
+		if (wasGroupType || job.dataGroupId || job.groupKey) job.recordType = 'group';
 		else job.recordType = 'user';
 
 		if (job.secondToken) {

@@ -10,6 +10,13 @@
   `3928097563762691601` became `3928097563762691600`) and group profile exports silently queried a
   nonexistent group. The flag is now `type: 'string'`, which `JobConfig` already handled. Library
   callers passing `dataGroupId` as a string were never affected; pass a string there too.
+- **`export-import-group` is now actually wired up.** The record type has been declared in
+  `index.d.ts` since round-trip types were added, but `parsers.js` had no branch for it — using the
+  literal string fell through the type dispatch and crashed. It now behaves as
+  `export-import-profile` in group mode: exports group profiles from `/api/2.0/engage` (pass
+  `dataGroupId`) and imports them into the destination project as `group` records (pass `groupKey`,
+  and `secondToken` when the destination is a different project). Previously the only way to
+  round-trip groups was `export-import-profile` + `dataGroupId`, which still works.
 
 ## 3.5.1
 

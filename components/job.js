@@ -600,7 +600,8 @@ class Job {
 			export: `https://data.mixpanel.com/api/2.0/export`,
 			"profile-export": `https://mixpanel.com/api/2.0/engage`,
 			"export-import-event": `https://data.mixpanel.com/api/2.0/export`,
-			"export-import-profile": `https://mixpanel.com/api/2.0/engage`
+			"export-import-profile": `https://mixpanel.com/api/2.0/engage`,
+			"export-import-group": `https://mixpanel.com/api/2.0/engage`
 		},
 		eu: {
 			event: `https://api-eu.mixpanel.com/import`,
@@ -611,7 +612,8 @@ class Job {
 			export: `https://data-eu.mixpanel.com/api/2.0/export`,
 			"profile-export": `https://eu.mixpanel.com/api/2.0/engage`,
 			"export-import-event": `https://data-eu.mixpanel.com/api/2.0/export`,
-			"export-import-profile": `https://eu.mixpanel.com/api/2.0/engage`
+			"export-import-profile": `https://eu.mixpanel.com/api/2.0/engage`,
+			"export-import-group": `https://eu.mixpanel.com/api/2.0/engage`
 		},
 		in: {
 			event: `https://api-in.mixpanel.com/import`,
@@ -622,7 +624,8 @@ class Job {
 			export: `https://data-in.mixpanel.com/api/2.0/export`,
 			"profile-export": `https://in.mixpanel.com/api/2.0/engage`,
 			"export-import-event": `https://data-in.mixpanel.com/api/2.0/export`,
-			"export-import-profile": `https://in.mixpanel.com/api/2.0/engage`
+			"export-import-profile": `https://in.mixpanel.com/api/2.0/engage`,
+			"export-import-group": `https://in.mixpanel.com/api/2.0/engage`
 		}
 
 	};

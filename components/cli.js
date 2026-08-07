@@ -67,7 +67,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			demandOption: false,
 			alias: "recordType",
 			default: 'event',
-			describe: 'event, user, group, table, export, scd, or profile-export, or export-import-event or export-import-profile',
+			describe: 'event, user, group, table, export, scd, or profile-export, or export-import-event, export-import-profile, or export-import-group',
 			type: 'string'
 		})
 		.option("compress", {
