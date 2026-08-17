@@ -1,4 +1,5 @@
 // @ts-nocheck
+/* eslint-disable no-undef */
 /*
 end-to-end pipeline test for identityReplay: the FULL corePipeline (existence filter →
 vendor → identityReplay → user transform → flatten → dedupe → helpers → batcher →
