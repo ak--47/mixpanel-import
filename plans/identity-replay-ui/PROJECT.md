@@ -36,3 +36,8 @@ configured entirely from the GUI — with helpful descriptions/tooltips — ship
 
 - 2026-08-17: Sprint start. Recon workflow launched (wf_94793be4-8eb: server plumbing,
   import front-end, export front-end → research/01-03).
+
+- 2026-08-17: Build complete (5-agent workflow: shared module → server/import/export/docs).
+  Playwright-verified live: tester chips, validation, CLI flags both modes, raw-vs-transformed
+  dry-run separation, per-recordType visibility on both pages. Bonus fixes: export secondRegion
+  drop, stale web-ui.md response-filter doc. Draft PR #30 (v3.6.1). Screenshot in this dir.
