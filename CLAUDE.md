@@ -210,5 +210,6 @@ Jest, config in `jest.config.json`. `npm test` runs in watch mode.
 | `tests/pools.test.js` | Undici pool lifecycle and retry counts against local servers |
 | `tests/cloud.test.js`, `cloud-failure.test.js` | GCS/S3 paths and failure handling |
 | `tests/vendor.test.js` | Vendor transforms |
+| `tests/identity-graph.test.js`, `identity-replay.test.js`, `identity-replay-pipeline.test.js` | identityReplay: graph module, stage semantics, full-pipeline integration (all local, no network) |
 | `tests/sanity.test.js`, `jsdocTests.js` | Smoke tests and JSDoc examples |
 | `tests/int.optional.test.js` | Live-API integration — despite the name it matches `testMatch` and runs with the rest; needs a `.env` (format documented at the top of the file) |
