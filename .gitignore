@@ -32,3 +32,7 @@ benchmarks/results/*
 credentials.json
 customers/*
 .playwright*
+# plans: research/agent docs are tracked, but generated data + probe artifacts are not
+plans/**/*.json
+plans/**/*.jsonl
+plans/**/*.ndjson
