@@ -37,7 +37,9 @@ async function insightsUniquesByScenario(projectId) {
 				typeCast: null,
 				unit: null,
 			}],
-			time: [{ dateRangeType: "between", value: ["2026-07-01", "2026-08-16"], unit: "day" }],
+			// unit 'year' = one bucket = true range-level uniques (per-day buckets cannot be
+			// aggregated into range uniques client-side)
+			time: [{ dateRangeType: "between", value: ["2026-07-01", "2026-08-16"], unit: "year" }],
 		},
 	};
 	const res = await fetch(`${BASE}/query/runQuery`, {
@@ -60,11 +62,8 @@ function extractByScenario(body) {
 		if (key === "$overall") continue;
 		if (typeof val === "number") { out[key] = val; continue; }
 		if (val && typeof val === "object") {
-			// sum across dates is WRONG for uniques; prefer 'all' | '$overall' totals if present
-			if (typeof val.all === "number") out[key] = val.all;
-			else if (typeof val.$overall === "number") out[key] = val.$overall;
-			else if (val.$overall && typeof val.$overall === "object") out[key] = Object.values(val.$overall).reduce((a, b) => a + Number(b), 0);
-			else out[key] = Math.max(...Object.values(val).map(Number).filter(Number.isFinite));
+			// with unit 'year' there is exactly one bucket, so summing is safe
+			out[key] = Object.values(val).reduce((a, b) => a + Number(b), 0);
 		}
 	}
 	return out;
