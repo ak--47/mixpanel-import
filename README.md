@@ -671,6 +671,7 @@ You must tell the replay how to recognize your user IDs. In module mode this is 
 | `associationTimestamp` | `string` | `'original'` | `'original'` (first-seen time of the device node) or `'floor'` (min event time − 24h, keeps associations out of analysis windows) |
 | `associationProps` | `object` | `{}` | Static properties merged onto every association event (e.g. a `dataVersion` tag) |
 | `scrubExportProps` | `boolean` | `true` | Delete Mixpanel-added raw-export props (`$import`, `$mp_api_endpoint`, `$mp_api_timestamp_ms`, `$mp_event_size`, `mp_processing_time_ms`) from events before re-import |
+| `includeJunkIds` | `boolean` | `true` | Neutralize well-known junk ids (`anonymous`, `null`, the zero uuid, …): the id prop is removed (record kept) and junk never becomes graph evidence — a shared junk `$device_id` would otherwise union unrelated users into one mega-cluster. `denylist`, by contrast, drops whole records (test accounts) |
 | `bareDistinctId` | `string` | `'validate'` | `'validate'` (classify via `isUserId`) or `'passthru'` (leave bare `distinct_id`s alone) |
 | `userIdFallbackProps` | `string[]` | `[]` | Extra properties probed for a user ID on ordinary events |
 | `denylist` | `string[]` | `[]` | IDs (e.g. test accounts) excluded from the graph and classification; counted |
@@ -748,6 +749,43 @@ Set `graphPath` to a local path or cloud URL (`gs://`, `s3://`) and the flush wr
 - **`transformFunc` sees synthetic events too.** Association events flow through the user transform as nested `{event: 'identity association', properties: {...}}` records — a `transformFunc` written for your export's row shape must pass them through (returning `null`/`undefined` for them silently kills identity stitching).
 - **Cloud `graphPath` is best-effort.** `gs://`/`s3://` artifact uploads go through the destination writer asynchronously; a failed upload logs and sets `graphPathError` telemetry but never fails the job. When the artifact is load-bearing, prefer a local path and upload it yourself.
 - **A verb-free stream reports `associationRate: 1`.** Nothing to translate counts as full coverage, so `minAssociationRate` never aborts chunked runs whose slice happens to contain no identity verbs.
+
+#### Scale: memory model and the two-pass recipe
+
+The graph holds **one Map entry per distinct id** (not per pair). Measured: 2M rows / 500k
+distinct ids stream through the full pipeline at ~300k events/sec with ~440MB peak heap —
+budget roughly **1GB of heap per 1M distinct ids** and set `--max-old-space-size`
+accordingly. The default `maxGraphSize` (5M ids ≈ 4–5GB) is a guardrail, not a target: past
+it, edges are **dropped and counted** (`graphOverflowEdges`), or the job aborts with
+`onGraphOverflow: 'abort'`.
+
+**Do not chunk a replay naively.** Two hazards:
+
+1. A graph built per-chunk misses **cross-chunk transitive links** — the exact links the
+   graph exists to find.
+2. `associationTimestamp: 'floor'` derives from each run's earliest event, so re-runs over
+   different chunks stamp different times and the events **stop deduping** at query time
+   (the dedupe tuple includes `time`). Use the default `'original'` for chunked runs.
+
+For datasets whose distinct-id count exceeds memory, use the **two-pass recipe** — in
+original-ID-merge projects, identity lives *only* in the verbs (`$device_id`/`$user_id`
+props on events are inert there), and verbs are a tiny fraction of any export:
+
+```js
+// PASS 1 — verbs only: full graph in tiny memory, emits ALL association events
+await mpImport(creds, null, {
+  recordType: 'export-import-event',
+  params: { event: '["$identify","$create_alias","$merge"]' },  // export-side filter
+  identityReplay: { isUserId, graphPath: './graph.jsonl' }
+});
+// PASS 2 — ordinary events, date-chunked, no graph needed (associations already sent;
+// simplified stitches retroactively regardless of arrival order)
+await mpImport(creds, null, {
+  recordType: 'export-import-event',
+  start: '2024-01-01', end: '2024-03-31',                        // ...chunk by date
+  identityReplay: { isUserId, graph: false, identityEvents: 'drop' }
+});
+```
 
 ---
 

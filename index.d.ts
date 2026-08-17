@@ -1203,6 +1203,14 @@ declare namespace main {
      */
     scrubExportProps?: boolean;
     /**
+     * neutralize well-known junk ids ('anonymous', 'null', the zero uuid, ...) — the id prop
+     * is removed (or distinct_id → '') and junk never becomes graph evidence, preventing a
+     * shared junk $device_id from uniting unrelated users into one mega-cluster. Unlike
+     * `denylist` (which drops the whole record), the record itself survives.
+     * @default true
+     */
+    includeJunkIds?: boolean;
+    /**
      * bare distinct_id policy for ordinary events: 'validate' = classify via isUserId
      * ($user_id when it matches, else $device: prefix); 'passthru' = leave untouched
      * @default "validate"
@@ -1249,8 +1257,10 @@ declare namespace main {
     assocEmitted: { live: number; closure: number };
     /** bare distinct_id classifications: user, device, and already-$device:-prefixed */
     bare: { user: number; device: number; prefixedAlready: number };
-    /** records/ids excluded via denylist */
+    /** records dropped via denylist */
     denylisted: number;
+    /** records whose junk ids were neutralized (record kept, id removed) */
+    junkNeutralized: number;
     /** ambiguity counts: multi-user merges and multi-user clusters */
     ambiguous: { merges: number; clusters: number };
     /** cluster census at flush */

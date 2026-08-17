@@ -125,9 +125,23 @@ function normalizeOptions(raw) {
 	}
 	// denylist entries are stored $device:-stripped so both representations match;
 	// empty-after-strip entries (e.g. '$device:' or '') are discarded — they would
-	// otherwise match every record whose $user_id/$device_id is the empty string
+	// otherwise match every record whose $user_id/$device_id is the empty string.
 	const denylist = new Set(
 		[...denylistRaw].map((id) => stripDevicePrefix(String(id))).filter((id) => id !== '')
+	);
+
+	// junk ids (transforms.js badUserIds: 'anonymous', 'null', the zero uuid, ...) get
+	// DIFFERENT treatment from the denylist: real exports carry them on real rows, and a
+	// single junk $device_id shared by thousands of users would union them into one
+	// mega-cluster. Junk ids are NEUTRALIZED (the id prop is removed / distinct_id → '')
+	// while the record survives; denylisted ids (test accounts) drop the whole record.
+	// disable with includeJunkIds: false if you must.
+	const includeJunkIds = raw.includeJunkIds ?? true;
+	const junkIds = new Set(
+		(includeJunkIds ? require('./transforms.js').badUserIds : [])
+			.filter((id) => id !== null && id !== undefined)
+			.map((id) => stripDevicePrefix(String(id)))
+			.filter((id) => id !== '')
 	);
 
 	const associationProps = raw.associationProps ?? {};
@@ -150,6 +164,7 @@ function normalizeOptions(raw) {
 		bareDistinctId,
 		userIdFallbackProps,
 		denylist,
+		junkIds,
 		onAmbiguous,
 		minAssociationRate,
 		graphPath: raw.graphPath || ''
@@ -199,6 +214,9 @@ function classifyRecord(record, opts) {
 		a = stripDevicePrefix(String(a));
 		b = stripDevicePrefix(String(b));
 		if (!a || !b || a === b) return;
+		// junk ids never become evidence — a shared junk $device_id would union
+		// unrelated users into one mega-cluster (silent: the record itself survives)
+		if (opts.junkIds.has(a) || opts.junkIds.has(b)) return;
 		if (opts.denylist.has(a) || opts.denylist.has(b)) {
 			denylisted++;
 			return;
@@ -236,6 +254,7 @@ function classifyRecord(record, opts) {
 					if (val === null || val === undefined || val === '') continue;
 					const candidate = String(val);
 					if (candidate === asIngested || candidate === stripped) continue; // must differ from as-ingested
+					if (opts.junkIds.has(stripDevicePrefix(candidate))) continue; // junk is never a user
 					if (!opts.isUserId(candidate, record)) continue; // must pass isUserId
 					addEdge(candidate, stripped, 2);
 					break;
@@ -264,6 +283,20 @@ function rewriteEvent(record, opts) {
 			if (junk in props) delete props[junk];
 		}
 	}
+
+	// junk ids are NEUTRALIZED, not dropped: the record is real data with a garbage id.
+	// a junk $user_id/$device_id prop is removed; a junk distinct_id becomes '' (the
+	// mixpanel-blessed sink — accepted at ingest, excluded from behavioral analysis)
+	if (hasValue(props.$user_id) && opts.junkIds.has(stripDevicePrefix(String(props.$user_id)))) delete props.$user_id;
+	if (hasValue(props.$device_id) && opts.junkIds.has(stripDevicePrefix(String(props.$device_id)))) delete props.$device_id;
+	{
+		const ingested = getAsIngestedId(props);
+		if (ingested !== null && opts.junkIds.has(stripDevicePrefix(ingested))) {
+			props.distinct_id = '';
+			delete props.$distinct_id_before_identity;
+		}
+	}
+
 	const asIngested = getAsIngestedId(props);
 	const stripped = asIngested !== null ? stripDevicePrefix(asIngested) : null;
 
@@ -311,6 +344,7 @@ function rewriteEvent(record, opts) {
 		if (val === null || val === undefined || val === '') continue;
 		const candidate = String(val);
 		if (candidate === asIngested || candidate === stripped) continue;
+		if (opts.junkIds.has(stripDevicePrefix(candidate))) continue; // junk is never a user
 		if (!opts.isUserId(candidate, record)) continue;
 		fallbackUser = candidate;
 		break;
@@ -419,6 +453,7 @@ function createIdentityReplay(job) {
 		assocEmitted: { live: 0, closure: 0 },
 		bare: { user: 0, device: 0, prefixedAlready: 0 },
 		denylisted: 0,
+		junkNeutralized: 0,
 		ambiguous: { merges: 0, clusters: 0 },
 		clusters: { total: 0, resolved: 0, anonOnly: 0, multiUser: 0 },
 		unresolvedAnonIds: 0,
@@ -550,6 +585,11 @@ function createIdentityReplay(job) {
 				// ordinary event: rewrite + push 1:1
 				const asIngested = getAsIngestedId(props);
 				if (asIngested !== null && asIngested.startsWith('$device:')) stats.bare.prefixedAlready++;
+				const hadJunk =
+					(hasValue(props.$user_id) && opts.junkIds.has(stripDevicePrefix(String(props.$user_id)))) ||
+					(hasValue(props.$device_id) && opts.junkIds.has(stripDevicePrefix(String(props.$device_id)))) ||
+					(asIngested !== null && opts.junkIds.has(stripDevicePrefix(asIngested)));
+				if (hadJunk) stats.junkNeutralized++;
 				const rewritten = rewriteEvent(record, opts);
 				if (rewritten === null) {
 					stats.denylisted++;

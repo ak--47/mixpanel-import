@@ -1212,7 +1212,9 @@ module.exports = {
 	normalizeReservedKey,
 	RESERVED_EVENT_PROPS,
 	RESERVED_USER_PROPS,
-	RESERVED_GROUP_PROPS
+	RESERVED_GROUP_PROPS,
+	// shared with identity-replay (its default denylist)
+	badUserIds
 };
 
 

@@ -331,6 +331,33 @@ describe("buildAssociationEvent", () => {
 		expect(floored.properties.time).toBe(100);
 	});
 
+	test("junk ids are neutralized, never graphed, and never union users (mega-cluster guard)", async () => {
+		const ZERO = "00000000-0000-0000-0000-000000000000";
+		const { out, stats } = await runStage({ isUserId }, [
+			// two REAL users sharing a junk $device_id — must NOT union
+			{ event: "login", properties: { distinct_id: "111", $user_id: "111", $device_id: ZERO, time: 1000 } },
+			{ event: "login", properties: { distinct_id: "222", $user_id: "222", $device_id: ZERO, time: 2000 } },
+			// junk distinct_id → '' sink, not '$device:null'
+			{ event: "page view", properties: { distinct_id: "null", time: 3000 } },
+			// verb whose anon side is junk → edge suppressed silently, record swallowed as usual
+			{ event: "$identify", properties: { distinct_id: "333", $identified_id: "333", $anon_id: "anonymous", time: 4000 } },
+		]);
+		const props = (l) => l.properties || l;
+		const logins = out.filter((r) => r.event === "login");
+		expect(logins.length).toBe(2);
+		for (const l of logins) expect(props(l).$device_id).toBeUndefined(); // junk prop removed
+		const pv = out.find((r) => r.event === "page view");
+		expect(props(pv).distinct_id).toBe(""); // sink, not a phantom '$device:null' person
+		expect(assocOnly(out).length).toBe(0); // no association ever touches a junk id
+		expect(stats.junkNeutralized).toBe(3);
+		expect(stats.clusters.multiUser).toBe(0); // 111 and 222 NOT unioned
+	});
+
+	test("includeJunkIds: false restores raw behavior", () => {
+		const opts = normalizeOptions({ isUserId, includeJunkIds: false });
+		expect(opts.junkIds.size).toBe(0);
+	});
+
 	test("scrubExportProps strips Mixpanel raw-export junk (and can be disabled)", () => {
 		const opts = normalizeOptions({ isUserId });
 		const rec = { event: "page view", properties: { distinct_id: "42", time: 1, $insert_id: "x", $import: true, $mp_api_endpoint: "api.mixpanel.com", $mp_api_timestamp_ms: 2, $mp_event_size: 3, mp_processing_time_ms: 4, keep: "me" } };
