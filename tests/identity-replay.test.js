@@ -393,11 +393,14 @@ describe("stage: graph mode flush closure", () => {
 		expect(bySrc.anon2).toBe("closure");
 	});
 
-	test("'original' timestamps = first-seen ts of each device node", async () => {
+	test("'original' timestamps = first EVIDENCE sighting of each device node", async () => {
+		// bare sightings deliberately do NOT track ts (memory: the graph is the only store,
+		// and retroactive stitching is order/time-independent — probe p09) — firstTs comes
+		// from the node's first verb/dual-row appearance
 		const { out } = await runStage({ isUserId }, chain);
 		const byDev = Object.fromEntries(assocOnly(out).map((a) => [a.properties.$device_id, a.properties.time]));
-		expect(byDev.anon1).toBe(1000); // bare page view sighting, before its first edge
-		expect(byDev.anon2).toBe(2000); // first seen in the merge, before its page view
+		expect(byDev.anon1).toBe(2000); // first evidence: the $merge at t=2000
+		expect(byDev.anon2).toBe(2000);
 		expect(byDev.anon3).toBe(3000);
 	});
 
@@ -626,11 +629,26 @@ describe("stage: graphPath artifact", () => {
 		fs.rmSync(dir, { recursive: true, force: true });
 	});
 
-	test("cloud paths are skipped with a telemetry flag (v1), not thrown", async () => {
-		const { stats } = await runStage({ isUserId, graphPath: "gs://bucket/graph.jsonl" }, chain);
-		expect(stats.graphPathSkipped).toBe(true);
-		const s3 = await runStage({ isUserId, graphPath: "s3://bucket/graph.jsonl" }, chain);
-		expect(s3.stats.graphPathSkipped).toBe(true);
+	test("cloud paths route through destination-writer and never throw (write only if writable)", async () => {
+		// no cloud creds in unit tests: the write attempt must degrade gracefully, never a
+		// thrown error — the job's data flow is not hostage to the artifact. Cloud uploads
+		// are best-effort/async in destination-writer, so only the no-throw contract and
+		// telemetry flags are asserted here (data-flow counts are covered by local tests).
+		const s3 = await runStage({ isUserId, graphPath: "s3://this-bucket-does-not-exist-mp-import/graph.jsonl" }, chain);
+		expect(s3.stats.graphPathWritten ?? s3.stats.graphPathError).toBeDefined();
+	});
+
+	test("a directory graphPath gets an auto-generated filename (destination-writer contract)", async () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ir-graph-"));
+		const { out, stats } = await runStage({ isUserId, graphPath: dir }, chain);
+		expect(assocOnly(out).length).toBe(2); // anon1 + anon2 → 42; anonP/anonQ unresolved
+		expect(stats.graphPathWritten).toBeDefined();
+		const files = fs.readdirSync(dir);
+		expect(files.length).toBe(1);
+		const lines = fs.readFileSync(path.join(dir, files[0]), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+		expect(lines.length).toBe(3); // 2 pairs + trailer
+		expect(lines[lines.length - 1]).toEqual({ unresolvedClusters: 1, ambiguousClusters: 0 });
+		fs.rmSync(dir, { recursive: true, force: true });
 	});
 
 	test("unwritable local path warns via telemetry instead of throwing", async () => {

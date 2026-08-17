@@ -7,7 +7,6 @@ simplified-ID-merge event stream; see plans/original-to-simplified/design-draft.
 */
 
 const { Transform } = require('stream');
-const fs = require('fs');
 const path = require('path');
 const md5 = require('md5');
 const { IdentityGraph, stripDevicePrefix } = require('./identity-graph.js');
@@ -22,6 +21,25 @@ const VERB_KINDS = {
 };
 
 const DAY_IN_SECONDS = 86400;
+const DAY_IN_MS = 86400 * 1000;
+const MS_EPOCH_THRESHOLD = 1e12; // epoch values above this are milliseconds
+
+/**
+ * one day, in the stream's epoch unit (seconds vs milliseconds, detected per value)
+ * @param {number | null} sampleTs - a representative timestamp from the stream
+ * @returns {number}
+ */
+function dayInStreamUnits(sampleTs) {
+	return sampleTs !== null && sampleTs > MS_EPOCH_THRESHOLD ? DAY_IN_MS : DAY_IN_SECONDS;
+}
+
+/**
+ * @param {*} v
+ * @returns {boolean} value is present and non-empty
+ */
+function hasValue(v) {
+	return v !== null && v !== undefined && v !== '';
+}
 
 /**
  * normalize + validate raw identityReplay options into canonical opts
@@ -105,8 +123,12 @@ function normalizeOptions(raw) {
 	if (!Array.isArray(denylistRaw) && !(denylistRaw instanceof Set)) {
 		throw new Error(`identityReplay: denylist must be an array (or Set) of ids`);
 	}
-	// denylist entries are stored $device:-stripped so both representations match
-	const denylist = new Set([...denylistRaw].map((id) => stripDevicePrefix(String(id))));
+	// denylist entries are stored $device:-stripped so both representations match;
+	// empty-after-strip entries (e.g. '$device:' or '') are discarded — they would
+	// otherwise match every record whose $user_id/$device_id is the empty string
+	const denylist = new Set(
+		[...denylistRaw].map((id) => stripDevicePrefix(String(id))).filter((id) => id !== '')
+	);
 
 	const associationProps = raw.associationProps ?? {};
 	if (!associationProps || typeof associationProps !== 'object' || Array.isArray(associationProps)) {
@@ -245,10 +267,10 @@ function rewriteEvent(record, opts) {
 	const asIngested = getAsIngestedId(props);
 	const stripped = asIngested !== null ? stripDevicePrefix(asIngested) : null;
 
-	// denylisted ids: drop the whole record (caller counts)
+	// denylisted ids: drop the whole record (caller counts); '' never matches (filtered at normalize)
 	if (stripped !== null && opts.denylist.has(stripped)) return null;
-	if (props.$user_id !== null && props.$user_id !== undefined && opts.denylist.has(stripDevicePrefix(String(props.$user_id)))) return null;
-	if (props.$device_id !== null && props.$device_id !== undefined && opts.denylist.has(stripDevicePrefix(String(props.$device_id)))) return null;
+	if (props.$user_id !== null && props.$user_id !== undefined && props.$user_id !== '' && opts.denylist.has(stripDevicePrefix(String(props.$user_id)))) return null;
+	if (props.$device_id !== null && props.$device_id !== undefined && props.$device_id !== '' && opts.denylist.has(stripDevicePrefix(String(props.$device_id)))) return null;
 
 	const hasUser = props.$user_id !== null && props.$user_id !== undefined && props.$user_id !== '';
 	const hasDevice = props.$device_id !== null && props.$device_id !== undefined && props.$device_id !== '';
@@ -345,28 +367,35 @@ function toTs(t) {
 }
 
 /**
- * write the graphPath JSONL artifact: one row per resolved pair + a trailer line
- * never throws — unwritable paths warn + set a telemetry flag; cloud paths are skipped in v1
+ * write the graphPath JSONL artifact: one row per resolved pair + a trailer line.
+ * local, gs://, and s3:// all go through components/destination-writer.js.
+ * never throws — unwritable paths warn + set a telemetry flag (write only if writable).
  * @param {string} graphPath
  * @param {Array<Object>} rows
  * @param {Object} trailer
  * @param {Object} stats
  * @param {Function} log
+ * @param {JobConfig} job - cloud credential plumbing for gs://|s3://
+ * @returns {Promise<void>}
  */
-function writeGraphArtifact(graphPath, rows, trailer, stats, log) {
-	if (/^(gs|s3):\/\//i.test(graphPath)) {
-		// cloud graphPath is a v1 SKIP (no trivial sync write path); counted + warned
-		stats.graphPathSkipped = true;
-		log(`identityReplay: graphPath '${graphPath}' is a cloud path — skipped in v1; use a local path`);
-		return;
-	}
+async function writeGraphArtifact(graphPath, rows, trailer, stats, log, job) {
 	try {
-		const resolved = path.resolve(graphPath);
-		fs.mkdirSync(path.dirname(resolved), { recursive: true });
-		const lines = rows.map((r) => JSON.stringify(r));
-		lines.push(JSON.stringify(trailer));
-		fs.writeFileSync(resolved, lines.join('\n') + '\n');
-		stats.graphPathWritten = resolved;
+		const { createDestinationStream } = require('./destination-writer.js');
+		const dest = await createDestinationStream(graphPath, job);
+		await new Promise((resolve, reject) => {
+			dest.on('error', reject);
+			dest.on('finish', resolve);
+			const writeRow = (row) => new Promise((res) => {
+				if (dest.write(row)) res();
+				else dest.once('drain', () => res());
+			});
+			(async () => {
+				for (const row of rows) await writeRow(row);
+				await writeRow(trailer);
+				dest.end();
+			})().catch(reject);
+		});
+		stats.graphPathWritten = /^(gs|s3):\/\//i.test(graphPath) ? graphPath : path.resolve(graphPath);
 	}
 	catch (err) {
 		stats.graphPathError = err.message;
@@ -413,20 +442,25 @@ function createIdentityReplay(job) {
 
 	/** @type {InstanceType<typeof IdentityGraph> | null} */
 	const graph = opts.graph ? new IdentityGraph({ maxNodes: opts.maxGraphSize }) : null;
-	/** @type {Map<string, {firstTs: number | null, rank: number}> | null} id → earliest ts + best evidence rank */
-	const nodeMeta = graph ? new Map() : null;
-	/** @type {Map<string, Set<string>> | null} device → users it was DIRECTLY verb/row-paired with */
-	const directPairs = graph ? new Map() : null;
+	/**
+	 * direct device↔user pairings (verb/dual-row evidence, rank <= 1) for provenance
+	 * labels at flush; composite string keys, one entry per PAIR — memory stays
+	 * bounded by the graph's node cap because pairs only form between accepted nodes
+	 * @type {Set<string> | null}
+	 */
+	const directPairs = graph ? new Set() : null;
+	const pairKey = (device, user) => `${device} ${user}`;
 	let minEventTime = Infinity;
+	let maxEventTime = -Infinity;
 
-	const trackMeta = (id, ts, rank) => {
-		const existing = nodeMeta.get(id);
-		if (!existing) {
-			nodeMeta.set(id, { firstTs: ts, rank });
-			return;
+	// classify an id, reusing the graph's stored verdict when the id is already a node
+	// (assumes the predicate is pure per id — the record arg is advisory context)
+	const classifyId = (id, record) => {
+		if (graph) {
+			const known = graph.meta.get(id);
+			if (known) return known.isUser;
 		}
-		if (ts !== null && (existing.firstTs === null || ts < existing.firstTs)) existing.firstTs = ts;
-		if (rank !== null && (existing.rank === null || rank < existing.rank)) existing.rank = rank;
+		return opts.isUserId(id, record);
 	};
 
 	const finalizeStats = () => {
@@ -434,7 +468,8 @@ function createIdentityReplay(job) {
 		const verbsTotal = stats.verbsSeen.identify + stats.verbsSeen.alias + stats.verbsSeen.merge;
 		const emitted = stats.assocEmitted.live + stats.assocEmitted.closure;
 		stats.isUserIdPassRate = isUserIdCalls > 0 ? isUserIdPasses / isUserIdCalls : 0;
-		stats.associationRate = emitted / Math.max(1, verbsTotal);
+		// zero verbs seen = nothing to translate = vacuously full coverage (never fail-closed on it)
+		stats.associationRate = verbsTotal > 0 ? emitted / verbsTotal : 1;
 		job.identityReplayStats = stats;
 	};
 
@@ -446,27 +481,24 @@ function createIdentityReplay(job) {
 			try {
 				if (!record || typeof record !== 'object') return callback();
 				const { kind, edges, denylisted } = classifyRecord(record, opts);
-				stats.denylisted += denylisted;
 				const props = getProps(record);
 				const ts = toTs(props.time);
 				if (ts !== null && ts < minEventTime) minEventTime = ts;
+				if (ts !== null && ts > maxEventTime) maxEventTime = ts;
 
 				// harvest edges into the graph
 				if (graph) {
 					for (const [a, b, rank] of edges) {
-						trackMeta(a, ts, rank);
-						trackMeta(b, ts, rank);
-						const aIsUser = opts.isUserId(a, record);
-						const bIsUser = opts.isUserId(b, record);
-						const aOk = graph.addNode(a, { isUser: aIsUser, ts, rank });
-						const bOk = graph.addNode(b, { isUser: bIsUser, ts, rank });
-						if (aOk && bOk) graph.addEdge(a, b);
-						// remember direct device↔user pairings (verb vs closure provenance at flush)
-						if (aIsUser !== bIsUser) {
-							const device = aIsUser ? b : a;
-							const user = aIsUser ? a : b;
-							if (!directPairs.has(device)) directPairs.set(device, new Set());
-							directPairs.get(device).add(user);
+						const aIsUser = classifyId(a, record);
+						const bIsUser = classifyId(b, record);
+						graph.addNode(a, { isUser: aIsUser, ts, rank });
+						graph.addNode(b, { isUser: bIsUser, ts, rank });
+						// unconditional: addEdge counts overflow itself when a side was cap-rejected
+						graph.addEdge(a, b);
+						// direct pairings drive 'verb' vs 'closure' provenance at flush —
+						// only hard/verb evidence qualifies (rank 2 fallback-props are inferred)
+						if (rank <= 1 && aIsUser !== bIsUser) {
+							directPairs.add(aIsUser ? pairKey(b, a) : pairKey(a, b));
 						}
 					}
 					if (opts.onGraphOverflow === 'abort' && graph.overflowEdges > 0) {
@@ -478,8 +510,10 @@ function createIdentityReplay(job) {
 				// identity verbs: swallow (never forward — simplified /import hard-rejects them)
 				if (kind !== 'event') {
 					stats.verbsSeen[kind]++;
-					if (kind === 'merge' && !Array.isArray(props.$distinct_ids)) stats.malformedVerbs++;
-					else if (kind === 'merge' && Array.isArray(props.$distinct_ids) && props.$distinct_ids.length !== 2) stats.malformedVerbs++;
+					if (denylisted > 0) stats.denylisted++; // once per verb record with suppressed evidence
+					if (kind === 'merge' && (!Array.isArray(props.$distinct_ids) || props.$distinct_ids.length !== 2)) stats.malformedVerbs++;
+					if (kind === 'identify' && (!hasValue(props.$identified_id) || !hasValue(props.$anon_id))) stats.malformedVerbs++;
+					if (kind === 'alias' && (!hasValue(props.alias) || !hasValue(props.$distinct_id_before_identity ?? props.distinct_id))) stats.malformedVerbs++;
 
 					// lite mode (graph:false): stateless 1:1 verb rewrite when exactly one side is a user
 					if (!graph && opts.identityEvents === 'rewrite' && edges.length === 1) {
@@ -489,10 +523,15 @@ function createIdentityReplay(job) {
 						if (aIsUser !== bIsUser) {
 							const user = aIsUser ? a : b;
 							const device = aIsUser ? b : a;
-							const now = Math.floor(Date.now() / 1000);
+							// fall back to the earliest stream time seen so far, then wall clock —
+							// unit-aware: match the stream's epoch unit when we've seen one
+							const fallbackNow = Number.isFinite(minEventTime)
+								? minEventTime
+								: Math.floor(Date.now() / 1000);
+							const assocTs = ts ?? fallbackNow;
 							const assoc = buildAssociationEvent(user, device, opts, {
-								ts: ts ?? now,
-								floorTs: (ts ?? now) - DAY_IN_SECONDS,
+								ts: assocTs,
+								floorTs: assocTs - dayInStreamUnits(assocTs),
 								source: 'verb'
 							});
 							stats.assocEmitted.live++;
@@ -511,9 +550,6 @@ function createIdentityReplay(job) {
 				// ordinary event: rewrite + push 1:1
 				const asIngested = getAsIngestedId(props);
 				if (asIngested !== null && asIngested.startsWith('$device:')) stats.bare.prefixedAlready++;
-				// a bare sighting counts toward a node's first-seen ts ('original' assoc timestamps),
-				// even though it contributes no edge (rank stays null — a sighting is not evidence)
-				if (graph && asIngested !== null && ts !== null) trackMeta(stripDevicePrefix(asIngested), ts, null);
 				const rewritten = rewriteEvent(record, opts);
 				if (rewritten === null) {
 					stats.denylisted++;
@@ -530,16 +566,39 @@ function createIdentityReplay(job) {
 		},
 
 		flush(callback) {
-			try {
-				const now = Math.floor(Date.now() / 1000);
+			const self = this;
+			(async () => {
+				const dayUnits = dayInStreamUnits(Number.isFinite(maxEventTime) ? maxEventTime : null);
+				const now = Math.floor(Date.now() / (dayUnits === DAY_IN_MS ? 1 : 1000));
 				const minTs = Number.isFinite(minEventTime) ? minEventTime : now;
-				const floorTs = minTs - DAY_IN_SECONDS;
+				let floorTs = minTs - dayUnits;
+				// epochFilter (downstream) drops events before job.epochStart — clamp so
+				// floor-mode association events survive it
+				if (job.epochStart && Number.isFinite(Number(job.epochStart))) {
+					const epochStartInUnits = dayUnits === DAY_IN_MS ? Number(job.epochStart) * 1000 : Number(job.epochStart);
+					if (floorTs < epochStartInUnits) {
+						floorTs = epochStartInUnits;
+						log(`identityReplay: associationTimestamp 'floor' clamped to epochStart (${epochStartInUnits}) so association events survive the epoch filter`);
+					}
+				}
+
 				/** @type {Array<{device: string, user: string, rank: number|null, source: string}>} */
 				const pairs = [];
+				const collectPairs = Boolean(opts.graphPath);
 				let unresolvedClusters = 0;
 
+				// backpressure-aware push: yield to the event loop whenever the readable
+				// buffer is at/over its high-water mark so downstream can drain — flush can
+				// emit millions of association events at the feature's target scale
+				const pushWithBackpressure = async (evt) => {
+					while (self.readableLength >= self.readableHighWaterMark) {
+						await new Promise((resolve) => setImmediate(resolve));
+					}
+					self.push(evt);
+				};
+
 				if (graph) {
-					for (const cluster of graph.clusters()) {
+					for (const cluster of graph.clusters({ skipSingletons: true })) {
 						stats.clusters.total++;
 						const users = cluster.users;
 						const userIds = new Set(users.map((u) => u.id));
@@ -560,8 +619,7 @@ function createIdentityReplay(job) {
 							stats.clusters.multiUser++;
 							stats.ambiguous.clusters++;
 							if (opts.onAmbiguous === 'error') {
-								finalizeStats();
-								return callback(new Error(`identityReplay: ambiguous cluster with ${users.length} users [${users.map((u) => u.id).join(', ')}] and onAmbiguous='error'`));
+								throw new Error(`identityReplay: ambiguous cluster with ${users.length} users [${users.map((u) => u.id).join(', ')}] and onAmbiguous='error'`);
 							}
 							if (opts.onAmbiguous === 'drop') {
 								unresolvedClusters++;
@@ -569,19 +627,18 @@ function createIdentityReplay(job) {
 								continue; // anons in a multi-user cluster get NO assoc events
 							}
 							// 'resolve': elect winner by evidence rank → latest ts → lexicographic min
-							const elected = /** @type {any} */ (graph.electUser(users, opts.onAmbiguous));
-							winner = typeof elected === 'string' ? elected : elected.id;
+							winner = IdentityGraph.electUser(users, 'resolve');
 						}
 						stats.clusters.resolved++;
 
 						// one assoc event per non-user member (losers stay their own identified users)
 						for (const member of anonMembers) {
-							const meta = /** @type {{rank?: number, firstTs?: number}} */ (nodeMeta.get(member) || {});
-							const source = directPairs.has(member) && directPairs.get(member).has(winner) ? 'verb' : 'closure';
-							pairs.push({ device: member, user: winner, rank: meta.rank ?? null, source });
+							const meta = graph.meta.get(member);
+							const source = directPairs.has(pairKey(member, winner)) ? 'verb' : 'closure';
+							if (collectPairs) pairs.push({ device: member, user: winner, rank: meta?.rank ?? null, source });
 							if (opts.identityEvents === 'rewrite') {
-								this.push(buildAssociationEvent(winner, member, opts, {
-									ts: meta.firstTs ?? minTs,
+								await pushWithBackpressure(buildAssociationEvent(winner, member, opts, {
+									ts: meta?.firstTs ?? minTs,
 									floorTs,
 									source
 								}));
@@ -594,33 +651,34 @@ function createIdentityReplay(job) {
 
 				// graphPath artifact: resolved pair table + trailer (write only if writable)
 				if (opts.graphPath) {
-					writeGraphArtifact(
+					await writeGraphArtifact(
 						opts.graphPath,
 						pairs,
 						{ unresolvedClusters, ambiguousClusters: stats.ambiguous.clusters },
 						stats,
-						log
+						log,
+						job
 					);
 				}
 
 				finalizeStats();
 
-				// fail-closed coverage floor
+				// fail-closed coverage floor (skipped when the stream had zero verbs — nothing to translate)
 				if (opts.identityEvents === 'rewrite' && opts.minAssociationRate > 0 && stats.associationRate < opts.minAssociationRate) {
-					return callback(new Error(`identityReplay: association rate ${stats.associationRate.toFixed(4)} is below minAssociationRate ${opts.minAssociationRate}; telemetry: ${JSON.stringify(stats)}`));
+					throw new Error(`identityReplay: association rate ${stats.associationRate.toFixed(4)} is below minAssociationRate ${opts.minAssociationRate}; telemetry: ${JSON.stringify(stats)}`);
 				}
-
-				callback();
-			}
-			catch (err) {
-				try {
-					finalizeStats();
+			})().then(
+				() => callback(),
+				(err) => {
+					try {
+						finalizeStats();
+					}
+					catch (e) {
+						// stats finalization must never mask the original error
+					}
+					callback(err);
 				}
-				catch (e) {
-					// stats finalization must never mask the original error
-				}
-				callback(err);
-			}
+			);
 		}
 	});
 

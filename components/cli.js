@@ -423,6 +423,10 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			if (argv.identityReplay && !argv.irUserIdRegex) {
 				throw new Error('--identity-replay requires --ir-user-id-regex (the CLI cannot pass an isUserId function; use the module API for predicates)');
 			}
+			// --ir-* flags without --identity-replay would otherwise be silently discarded
+			if (!argv.identityReplay && (argv.irUserIdRegex || argv.irGraphPath || argv.irOnAmbiguous)) {
+				throw new Error('--ir-* flags require --identity-replay (they are ignored without it)');
+			}
 			return true;
 		})
 		.help()

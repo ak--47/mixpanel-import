@@ -90,9 +90,6 @@ class IdentityGraph {
 
 		/** @type {number} edges skipped because a side was rejected at the node cap */
 		this.overflowEdges = 0;
-
-		/** @type {Map<string, ClusterUser[]> | null} memoized root -> users index; invalidated on mutation */
-		this._userIndexCache = null;
 	}
 
 	/** @returns {number} count of distinct ids in the graph */
@@ -131,7 +128,6 @@ class IdentityGraph {
 				if (existing.firstTs === null || ts < existing.firstTs) existing.firstTs = ts;
 				if (existing.lastTs === null || ts > existing.lastTs) existing.lastTs = ts;
 			}
-			this._userIndexCache = null;
 			return true;
 		}
 
@@ -146,7 +142,6 @@ class IdentityGraph {
 			firstTs: hasTs ? ts : null,
 			lastTs: hasTs ? ts : null
 		});
-		this._userIndexCache = null;
 		return true;
 	}
 
@@ -190,7 +185,6 @@ class IdentityGraph {
 		this.parent.set(rootB, rootA);
 		this.clusterSizes.set(rootA, sizeA + sizeB);
 		this.clusterSizes.delete(rootB);
-		this._userIndexCache = null;
 		return true;
 	}
 
@@ -215,11 +209,12 @@ class IdentityGraph {
 	}
 
 	/**
-	 * builds (and memoizes) the root -> users index; invalidated on any mutation
+	 * builds the root -> users index in one O(n) pass (flush/test-time helper —
+	 * do NOT call per record; there is deliberately no memo, since every
+	 * streaming mutation would invalidate it anyway)
 	 * @returns {Map<string, ClusterUser[]>}
 	 */
 	_userIndex() {
-		if (this._userIndexCache) return this._userIndexCache;
 		const index = new Map();
 		for (const [id, meta] of this.meta) {
 			if (!meta.isUser) continue;
@@ -229,20 +224,24 @@ class IdentityGraph {
 			if (users) users.push(entry);
 			else index.set(root, [entry]);
 		}
-		this._userIndexCache = index;
 		return index;
 	}
 
 	/**
 	 * materializes EVERY cluster — multi-member AND single-member — in one pass
-	 * over the union-find; the caller filters (e.g. skips singletons, splits
-	 * anon-only vs resolved vs multi-user)
+	 * over the union-find; the caller filters (e.g. splits anon-only vs resolved
+	 * vs multi-user). Pass {skipSingletons: true} to leave single-member clusters
+	 * out entirely (they never yield association events, and at scale nearly every
+	 * root is a singleton — skipping avoids materializing millions of objects).
+	 * @param {{skipSingletons?: boolean}} [filter]
 	 * @returns {Cluster[]}
 	 */
-	clusters() {
+	clusters(filter = {}) {
+		const { skipSingletons = false } = filter;
 		const byRoot = new Map();
 		for (const id of this.parent.keys()) {
 			const root = this._find(id);
+			if (skipSingletons && this.clusterSizes.get(root) === 1) continue;
 			let cluster = byRoot.get(root);
 			if (!cluster) {
 				cluster = { members: [], users: [] };

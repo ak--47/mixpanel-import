@@ -371,9 +371,13 @@ class Job {
 			}
 			if (!this.identityReplay.isUserId) throw new Error('identityReplay requires isUserId (a function, RegExp, or regex string)');
 			if (this.v2_compat) {
-				console.warn('⚠️  identityReplay and v2_compat are mutually exclusive; identityReplay wins... disabling v2_compat');
+				// library discipline: no unconditional console output from a constructor
+				if (this.verbose) console.warn('⚠️  identityReplay and v2_compat are mutually exclusive; identityReplay wins... disabling v2_compat');
 				this.v2_compat = false;
 			}
+			// exported rows arrive FLAT (streamEvents spreads properties to the root);
+			// the replay rewrite contract depends on ezTransforms re-nesting them
+			if (this.recordType === 'export-import-event' && !this.fixData) this.fixData = true;
 		}
 
 		/** @type {string} directive for profile operations ($set, $set_once, $append, $increment, etc.) */

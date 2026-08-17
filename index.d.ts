@@ -1257,12 +1257,20 @@ declare namespace main {
     clusters: { total: number; resolved: number; anonOnly: number; multiUser: number };
     /** anonymous ids left without a canonical user */
     unresolvedAnonIds: number;
+    /** lite mode only: anon↔anon verbs that need the graph (impossible statelessly) */
+    deferredImpossible: number;
+    /** verb rows missing their required identity props */
+    malformedVerbs: number;
     /** edges skipped because a node was rejected at maxGraphSize */
     graphOverflowEdges: number;
     /** fraction of candidate ids isUserId classified as users */
     isUserIdPassRate: number;
-    /** associations emitted / verbs seen — compared against minAssociationRate */
+    /** associations emitted / verbs seen (1 when the stream had no verbs) — compared against minAssociationRate */
     associationRate: number;
+    /** resolved path the graphPath artifact was written to (set on success) */
+    graphPathWritten?: string;
+    /** why the graphPath artifact could not be written (never fails the job) */
+    graphPathError?: string;
   };
 
   /**
