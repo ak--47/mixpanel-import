@@ -22,7 +22,7 @@ Design contract: plans/original-to-simplified/design-draft.md §"Pinned interfac
 - Denylist handling is deliberately NOT here — the caller (identity-replay stage)
   filters denylisted ids before they ever reach the graph.
 
-This module has no internal require()s and no process-global side effects.
+This module has no internal imports and no process-global side effects.
 */
 
 /** the reserved prefix Mixpanel uses to mark device-scoped distinct_ids */

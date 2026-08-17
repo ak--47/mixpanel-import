@@ -31,7 +31,8 @@ function runStage(irOpts, records) {
 			reject(err);
 		});
 		stage.on("end", () => resolve({ out, stats: job.identityReplayStats }));
-		Readable.from(records).pipe(stage);
+		// the stage mutates records in place (repo transform idiom) — clone so shared fixtures stay pristine
+		Readable.from(records.map((r) => structuredClone(r))).pipe(stage);
 	});
 }
 

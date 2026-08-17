@@ -558,14 +558,14 @@ function createIdentityReplay(job) {
 								continue; // anons in a multi-user cluster get NO assoc events
 							}
 							// 'resolve': elect winner by evidence rank → latest ts → lexicographic min
-							const elected = graph.electUser(users, opts.onAmbiguous);
+							const elected = /** @type {any} */ (graph.electUser(users, opts.onAmbiguous));
 							winner = typeof elected === 'string' ? elected : elected.id;
 						}
 						stats.clusters.resolved++;
 
 						// one assoc event per non-user member (losers stay their own identified users)
 						for (const member of anonMembers) {
-							const meta = nodeMeta.get(member) || {};
+							const meta = /** @type {{rank?: number, firstTs?: number}} */ (nodeMeta.get(member) || {});
 							const source = directPairs.has(member) && directPairs.get(member).has(winner) ? 'verb' : 'closure';
 							pairs.push({ device: member, user: winner, rank: meta.rank ?? null, source });
 							if (opts.identityEvents === 'rewrite') {

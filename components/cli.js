@@ -432,6 +432,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 	// deep normalization (regex compilation, defaults) happens in components/identity-replay.js
 	// @ts-ignore
 	if (args.identityReplay) {
+		// @ts-ignore
 		const identityReplay = { isUserId: args.irUserIdRegex };
 		// @ts-ignore
 		if (args.irGraphPath) identityReplay.graphPath = args.irGraphPath;
