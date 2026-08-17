@@ -670,6 +670,7 @@ You must tell the replay how to recognize your user IDs. In module mode this is 
 | `associationEventName` | `string` | `'identity association'` | Event name for emitted association events |
 | `associationTimestamp` | `string` | `'original'` | `'original'` (first-seen time of the device node) or `'floor'` (min event time − 24h, keeps associations out of analysis windows) |
 | `associationProps` | `object` | `{}` | Static properties merged onto every association event (e.g. a `dataVersion` tag) |
+| `scrubExportProps` | `boolean` | `true` | Delete Mixpanel-added raw-export props (`$import`, `$mp_api_endpoint`, `$mp_api_timestamp_ms`, `$mp_event_size`, `mp_processing_time_ms`) from events before re-import |
 | `bareDistinctId` | `string` | `'validate'` | `'validate'` (classify via `isUserId`) or `'passthru'` (leave bare `distinct_id`s alone) |
 | `userIdFallbackProps` | `string[]` | `[]` | Extra properties probed for a user ID on ordinary events |
 | `denylist` | `string[]` | `[]` | IDs (e.g. test accounts) excluded from the graph and classification; counted |

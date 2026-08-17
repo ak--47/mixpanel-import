@@ -90,6 +90,7 @@ describe("normalizeOptions", () => {
 		expect(opts.denylist).toEqual(new Set());
 		expect(opts.onAmbiguous).toBe("drop");
 		expect(opts.minAssociationRate).toBe(0);
+		expect(opts.scrubExportProps).toBe(true);
 		expect(opts.graphPath).toBe("");
 	});
 
@@ -328,6 +329,21 @@ describe("buildAssociationEvent", () => {
 		const floorOpts = normalizeOptions({ isUserId, associationTimestamp: "floor" });
 		const floored = buildAssociationEvent("42", "d", floorOpts, { ts: 500, floorTs: 100 });
 		expect(floored.properties.time).toBe(100);
+	});
+
+	test("scrubExportProps strips Mixpanel raw-export junk (and can be disabled)", () => {
+		const opts = normalizeOptions({ isUserId });
+		const rec = { event: "page view", properties: { distinct_id: "42", time: 1, $insert_id: "x", $import: true, $mp_api_endpoint: "api.mixpanel.com", $mp_api_timestamp_ms: 2, $mp_event_size: 3, mp_processing_time_ms: 4, keep: "me" } };
+		const out = rewriteEvent(structuredClone(rec), opts);
+		expect(out.properties.$import).toBeUndefined();
+		expect(out.properties.$mp_api_endpoint).toBeUndefined();
+		expect(out.properties.$mp_api_timestamp_ms).toBeUndefined();
+		expect(out.properties.$mp_event_size).toBeUndefined();
+		expect(out.properties.mp_processing_time_ms).toBeUndefined();
+		expect(out.properties.keep).toBe("me");
+		const keepOpts = normalizeOptions({ isUserId, scrubExportProps: false });
+		const kept = rewriteEvent(structuredClone(rec), keepOpts);
+		expect(kept.properties.$import).toBe(true);
 	});
 
 	test("custom associationEventName + associationProps merged", () => {

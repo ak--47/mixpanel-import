@@ -1197,6 +1197,12 @@ declare namespace main {
      */
     associationProps?: object;
     /**
+     * delete Mixpanel-added raw-export props ($import, $mp_api_endpoint, $mp_api_timestamp_ms,
+     * $mp_event_size, mp_processing_time_ms) from ordinary events before re-import
+     * @default true
+     */
+    scrubExportProps?: boolean;
+    /**
      * bare distinct_id policy for ordinary events: 'validate' = classify via isUserId
      * ($user_id when it matches, else $device: prefix); 'passthru' = leave untouched
      * @default "validate"

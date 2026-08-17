@@ -113,7 +113,10 @@ function normalizeOptions(raw) {
 		throw new Error(`identityReplay: associationProps must be a plain object of static props`);
 	}
 
+	const scrubExportProps = raw.scrubExportProps ?? true;
+
 	return {
+		scrubExportProps,
 		isUserId: predicate,
 		graph: raw.graph ?? true,
 		maxGraphSize,
@@ -229,8 +232,16 @@ function classifyRecord(record, opts) {
  * @param {Object} opts - canonical opts from normalizeOptions
  * @returns {Object | null}
  */
+/** Mixpanel-added props on raw-export rows; re-importing them stores them as literal properties */
+const EXPORT_JUNK_PROPS = ['$import', '$mp_api_endpoint', '$mp_api_timestamp_ms', '$mp_event_size', 'mp_processing_time_ms'];
+
 function rewriteEvent(record, opts) {
 	const props = getProps(record);
+	if (opts.scrubExportProps) {
+		for (const junk of EXPORT_JUNK_PROPS) {
+			if (junk in props) delete props[junk];
+		}
+	}
 	const asIngested = getAsIngestedId(props);
 	const stripped = asIngested !== null ? stripDevicePrefix(asIngested) : null;
 
