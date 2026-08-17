@@ -17,6 +17,7 @@ class MixpanelImportUI {
 		this.timerInterval = null; // Timer interval for job duration
 		this.timerStartTime = null; // Start time for timer
 		this.initializeUI();
+		this.initializeIdentityReplaySection();
 		this.setupEventListeners();
 		this.updateColumnMapperButtons(); // Set initial button state
 		this.initializeMonacoEditor();
@@ -511,6 +512,15 @@ class MixpanelImportUI {
 		}
 	}
 
+	initializeIdentityReplaySection() {
+		// Render the shared identity replay section (identity-replay-ui.js) into its container;
+		// must run before setupEventListeners() so loadFormState() can restore its fields
+		const container = document.getElementById('identity-replay-container');
+		if (container && window.IdentityReplayUI) {
+			window.IdentityReplayUI.renderSection(container, { page: 'import' });
+		}
+	}
+
 	initializeETLCycling() {
 		// Separate word banks for E, T, and L
 		const eWords = [
@@ -876,6 +886,13 @@ class MixpanelImportUI {
 
 		// Load saved form state on page load
 		this.loadFormState();
+
+		// Re-sync identity replay conditional visibility after session restore
+		// (loadFormState restores checkboxes/selects without dispatching change events)
+		if (window.IdentityReplayUI) {
+			window.IdentityReplayUI.refresh();
+			this.updateFieldVisibility();
+		}
 	}
 
 
@@ -1006,6 +1023,12 @@ class MixpanelImportUI {
 		const directiveRow = document.getElementById('directive-row');
 		if (directiveRow) {
 			directiveRow.style.display = (recordType === 'user' || recordType === 'group') ? 'block' : 'none';
+		}
+
+		// Show identity replay section for events only (job.js throws for user/group)
+		const identityReplayContainer = document.getElementById('identity-replay-container');
+		if (identityReplayContainer) {
+			identityReplayContainer.style.display = recordType === 'event' ? 'block' : 'none';
 		}
 
 		// Define authentication requirements based on RecordType
@@ -1325,6 +1348,14 @@ class MixpanelImportUI {
 					command += ` --${cliFlag}`;
 				}
 			});
+
+			// Identity replay flags (events only; module-only options get a trailing comment)
+			if (recordType === 'event' && window.IdentityReplayUI) {
+				const identityReplayFlags = window.IdentityReplayUI.cliFlags();
+				if (identityReplayFlags.length > 0) {
+					command += ` ${identityReplayFlags.join(' ')}`;
+				}
+			}
 
 			cliElement.textContent = command;
 			cliElement.classList.remove('empty');
@@ -1675,6 +1706,12 @@ function transform(row) {
 		if (this.getElementChecked('keepBadRecords')) options.keepBadRecords = true;
 		if (this.getElementChecked('manualGc')) options.manualGc = true;
 
+		// Identity replay (events only — job.js throws for other record types)
+		if (recordType === 'event' && window.IdentityReplayUI) {
+			const identityReplay = window.IdentityReplayUI.collect();
+			if (identityReplay) options.identityReplay = identityReplay;
+		}
+
 		return options;
 	}
 
@@ -1804,6 +1841,12 @@ function transform(row) {
 		const currentAliases = this.getCurrentAliases();
 		if (Object.keys(currentAliases).length > 0) {
 			options.aliases = currentAliases;
+		}
+
+		// Identity replay (events only — must be here too or dry runs won't exercise the replay)
+		if (recordType === 'event' && window.IdentityReplayUI) {
+			const identityReplay = window.IdentityReplayUI.collect();
+			if (identityReplay) options.identityReplay = identityReplay;
 		}
 
 		formData.append('options', JSON.stringify(options));
@@ -1991,6 +2034,15 @@ function transform(row) {
 			if (!recordType) {
 				this.showError('Please select an import type.');
 				return;
+			}
+
+			// Identity replay validation — runs for dry runs too, since the replay executes there
+			if (recordType === 'event' && window.IdentityReplayUI) {
+				const identityReplayValidation = window.IdentityReplayUI.validate();
+				if (!identityReplayValidation.ok) {
+					this.showError(identityReplayValidation.errors.join(' '));
+					return;
+				}
 			}
 
 			// Skip credential validation for dry runs (dry runs don't require credentials)

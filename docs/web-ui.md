@@ -22,6 +22,15 @@ Import supports local upload (drag & drop), `gs://` and `s3://` paths; JSON, JSO
 each with optional `.gz`. Transforms are authored in an embedded Monaco editor. Both tools render a
 live CLI-command preview and support dry runs.
 
+Both pages also expose an **identity-replay** section (import: `event` record type only; export:
+`export-import-event` only) covering the `identityReplay` option group — core options up front,
+the rest behind an "Advanced" accordion. The required `isUserId` predicate is authored as a regex
+string with a live tester (sample IDs in, ✓/✗ per line), or as a function in function mode
+(Monaco on the import page, a plain code textarea on the export page). The rendered options ride
+the normal options JSON; function-mode code is compiled server-side the same way `transformCode`
+is. See the [README](../README.md#-original--simplified-id-merge-migration-identityreplay) for
+what the options mean.
+
 ## HTTP Endpoints
 
 | Method | Path | Notes |
@@ -64,7 +73,8 @@ Result payloads are trimmed before being sent to the client.
 **Included:** `recordType`, `total`, `success`, `failed`, `empty`, `outOfBounds`, `duplicates`,
 `startTime`, `endTime`, `durationHuman`, `bytesHuman`, `requests`, `retries`, `rateLimit`,
 `wasStream`, `eps`, `rps`, `mbps`, `badRecords`, `vendor`, `vendorOpts`, `errors`, `responses`,
-`files`, `downloadUrl`
+`files`, `downloadUrl`, `identityReplay`, `stallsDetected`, `resumesAttempted`, `resumesSucceeded`,
+`filesSkippedMissing`, `bytesResumed`
 
 **Excluded:** `memory`, `memoryHuman`, `duration`, `avgBatchLength`, `percentQuota`, `transport`,
 `batches`, `serverErrors`, `clientErrors`, `version`, `workers`, `dryRun`

@@ -7,7 +7,18 @@ class MixpanelExportUI {
 		this.websocket = null; // WebSocket connection for real-time progress
 		this.currentJobId = null; // Track current job ID
 		this.initializeLTECycling();
+		this.renderIdentityReplaySection();
 		this.setupEventListeners();
+	}
+
+	// Render the shared Identity Replay section (identity-replay-ui.js) into its
+	// placeholder — BEFORE setupEventListeners so its fields exist when the saved
+	// form state is restored and get sessionStorage persistence for free
+	renderIdentityReplaySection() {
+		const container = document.getElementById('identityReplay-group');
+		if (container && window.IdentityReplayUI) {
+			window.IdentityReplayUI.renderSection(container, { page: 'export' });
+		}
 	}
 
 	// WebSocket connection methods
@@ -582,6 +593,14 @@ class MixpanelExportUI {
 		// Load saved form state on page load
 		this.loadFormState();
 
+		// Re-sync visibility after restore: select/checkbox restores don't dispatch
+		// change events, so the recordType-driven groups and the identity replay
+		// section's internal toggles need an explicit refresh
+		this.updateFieldVisibility();
+		if (window.IdentityReplayUI) {
+			window.IdentityReplayUI.refresh();
+		}
+
 		// Snowcat button
 		const snowcatBtn = document.getElementById('snowcat-btn');
 		if (snowcatBtn) {
@@ -660,8 +679,9 @@ class MixpanelExportUI {
 		// Hide all groups initially
 		const allGroups = [
 			'project-group', 'lookupTableId-group', 'token-group', 'groupKey-group',
-			'dataGroupId-group', 'secondToken-group', 'secondRegion-group', 'auth-toggle', 
-			'service-auth', 'secret-auth', 'destination-title', 'destination-description'
+			'dataGroupId-group', 'secondToken-group', 'secondRegion-group', 'auth-toggle',
+			'service-auth', 'secret-auth', 'destination-title', 'destination-description',
+			'identityReplay-group'
 		];
 		allGroups.forEach(groupId => {
 			const element = document.getElementById(groupId);
@@ -727,6 +747,9 @@ class MixpanelExportUI {
 				document.getElementById('destination-description').style.display = 'block';
 				document.getElementById('secondToken-group').style.display = 'block';
 				document.getElementById('secondRegion-group').style.display = 'block';
+				// Identity replay is ONLY valid for export-import-event — job.js throws
+				// for export-import-profile / export-import-group, so no other case shows it
+				document.getElementById('identityReplay-group').style.display = 'block';
 				break;
 
 			case 'export-import-profile':
@@ -1049,6 +1072,15 @@ class MixpanelExportUI {
 				}
 			});
 
+			// Identity replay flags (export-import-event only) — kept last because the
+			// module may append a trailing "# ..." module-API comment fragment
+			if (recordType === 'export-import-event' && window.IdentityReplayUI) {
+				const irFlags = window.IdentityReplayUI.cliFlags();
+				if (irFlags.length > 0) {
+					command += ` ${irFlags.join(' ')}`;
+				}
+			}
+
 			cliElement.textContent = command;
 			cliElement.classList.remove('empty');
 
@@ -1081,6 +1113,16 @@ class MixpanelExportUI {
 
 	async submitExport(isDryRun = false, maxRecords = null) {
 		const recordType = document.getElementById('recordType').value;
+
+		// Identity replay validation runs for dry runs too — a bad regex would
+		// otherwise reach job.js and come back as an unfriendly server 500
+		if (recordType === 'export-import-event' && window.IdentityReplayUI) {
+			const irValidation = window.IdentityReplayUI.validate();
+			if (!irValidation.ok) {
+				alert(irValidation.errors.join('\n'));
+				return;
+			}
+		}
 
 		// Skip credential validation for dry runs (dry runs don't require credentials)
 		if (!isDryRun) {
@@ -1209,6 +1251,15 @@ class MixpanelExportUI {
 			s3Key: this.getElementValue('s3Key'),
 			s3Secret: this.getElementValue('s3Secret')
 		};
+
+		// Identity replay (export-import-event only) — one nested object per the
+		// wire contract; collect() returns null when the section is disabled
+		if (data.recordType === 'export-import-event' && window.IdentityReplayUI) {
+			const identityReplay = window.IdentityReplayUI.collect();
+			if (identityReplay) {
+				data.identityReplay = identityReplay;
+			}
+		}
 
 		// Remove empty values
 		Object.keys(data).forEach(key => {

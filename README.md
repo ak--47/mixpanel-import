@@ -29,6 +29,7 @@ This opens a browser-based interface where you can:
 - 🔧 **Write custom transforms** with a code editor and live preview
 - ⚡ **Test everything** with dry runs before importing
 - 💻 **Generate CLI commands** for automation
+- 🔀 **Configure identity replay** for original → simplified ID merge migrations, with a live regex tester for the `isUserId` predicate — on both the import and export tools
 - 📊 **Track progress** with real-time feedback
 
 **Supported file formats:** JSON, JSONL, CSV, Parquet (including `.gz` compressed versions with automatic detection)
