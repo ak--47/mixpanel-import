@@ -101,3 +101,15 @@ environments stay reusable across rounds.
   (wf_9b079b10-59f: graph module, replay stage, plumbing, docs — 4 agents). Steady-state
   re-export scheduled (+60min background task b42pt0pz5). NOTE: per CLAUDE.md we do NOT run
   jest — verification via probes/run-04 live replay + AK runs suites in the morning.
+- 2026-08-17 (overnight): AK unblocked test-running (CLAUDE.md updated with live-network/watch-mode
+  guidance). Branch feat/identity-replay created; work committed in chunks. Build workflow
+  delivered graph + stage + plumbing + docs; suites green (349 pass; 1 pre-existing parquet env
+  failure). /code-review (high) found 10 verified issues — ALL fixed + committed (12a8b08):
+  dead overflow accounting, unbounded shadow Maps, flush backpressure, cloud graphPath via
+  destination-writer, epochStart×floor clamp, ms/s unit detection, zero-verb minAssociationRate,
+  denylist double-count + '' entries, rank-2 'verb' mislabel, CLI silent --ir-* discard,
+  verbose-gated v2_compat warn, fixData force-on for export-import replay.
+  Steady-state export: verbs PERSIST in raw export (round-1 gaps were lag) + export contains
+  DUPLICATE rows. Acceptance: dry telemetry matched manifest exactly (569 assoc, 13 clusters);
+  LIVE replay → SIMPLIFIED 1241/1241 success 0 fail. Verdict query scheduled (+12min,
+  task b86jhq9n6, probes/run-05-compare.js).

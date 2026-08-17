@@ -51,11 +51,24 @@ Items marked ⏳ need steady-state re-export/re-query (scheduled). Probe scripts
 15. **500-cap effects visible** ⏳: s07 page-view uniques = 103 (would be 1 if fully merged) —
     large orphan population consistent with the cap. Needs steady-state census (JQL) for exact split.
 
-## Mid-propagation (⏳ re-check at steady state)
-- s01 export unresolved; s02 chain partial (A2 collapsed into A1, A3+U separate); s05 3 uniques;
-  s09 identify rows missing from export; s11 8 uniques (expect 1); s07 missing ~310 rows.
-- Total exported 901/1216 — determine whether missing rows are propagation lag or permanent
-  (identify-row compaction?). CRITICAL for "can replay rely on exported verbs" question.
+## Steady state (round 2, ~45 min after import) — RESOLVED
+- **All rows materialized**: 1251 exported vs 1216 sent. Missing rows in round 1 were export
+  materialization lag, NOT compaction. **Replay CAN rely on verbs persisting in raw export.**
+- **Export contains DUPLICATE rows**: 565/8/6 verb rows vs 562/5/4 sent. Dedupe is query-time
+  only ⇒ graph edge dedupe + deterministic assoc $insert_id are both load-bearing (both built).
+- Export re-keying is partial + cluster-dependent (s01 rows keep as-ingested ids with befId:0
+  while s07 shows 516 befId rows) — one more reason to never trust exported distinct_id and
+  always classify from $distinct_id_before_identity ?? distinct_id + verb props.
+
+## Acceptance run (v1 dataset, steady-state export → replay → SIMPLIFIED 4054681)
+- Dry run telemetry matched manifest ground truth EXACTLY: 13 clusters = 12 resolved + 1
+  anon-only (s04); 569 assoc events (570 predicted pairs − s12 whose "anon" is itself a user
+  id ⇒ no anon member); ambiguous.clusters = 2 (s06 user↔user $merge, s12 collision);
+  unresolvedAnonIds = 2 (s04). Graph deduped the export's duplicate verb rows.
+- **Live import: 1241/1241 success, 0 failures** — 1251 read − 579 verbs swallowed + 569
+  assoc added. Zero verb leaks (simplified would 400 on any).
+- Verdict query (per-scenario uniques orig vs simplified vs ideal): see v{N}-05-compare
+  results + progress log.
 
 ## v2 dataset TODOs (fixes to generator)
 - s10: add anon-side events (distinct_id=A) so dual-id linkage is testable via export, not

@@ -745,6 +745,9 @@ Set `graphPath` to a local path or cloud URL (`gs://`, `s3://`) and the flush wr
 - **Expect a structural floor of unresolved IDs.** Real migrations observe roughly **~19% of anonymous IDs that cannot be resolved to any user** — original projects accumulate orphaned anons (500-ID cluster caps, never-identified visitors). This is a property of the source data, not a replay failure.
 - **Do a dry run first.** Combine with `destinationOnly` and a `destination` file to run the full replay — graph, closure, telemetry, `graphPath` artifact — while sending **nothing** to Mixpanel. Inspect the output and the telemetry, then run for real.
 - **Association events are re-run safe.** Every association event gets a deterministic `$insert_id` derived from the (user, device) pair, so repeated runs and closure duplicates self-dedupe at query time.
+- **`transformFunc` sees synthetic events too.** Association events flow through the user transform as nested `{event: 'identity association', properties: {...}}` records — a `transformFunc` written for your export's row shape must pass them through (returning `null`/`undefined` for them silently kills identity stitching).
+- **Cloud `graphPath` is best-effort.** `gs://`/`s3://` artifact uploads go through the destination writer asynchronously; a failed upload logs and sets `graphPathError` telemetry but never fails the job. When the artifact is load-bearing, prefer a local path and upload it yourself.
+- **A verb-free stream reports `associationRate: 1`.** Nothing to translate counts as full coverage, so `minAssociationRate` never aborts chunked runs whose slice happens to contain no identity verbs.
 
 ---
 
