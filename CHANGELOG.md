@@ -1,5 +1,33 @@
 # Changelog
 
+## 3.6.1
+
+### Added
+
+- **Web UI: `identityReplay` is configurable from both tools.** The import page (E.T.L) and the
+  export page (L.T.E, for `export-import-event` migrations) each gain an identity-replay section:
+  the core options up front, the rest behind an "Advanced" accordion. The required `isUserId`
+  predicate can be authored two ways — a regex string with a **live tester** (paste sample
+  distinct_ids, one per line, and see which match) or a **function editor** for predicates a regex
+  can't express. Function mode is compiled server-side via the same mechanism as `transformCode`;
+  regex mode travels as a plain string and is compiled by the library. The live CLI-command
+  preview renders the `--ir-*` flags, with a note when the configuration includes module-only
+  options the CLI cannot express. `associationProps` remains module-API-only.
+
+### Fixed
+
+- **Web UI: `/export` and `/export-dry-run` no longer drop `secondRegion`.** The export routes
+  build their options object field-by-field, and `secondRegion` was collected by the client and
+  logged by the server but never actually set on the options — so export-import jobs targeting a
+  different destination region silently used the source region. It is now threaded through, along
+  with the new `identityReplay` object.
+- **Web UI: `identityReplay` telemetry survives `job-complete`.** The response filter's allowlist
+  did not include the `identityReplay` results block, so replay telemetry was stripped from every
+  completion payload and from `GET /job/:jobId/status`. It is now included.
+- **Web UI: `/dry-run`'s raw pass no longer runs the replay.** The "raw" preview pass nulls out
+  transforms but kept `identityReplay`, so the identity graph ran twice and the before/after diff
+  showed replayed data on both sides. The raw pass now clears it alongside `transformFunc`.
+
 ## 3.6.0
 
 ### Added

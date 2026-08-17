@@ -112,6 +112,23 @@ async function getSnowcatClient() {
 	throw new Error("Could not get Snowcat client");
 }
 
+// Compile identityReplay function-mode predicate (isUserIdCode → isUserId)
+// Mirrors the transformCode eval sites: raw eval, same trust model (the UI user runs their own server)
+function compileIdentityReplayOpts(opts, log) {
+	if (!opts || !opts.identityReplay) return;
+	const code = opts.identityReplay.isUserIdCode;
+	if (typeof code === "string" && code.trim()) {
+		try {
+			// Create predicate function from code (eval to support arrow functions)
+			opts.identityReplay.isUserId = eval(`(${code})`);
+			log.debug("identityReplay isUserId compiled from function code");
+		} catch (err) {
+			throw new Error(`identityReplay isUserId function error: ${err.message}`);
+		}
+	}
+	delete opts.identityReplay.isUserIdCode;
+}
+
 // Execute job over WebSocket
 async function executeJobOverWebSocket(ws, jobId, credentials, options, cloudPaths, transformCode, jobLogger) {
 
@@ -156,6 +173,9 @@ async function executeJobOverWebSocket(ws, jobId, credentials, options, cloudPat
 				throw new Error(`Transform function error: ${transformError.message}`);
 			}
 		}
+
+		// Compile identity replay predicate if provided (function mode)
+		compileIdentityReplayOpts(opts, jobLogger);
 
 		// Determine data source: cloud paths OR local files from /job/prepare
 		if (cloudPaths) {
@@ -421,7 +441,8 @@ function filterResultForClient(result) {
 		'duplicates', 'startTime', 'endTime', 'durationHuman', 'bytesHuman',
 		'requests', 'retries', 'rateLimit', 'wasStream', 'eps', 'rps', 'mbps',
 		'badRecords', 'vendor', 'vendorOpts', 'errors', 'responses', 'files', 'downloadUrl',
-		'stallsDetected', 'resumesAttempted', 'resumesSucceeded', 'filesSkippedMissing', 'bytesResumed'
+		'stallsDetected', 'resumesAttempted', 'resumesSucceeded', 'filesSkippedMissing', 'bytesResumed',
+		'identityReplay'
 	];
 
 	const filtered = {};
@@ -780,6 +801,16 @@ app.post("/job", upload.array("files"), handleMulterError, async (req, res) => {
 					error: `Transform function error: ${err.message}`
 				});
 			}
+		}
+
+		// Compile identity replay predicate if provided (function mode)
+		try {
+			compileIdentityReplayOpts(opts, logger);
+		} catch (err) {
+			return res.status(400).json({
+				success: false,
+				error: err.message
+			});
 		}
 
 		opts.showProgress = true;
@@ -1239,6 +1270,16 @@ app.post("/dry-run", upload.array("files"), handleMulterError, async (req, res) 
 			}
 		}
 
+		// Compile identity replay predicate if provided (function mode)
+		try {
+			compileIdentityReplayOpts(opts, logger);
+		} catch (err) {
+			return res.status(400).json({
+				success: false,
+				error: err.message
+			});
+		}
+
 		// Process files or cloud paths (same as main endpoint)
 		let data;
 
@@ -1278,6 +1319,7 @@ app.post("/dry-run", upload.array("files"), handleMulterError, async (req, res) 
 		// Run raw data fetch first (no transforms) for comparison
 		const rawOpts = { ...opts };
 		rawOpts.transformFunc = null;
+		rawOpts.identityReplay = null; // Raw pass must not run the replay graph
 		rawOpts.fixData = false; // CRITICAL: Keep raw CSV structure
 		rawOpts.removeNulls = false;
 		rawOpts.flattenData = false;
@@ -1467,6 +1509,20 @@ app.post("/export", async (req, res) => {
 			s3Key: exportData.s3Key,
 			s3Secret: exportData.s3Secret
 		};
+
+		// Export-import options (explicit construction drops unknown keys)
+		if (exportData.identityReplay) opts.identityReplay = exportData.identityReplay;
+		if (exportData.secondRegion) opts.secondRegion = exportData.secondRegion;
+
+		// Compile identity replay predicate if provided (function mode)
+		try {
+			compileIdentityReplayOpts(opts, logger);
+		} catch (err) {
+			return res.status(400).json({
+				success: false,
+				error: err.message
+			});
+		}
 
 		// Handle cloud destinations
 		const destinationType = exportData.destinationType || 'local';
@@ -1776,6 +1832,20 @@ app.post("/export-dry-run", async (req, res) => {
 			writeToFile: false, // Never write files in dry run
 			logs: false // No logs for dry run
 		};
+
+		// Export-import options (explicit construction drops unknown keys)
+		if (exportData.identityReplay) opts.identityReplay = exportData.identityReplay;
+		if (exportData.secondRegion) opts.secondRegion = exportData.secondRegion;
+
+		// Compile identity replay predicate if provided (function mode)
+		try {
+			compileIdentityReplayOpts(opts, logger);
+		} catch (err) {
+			return res.status(400).json({
+				success: false,
+				error: err.message
+			});
+		}
 
 		logger.debug({ recordType: opts.recordType }, "export dry run started");
 
