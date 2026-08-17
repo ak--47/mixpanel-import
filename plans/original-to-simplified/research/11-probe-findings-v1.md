@@ -70,6 +70,28 @@ Items marked ⏳ need steady-state re-export/re-query (scheduled). Probe scripts
 - Verdict query (per-scenario uniques orig vs simplified vs ideal): see v{N}-05-compare
   results + progress log.
 
+## HEADLINE CLAIMS PROVEN (activity-stream cluster membership, SIMPLIFIED, ~35 min post-replay)
+1. **500-cap orphan recovery**: s07 anons #505/#510 (identified AFTER the cap; orphaned in
+   ORIGINAL) return user 1070001's merged timeline in SIMPLIFIED. The replay resolves
+   identities the source project structurally could not.
+2. **Non-uuidv4 anon recovery**: `$device:session_abc123_v1` merged with 1080001 — original's
+   $identify refused this id shape; replay links it.
+3. **Transitive chain**: s02 A1 and A3 (anon→anon→anon→user via daisy-chained aliases) both
+   return the full merged stream — the closure events did their job.
+4. **Control correct**: s04 anon↔anon cluster stays `$device:`-anonymous (inexpressible in
+   simplified by design; counted in telemetry).
+
+## Instrument notes (query-layer gotchas for validation tooling)
+- **JQL Events() sees UNRESOLVED distinct_ids** — groupByUser undercounts merges (s01 showed
+  2 where segmentation showed 1). Do NOT use JQL for identity validation. (Settles an open
+  research question.)
+- getSegmentation (type unique) IS identity-resolved but is per-event-name (no $all_events).
+- Insights runQuery ($all_events, math unique, group by prop) is the right verdict instrument;
+  grouped-uniques response shape needs care when aggregating across a date range (use raw body).
+- Activity stream (getActivityStream by ANY cluster member) is the fastest membership probe and
+  resolves ahead of event restamping. Restamping (distinct_id rewrite on old rows) lags
+  membership by a lot — exports show `$device:` rows long after the cluster is live.
+
 ## v2 dataset TODOs (fixes to generator)
 - s10: add anon-side events (distinct_id=A) so dual-id linkage is testable via export, not
   just activity stream.
