@@ -113,3 +113,13 @@ environments stay reusable across rounds.
   DUPLICATE rows. Acceptance: dry telemetry matched manifest exactly (569 assoc, 13 clusters);
   LIVE replay → SIMPLIFIED 1241/1241 success 0 fail. Verdict query scheduled (+12min,
   task b86jhq9n6, probes/run-05-compare.js).
+- 2026-08-17 morning: **VERDICT (post-compaction, ~5h): replay = ideal in 14/15 scenarios;
+  beats ORIGINAL on s07 (500-cap: 11 uniques → 1) and s08 (non-uuid anon: 2 → 1).** s04
+  anon-only stays split (inexpressible, counted); s06/s12 = 2 = correct simplified semantics.
+  Full table in PR.md. Instrument notes: JQL unresolved; insights unit-year = range uniques.
+  Pipeline integration test added; v3.6.0; PR.md finalized. Suites: 352 pass, 1 pre-existing
+  env failure (gzip parquet needs --experimental-vm-modules — unrelated).
+  REMAINING: AK review → open PR → on merge, move plans/original-to-simplified →
+  plans/completed/. Possible follow-ups: profiles migration (graph artifact ready),
+  UI exposure, vendor:'mixpanel' interplay docs, v2 dataset round if AK wants deeper probes
+  (s10 anon-side events; already-merged $anon_id reuse; $device:$device: garbage into original).

@@ -1,7 +1,6 @@
 # PR Draft: `identityReplay` — Original → Simplified ID Merge migration (v3.6.0)
 
-> Draft body for the single PR. Numbers marked ⏳ get finalized from the post-compaction
-> verdict table (probes/results/v1-05b-compare-insights.json) before opening the PR.
+> FINAL — post-compaction verdict table included (2026-08-17 morning).
 
 ## What
 
@@ -52,12 +51,35 @@ Torture dataset: 15 scenarios, 1216 events, all three verbs, in-limit AND over-l
 
 - Replay imported **1241/1241, zero failures, zero verb leaks**.
 - Dry-run telemetry matched manifest ground truth exactly (569 associations, 13 clusters).
-- **Beats the source project's structural limits** (cluster-membership verified via
-  activity stream):
-  - anons orphaned by original's **500-id cluster cap** resolve to their user;
-  - **non-uuidv4 anon ids** (refused by original's `$identify`) link fine;
-  - **anon→anon→anon alias chains** resolve transitively.
-- ⏳ Final per-scenario uniques table (post-compaction).
+- **Beats the source project's structural limits.** Post-compaction unique-user counts per
+  scenario ($all_events, identity-resolved):
+
+  | scenario | ORIGINAL | SIMPLIFIED (replayed) | ideal |
+  |---|---|---|---|
+  | s01 simple identify | 1 | 1 | 1 |
+  | s02 anon→anon→anon alias chain | 1 | 1 | 1 |
+  | s03 alias fan-in | 1 | 1 | 1 |
+  | s04 anon↔anon $merge only | 1 | 2 | 1* |
+  | s05 merge chain + late identify | 1 | 1 | 1 |
+  | s06 user↔user $merge | 1 | 2 | 2** |
+  | **s07 510 ids (over the 500 cluster cap)** | **11** | **1** | **1** |
+  | **s08 non-uuidv4 $anon_id** | **2** | **1** | **1** |
+  | s09 server-side identify shape | 1 | 1 | 1 |
+  | s10 dual-ID rows, no verbs | 1 | 1 | 1 |
+  | s11 test-account (40 devices) | 1 | 1 | 1 |
+  | s12 numeric alias (isUserId collision) | 1 | 2 | 2** |
+  | s13 unlinked anon (control) | 1 | 1 | 1 |
+  | s14 plain user (control) | 1 | 1 | 1 |
+  | s15 events days before identify | 1 | 1 | 1 |
+
+  \* anon↔anon clusters are inexpressible in simplified (no verb exists); counted in
+  telemetry as `clusters.anonOnly` / `unresolvedAnonIds`.
+  \** simplified allows exactly one `$user_id` per cluster; the second user correctly stays
+  its own person (original silently collapsed them). `onAmbiguous` controls the election.
+
+  **The replay achieves ideal identity resolution in 14/15 scenarios and beats the source
+  project outright on its two structural failures: the 500-id cluster cap (11 → 1) and the
+  uuidv4 anon-id requirement (2 → 1).**
 
 ## Empirical findings that shaped the design (plans/original-to-simplified/research/)
 
