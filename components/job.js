@@ -360,6 +360,22 @@ class Job {
 
 		this.v2_compat = u.isNil(opts.v2_compat) ? false : opts.v2_compat; //automatically set distinct_id from $user_id or $device_id (events only)
 
+		// ? identity replay options (original → simplified ID-merge translation)
+		// stored as-passed; deep normalization happens in the stage's normalizeOptions (components/identity-replay.js)
+		this.identityReplay = opts.identityReplay || null;
+		this.identityReplayStats = null; //telemetry; set by the identity-replay stage at _flush
+		if (this.identityReplay) {
+			if (this.fastMode) throw new Error('identityReplay is incompatible with fastMode');
+			if (!['event', 'export-import-event'].includes(this.recordType)) {
+				throw new Error(`identityReplay requires recordType 'event' or 'export-import-event' (got '${this.recordType}')`);
+			}
+			if (!this.identityReplay.isUserId) throw new Error('identityReplay requires isUserId (a function, RegExp, or regex string)');
+			if (this.v2_compat) {
+				console.warn('⚠️  identityReplay and v2_compat are mutually exclusive; identityReplay wins... disabling v2_compat');
+				this.v2_compat = false;
+			}
+		}
+
 		/** @type {string} directive for profile operations ($set, $set_once, $append, $increment, etc.) */
 		this.directive = opts.directive || '$set'; //directive for profile operations (user and group profiles) - defaults to $set
 
@@ -1144,6 +1160,9 @@ class Job {
 			summary.badRecords = this.badRecords;
 		}
 
+		// identityReplay telemetry (set by the identity-replay stage at _flush)
+		if (this.identityReplayStats) summary.identityReplay = this.identityReplayStats;
+
 		// stats
 		if (summary.total && summary.duration && summary.requests && summary.bytes) {
 			summary.eps = Math.floor(summary.total / summary.duration * 1000);
@@ -1189,7 +1208,9 @@ class Job {
 				"resumesAttempted",
 				"resumesSucceeded",
 				"filesSkippedMissing",
-				"bytesResumed"
+				"bytesResumed",
+				// identityReplay telemetry
+				"identityReplay"
 			];
 			for (const key in summary) {
 				if (!includeOnly.includes(key)) delete summary[key];
