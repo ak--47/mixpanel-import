@@ -123,3 +123,7 @@ environments stay reusable across rounds.
   plans/completed/. Possible follow-ups: profiles migration (graph artifact ready),
   UI exposure, vendor:'mixpanel' interplay docs, v2 dataset round if AK wants deeper probes
   (s10 anon-side events; already-merged $anon_id reuse; $device:$device: garbage into original).
+
+- 2026-08-17: Post-review round merged (electionScope, pinned associationTimestamp, scrubJunkIds
+  rename + case-insensitive matching, inertness + v2_compat tests). Squash-merged to main as
+  v3.6.0 via PR #29. Sprint complete — dir moved to plans/completed/.
