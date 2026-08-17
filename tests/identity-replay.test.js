@@ -353,9 +353,62 @@ describe("buildAssociationEvent", () => {
 		expect(stats.clusters.multiUser).toBe(0); // 111 and 222 NOT unioned
 	});
 
-	test("includeJunkIds: false restores raw behavior", () => {
-		const opts = normalizeOptions({ isUserId, includeJunkIds: false });
+	test("scrubJunkIds: false restores raw behavior; matching is case-insensitive like ingestion", async () => {
+		const opts = normalizeOptions({ isUserId, scrubJunkIds: false });
 		expect(opts.junkIds.size).toBe(0);
+		// ingestion's IsBadID lowercases before comparing — so do we
+		const { out } = await runStage({ isUserId }, [
+			{ event: "page view", properties: { distinct_id: "ANONYMOUS", time: 1000 } },
+			{ event: "page view", properties: { distinct_id: "NULL", time: 2000 } },
+		]);
+		for (const r of out) expect((r.properties || r).distinct_id).toBe("");
+	});
+
+	test("electionScope 'device': anons resolve to THEIR user in a multi-user cluster", async () => {
+		// U1 owns A/B, U2 owns C, shared device D bridges the two users into one cluster
+		const recs = [
+			{ event: "$identify", properties: { distinct_id: "111", $identified_id: "111", $anon_id: "devA", time: 1000 } },
+			{ event: "$identify", properties: { distinct_id: "111", $identified_id: "111", $anon_id: "devB", time: 2000 } },
+			{ event: "$identify", properties: { distinct_id: "222", $identified_id: "222", $anon_id: "devC", time: 3000 } },
+			{ event: "$identify", properties: { distinct_id: "111", $identified_id: "111", $anon_id: "devD", time: 4000 } },
+			{ event: "$identify", properties: { distinct_id: "222", $identified_id: "222", $anon_id: "devD", time: 5000 } }, // shared device
+		];
+		// cluster scope (default) + resolve: ALL devices go to one elected winner
+		const clusterScope = await runStage({ isUserId, onAmbiguous: "resolve" }, recs);
+		const cWinners = new Set(assocOnly(clusterScope.out).map((a) => a.properties.$user_id));
+		expect(cWinners.size).toBe(1);
+		// device scope: each device follows its own direct evidence
+		const deviceScope = await runStage({ isUserId, onAmbiguous: "resolve", electionScope: "device" }, recs);
+		const byDev = Object.fromEntries(assocOnly(deviceScope.out).map((a) => [a.properties.$device_id, a.properties.$user_id]));
+		expect(byDev.devA).toBe("111");
+		expect(byDev.devB).toBe("111");
+		expect(byDev.devC).toBe("222");
+		expect(byDev.devD).toBe("222"); // shared device: latest direct evidence wins (ts 5000)
+	});
+
+	test("electionScope 'device' + onAmbiguous 'drop': direct-evidence anons still resolve, fallback anons don't", async () => {
+		const recs = [
+			{ event: "$identify", properties: { distinct_id: "111", $identified_id: "111", $anon_id: "devA", time: 1000 } },
+			{ event: "$identify", properties: { distinct_id: "222", $identified_id: "222", $anon_id: "devA", time: 2000 } }, // multi-user via shared device
+			{ event: "$merge", properties: { distinct_id: "devA", $distinct_ids: ["devA", "devX"], time: 3000 } }, // devX: no direct user evidence
+		];
+		const { out, stats } = await runStage({ isUserId, onAmbiguous: "drop", electionScope: "device" }, recs);
+		const byDev = Object.fromEntries(assocOnly(out).map((a) => [a.properties.$device_id, a.properties.$user_id]));
+		expect(byDev.devA).toBe("222"); // direct evidence, latest wins
+		expect(byDev.devX).toBeUndefined(); // fallback-only anon dropped under 'drop'
+		expect(stats.unresolvedAnonIds).toBe(1);
+	});
+
+	test("pinned numeric associationTimestamp stamps every assoc event with that epoch", async () => {
+		const PIN = 1600000000;
+		const { out } = await runStage({ isUserId, associationTimestamp: PIN }, [
+			{ event: "$merge", properties: { distinct_id: "anon1", $distinct_ids: ["anon1", "anon2"], time: 2000 } },
+			{ event: "$identify", properties: { distinct_id: "42", $identified_id: "42", $anon_id: "anon2", time: 4000 } },
+		]);
+		const assoc = assocOnly(out);
+		expect(assoc.length).toBe(2);
+		for (const a of assoc) expect(a.properties.time).toBe(PIN);
+		expect(() => normalizeOptions({ isUserId, associationTimestamp: -5 })).toThrow(/positive epoch/);
 	});
 
 	test("scrubExportProps strips Mixpanel raw-export junk (and can be disabled)", () => {

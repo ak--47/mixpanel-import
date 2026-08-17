@@ -42,6 +42,17 @@ function hasValue(v) {
 }
 
 /**
+ * case-insensitive junk-id membership (ingestion's IsBadID lowercases; so do we)
+ * @param {Set<string>} junkIds - lowercased, $device:-stripped junk ids
+ * @param {*} id - candidate (any casing, possibly prefixed)
+ * @returns {boolean}
+ */
+function isJunkId(junkIds, id) {
+	if (junkIds.size === 0 || id === null || id === undefined) return false;
+	return junkIds.has(stripDevicePrefix(String(id)).toLowerCase());
+}
+
+/**
  * normalize + validate raw identityReplay options into canonical opts
  * compiles isUserId (fn | RegExp | regex string) into a predicate function
  * @param {Object} raw - the user-supplied identityReplay option group
@@ -85,9 +96,17 @@ function normalizeOptions(raw) {
 	if (!['rewrite', 'drop'].includes(identityEvents)) {
 		throw new Error(`identityReplay: identityEvents must be 'rewrite' or 'drop'; got '${identityEvents}'`);
 	}
+	// 'original' = first evidence ts per device | 'floor' = min stream time − 24h |
+	// number = pinned epoch (recommended for chunked/multi-run replays: a run-derived
+	// 'floor' differs per run, so re-runs stop deduping — the dedupe tuple includes time)
 	const associationTimestamp = raw.associationTimestamp ?? 'original';
-	if (!['original', 'floor'].includes(associationTimestamp)) {
-		throw new Error(`identityReplay: associationTimestamp must be 'original' or 'floor'; got '${associationTimestamp}'`);
+	if (typeof associationTimestamp === 'number') {
+		if (!Number.isFinite(associationTimestamp) || associationTimestamp <= 0) {
+			throw new Error(`identityReplay: a numeric associationTimestamp must be a positive epoch value; got ${associationTimestamp}`);
+		}
+	}
+	else if (!['original', 'floor'].includes(associationTimestamp)) {
+		throw new Error(`identityReplay: associationTimestamp must be 'original', 'floor', or a pinned epoch number; got '${associationTimestamp}'`);
 	}
 	const bareDistinctId = raw.bareDistinctId ?? 'validate';
 	if (!['validate', 'passthru'].includes(bareDistinctId)) {
@@ -96,6 +115,14 @@ function normalizeOptions(raw) {
 	const onAmbiguous = raw.onAmbiguous ?? 'drop';
 	if (!['drop', 'resolve', 'error'].includes(onAmbiguous)) {
 		throw new Error(`identityReplay: onAmbiguous must be 'drop', 'resolve', or 'error'; got '${onAmbiguous}'`);
+	}
+	// multi-user clusters only: 'cluster' links every anon to ONE elected winner;
+	// 'device' links each anon to the user it has DIRECT evidence with (verb/dual-row/
+	// fallback-prop naming both ids), falling back to onAmbiguous for the rest —
+	// the per-device strategy that shipped the Vipps remediation
+	const electionScope = raw.electionScope ?? 'cluster';
+	if (!['cluster', 'device'].includes(electionScope)) {
+		throw new Error(`identityReplay: electionScope must be 'cluster' or 'device'; got '${electionScope}'`);
 	}
 	const onGraphOverflow = raw.onGraphOverflow ?? 'warn';
 	if (!['warn', 'abort'].includes(onGraphOverflow)) {
@@ -130,17 +157,18 @@ function normalizeOptions(raw) {
 		[...denylistRaw].map((id) => stripDevicePrefix(String(id))).filter((id) => id !== '')
 	);
 
-	// junk ids (transforms.js badUserIds: 'anonymous', 'null', the zero uuid, ...) get
-	// DIFFERENT treatment from the denylist: real exports carry them on real rows, and a
-	// single junk $device_id shared by thousands of users would union them into one
-	// mega-cluster. Junk ids are NEUTRALIZED (the id prop is removed / distinct_id → '')
-	// while the record survives; denylisted ids (test accounts) drop the whole record.
-	// disable with includeJunkIds: false if you must.
-	const includeJunkIds = raw.includeJunkIds ?? true;
+	// junk ids (transforms.js badUserIds — the same list ingestion's verify layer rejects,
+	// analytics events_v2.go badIDs) get DIFFERENT treatment from the denylist: real exports
+	// carry them on real rows, a single junk $device_id shared by thousands of users would
+	// union them into one mega-cluster, and strict /import REJECTS rows carrying them.
+	// Junk ids are NEUTRALIZED (the id prop is removed / distinct_id → '') while the record
+	// survives; denylisted ids (test accounts) drop the whole record. Matching is
+	// case-insensitive, same as ingestion (IsBadID lowercases). scrubJunkIds: false disables.
+	const scrubJunkIds = raw.scrubJunkIds ?? true;
 	const junkIds = new Set(
-		(includeJunkIds ? require('./transforms.js').badUserIds : [])
+		(scrubJunkIds ? require('./transforms.js').badUserIds : [])
 			.filter((id) => id !== null && id !== undefined)
-			.map((id) => stripDevicePrefix(String(id)))
+			.map((id) => stripDevicePrefix(String(id)).toLowerCase())
 			.filter((id) => id !== '')
 	);
 
@@ -166,6 +194,7 @@ function normalizeOptions(raw) {
 		denylist,
 		junkIds,
 		onAmbiguous,
+		electionScope,
 		minAssociationRate,
 		graphPath: raw.graphPath || ''
 	};
@@ -216,7 +245,7 @@ function classifyRecord(record, opts) {
 		if (!a || !b || a === b) return;
 		// junk ids never become evidence — a shared junk $device_id would union
 		// unrelated users into one mega-cluster (silent: the record itself survives)
-		if (opts.junkIds.has(a) || opts.junkIds.has(b)) return;
+		if (isJunkId(opts.junkIds, a) || isJunkId(opts.junkIds, b)) return;
 		if (opts.denylist.has(a) || opts.denylist.has(b)) {
 			denylisted++;
 			return;
@@ -254,7 +283,7 @@ function classifyRecord(record, opts) {
 					if (val === null || val === undefined || val === '') continue;
 					const candidate = String(val);
 					if (candidate === asIngested || candidate === stripped) continue; // must differ from as-ingested
-					if (opts.junkIds.has(stripDevicePrefix(candidate))) continue; // junk is never a user
+					if (isJunkId(opts.junkIds, candidate)) continue; // junk is never a user
 					if (!opts.isUserId(candidate, record)) continue; // must pass isUserId
 					addEdge(candidate, stripped, 2);
 					break;
@@ -287,11 +316,11 @@ function rewriteEvent(record, opts) {
 	// junk ids are NEUTRALIZED, not dropped: the record is real data with a garbage id.
 	// a junk $user_id/$device_id prop is removed; a junk distinct_id becomes '' (the
 	// mixpanel-blessed sink — accepted at ingest, excluded from behavioral analysis)
-	if (hasValue(props.$user_id) && opts.junkIds.has(stripDevicePrefix(String(props.$user_id)))) delete props.$user_id;
-	if (hasValue(props.$device_id) && opts.junkIds.has(stripDevicePrefix(String(props.$device_id)))) delete props.$device_id;
+	if (hasValue(props.$user_id) && isJunkId(opts.junkIds, props.$user_id)) delete props.$user_id;
+	if (hasValue(props.$device_id) && isJunkId(opts.junkIds, props.$device_id)) delete props.$device_id;
 	{
 		const ingested = getAsIngestedId(props);
-		if (ingested !== null && opts.junkIds.has(stripDevicePrefix(ingested))) {
+		if (ingested !== null && isJunkId(opts.junkIds, ingested)) {
 			props.distinct_id = '';
 			delete props.$distinct_id_before_identity;
 		}
@@ -344,7 +373,7 @@ function rewriteEvent(record, opts) {
 		if (val === null || val === undefined || val === '') continue;
 		const candidate = String(val);
 		if (candidate === asIngested || candidate === stripped) continue;
-		if (opts.junkIds.has(stripDevicePrefix(candidate))) continue; // junk is never a user
+		if (isJunkId(opts.junkIds, candidate)) continue; // junk is never a user
 		if (!opts.isUserId(candidate, record)) continue;
 		fallbackUser = candidate;
 		break;
@@ -375,7 +404,9 @@ function rewriteEvent(record, opts) {
 function buildAssociationEvent(user, device, opts, meta = {}) {
 	const usr = String(user);
 	const dev = stripDevicePrefix(String(device));
-	const time = opts.associationTimestamp === 'floor' ? meta.floorTs : meta.ts;
+	const time = typeof opts.associationTimestamp === 'number'
+		? opts.associationTimestamp
+		: (opts.associationTimestamp === 'floor' ? meta.floorTs : meta.ts);
 	return {
 		event: opts.associationEventName,
 		properties: {
@@ -478,13 +509,24 @@ function createIdentityReplay(job) {
 	/** @type {InstanceType<typeof IdentityGraph> | null} */
 	const graph = opts.graph ? new IdentityGraph({ maxNodes: opts.maxGraphSize }) : null;
 	/**
-	 * direct device↔user pairings (verb/dual-row evidence, rank <= 1) for provenance
-	 * labels at flush; composite string keys, one entry per PAIR — memory stays
-	 * bounded by the graph's node cap because pairs only form between accepted nodes
-	 * @type {Set<string> | null}
+	 * direct device↔user pairings with their best evidence: provenance labels at flush
+	 * ('verb' when rank <= 1) and per-device election under electionScope 'device'.
+	 * composite string keys, one entry per PAIR — memory stays bounded by the graph's
+	 * node cap because pairs only form between accepted nodes
+	 * @type {Map<string, {rank: number, ts: number | null}> | null}
 	 */
-	const directPairs = graph ? new Set() : null;
+	const directPairs = graph ? new Map() : null;
 	const pairKey = (device, user) => `${device} ${user}`;
+	const recordPair = (device, user, rank, ts) => {
+		const key = pairKey(device, user);
+		const existing = directPairs.get(key);
+		if (!existing) {
+			directPairs.set(key, { rank, ts });
+			return;
+		}
+		if (rank < existing.rank) existing.rank = rank;
+		if (ts !== null && (existing.ts === null || ts > existing.ts)) existing.ts = ts; // recency for election
+	};
 	let minEventTime = Infinity;
 	let maxEventTime = -Infinity;
 
@@ -530,10 +572,12 @@ function createIdentityReplay(job) {
 						graph.addNode(b, { isUser: bIsUser, ts, rank });
 						// unconditional: addEdge counts overflow itself when a side was cap-rejected
 						graph.addEdge(a, b);
-						// direct pairings drive 'verb' vs 'closure' provenance at flush —
-						// only hard/verb evidence qualifies (rank 2 fallback-props are inferred)
-						if (rank <= 1 && aIsUser !== bIsUser) {
-							directPairs.add(aIsUser ? pairKey(b, a) : pairKey(a, b));
+						// direct pairings: provenance at flush ('verb' when rank <= 1) and
+						// per-device election under electionScope 'device' (all ranks qualify
+						// as election evidence; rank 2 fallback-props stay labeled 'closure')
+						if (aIsUser !== bIsUser) {
+							if (aIsUser) recordPair(b, a, rank, ts);
+							else recordPair(a, b, rank, ts);
 						}
 					}
 					if (opts.onGraphOverflow === 'abort' && graph.overflowEdges > 0) {
@@ -586,9 +630,9 @@ function createIdentityReplay(job) {
 				const asIngested = getAsIngestedId(props);
 				if (asIngested !== null && asIngested.startsWith('$device:')) stats.bare.prefixedAlready++;
 				const hadJunk =
-					(hasValue(props.$user_id) && opts.junkIds.has(stripDevicePrefix(String(props.$user_id)))) ||
-					(hasValue(props.$device_id) && opts.junkIds.has(stripDevicePrefix(String(props.$device_id)))) ||
-					(asIngested !== null && opts.junkIds.has(stripDevicePrefix(asIngested)));
+					(hasValue(props.$user_id) && isJunkId(opts.junkIds, props.$user_id)) ||
+					(hasValue(props.$device_id) && isJunkId(opts.junkIds, props.$device_id)) ||
+					(asIngested !== null && isJunkId(opts.junkIds, asIngested));
 				if (hadJunk) stats.junkNeutralized++;
 				const rewritten = rewriteEvent(record, opts);
 				if (rewritten === null) {
@@ -651,9 +695,10 @@ function createIdentityReplay(job) {
 							continue; // members stay $device:-anonymous (already correct from per-event rewrite)
 						}
 
-						let winner;
-						if (users.length === 1) {
-							winner = users[0].id;
+						const multiUser = users.length > 1;
+						let clusterWinner = null; // fallback for anons without direct evidence
+						if (!multiUser) {
+							clusterWinner = users[0].id;
 						}
 						else {
 							stats.clusters.multiUser++;
@@ -661,20 +706,41 @@ function createIdentityReplay(job) {
 							if (opts.onAmbiguous === 'error') {
 								throw new Error(`identityReplay: ambiguous cluster with ${users.length} users [${users.map((u) => u.id).join(', ')}] and onAmbiguous='error'`);
 							}
-							if (opts.onAmbiguous === 'drop') {
+							if (opts.onAmbiguous === 'resolve') {
+								// elect winner by evidence rank → latest ts → lexicographic min
+								clusterWinner = IdentityGraph.electUser(users, 'resolve');
+							}
+							// 'drop': clusterWinner stays null — anons without their own direct
+							// evidence get NO assoc event (under electionScope 'device', anons
+							// WITH direct evidence still resolve to their own user)
+							if (clusterWinner === null && opts.electionScope !== 'device') {
 								unresolvedClusters++;
 								stats.unresolvedAnonIds += anonMembers.length;
-								continue; // anons in a multi-user cluster get NO assoc events
+								continue;
 							}
-							// 'resolve': elect winner by evidence rank → latest ts → lexicographic min
-							winner = IdentityGraph.electUser(users, 'resolve');
 						}
-						stats.clusters.resolved++;
 
 						// one assoc event per non-user member (losers stay their own identified users)
+						let emittedAny = false;
 						for (const member of anonMembers) {
+							let winner = clusterWinner;
+							if (multiUser && opts.electionScope === 'device') {
+								// per-device: elect among the users this device has DIRECT
+								// evidence with (pair rank asc → pair ts desc → id asc)
+								const candidates = [];
+								for (const u of users) {
+									const pair = directPairs.get(pairKey(member, u.id));
+									if (pair) candidates.push({ id: u.id, rank: pair.rank, ts: pair.ts });
+								}
+								if (candidates.length > 0) winner = IdentityGraph.electUser(candidates, 'resolve');
+							}
+							if (winner === null) {
+								stats.unresolvedAnonIds++;
+								continue;
+							}
 							const meta = graph.meta.get(member);
-							const source = directPairs.has(pairKey(member, winner)) ? 'verb' : 'closure';
+							const pair = directPairs.get(pairKey(member, winner));
+							const source = pair && pair.rank <= 1 ? 'verb' : 'closure';
 							if (collectPairs) pairs.push({ device: member, user: winner, rank: meta?.rank ?? null, source });
 							if (opts.identityEvents === 'rewrite') {
 								await pushWithBackpressure(buildAssociationEvent(winner, member, opts, {
@@ -685,7 +751,10 @@ function createIdentityReplay(job) {
 								if (source === 'verb') stats.assocEmitted.live++;
 								else stats.assocEmitted.closure++;
 							}
+							emittedAny = true;
 						}
+						if (!multiUser || clusterWinner !== null || emittedAny) stats.clusters.resolved++;
+						else unresolvedClusters++;
 					}
 				}
 

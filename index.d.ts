@@ -1190,7 +1190,7 @@ declare namespace main {
      * 'floor' = (min event time seen) − 24h, keeping associations out of analysis windows
      * @default "original"
      */
-    associationTimestamp?: "original" | "floor";
+    associationTimestamp?: "original" | "floor" | number;
     /**
      * static props merged onto every association event (e.g. a dataVersion tag)
      * @default {}
@@ -1203,13 +1203,21 @@ declare namespace main {
      */
     scrubExportProps?: boolean;
     /**
-     * neutralize well-known junk ids ('anonymous', 'null', the zero uuid, ...) — the id prop
-     * is removed (or distinct_id → '') and junk never becomes graph evidence, preventing a
-     * shared junk $device_id from uniting unrelated users into one mega-cluster. Unlike
-     * `denylist` (which drops the whole record), the record itself survives.
+     * neutralize well-known junk ids (ingestion's badIDs list: 'anonymous', 'null', the zero
+     * uuid, ...; matched case-insensitively) — the id prop is removed (or distinct_id → '')
+     * and junk never becomes graph evidence, preventing a shared junk $device_id from uniting
+     * unrelated users into one mega-cluster. Strict /import would reject these rows anyway.
+     * Unlike `denylist` (which drops the whole record), the record itself survives.
      * @default true
      */
-    includeJunkIds?: boolean;
+    scrubJunkIds?: boolean;
+    /**
+     * multi-user-cluster election scope: 'cluster' links every anon to one elected winner;
+     * 'device' links each anon to the user it has DIRECT evidence with (verb/dual-row/
+     * fallback-prop naming both ids), falling back to onAmbiguous for the rest
+     * @default "cluster"
+     */
+    electionScope?: "cluster" | "device";
     /**
      * bare distinct_id policy for ordinary events: 'validate' = classify via isUserId
      * ($user_id when it matches, else $device: prefix); 'passthru' = leave untouched

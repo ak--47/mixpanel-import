@@ -28,12 +28,16 @@
 
   Options (all under `identityReplay: {}`): `isUserId` (required), `graph`, `maxGraphSize`,
   `onGraphOverflow`, `identityEvents` (`'rewrite'` | `'drop'`), `associationEventName`,
-  `associationTimestamp` (`'original'` | `'floor'`), `associationProps`, `bareDistinctId`,
-  `userIdFallbackProps`, `denylist`, `onAmbiguous`, `minAssociationRate` (fail-closed coverage
-  floor), and `graphPath` (write the resolved pair table + unresolved clusters to a local or
+  `associationTimestamp` (`'original'` | `'floor'` | pinned epoch number for multi-run
+  dedupe), `associationProps`, `bareDistinctId`, `userIdFallbackProps`, `denylist` (test
+  accounts — drops whole records), `scrubJunkIds` (neutralizes ingestion's badIDs list
+  case-insensitively; the record survives), `onAmbiguous`, `electionScope` (`'cluster'` |
+  `'device'` — per-device election follows each device's own direct evidence in multi-user
+  clusters), `scrubExportProps`, `minAssociationRate` (fail-closed coverage floor), and
+  `graphPath` (write the resolved pair table + unresolved clusters to a local or
   `gs://`/`s3://` path). Results gain an `identityReplay` telemetry block: verbs seen,
-  associations emitted (live vs. closure), bare-ID classification counts, cluster census,
-  ambiguity counts, and the association rate.
+  associations emitted (live vs. closure), bare-ID classification counts, junk
+  neutralizations, cluster census, ambiguity counts, and the association rate.
 
   New files: `components/identity-graph.js`, `components/identity-replay.js`. The stage sits
   between the vendor transform and the user transform in `corePipeline`.

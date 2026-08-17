@@ -668,10 +668,11 @@ You must tell the replay how to recognize your user IDs. In module mode this is 
 | `onGraphOverflow` | `string` | `'warn'` | At cap: `'warn'` (keep streaming, count skipped edges) or `'abort'` |
 | `identityEvents` | `string` | `'rewrite'` | `'rewrite'` (verbs become association events) or `'drop'` (verbs still feed the graph but no association events are emitted) |
 | `associationEventName` | `string` | `'identity association'` | Event name for emitted association events |
-| `associationTimestamp` | `string` | `'original'` | `'original'` (first-seen time of the device node) or `'floor'` (min event time − 24h, keeps associations out of analysis windows) |
+| `associationTimestamp` | `string \| number` | `'original'` | `'original'` (first-seen time of the device node), `'floor'` (min event time − 24h, keeps associations out of analysis windows), or a **pinned epoch number** — recommended for chunked/multi-run replays so association events dedupe across runs (the dedupe tuple includes `time`) |
+| `electionScope` | `string` | `'cluster'` | Multi-user clusters only: `'cluster'` links every anon to one elected winner; `'device'` links each anon to the user it has **direct evidence** with (a verb/dual-ID row naming both ids), falling back to `onAmbiguous` for the rest — the per-device strategy real migrations used for shared-device data |
 | `associationProps` | `object` | `{}` | Static properties merged onto every association event (e.g. a `dataVersion` tag) |
 | `scrubExportProps` | `boolean` | `true` | Delete Mixpanel-added raw-export props (`$import`, `$mp_api_endpoint`, `$mp_api_timestamp_ms`, `$mp_event_size`, `mp_processing_time_ms`) from events before re-import |
-| `includeJunkIds` | `boolean` | `true` | Neutralize well-known junk ids (`anonymous`, `null`, the zero uuid, …): the id prop is removed (record kept) and junk never becomes graph evidence — a shared junk `$device_id` would otherwise union unrelated users into one mega-cluster. `denylist`, by contrast, drops whole records (test accounts) |
+| `scrubJunkIds` | `boolean` | `true` | Neutralize well-known junk ids (ingestion's own `badIDs` list — `anonymous`, `null`, the zero uuid, …; matched case-insensitively like ingestion): the id prop is removed (record kept) and junk never becomes graph evidence — a shared junk `$device_id` would otherwise union unrelated users into one mega-cluster, and strict `/import` rejects such rows anyway. `denylist`, by contrast, drops whole records (test accounts) |
 | `bareDistinctId` | `string` | `'validate'` | `'validate'` (classify via `isUserId`) or `'passthru'` (leave bare `distinct_id`s alone) |
 | `userIdFallbackProps` | `string[]` | `[]` | Extra properties probed for a user ID on ordinary events |
 | `denylist` | `string[]` | `[]` | IDs (e.g. test accounts) excluded from the graph and classification; counted |
@@ -750,7 +751,7 @@ Set `graphPath` to a local path or cloud URL (`gs://`, `s3://`) and the flush wr
 - **Cloud `graphPath` is best-effort.** `gs://`/`s3://` artifact uploads go through the destination writer asynchronously; a failed upload logs and sets `graphPathError` telemetry but never fails the job. When the artifact is load-bearing, prefer a local path and upload it yourself.
 - **A verb-free stream reports `associationRate: 1`.** Nothing to translate counts as full coverage, so `minAssociationRate` never aborts chunked runs whose slice happens to contain no identity verbs.
 
-#### Scale: memory model and the two-pass recipe
+#### Scale: memory model
 
 The graph holds **one Map entry per distinct id** (not per pair). Measured: 2M rows / 500k
 distinct ids stream through the full pipeline at ~300k events/sec with ~440MB peak heap —
@@ -767,22 +768,26 @@ it, edges are **dropped and counted** (`graphOverflowEdges`), or the job aborts 
    different chunks stamp different times and the events **stop deduping** at query time
    (the dedupe tuple includes `time`). Use the default `'original'` for chunked runs.
 
-For datasets whose distinct-id count exceeds memory, use the **two-pass recipe** — in
-original-ID-merge projects, identity lives *only* in the verbs (`$device_id`/`$user_id`
-props on events are inert there), and verbs are a tiny fraction of any export:
+If a dataset's distinct-id count exceeds what one process can hold, the escape hatch is
+still a **singular stream per job**: run one job over a **verb-filtered export** (in
+original-ID-merge projects identity lives *only* in the verbs — `$device_id`/`$user_id`
+props are inert there — and verbs are a tiny fraction of any export), which builds the
+full graph in tiny memory and emits every association event. Ordinary events then stream
+in ordinary date-ranged jobs with `graph: false` (associations are already sent;
+simplified stitches retroactively regardless of arrival order). Pin
+`associationTimestamp` to a number for any multi-run replay.
 
 ```js
-// PASS 1 — verbs only: full graph in tiny memory, emits ALL association events
+// job A — verbs only: full graph, all association events, audit artifact
 await mpImport(creds, null, {
   recordType: 'export-import-event',
   params: { event: '["$identify","$create_alias","$merge"]' },  // export-side filter
-  identityReplay: { isUserId, graphPath: './graph.jsonl' }
+  identityReplay: { isUserId, associationTimestamp: 1700000000, graphPath: './graph.jsonl' }
 });
-// PASS 2 — ordinary events, date-chunked, no graph needed (associations already sent;
-// simplified stitches retroactively regardless of arrival order)
+// job B..N — ordinary events by date range, no graph needed
 await mpImport(creds, null, {
   recordType: 'export-import-event',
-  start: '2024-01-01', end: '2024-03-31',                        // ...chunk by date
+  start: '2024-01-01', end: '2024-03-31',
   identityReplay: { isUserId, graph: false, identityEvents: 'drop' }
 });
 ```

@@ -99,6 +99,38 @@ describe("identityReplay through the full pipeline (destinationOnly)", () => {
 		expect(new Set(assoc.map((a) => props(a).$insert_id)).size).toBe(1);
 	});
 
+	test("without identityReplay the feature is fully inert: no stage, no telemetry, verbs pass through", async () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ir-inert-"));
+		const destination = path.join(dir, "out.jsonl");
+		const results = await mpImport(
+			{ token: "test-token-not-used" },
+			microDataset(),
+			{ recordType: "event", destination, destinationOnly: true, fixData: false, verbose: false, showProgress: false, abridged: false }
+		);
+		const lines = fs.readFileSync(destination, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+		fs.rmSync(dir, { recursive: true, force: true });
+		// verbs NOT swallowed, ids NOT rewritten, no synthetic events, no telemetry
+		expect(lines.filter((l) => l.event === "$identify").length).toBe(2);
+		expect(lines.filter((l) => l.event === "identity association").length).toBe(0);
+		const pv = lines.find((l) => l.event === "page view");
+		expect((pv.properties || pv).distinct_id.startsWith("$device:")).toBe(false);
+		expect(results.identityReplay).toBeUndefined();
+	});
+
+	test("identityReplay forces v2_compat off (mutually exclusive — destination is simplified)", async () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ir-v2c-"));
+		const destination = path.join(dir, "out.jsonl");
+		const results = await mpImport(
+			{ token: "test-token-not-used" },
+			microDataset(),
+			{ recordType: "event", destination, destinationOnly: true, fixData: false, verbose: false, showProgress: false, abridged: false, v2_compat: true, identityReplay: { isUserId: /^\d+$/ } }
+		);
+		fs.rmSync(dir, { recursive: true, force: true });
+		// the job ran the replay (telemetry present) — v2_compat did not interfere
+		expect(results.identityReplay).toBeDefined();
+		expect(results.identityReplay.verbsSeen.identify).toBe(2);
+	});
+
 	test("job construction guards: fastMode throws, wrong recordType throws", () => {
 		const guard = (opts) => mpImport({ token: "t" }, [{ event: "x", properties: { distinct_id: "1", time: 1 } }], opts);
 		expect(guard({ recordType: "event", fastMode: true, identityReplay: { isUserId: /^\d+$/ }, destinationOnly: true, destination: os.tmpdir() }))
