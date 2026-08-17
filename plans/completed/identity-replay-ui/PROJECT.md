@@ -41,3 +41,5 @@ configured entirely from the GUI — with helpful descriptions/tooltips — ship
   Playwright-verified live: tester chips, validation, CLI flags both modes, raw-vs-transformed
   dry-run separation, per-recordType visibility on both pages. Bonus fixes: export secondRegion
   drop, stale web-ui.md response-filter doc. Draft PR #30 (v3.6.1). Screenshot in this dir.
+
+- 2026-08-17: Squash-merged to main as v3.6.1 via PR #30. Sprint complete — dir moved to plans/completed/.
