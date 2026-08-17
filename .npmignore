@@ -31,6 +31,9 @@ Dockerfile
 .dockerignore
 .gcloudignore
 
+# Agent docs + research (version-controlled, never published)
+plans/
+
 # Documentation (keep essential ones via package.json files)
 CONFIG_REVIEW.md
 WEBSOCKET_HYBRID_PATTERN.md

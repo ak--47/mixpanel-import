@@ -1,5 +1,56 @@
 # Changelog
 
+## 3.6.0
+
+### Added
+
+- **`identityReplay` — migrate events from original ID merge to simplified ID merge.** Projects on
+  simplified ID merge hard-reject the identity verbs (`$identify`, `$create_alias`, `$merge`) that
+  original projects use to link identities: `/import` returns a 400 and fails the whole batch.
+  The new `identityReplay` option group translates an original-merge event stream in-pipeline:
+
+  - Builds an **identity graph** (union-find with transitive closure) from every evidence source
+    in the stream — verb events, dual-ID rows, and `$distinct_id_before_identity`.
+  - **Rewrites identity verbs** into dual-ID association events (`$user_id` + `$device_id`, default
+    event name `identity association`, deterministic per-pair `$insert_id` so re-runs self-dedupe).
+    The raw verbs never reach the API.
+  - **Classifies bare `distinct_id`s** on ordinary events via a required `isUserId` predicate
+    (function or RegExp in module mode, `--ir-user-id-regex` on the CLI): user IDs become
+    `$user_id`, everything else becomes a `$device:`-prefixed `$device_id`. This also prevents
+    anonymous UUIDs from being promoted to phantom users.
+  - **Flushes closure events at end of stream:** every anonymous ID in a resolved cluster gets a
+    direct association to the cluster's user, even when the source data only linked it through a
+    chain of other anonymous IDs.
+  - **Resolves device conflicts pipeline-side, pre-send.** Simplified projects are
+    first-write-wins on device→user binding, so clusters with 2+ users go through `onAmbiguous`
+    (`'drop'` default, `'resolve'` by evidence rank → recency → lexicographic min, or `'error'`)
+    instead of letting API arrival order pick a winner.
+
+  Options (all under `identityReplay: {}`): `isUserId` (required), `graph`, `maxGraphSize`,
+  `onGraphOverflow`, `identityEvents` (`'rewrite'` | `'drop'`), `associationEventName`,
+  `associationTimestamp` (`'original'` | `'floor'` | pinned epoch number for multi-run
+  dedupe), `associationProps`, `bareDistinctId`, `userIdFallbackProps`, `denylist` (test
+  accounts — drops whole records), `scrubJunkIds` (neutralizes ingestion's badIDs list
+  case-insensitively; the record survives), `onAmbiguous`, `electionScope` (`'cluster'` |
+  `'device'` — per-device election follows each device's own direct evidence in multi-user
+  clusters), `scrubExportProps`, `minAssociationRate` (fail-closed coverage floor), and
+  `graphPath` (write the resolved pair table + unresolved clusters to a local or
+  `gs://`/`s3://` path). Results gain an `identityReplay` telemetry block: verbs seen,
+  associations emitted (live vs. closure), bare-ID classification counts, junk
+  neutralizations, cluster census, ambiguity counts, and the association rate.
+
+  New files: `components/identity-graph.js`, `components/identity-replay.js`. The stage sits
+  between the vendor transform and the user transform in `corePipeline`.
+
+  Constraints: events only (`recordType: 'event'` or `export-import-event`); incompatible with
+  `fastMode` (throws); if `v2_compat` is also set, `identityReplay` wins and `v2_compat` is
+  disabled with a warning. For a dry run, combine with `destinationOnly` — the full replay runs
+  (graph, closure, telemetry, `graphPath` artifact) and nothing is sent to Mixpanel.
+
+- **CLI flags:** `--identity-replay` (accepts a JSON blob for the full option group) and
+  `--ir-user-id-regex '<re>'` as a convenience for the required predicate. Function-valued
+  options remain module-only.
+
 ## 3.5.2
 
 ### Fixed

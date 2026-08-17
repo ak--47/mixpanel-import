@@ -681,8 +681,18 @@ async function corePipeline(stream, job, toNodeStream = false) {
 		// Normal mode: full transformation pipeline
 		stages.push(
 			createExistenceFilter(job),
-			createVendorTransform(job),
+			createVendorTransform(job)
 			// Note: Vendor transforms are 1:1, no flatten needed
+		);
+
+		// identityReplay: translate original ID-merge verbs into simplified dual-ID association events
+		// (job.js throws on identityReplay + fastMode; guard anyway since fastMode skips this branch)
+		if (job.identityReplay && !job.fastMode) {
+			const { createIdentityReplay } = require('./identity-replay.js'); // lazy: avoids cost when unused
+			stages.push(createIdentityReplay(job));
+		}
+
+		stages.push(
 			createUserTransform(job),
 			createFlattenStream(job), // User transforms can explode 1 row to multiple
 			createDedupeTransform(job),

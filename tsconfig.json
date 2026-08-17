@@ -47,7 +47,8 @@
     "**/*.test.js",                    // Exclude test files (optional)
     "benchmarks",                      // Exclude benchmarks (they might have different rules)
     "ui/public/analytics.js",          // Exclude Mixpanel snippet (vendor code)
-    "customers/**"                     // Exclude customer examples
+    "customers/**",                    // Exclude customer examples
+    "plans/**"                         // Exclude research/agent docs + probe scripts
   ],
   "compileOnSave": false,
   "typeAcquisition": {

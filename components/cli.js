@@ -387,15 +387,64 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			type: 'string',
 			describe: 'data group id for group profile exports'
 		})
+		.option('identity-replay', {
+			demandOption: false,
+			alias: 'identityReplay',
+			default: false,
+			describe: 'translate original ID-merge verbs ($identify/$create_alias/$merge) into simplified dual-ID association events; requires --ir-user-id-regex (function-valued options are module-only)',
+			type: 'boolean'
+		})
+		.option('ir-user-id-regex', {
+			demandOption: false,
+			alias: 'irUserIdRegex',
+			describe: 'identity replay: regex (string) matching USER ids; compiled by the stage (the CLI cannot pass an isUserId function; use the module API for predicates)',
+			type: 'string'
+		})
+		.option('ir-graph-path', {
+			demandOption: false,
+			alias: 'irGraphPath',
+			describe: 'identity replay: write the resolved pair table + unresolved clusters to this path at flush (local, gs://, or s3://)',
+			type: 'string'
+		})
+		.option('ir-on-ambiguous', {
+			demandOption: false,
+			alias: 'irOnAmbiguous',
+			describe: 'identity replay: multi-user cluster policy (drop = no assoc events for anons, resolve = elect a winner, error = abort)',
+			choices: ['drop', 'resolve', 'error'],
+			type: 'string'
+		})
 		.option('ui', {
 			demandOption: false,
 			default: false,
 			describe: 'start the web UI for interactive imports',
 			type: 'boolean'
 		})
+		.check((argv) => {
+			if (argv.identityReplay && !argv.irUserIdRegex) {
+				throw new Error('--identity-replay requires --ir-user-id-regex (the CLI cannot pass an isUserId function; use the module API for predicates)');
+			}
+			// --ir-* flags without --identity-replay would otherwise be silently discarded
+			if (!argv.identityReplay && (argv.irUserIdRegex || argv.irGraphPath || argv.irOnAmbiguous)) {
+				throw new Error('--ir-* flags require --identity-replay (they are ignored without it)');
+			}
+			return true;
+		})
 		.help()
 		.wrap(null)
 		.argv;
+	// compose --ir-* flags into the identityReplay option group (only when --identity-replay is set);
+	// deep normalization (regex compilation, defaults) happens in components/identity-replay.js
+	// @ts-ignore
+	if (args.identityReplay) {
+		// @ts-ignore
+		const identityReplay = { isUserId: args.irUserIdRegex };
+		// @ts-ignore
+		if (args.irGraphPath) identityReplay.graphPath = args.irGraphPath;
+		// @ts-ignore
+		if (args.irOnAmbiguous) identityReplay.onAmbiguous = args.irOnAmbiguous;
+		// @ts-ignore
+		args.identityReplay = identityReplay;
+	}
 	// @ts-ignore
 	if (args._.length === 0 && !args.type?.toLowerCase()?.includes('export') && !args.type?.toLowerCase()?.includes('delete') && !args.ui) {
 		// @ts-ignore

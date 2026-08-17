@@ -4,7 +4,14 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 
 ## Important Instructions
 
-- **DO NOT run tests** — the user runs tests themselves. Focus on writing code and explaining changes.
+- **Tests: run them freely, but know what you're running.** `npm test` is Jest in **watch mode**
+  (it never exits — use `npx jest <path> --watchAll=false` for one-shot runs). Some suites make
+  **live network calls** and can be slow or flaky: `tests/int.optional.test.js` and
+  `tests/sanity.test.js` take a long time, and anything hitting the export APIs is subject to
+  rate limits (60 req/hr). Old fixture data (>5 years) can also age out of API time bounds.
+  Do not get stuck re-running or "fixing" failures in live-network suites that are
+  environmental — note them and move on. Fast local suites (`unit`, `handlers`, the per-module
+  suites) are safe to run any time.
 
 ## Overview
 
@@ -58,6 +65,8 @@ Deeper references, kept out of this file on purpose:
 | `components/resilient-source.js` | Idle-watchdog + range-read resume for cloud reads |
 | `components/destination-writer.js` | Write/tee output to a destination instead of, or alongside, Mixpanel |
 | `components/smart-config.js` | Memory monitor stage and adaptive config |
+| `components/identity-graph.js` | Union-find identity graph (no internal imports) for identityReplay |
+| `components/identity-replay.js` | Original→Simplified id-merge translation stage (`identityReplay` option) |
 | `components/constants.js` | Shared constants; no internal `require`s (avoids cycles) |
 | `components/jsonl.js`, `logs.js`, `meta.js`, `fakeData.js` | JSONL helpers, logger config, project metadata, test-data generator |
 | `vendor/` | Source-platform transforms: amplitude, ga4, heap, june, mixpanel, mparticle, posthog |
@@ -79,10 +88,14 @@ record types (`table`, `export`, `profile-export`, `annotations`, `get-annotatio
 build a stage array:
 
 - **Prelude** (conditional): `createMemoryMonitor` when `verbose` or `memoryMonitor`.
-- **Normal mode:** `createExistenceFilter` → `createVendorTransform` → `createUserTransform` →
+- **Normal mode:** `createExistenceFilter` → `createVendorTransform` →
+  [`createIdentityReplay` when `identityReplay` is set] → `createUserTransform` →
   `createFlattenStream` → `createDedupeTransform` → `createExistenceFilter2` →
   `createHelperTransforms` → `createStringifyCacher`.
   Only one flatten stage exists, after the user transform — vendor transforms are 1:1.
+  The identityReplay stage swallows `$identify`/`$create_alias`/`$merge` verbs and emits
+  synthetic `identity association` events at flush — a user `transformFunc` downstream must
+  tolerate those nested records.
 - **`fastMode`:** collapses the above to `createExistenceFilter` → `createStringifyCacher`.
 - **Sink:** `createSmartBatcher` → optional `createTeeStream(destinationStream)` →
   `createHttpSender` → `createLogger`. With `destinationOnly`, records bypass batching and the HTTP
@@ -197,5 +210,6 @@ Jest, config in `jest.config.json`. `npm test` runs in watch mode.
 | `tests/pools.test.js` | Undici pool lifecycle and retry counts against local servers |
 | `tests/cloud.test.js`, `cloud-failure.test.js` | GCS/S3 paths and failure handling |
 | `tests/vendor.test.js` | Vendor transforms |
+| `tests/identity-graph.test.js`, `identity-replay.test.js`, `identity-replay-pipeline.test.js` | identityReplay: graph module, stage semantics, full-pipeline integration (all local, no network) |
 | `tests/sanity.test.js`, `jsdocTests.js` | Smoke tests and JSDoc examples |
 | `tests/int.optional.test.js` | Live-API integration — despite the name it matches `testMatch` and runs with the rest; needs a `.env` (format documented at the top of the file) |

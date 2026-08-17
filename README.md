@@ -526,6 +526,7 @@ npx mixpanel-import --type export --start 2024-01-01 --end 2024-01-31 \
 | `scdLabel` | `string` | Label for SCD (Slowly Changing Dimension) imports |
 | `scdKey` | `string` | Property name for SCD values |
 | `scdType` | `string` | Data type for SCD: `string`, `number`, `boolean` |
+| `identityReplay` | `object` | Translate original-ID-merge identity verbs for a simplified-ID-merge destination; see [Original → Simplified ID Merge Migration](#-original--simplified-id-merge-migration-identityreplay) |
 
 ---
 
@@ -637,6 +638,158 @@ const result = await mpImport(
     page: '/home'
   }
 }
+```
+
+### 🔀 **Original → Simplified ID Merge Migration (`identityReplay`)**
+
+Migrating events from a project on **original** ID merge into a project on **simplified** ID merge has a hard incompatibility: original projects express identity through the `$identify`, `$create_alias`, and `$merge` verb events, but simplified projects **hard-reject those verbs** — `/import` returns a 400 (`"identity events are not allowed when project is using simplified identity management"`) and fails the whole batch. Simplified projects merge identities only one way: an event carrying both `$user_id` and `$device_id`.
+
+The `identityReplay` option group translates an original-merge event stream into a simplified-merge event stream:
+
+- **Builds an identity graph** from every evidence source in the stream — verb events, dual-ID rows, and `$distinct_id_before_identity` — as records flow through the pipeline
+- **Rewrites identity verbs** into dual-ID association events (`$user_id` + `$device_id` on a non-reserved event name); the raw verbs never reach the API
+- **Classifies bare `distinct_id`s** on ordinary events using your `isUserId` predicate: user IDs become `$user_id`, everything else becomes a `$device:`-prefixed `$device_id` (this also prevents the "phantom user" bug where anonymous UUIDs get promoted to users)
+- **Flushes transitive closure** at end of stream: for a chain like `anon1 → anon2 → anon3 → user`, it also emits `anon1 → user` and `anon2 → user`, so every anonymous ID in a resolved cluster links directly to its user
+- **Reports coverage telemetry** and can fail closed below a configurable association-rate floor
+
+Requires `recordType: 'event'` (or `export-import-event`). Incompatible with `fastMode` (throws). If `v2_compat` is also set, `identityReplay` wins and `v2_compat` is disabled with a warning.
+
+#### The one required option: `isUserId`
+
+You must tell the replay how to recognize your user IDs. In module mode this is a function `(candidate, record) => boolean` or a `RegExp`; on the CLI it's a regex string. Everything else has a sensible default.
+
+#### `identityReplay` options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `isUserId` | `function`/`RegExp`/`string` | **required** | Predicate that decides whether an ID is a user ID; strings are compiled as RegExp |
+| `graph` | `boolean` | `true` | Build the identity graph; `false` = stateless verb rewrite only ("lite" mode, no closure flush) |
+| `maxGraphSize` | `number` | `5000000` | Max distinct IDs (nodes) held in memory |
+| `onGraphOverflow` | `string` | `'warn'` | At cap: `'warn'` (keep streaming, count skipped edges) or `'abort'` |
+| `identityEvents` | `string` | `'rewrite'` | `'rewrite'` (verbs become association events) or `'drop'` (verbs still feed the graph but no association events are emitted) |
+| `associationEventName` | `string` | `'identity association'` | Event name for emitted association events |
+| `associationTimestamp` | `string \| number` | `'original'` | `'original'` (first-seen time of the device node), `'floor'` (min event time − 24h, keeps associations out of analysis windows), or a **pinned epoch number** — recommended for chunked/multi-run replays so association events dedupe across runs (the dedupe tuple includes `time`) |
+| `electionScope` | `string` | `'cluster'` | Multi-user clusters only: `'cluster'` links every anon to one elected winner; `'device'` links each anon to the user it has **direct evidence** with (a verb/dual-ID row naming both ids), falling back to `onAmbiguous` for the rest — the per-device strategy real migrations used for shared-device data |
+| `associationProps` | `object` | `{}` | Static properties merged onto every association event (e.g. a `dataVersion` tag) |
+| `scrubExportProps` | `boolean` | `true` | Delete Mixpanel-added raw-export props (`$import`, `$mp_api_endpoint`, `$mp_api_timestamp_ms`, `$mp_event_size`, `mp_processing_time_ms`) from events before re-import |
+| `scrubJunkIds` | `boolean` | `true` | Neutralize well-known junk ids (ingestion's own `badIDs` list — `anonymous`, `null`, the zero uuid, …; matched case-insensitively like ingestion): the id prop is removed (record kept) and junk never becomes graph evidence — a shared junk `$device_id` would otherwise union unrelated users into one mega-cluster, and strict `/import` rejects such rows anyway. `denylist`, by contrast, drops whole records (test accounts) |
+| `bareDistinctId` | `string` | `'validate'` | `'validate'` (classify via `isUserId`) or `'passthru'` (leave bare `distinct_id`s alone) |
+| `userIdFallbackProps` | `string[]` | `[]` | Extra properties probed for a user ID on ordinary events |
+| `denylist` | `string[]` | `[]` | IDs (e.g. test accounts) excluded from the graph and classification; counted |
+| `onAmbiguous` | `string` | `'drop'` | Clusters with 2+ users: `'drop'` (no association events for that cluster's anons), `'resolve'` (elect a winner by evidence rank → latest timestamp → lexicographic min), or `'error'` (abort) |
+| `minAssociationRate` | `number` | `0` | Fail-closed floor: abort if `assocEmitted / verbsSeen` falls below this (0 disables) |
+| `graphPath` | `string` | `''` | Write the resolved pair table + unresolved clusters at flush: local path, `gs://`, or `s3://` (`''` = off) |
+
+#### Module example: original project → simplified project
+
+```javascript
+const mpImport = require('mixpanel-import');
+
+const results = await mpImport(
+  {
+    secret: 'source-original-project-api-secret',  // read from the source
+    secondToken: 'dest-simplified-project-token'   // write to the destination
+  },
+  null, // export-import streams directly; no data source needed
+  {
+    recordType: 'export-import-event',
+    start: '2024-01-01',
+    end: '2024-12-31',
+    identityReplay: {
+      isUserId: (id) => /^\d+$/.test(id),  // our user IDs are numeric
+      associationProps: { dataVersion: 'migration-2026-08' },
+      graphPath: './identity-graph.jsonl'
+    }
+  }
+);
+
+console.log(results.identityReplay); // telemetry (see below)
+```
+
+#### CLI example
+
+```bash
+npx mixpanel-import raw-export.jsonl \
+  --token dest-simplified-project-token \
+  --identity-replay \
+  --ir-user-id-regex '^\d+$'
+```
+
+The CLI covers the common scalars; function-valued options (like a custom `isUserId` function) are module-only.
+
+#### Telemetry
+
+Results include an `identityReplay` block:
+
+```
+identityReplay: {
+  verbsSeen: { identify, alias, merge },
+  assocEmitted: { live, closure },
+  bare: { user, device, prefixedAlready },
+  denylisted,
+  ambiguous: { merges, clusters },
+  clusters: { total, resolved, anonOnly, multiUser },
+  unresolvedAnonIds,
+  graphOverflowEdges,
+  isUserIdPassRate,
+  associationRate
+}
+```
+
+#### The `graphPath` artifact
+
+Set `graphPath` to a local path or cloud URL (`gs://`, `s3://`) and the flush writes the resolved (device → user) pair table plus the unresolved clusters. Useful for auditing what the replay decided before (or after) sending data. The file is only written if the destination is writable — a bad path won't fail the job.
+
+#### Gotchas
+
+- **One `$user_id` per cluster, forever.** In simplified projects a device binds to the **first** user it's associated with — first-write-wins, and there is no undo. This is exactly why `identityReplay` resolves conflicts pipeline-side, *before* sending: a cluster with multiple users goes through `onAmbiguous` rather than letting API arrival order pick a winner.
+- **Anon↔anon clusters stay anonymous.** A cluster with no user ID in it gets no association events; its members remain `$device:`-keyed. They're counted in telemetry as `clusters.anonOnly`.
+- **Expect a structural floor of unresolved IDs.** Real migrations observe roughly **~19% of anonymous IDs that cannot be resolved to any user** — original projects accumulate orphaned anons (500-ID cluster caps, never-identified visitors). This is a property of the source data, not a replay failure.
+- **Do a dry run first.** Combine with `destinationOnly` and a `destination` file to run the full replay — graph, closure, telemetry, `graphPath` artifact — while sending **nothing** to Mixpanel. Inspect the output and the telemetry, then run for real.
+- **Association events are re-run safe.** Every association event gets a deterministic `$insert_id` derived from the (user, device) pair, so repeated runs and closure duplicates self-dedupe at query time.
+- **`transformFunc` sees synthetic events too.** Association events flow through the user transform as nested `{event: 'identity association', properties: {...}}` records — a `transformFunc` written for your export's row shape must pass them through (returning `null`/`undefined` for them silently kills identity stitching).
+- **Cloud `graphPath` is best-effort.** `gs://`/`s3://` artifact uploads go through the destination writer asynchronously; a failed upload logs and sets `graphPathError` telemetry but never fails the job. When the artifact is load-bearing, prefer a local path and upload it yourself.
+- **A verb-free stream reports `associationRate: 1`.** Nothing to translate counts as full coverage, so `minAssociationRate` never aborts chunked runs whose slice happens to contain no identity verbs.
+
+#### Scale: memory model
+
+The graph holds **one Map entry per distinct id** (not per pair). Measured: 2M rows / 500k
+distinct ids stream through the full pipeline at ~300k events/sec with ~440MB peak heap —
+budget roughly **1GB of heap per 1M distinct ids** and set `--max-old-space-size`
+accordingly. The default `maxGraphSize` (5M ids ≈ 4–5GB) is a guardrail, not a target: past
+it, edges are **dropped and counted** (`graphOverflowEdges`), or the job aborts with
+`onGraphOverflow: 'abort'`.
+
+**Do not chunk a replay naively.** Two hazards:
+
+1. A graph built per-chunk misses **cross-chunk transitive links** — the exact links the
+   graph exists to find.
+2. `associationTimestamp: 'floor'` derives from each run's earliest event, so re-runs over
+   different chunks stamp different times and the events **stop deduping** at query time
+   (the dedupe tuple includes `time`). Use the default `'original'` for chunked runs.
+
+If a dataset's distinct-id count exceeds what one process can hold, the escape hatch is
+still a **singular stream per job**: run one job over a **verb-filtered export** (in
+original-ID-merge projects identity lives *only* in the verbs — `$device_id`/`$user_id`
+props are inert there — and verbs are a tiny fraction of any export), which builds the
+full graph in tiny memory and emits every association event. Ordinary events then stream
+in ordinary date-ranged jobs with `graph: false` (associations are already sent;
+simplified stitches retroactively regardless of arrival order). Pin
+`associationTimestamp` to a number for any multi-run replay.
+
+```js
+// job A — verbs only: full graph, all association events, audit artifact
+await mpImport(creds, null, {
+  recordType: 'export-import-event',
+  params: { event: '["$identify","$create_alias","$merge"]' },  // export-side filter
+  identityReplay: { isUserId, associationTimestamp: 1700000000, graphPath: './graph.jsonl' }
+});
+// job B..N — ordinary events by date range, no graph needed
+await mpImport(creds, null, {
+  recordType: 'export-import-event',
+  start: '2024-01-01', end: '2024-03-31',
+  identityReplay: { isUserId, graph: false, identityEvents: 'drop' }
+});
 ```
 
 ---

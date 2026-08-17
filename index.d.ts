@@ -1022,6 +1022,24 @@ declare namespace main {
     v2_compat?: boolean;
 
     // ═══════════════════════════════════════════════════════════════
+    // IDENTITY REPLAY OPTIONS (original → simplified ID-merge)
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Translate an original-ID-merge event stream (raw /export shape) into a
+     * simplified-ID-merge event stream: builds an identity graph from identity
+     * verbs ($identify / $create_alias / $merge) and dual-ID rows, rewrites the
+     * verbs into dual-ID association events, classifies bare distinct_ids via
+     * `isUserId`, and flushes transitive-closure association events at end of
+     * stream. Requires recordType 'event' or 'export-import-event'; throws when
+     * combined with `fastMode`; wins over `v2_compat` (disabled with a warning).
+     * Telemetry lands on the results as `identityReplay`.
+     * @example
+     * { identityReplay: { isUserId: (id) => /^\d+$/.test(id) } }
+     */
+    identityReplay?: identityReplayOpts;
+
+    // ═══════════════════════════════════════════════════════════════
     // SCD (SLOWLY CHANGING DIMENSIONS) OPTIONS
     // ═══════════════════════════════════════════════════════════════
 
@@ -1128,6 +1146,149 @@ declare namespace main {
     attempt: number;
     /** the triggering error, when there is one */
     error?: { message: string; code?: string | number };
+  };
+
+  /**
+   * options for `identityReplay` — translating an original-ID-merge event
+   * stream into a simplified-ID-merge event stream
+   */
+  type identityReplayOpts = {
+    /**
+     * REQUIRED: classifies a bare id as a USER id — a predicate function
+     * (module API), a RegExp, or a string compiled to a RegExp (CLI: --ir-user-id-regex)
+     */
+    isUserId: ((candidate: string, record?: any) => boolean) | RegExp | string;
+    /**
+     * build the identity graph (transitive-closure association events at flush);
+     * `false` = stateless verb rewrite only ("lite" mode)
+     * @default true
+     */
+    graph?: boolean;
+    /**
+     * max node count in the identity graph; at cap, new ids are skipped and skipped edges are counted
+     * @default 5_000_000
+     */
+    maxGraphSize?: number;
+    /**
+     * what to do when the graph hits maxGraphSize: keep streaming + count ('warn') or kill the job ('abort')
+     * @default "warn"
+     */
+    onGraphOverflow?: "warn" | "abort";
+    /**
+     * identity verb handling: 'rewrite' verbs into association events, or 'drop' them entirely
+     * (the graph still builds; no association events are emitted) — the raw verb never reaches the sender
+     * @default "rewrite"
+     */
+    identityEvents?: "rewrite" | "drop";
+    /**
+     * event name for emitted association events (non-reserved, dual-ID)
+     * @default "identity association"
+     */
+    associationEventName?: string;
+    /**
+     * association event timestamp: 'original' = first-seen ts of the device node;
+     * 'floor' = (min event time seen) − 24h, keeping associations out of analysis windows
+     * @default "original"
+     */
+    associationTimestamp?: "original" | "floor" | number;
+    /**
+     * static props merged onto every association event (e.g. a dataVersion tag)
+     * @default {}
+     */
+    associationProps?: object;
+    /**
+     * delete Mixpanel-added raw-export props ($import, $mp_api_endpoint, $mp_api_timestamp_ms,
+     * $mp_event_size, mp_processing_time_ms) from ordinary events before re-import
+     * @default true
+     */
+    scrubExportProps?: boolean;
+    /**
+     * neutralize well-known junk ids (ingestion's badIDs list: 'anonymous', 'null', the zero
+     * uuid, ...; matched case-insensitively) — the id prop is removed (or distinct_id → '')
+     * and junk never becomes graph evidence, preventing a shared junk $device_id from uniting
+     * unrelated users into one mega-cluster. Strict /import would reject these rows anyway.
+     * Unlike `denylist` (which drops the whole record), the record itself survives.
+     * @default true
+     */
+    scrubJunkIds?: boolean;
+    /**
+     * multi-user-cluster election scope: 'cluster' links every anon to one elected winner;
+     * 'device' links each anon to the user it has DIRECT evidence with (verb/dual-row/
+     * fallback-prop naming both ids), falling back to onAmbiguous for the rest
+     * @default "cluster"
+     */
+    electionScope?: "cluster" | "device";
+    /**
+     * bare distinct_id policy for ordinary events: 'validate' = classify via isUserId
+     * ($user_id when it matches, else $device: prefix); 'passthru' = leave untouched
+     * @default "validate"
+     */
+    bareDistinctId?: "validate" | "passthru";
+    /**
+     * extra property names probed for a user id on ordinary events
+     * (e.g. ['$distinct_id_before_identity'])
+     * @default []
+     */
+    userIdFallbackProps?: string[];
+    /**
+     * ids excluded from the graph and classification entirely (test accounts); excluded + counted
+     * @default []
+     */
+    denylist?: string[];
+    /**
+     * multi-user cluster policy: 'drop' = no association events for anons in the cluster (counted);
+     * 'resolve' = elect a winner (evidence rank → latest ts → lexicographic min); 'error' = abort the job
+     * @default "drop"
+     */
+    onAmbiguous?: "drop" | "resolve" | "error";
+    /**
+     * fail-closed coverage floor: abort when (associations emitted / verbs seen) falls below this rate; 0 disables
+     * @default 0
+     */
+    minAssociationRate?: number;
+    /**
+     * write the resolved pair table + unresolved clusters at flush:
+     * '' = off, or a local path, gs:// or s3:// url (written only if writable)
+     * @default ""
+     */
+    graphPath?: string;
+  };
+
+  /**
+   * telemetry for an identityReplay run — appended to ImportResults as
+   * `identityReplay` when the option was enabled
+   */
+  type identityReplayStats = {
+    /** identity verbs seen in the stream, by type */
+    verbsSeen: { identify: number; alias: number; merge: number };
+    /** association events emitted live (per-verb) vs at closure flush */
+    assocEmitted: { live: number; closure: number };
+    /** bare distinct_id classifications: user, device, and already-$device:-prefixed */
+    bare: { user: number; device: number; prefixedAlready: number };
+    /** records dropped via denylist */
+    denylisted: number;
+    /** records whose junk ids were neutralized (record kept, id removed) */
+    junkNeutralized: number;
+    /** ambiguity counts: multi-user merges and multi-user clusters */
+    ambiguous: { merges: number; clusters: number };
+    /** cluster census at flush */
+    clusters: { total: number; resolved: number; anonOnly: number; multiUser: number };
+    /** anonymous ids left without a canonical user */
+    unresolvedAnonIds: number;
+    /** lite mode only: anon↔anon verbs that need the graph (impossible statelessly) */
+    deferredImpossible: number;
+    /** verb rows missing their required identity props */
+    malformedVerbs: number;
+    /** edges skipped because a node was rejected at maxGraphSize */
+    graphOverflowEdges: number;
+    /** fraction of candidate ids isUserId classified as users */
+    isUserIdPassRate: number;
+    /** associations emitted / verbs seen (1 when the stream had no verbs) — compared against minAssociationRate */
+    associationRate: number;
+    /** resolved path the graphPath artifact was written to (set on success) */
+    graphPathWritten?: string;
+    /** why the graphPath artifact could not be written (never fails the job) */
+    graphPathError?: string;
   };
 
   /**
@@ -1308,6 +1469,10 @@ declare namespace main {
     vendor?: string;
     vendorOpts?: object;
 	badRecords?: ArrayOfObjects; // records that failed to import
+    /**
+     * identityReplay telemetry (only present when the identityReplay option was enabled)
+     */
+    identityReplay?: identityReplayStats;
   };
 
   type genericObj = {
