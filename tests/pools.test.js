@@ -228,3 +228,103 @@ describe("lazy undici pools", () => {
 		}
 	});
 });
+
+describe("profile receipts under concurrency (undici path)", () => {
+	// /engage answers {status: 1} with no per-record count, so the user/group branch falls back to
+	// a batch length. It used to read job.lastBatchLength — one scalar on the job, overwritten by
+	// addBatchLength() at every batch DISPATCH. With workers > 1 every batch is in flight before any
+	// response lands, so each response credited whichever batch was queued last. The same fix lives
+	// in the `got` path; tests/profile-receipt.test.js covers that one.
+
+	/** an /engage stand-in: 200 with a bare {status: 1}, never a record count */
+	function startEngageServer(status = 1) {
+		return startServer((req, res) => {
+			res.writeHead(200, { "Content-Type": "application/json" });
+			res.end(JSON.stringify(status ? { status: 1 } : { status: 0, error: "bad token" }));
+		});
+	}
+
+	function batchOf(size, offset = 0) {
+		return Array.from({ length: size }, (_, i) => ({ $distinct_id: `user-${offset + i}`, $set: {} }));
+	}
+
+	/** dispatch every batch before any response lands — exactly the production failure */
+	async function sendConcurrently(origin, eligible, recordType = "user", batchSize = 2000) {
+		const job = makeJob(`${origin}/engage`, {
+			recordType,
+			lastBatchLength: 0,
+			addBatchLength(length) { this.lastBatchLength = length; }
+		});
+		const batches = [];
+		for (let sent = 0; sent < eligible; sent += batchSize) {
+			batches.push(batchOf(Math.min(batchSize, eligible - sent), sent));
+		}
+		for (const batch of batches) job.addBatchLength(batch.length);
+		await Promise.all(batches.map((batch) => flushToMixpanelWithUndici(batch, job)));
+		return { job, batches };
+	}
+
+	test.each([1, 1999, 2000, 2001, 4000, 4415, 5000])("accounts for every one of %i eligible profiles", async (eligible) => {
+		const srv = await startEngageServer();
+		try {
+			const { job } = await sendConcurrently(srv.origin, eligible);
+			expect(job.success + job.failed).toBe(eligible);
+			expect(job.failed).toBe(0);
+		} finally {
+			await destroy();
+			await srv.close();
+		}
+	});
+
+	test("does not reproduce the batches x lastBatchLength formula", async () => {
+		const srv = await startEngageServer();
+		try {
+			const eligible = 4415;
+			const wrong = Math.ceil(eligible / 2000) * (eligible % 2000 || 2000);
+			expect(wrong).toBe(1245);
+			const { job } = await sendConcurrently(srv.origin, eligible);
+			expect(job.success).not.toBe(wrong);
+			expect(job.success).toBe(eligible);
+		} finally {
+			await destroy();
+			await srv.close();
+		}
+	});
+
+	test("counts a failed response against its own batch", async () => {
+		const srv = await startEngageServer(0);
+		try {
+			const { job } = await sendConcurrently(srv.origin, 4415);
+			expect(job.failed).toBe(4415);
+			expect(job.success).toBe(0);
+		} finally {
+			await destroy();
+			await srv.close();
+		}
+	});
+
+	test("applies the same rule to group profiles", async () => {
+		const srv = await startEngageServer();
+		try {
+			const { job } = await sendConcurrently(srv.origin, 3522, "group");
+			expect(job.success).toBe(3522);
+		} finally {
+			await destroy();
+			await srv.close();
+		}
+	});
+
+	test("still prefers a per-record count when the endpoint reports one", async () => {
+		const srv = await startServer((req, res) => {
+			res.writeHead(200, { "Content-Type": "application/json" });
+			res.end(JSON.stringify({ status: 1, num_good_events: 7 }));
+		});
+		try {
+			const { job, batches } = await sendConcurrently(srv.origin, 4415);
+			expect(job.success).toBe(7 * batches.length);
+		} finally {
+			await destroy();
+			await srv.close();
+		}
+	});
+});

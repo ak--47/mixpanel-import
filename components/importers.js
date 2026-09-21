@@ -229,15 +229,27 @@ async function flushToMixpanel(batch, job) {
 			}
 		}
 		else if (job.recordType === 'user' || job.recordType === 'group') {
+			// Credit the batch THIS response belongs to, not `job.lastBatchLength`.
+			// That field is one scalar on the job, overwritten by addBatchLength() at
+			// every batch DISPATCH, so with workers > 1 every batch is in flight
+			// before any response lands and each response adds whichever batch was
+			// queued last. /engage returns no per-record count, so the num_good_events
+			// branch never runs for profiles and the fallback was the only path.
+			// Measured over the 7 days to 2026-09-16 against 20 production runs:
+			// success == ceil(E / 2000) * (E mod 2000 || 2000) in all 20, so a
+			// 5,000-user import with failed:0 and every response 200 reported
+			// success: 3. It reconciles only when there is one batch, or when every
+			// batch is exactly full.
+			const batchLength = Array.isArray(batch) ? batch.length : job.lastBatchLength;
 			if (!res.error || res.status) {
 				if (res.num_good_events) {
 					job.success += res.num_good_events;
 				}
 				else {
-					job.success += job.lastBatchLength;
+					job.success += batchLength;
 				}
 			}
-			if (res.error || !res.status) job.failed += job.lastBatchLength;
+			if (res.error || !res.status) job.failed += batchLength;
 		}
 
 		// MEMORY FIX: Store abbreviated responses to prevent memory issues
@@ -489,15 +501,27 @@ async function flushToMixpanelWithUndici(batch, job) {
 			}
 		}
 		else if (job.recordType === 'user' || job.recordType === 'group') {
+			// Credit the batch THIS response belongs to, not `job.lastBatchLength`.
+			// That field is one scalar on the job, overwritten by addBatchLength() at
+			// every batch DISPATCH, so with workers > 1 every batch is in flight
+			// before any response lands and each response adds whichever batch was
+			// queued last. /engage returns no per-record count, so the num_good_events
+			// branch never runs for profiles and the fallback was the only path.
+			// Measured over the 7 days to 2026-09-16 against 20 production runs:
+			// success == ceil(E / 2000) * (E mod 2000 || 2000) in all 20, so a
+			// 5,000-user import with failed:0 and every response 200 reported
+			// success: 3. It reconciles only when there is one batch, or when every
+			// batch is exactly full.
+			const batchLength = Array.isArray(batch) ? batch.length : job.lastBatchLength;
 			if (!res.error || res.status) {
 				if (res.num_good_events) {
 					job.success += res.num_good_events;
 				}
 				else {
-					job.success += job.lastBatchLength;
+					job.success += batchLength;
 				}
 			}
-			if (res.error || !res.status) job.failed += job.lastBatchLength;
+			if (res.error || !res.status) job.failed += batchLength;
 		}
 
 		// MEMORY FIX: Store abbreviated responses to prevent memory issues

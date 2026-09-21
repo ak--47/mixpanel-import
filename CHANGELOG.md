@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.6.2
+
+### Fixed
+
+- **Profile and group imports report the wrong `success` count under concurrency.** `/engage`
+  answers `{status: 1}` with no per-record count, so for `recordType: 'user'` and `'group'` the
+  importer fell back to `job.success += job.lastBatchLength`. That is one scalar on the `JobConfig`,
+  overwritten by `addBatchLength()` at every batch **dispatch**. With the default `workers: 50`
+  every batch is in flight before any response lands, so each response credited whichever batch was
+  queued last. The reported total collapsed to
+  `ceil(records / 2000) * (records % 2000 || 2000)` — a 4,415-profile import with `failed: 0` and
+  every response `200` reported `success: 1245`. It only reconciled when there was a single batch,
+  or when every batch was exactly full. Each response now credits the batch it actually describes.
+  Fixed in both transports (`undici` and `got`); event and SCD counting is unchanged, since those
+  read `num_records_imported` off the response. Counts only — no records were ever lost or
+  double-sent, and `total` was always right.
+
 ## 3.6.1
 
 ### Added
