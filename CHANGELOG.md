@@ -1,5 +1,26 @@
 # Changelog
 
+## 3.6.3
+
+### Fixed
+
+- **Event export accepted a stream the server cut short.** Mixpanel's `/export` server can end a
+  `200` response cleanly with the last record cut off and the bare text `terminated early`
+  appended. `exportEvents` wrote the body, counted the broken line (or, on the cloud and
+  transform paths, skipped it as unparsable) and finalized the file: most of the day was missing
+  and nothing failed. Found on a snowcat export where four days kept 5–13% of their records. A new
+  tail guard in the export pipeline passes every byte through and fails the attempt with
+  `code: 'EXPORT_TERMINATED_EARLY'` when the last line is not valid JSON.
+
+### Changed
+
+- **A failed event export now throws and leaves no output.** Any non-429 failure (the stream
+  above, a body that breaks mid-download, an HTTP error) used to log a warning in verbose mode
+  and fall through to the commit, which finalized the partial file — or an empty one — as a
+  success. Now the cloud upload is aborted (no object is created), a local file is removed, and
+  the error is thrown. Callers that relied on a partial result must catch it. 429 handling is
+  unchanged.
+
 ## 3.6.2
 
 ### Fixed

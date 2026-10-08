@@ -269,7 +269,9 @@ async function exportEvents(filename, job) {
 				downloadProgress(progress.transferred, job);
 			});
 
-			await pipeline(currentRequest, outputStream);
+			// The tail guard passes every byte through and fails the attempt when
+			// the body's last line is not a JSON record (see createTailGuard).
+			await pipeline(currentRequest, createTailGuard(), outputStream);
 			break; // Success, exit retry loop
 		}
 		catch (e) {
@@ -299,9 +301,12 @@ async function exportEvents(filename, job) {
 				throw rateLimitError;
 			}
 
-			// Non-429 errors: keep existing behavior (warn and continue with 0 results)
+			// Any other failure — a stream terminated early, a broken body, an
+			// HTTP error — fails the export. It used to warn and fall through to
+			// the commit below, which finalized the partial file as a success.
 			if (job.verbose) console.warn(`Pipeline error: ${e.message}`);
-			break;
+			abortExportOutput(fileStream, filename, cloudInfo, e);
+			throw e;
 		}
 	}
 
@@ -378,6 +383,86 @@ async function exportEvents(filename, job) {
 		return filename;
 	}
 
+}
+
+/**
+ * Mixpanel's /export server can end a 200 response cleanly with the last
+ * record cut off and the bare text `terminated early` appended. Nothing in the
+ * transport fails, so this guard checks the body itself: it passes every chunk
+ * through untouched, remembers the last non-blank line, and at the end fails
+ * with EXPORT_TERMINATED_EARLY when that line is not valid JSON. A whole
+ * export always ends on a whole record.
+ * @returns {Transform}
+ */
+function createTailGuard() {
+	/** bytes after the last "\n" seen so far */
+	let carry = [];
+	/** the last complete non-blank line */
+	let lastLine = null;
+	return new Transform({
+		transform(chunk, _enc, callback) {
+			const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+			const nl = buf.lastIndexOf(10);
+			if (nl === -1) {
+				carry.push(Buffer.from(buf));
+				return callback(null, chunk);
+			}
+			const head = carry.length ? Buffer.concat([...carry, buf.subarray(0, nl)]) : buf.subarray(0, nl);
+			const line = lastNonBlankLine(head);
+			if (line) lastLine = Buffer.from(line);
+			carry = nl + 1 < buf.length ? [Buffer.from(buf.subarray(nl + 1))] : [];
+			callback(null, chunk);
+		},
+		flush(callback) {
+			const rest = Buffer.concat(carry);
+			const last = rest.toString('utf8').trim() ? rest : lastLine;
+			if (last) {
+				try {
+					JSON.parse(last.toString('utf8'));
+				} catch (e) {
+					const err = new Error(`Export stream terminated early: the last line is not a JSON record ("${last.toString('utf8').slice(-80)}"); the rest of the range is missing`);
+					// @ts-ignore
+					err.code = 'EXPORT_TERMINATED_EARLY';
+					return callback(err);
+				}
+			}
+			callback();
+		}
+	});
+}
+
+/**
+ * @param {Buffer} buf - whole lines, without the final "\n"
+ * @returns {Buffer|null}
+ */
+function lastNonBlankLine(buf) {
+	let end = buf.length;
+	while (end >= 0) {
+		const start = end === 0 ? 0 : buf.lastIndexOf(10, end - 1) + 1;
+		const line = buf.subarray(start, end);
+		if (line.toString('utf8').trim()) return line;
+		if (start === 0) return null;
+		end = start - 1;
+	}
+	return null;
+}
+
+/**
+ * Discard a failed export attempt's output. A cloud write stream destroyed
+ * before it ends uploads nothing, so no object is created; a local file is
+ * removed. The error is thrown to the caller, so the 'error' each destroy
+ * emits is not the place to report it.
+ * @param {any} fileStream
+ * @param {string} filename
+ * @param {{ isCloud: boolean }} cloudInfo
+ * @param {Error} err
+ */
+function abortExportOutput(fileStream, filename, cloudInfo, err) {
+	for (const s of [fileStream?._underlyingStream, fileStream].filter(Boolean)) {
+		s.on('error', () => {});
+		s.destroy(err);
+	}
+	if (!cloudInfo.isCloud) fs.rmSync(filename, { force: true });
 }
 
 /**
