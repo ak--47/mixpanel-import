@@ -1,11 +1,11 @@
 {
 	"version": 1,
-	"about": "Mixpanel-internal event property keys found in Mixpanel's own raw export. filterMixpanelNoise deletes every 'drop' key from event properties before import and counts every 'watch' key and 'watch_events' name it sees, without changing them. A key moves into 'drop' only with a code reference into Mixpanel's source or a sandbox reproduction. Evidence paths are relative to the Mixpanel analytics repo at 0bbc6a46c0e. Full survey: snowcat plans/2026-10-mixpanel-noise-filter/research/mixpanel-source-survey.md.",
+	"about": "Mixpanel-internal event property keys found in Mixpanel's own raw export. filterMixpanelNoise deletes every 'drop' key from event properties before import and counts every 'watch' key and 'watch_events' name it sees, without changing them. A key moves into 'drop' only with a code reference into Mixpanel's source or a sandbox reproduction. Evidence paths are relative to the Mixpanel analytics repo at 0bbc6a46c0e.",
 	"drop": [
 		{
 			"key": "$preshuffle_distinct_id",
 			"why": "The query readers hide an event carrying it until identity management confirms the id remaps to the event's own distinct_id. That remap exists only in the source project, so in any other project the event is hidden from every query, forever. /import still counts it as imported.",
-			"evidence": "backend/libquery/arb_bin/reader.c:183-237; backend/libquery/brb/reader_v2/filters/global_distinct_id_filter.cpp:82-148; Menards staging import: 5,902,970 hidden events restored by re-sending without the key",
+			"evidence": "backend/libquery/arb_bin/reader.c:183-237; backend/libquery/brb/reader_v2/filters/global_distinct_id_filter.cpp:82-148; staging reproduction: 5,902,970 hidden events restored by re-sending without the key",
 			"added": "2026-10-09"
 		}
 	],

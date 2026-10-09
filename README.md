@@ -434,6 +434,8 @@ The summary has two maps. `noise_removed` counts the records each deleted key wa
 
 A key is deleted only when it makes the destination hide an event the source showed. Keys whose effect travels with the data, such as `$is_deleted` and `$delete` events, are counted and kept.
 
+For `export-import-event`, records arrive flat, so the filter needs `fixData: true` to see `properties`.
+
 On any other record type, or with `fastMode`, the filter does nothing. An explicit `filterMixpanelNoise: true` in those cases is an error.
 
 To re-import a Mixpanel export, also set `fixData: false` and `tags: {}`. With `fixData: true`, keys such as `name`, `source` and `country` are renamed to `$name`, `$source` and `mp_country_code`.

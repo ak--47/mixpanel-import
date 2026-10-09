@@ -442,7 +442,7 @@ function filterResultForClient(result) {
 		'requests', 'retries', 'rateLimit', 'wasStream', 'eps', 'rps', 'mbps',
 		'badRecords', 'vendor', 'vendorOpts', 'errors', 'responses', 'files', 'downloadUrl',
 		'stallsDetected', 'resumesAttempted', 'resumesSucceeded', 'filesSkippedMissing', 'bytesResumed',
-		'identityReplay'
+		'identityReplay', 'noise_removed', 'noise_seen'
 	];
 
 	const filtered = {};

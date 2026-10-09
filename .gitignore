@@ -1,5 +1,6 @@
 # ignore this shit
 *.ndjson
+!tests/fixtures/noise/*.ndjson
 *.gz
 scratchpad.js
 scratch.js

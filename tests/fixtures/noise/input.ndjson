@@ -1,0 +1,20 @@
+{"event":"plain","properties":{"distinct_id":"u1","time":1760000000,"$insert_id":"n01","plan":"pro"}}
+{"event":"preshuffle string","properties":{"distinct_id":"u2","time":1760000001,"$insert_id":"n02","$preshuffle_distinct_id":"anon-2"}}
+{"event":"preshuffle empty","properties":{"distinct_id":"u3","time":1760000002,"$insert_id":"n03","$preshuffle_distinct_id":""}}
+{"event":"preshuffle null","properties":{"distinct_id":"u4","time":1760000003,"$insert_id":"n04","$preshuffle_distinct_id":null}}
+{"event":"preshuffle same id","properties":{"distinct_id":"u5","time":1760000004,"$insert_id":"n05","$preshuffle_distinct_id":"u5"}}
+{"event":"reshuffled with drop key","properties":{"distinct_id":"u6","time":1760000005,"$insert_id":"n06","$is_reshuffled":true,"$preshuffle_distinct_id":"anon-6"}}
+{"event":"reshuffled alone","properties":{"distinct_id":"u7","time":1760000006,"$insert_id":"n07","$is_reshuffled":true}}
+{"event":"deleted","properties":{"distinct_id":"u8","time":1760000007,"$insert_id":"n08","$is_deleted":true,"$inserted_at":1760000100}}
+{"event":"$delete","properties":{"distinct_id":"u8","time":1760000008,"$insert_id":"n09","$delete_event_name":"deleted","$delete_insert_id":"n08","$delete_inserted_before":1760000200}}
+{"event":"overwritten","properties":{"distinct_id":"u9","time":1760000009,"$insert_id":"n10","$mp_api_endpoint":"api.mixpanel.com","$mp_api_timestamp_ms":1760000009000,"$mp_event_size":512,"mp_processing_time_ms":1760000009123,"$import":true,"$mp_actor_type":"human","$mp_raw_user_agent":"Mozilla/5.0"}}
+{"event":"storage","properties":{"distinct_id":"u10","time":1760000010,"$insert_id":"n11","$version":2,"$possible_duplicate":true,"$sampling_factor":1,"$bucket":7}}
+{"event":"identity","properties":{"distinct_id":"u11","time":1760000011,"$insert_id":"n12","$distinct_id_before_identity":"anon-11","$original_distinct_id":"orig-11","$identity_failure_reason":"none","$had_persisted_distinct_id":false}}
+{"event":"warehouse","properties":{"distinct_id":"u12","time":1760000012,"$insert_id":"n13","$warehouse_import_id":"wi","$warehouse_import_job_id":"wj","$warehouse_import_run_id":"wr","$warehouse_table":"events","$warehouse_type":"bigquery","mp_original_distinct_id":"od","mp_original_event_name":"oe"}}
+{"event":"nested listed key","properties":{"distinct_id":"u13","time":1760000013,"$insert_id":"n14","meta":{"$preshuffle_distinct_id":"nested","$is_deleted":true}}}
+{"event":"root listed key","$preshuffle_distinct_id":"root","$is_reshuffled":true,"properties":{"distinct_id":"u14","time":1760000014,"$insert_id":"n15"}}
+{"event":"never listed","properties":{"distinct_id":"u15","time":1760000015,"$insert_id":"n16","$user_id":"u15","$device_id":"d15","$source":"web","mp_lib":"web","token":"abc"}}
+{"event":"never listed with drop key","properties":{"distinct_id":"u16","time":1760000016,"$insert_id":"n17","$user_id":"u16","$device_id":"d16","$preshuffle_distinct_id":"d16","$is_deleted":false}}
+{"event":"plain nested","properties":{"distinct_id":"u17","time":1760000017,"$insert_id":"n18","items":[{"sku":"a","qty":1},{"sku":"b","qty":2}]}}
+{"event":"mixed","properties":{"distinct_id":"u18","time":1760000018,"$insert_id":"n19","$preshuffle_distinct_id":"anon-18","$is_reshuffled":false,"$version":3,"$import":true,"mp_lib":"python"}}
+{"event":"plain last","properties":{"distinct_id":"u19","time":1760000019,"$insert_id":"n20"}}

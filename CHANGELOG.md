@@ -8,8 +8,8 @@
   `'export-import-event'`, the importer now deletes `$preshuffle_distinct_id` from each event's
   top-level `properties`, as the last transform step. Mixpanel's raw export writes this key. In
   any project but the source, the query engine hides every event that carries it, while `/import`
-  still counts the event as imported. On a Menards staging import, 5,902,970 events were hidden
-  this way. Set `filterMixpanelNoise: false` to keep the keys. Other record types and `fastMode`
+  still counts the event as imported. On one staging import, 5,902,970 events (1.8% of a week)
+  were hidden this way. Set `filterMixpanelNoise: false` to keep the keys. Other record types and `fastMode`
   are not changed; an explicit `true` with either is an error.
 - **Two new summary maps.** `noise_removed` counts the records each deleted key was removed from.
   `noise_seen` counts the records each watched key was present on (for example `$is_deleted`,
