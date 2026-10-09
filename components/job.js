@@ -1168,8 +1168,8 @@ class Job {
 			rps: 0,
 			mbps: 0,
 			errors: this.errors,  // Always include errors object
-			noise_removed: this.noiseRemoved || {},
-			noise_seen: this.noiseSeen || {},
+			noise_removed: this.noiseRemoved,
+			noise_seen: this.noiseSeen,
 			responses: this.responses,  // Include responses (empty if abridged)
 			dryRun: this.dryRunResults,
 			vendor: this.vendor || "",

@@ -186,3 +186,19 @@ describe('filterMixpanelNoise option', () => {
 		expect(block).toMatch(/default:\s*undefined/);
 	});
 });
+
+describe('filterMixpanelNoise with export-import-event', () => {
+	test('fixData re-nests a flat exported row; the step then cleans properties', () => {
+		const job = new Job(creds, { recordType: 'export-import-event', fixData: true });
+		let data = { event: 'a', distinct_id: 'u1', time: 1700000000, $insert_id: 'i1', $preshuffle_distinct_id: 'old', $is_reshuffled: true };
+		for (const t of job.activeTransforms) {
+			if (t.mutates === false) data = t.fn(data);
+			else t.fn(data);
+			if (!data) break;
+		}
+		expect(data.properties).toBeDefined();
+		expect(data.properties).not.toHaveProperty('$preshuffle_distinct_id');
+		expect(data.properties.$is_reshuffled).toBe(true);
+		expect(job.noiseRemoved).toEqual({ $preshuffle_distinct_id: 1 });
+	});
+});
