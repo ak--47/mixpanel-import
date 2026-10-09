@@ -1,0 +1,45 @@
+{
+	"version": 1,
+	"about": "Mixpanel-internal event property keys found in Mixpanel's own raw export. filterMixpanelNoise deletes every 'drop' key from event properties before import and counts every 'watch' key and 'watch_events' name it sees, without changing them. A key moves into 'drop' only with a code reference into Mixpanel's source or a sandbox reproduction. Evidence paths are relative to the Mixpanel analytics repo at 0bbc6a46c0e. Full survey: snowcat plans/2026-10-mixpanel-noise-filter/research/mixpanel-source-survey.md.",
+	"drop": [
+		{
+			"key": "$preshuffle_distinct_id",
+			"why": "The query readers hide an event carrying it until identity management confirms the id remaps to the event's own distinct_id. That remap exists only in the source project, so in any other project the event is hidden from every query, forever. /import still counts it as imported.",
+			"evidence": "backend/libquery/arb_bin/reader.c:183-237; backend/libquery/brb/reader_v2/filters/global_distinct_id_filter.cpp:82-148; Menards staging import: 5,902,970 hidden events restored by re-sending without the key",
+			"added": "2026-10-09"
+		}
+	],
+	"watch": [
+		{ "key": "$is_reshuffled", "group": "reshuffle", "why": "Written by the reshuffle writer. No query or identity reader reads it. Candidate for drop pending a sandbox test.", "evidence": "backend/arb/writer/brb_to_brb.cpp:588-598; backend/arb/writer/sort_key.cpp:136-140", "added": "2026-10-09" },
+		{ "key": "$is_deleted", "group": "deletion", "why": "true hides the event in the destination as it did in the source. Removing it would show a deleted event.", "evidence": "backend/arb/reader/main.cpp:3016; backend/libquery/value/value.c:268-270", "added": "2026-10-09" },
+		{ "key": "$delete_event_name", "group": "deletion", "why": "Part of the $delete mechanism; deletes the same events in the destination as in the source.", "evidence": "backend/libquery/event_reader/delete_event_reader.cpp:137-171", "added": "2026-10-09" },
+		{ "key": "$delete_insert_id", "group": "deletion", "why": "Part of the $delete mechanism.", "evidence": "backend/libquery/event_reader/delete_event_reader.cpp:137-171; go/src/mixpanel.com/ingestion/remap/converter/events.go:94-95", "added": "2026-10-09" },
+		{ "key": "$delete_inserted_before", "group": "deletion", "why": "Part of the $delete mechanism.", "evidence": "backend/libquery/event_reader/delete_event_reader.cpp:241-253", "added": "2026-10-09" },
+		{ "key": "$inserted_at", "group": "deletion", "why": "Decides whether a matching $delete removes the event. Effect travels with the data.", "evidence": "backend/libquery/event_reader/delete_event_reader.cpp:241-253; backend/arb/writer/possible_duplicates.cpp:15-20", "added": "2026-10-09" },
+		{ "key": "$distinct_id_before_identity", "group": "identity", "why": "Read back as an extra delete and dedupe id, as in the source.", "evidence": "backend/arb/writer/delete_key.cpp:67-100; backend/arb/writer/possible_duplicates.cpp:118-121", "added": "2026-10-09" },
+		{ "key": "$original_distinct_id", "group": "identity", "why": "Extra dedupe key on group clones, as in the source.", "evidence": "backend/arb/writer/possible_duplicates.cpp:118; go/src/mixpanel.com/ingestion/remap/transformers/group_transformer.go:113", "added": "2026-10-09" },
+		{ "key": "$identity_failure_reason", "group": "identity", "why": "Passes through; no hiding reader.", "evidence": "go/src/mixpanel.com/ingestion/remap/transformers/identity_manager_transformer.go:158-160", "added": "2026-10-09" },
+		{ "key": "$had_persisted_distinct_id", "group": "identity", "why": "Passes through; no hiding reader.", "evidence": "survey section 2 (not referenced by ingestion)", "added": "2026-10-09" },
+		{ "key": "$mp_api_endpoint", "group": "overwritten", "why": "Ingestion overwrites it with the request host.", "evidence": "go/src/mixpanel.com/ingestion/api/transform/transform.go:409", "added": "2026-10-09" },
+		{ "key": "$mp_api_timestamp_ms", "group": "overwritten", "why": "Ingestion overwrites it with the receive time.", "evidence": "go/src/mixpanel.com/ingestion/api/transform/transform.go:410", "added": "2026-10-09" },
+		{ "key": "$mp_event_size", "group": "overwritten", "why": "Ingestion overwrites it with the event's byte length.", "evidence": "go/src/mixpanel.com/ingestion/api/verify/events_v2.go:207", "added": "2026-10-09" },
+		{ "key": "mp_processing_time_ms", "group": "overwritten", "why": "Remap overwrites it.", "evidence": "go/src/mixpanel.com/ingestion/remap/transformers/properties_transformer.go:61", "added": "2026-10-09" },
+		{ "key": "$import", "group": "overwritten", "why": "Ingestion sets it to true on /import.", "evidence": "go/src/mixpanel.com/ingestion/api/transform/transform.go:412-415", "added": "2026-10-09" },
+		{ "key": "$mp_actor_type", "group": "overwritten", "why": "Ingestion overwrites it from the request User-Agent.", "evidence": "go/src/mixpanel.com/ingestion/api/transform/transform.go:401-402", "added": "2026-10-09" },
+		{ "key": "$mp_raw_user_agent", "group": "overwritten", "why": "Ingestion overwrites it from the request User-Agent.", "evidence": "go/src/mixpanel.com/ingestion/api/transform/transform.go:401-402", "added": "2026-10-09" },
+		{ "key": "$version", "group": "storage", "why": "Orders duplicates; the effect travels with the data.", "evidence": "backend/libquery/brb/reader_v2/reader.cpp:202-219", "added": "2026-10-09" },
+		{ "key": "$possible_duplicate", "group": "storage", "why": "An imported key is a user column; the dedupe filter reads the builtin column.", "evidence": "backend/libquery/brb/reader_v2/filters/duplicates_filter.cpp:58-66; backend/arb/writer/write_brb.cpp:57-64", "added": "2026-10-09" },
+		{ "key": "$sampling_factor", "group": "storage", "why": "No effect on counts in a project without a sampling config.", "evidence": "backend/libquery/arb_bin/event.c:316-321; go/src/mixpanel.com/ingestion/api/verify/sampling_verify.go:19-23", "added": "2026-10-09" },
+		{ "key": "$bucket", "group": "storage", "why": "Moved into a deprecated builtin; compaction writes an empty value.", "evidence": "go/src/mixpanel.com/arb/format/event.go:62", "added": "2026-10-09" },
+		{ "key": "$warehouse_import_id", "group": "warehouse", "why": "Passes through.", "evidence": "go/src/mixpanel.com/ingestion/api/handlers/import_events.go:437-438", "added": "2026-10-09" },
+		{ "key": "$warehouse_import_job_id", "group": "warehouse", "why": "Passes through.", "evidence": "survey section 2 (not referenced by ingestion)", "added": "2026-10-09" },
+		{ "key": "$warehouse_import_run_id", "group": "warehouse", "why": "Passes through.", "evidence": "survey section 2 (not referenced by ingestion)", "added": "2026-10-09" },
+		{ "key": "$warehouse_table", "group": "warehouse", "why": "Passes through.", "evidence": "survey section 2 (not referenced by ingestion)", "added": "2026-10-09" },
+		{ "key": "$warehouse_type", "group": "warehouse", "why": "Passes through.", "evidence": "survey section 2 (not referenced by ingestion)", "added": "2026-10-09" },
+		{ "key": "mp_original_distinct_id", "group": "warehouse", "why": "Passes through; overwritten only on a hot shard.", "evidence": "go/src/mixpanel.com/ingestion/remap/transformers/hotshard_remediator_transformer.go:105-111", "added": "2026-10-09" },
+		{ "key": "mp_original_event_name", "group": "warehouse", "why": "Passes through; overwritten only on a hot shard.", "evidence": "go/src/mixpanel.com/ingestion/remap/transformers/hotshard_remediator_transformer.go:105-111", "added": "2026-10-09" }
+	],
+	"watch_events": [
+		{ "event": "$delete", "group": "deletion", "why": "A $delete event deletes the matching events in the destination, as it did in the source. Export emits the targets too, so skipping it would show deleted events.", "evidence": "backend/libquery/event_reader/delete_event_reader.cpp:189-258; backend/arb/writer/sort_key.cpp:105, 155-172", "added": "2026-10-09" }
+	]
+}

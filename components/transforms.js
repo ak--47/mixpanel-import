@@ -4,6 +4,7 @@ const utc = require("dayjs/plugin/utc");
 dayjs.extend(utc);
 const u = require("ak-tools");
 const stringify = require("json-stable-stringify");
+const MIXPANEL_NOISE = require("./mixpanel-noise.json");
 const validOperations = ["$set", "$set_once", "$add", "$union", "$append", "$remove", "$unset"];
 // ? https://docs.mixpanel.com/docs/data-structure/user-profiles#reserved-profile-properties
 const specialProps = ["name", "first_name", "last_name", "email", "phone", "avatar", "created", "insert_id", "city", "region", "lib_version", "os", "os_version", "browser", "browser_version", "app_build_number", "app_version_string", "device", "screen_height", "screen_width", "screen_dpi", "current_url", "initial_referrer", "initial_referring_domain", "referrer", "referring_domain", "search_engine", "manufacturer", "brand", "model", "watch_model", "carrier", "radio", "wifi", "bluetooth_enabled", "bluetooth_version", "has_nfc", "has_telephone", "google_play_services", "duration", "country", "country_code"];
@@ -740,6 +741,40 @@ function dedupeRecords(jobConfig) {
 }
 
 /**
+ * filterMixpanelNoise: delete Mixpanel-internal keys that make the destination hide an event
+ * (the list's `drop`), and count the internal keys it only watches. Top-level `properties`
+ * only; values are never changed and no record is dropped.
+ * @param  {JobConfig} jobConfig - owns `noiseRemoved` and `noiseSeen`
+ * @param  {{drop: {key: string}[], watch: {key: string}[], watch_events: {event: string}[]}} [list]
+ */
+function noiseFilter(jobConfig, list = MIXPANEL_NOISE) {
+	const drop = list.drop.map(e => e.key);
+	const watch = list.watch.map(e => e.key);
+	const watchEvents = new Set(list.watch_events.map(e => e.event));
+	const has = Object.prototype.hasOwnProperty;
+	return function filterMixpanelNoise(record) {
+		const props = record?.properties;
+		if (props === null || typeof props !== 'object' || Array.isArray(props)) return record;
+		const removed = jobConfig.noiseRemoved;
+		const seen = jobConfig.noiseSeen;
+		for (const key of drop) {
+			if (has.call(props, key)) {
+				delete props[key];
+				removed[key] = (removed[key] || 0) + 1;
+			}
+		}
+		for (const key of watch) {
+			if (has.call(props, key)) seen[key] = (seen[key] || 0) + 1;
+		}
+		if (typeof record.event === 'string' && watchEvents.has(record.event)) {
+			const k = `event:${record.event}`;
+			seen[k] = (seen[k] || 0) + 1;
+		}
+		return record;
+	};
+}
+
+/**
  * this function is used to whitelist or blacklist events, prop keys, or prop values
  * @param  {JobConfig} jobConfig
  * @param  {import('../index').WhiteAndBlackListParams} params
@@ -1195,6 +1230,8 @@ module.exports = {
 	addTags,
 	applyAliases,
 	dedupeRecords,
+	noiseFilter,
+	MIXPANEL_NOISE,
 	whiteAndBlackLister,
 	epochFilter,
 	isNotEmpty,
