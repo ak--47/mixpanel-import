@@ -743,6 +743,16 @@ declare namespace main {
      */
     fastMode?: boolean;
 
+    /**
+     * Delete Mixpanel-internal keys that hide events (`$preshuffle_distinct_id`) and count
+     * watched keys. Events only (`event`, `export-import-event`); the step runs last.
+     * The default does nothing for other record types or under `fastMode`.
+     * `false` keeps the keys. An explicit `true` with `fastMode` or a non-event record type throws.
+     * Counts appear in the summary as `noise_removed` and `noise_seen`.
+     * @default true
+     */
+    filterMixpanelNoise?: boolean;
+
     // ═══════════════════════════════════════════════════════════════
     // OUTPUT & LOGGING
     // ═══════════════════════════════════════════════════════════════
@@ -1343,6 +1353,14 @@ declare namespace main {
      * - failed import records (400s)
      */
     errors: any;
+    /**
+     * - per key: records whose noise key was deleted (filterMixpanelNoise)
+     */
+    noise_removed: { [key: string]: number };
+    /**
+     * - per key or event name: watched noise seen and kept (filterMixpanelNoise)
+     */
+    noise_seen: { [key: string]: number };
     /**
      * - the elapsed time in ms
      */

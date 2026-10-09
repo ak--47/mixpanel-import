@@ -112,6 +112,12 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 			describe: 'override stream format (json, jsonl, csv, parquet); auto-detected from file extension when omitted',
 			type: 'string'
 		})
+		.option("filterMixpanelNoise", {
+			demandOption: false,
+			default: undefined,
+			describe: 'delete Mixpanel-internal keys that hide events ($preshuffle_distinct_id); on by default for events, pass false to keep them',
+			type: 'boolean'
+		})
 		.option("stream", {
 			alias: "forceStream",
 			demandOption: false,

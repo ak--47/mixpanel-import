@@ -91,3 +91,98 @@ describe('noiseFilter', () => {
 		expect(job.noiseRemoved).toEqual({ zap: 1 });
 	});
 });
+
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
+const Job = require('../components/job.js');
+const mp = require('../index.js');
+const creds = { token: 'dummy-token-nothing-is-sent' };
+
+const tmpFile = (name) => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'noise-')), name);
+const readNdjson = (p) => fs.readFileSync(p, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+const events = () => [
+	{ event: 'a', properties: { distinct_id: 'u1', time: 1700000000, $insert_id: 'i1', $preshuffle_distinct_id: 'old', $is_reshuffled: true } },
+	{ event: 'b', properties: { distinct_id: 'u2', time: 1700000001, $insert_id: 'i2' } }
+];
+const run = (opts, data = events()) => {
+	const dest = tmpFile('out.ndjson');
+	return mp(creds, data, { recordType: 'event', destination: dest, destinationOnly: true, ...opts })
+		.then(summary => ({ summary, out: readNdjson(dest) }));
+};
+
+describe('filterMixpanelNoise option', () => {
+	test('default is on: step is last, maps start empty', () => {
+		const job = new Job(creds, { recordType: 'event', fixTime: true });
+		expect(job.filterMixpanelNoise).toBe(true);
+		expect(job.activeTransforms.at(-1).name).toBe('noiseFilter');
+		expect(job.noiseRemoved).toEqual({});
+		expect(job.noiseSeen).toEqual({});
+	});
+
+	test('export-import-event gets the step', () => {
+		const job = new Job(creds, { recordType: 'export-import-event' });
+		expect(job.activeTransforms.at(-1).name).toBe('noiseFilter');
+	});
+
+	test.each([[{ recordType: 'user' }], [{ recordType: 'group' }], [{ recordType: 'event', fastMode: true }]])('default does nothing on %p', (opts) => {
+		const job = new Job(creds, opts);
+		expect(job.activeTransforms.map(t => t.name)).not.toContain('noiseFilter');
+	});
+
+	test('explicit true throws with fastMode and with a non-event recordType', () => {
+		expect(() => new Job(creds, { recordType: 'event', fastMode: true, filterMixpanelNoise: true })).toThrow(/filterMixpanelNoise/);
+		expect(() => new Job(creds, { recordType: 'user', filterMixpanelNoise: true })).toThrow(/filterMixpanelNoise/);
+		expect(() => new Job(creds, { recordType: 'event', filterMixpanelNoise: true })).not.toThrow();
+	});
+
+	test('option absent: keys removed, counts in the full and abridged summary', async () => {
+		const { summary, out } = await run({});
+		expect(out.find(r => r.event === 'a').properties).not.toHaveProperty('$preshuffle_distinct_id');
+		expect(out.find(r => r.event === 'a').properties.$is_reshuffled).toBe(true);
+		expect(summary.noise_removed).toEqual({ $preshuffle_distinct_id: 1 });
+		expect(summary.noise_seen).toEqual({ $is_reshuffled: 1 });
+		const ab = await run({ abridged: true });
+		expect(ab.summary.noise_removed).toEqual({ $preshuffle_distinct_id: 1 });
+		expect(ab.summary.noise_seen).toEqual({ $is_reshuffled: 1 });
+		const keys = Object.keys(ab.summary);
+		expect(keys.indexOf('noise_removed')).toBe(keys.indexOf('errors') + 1);
+		expect(keys.indexOf('noise_seen')).toBe(keys.indexOf('errors') + 2);
+	});
+
+	test('false: output identical to input, maps empty', async () => {
+		const input = events();
+		const { summary, out } = await run({ filterMixpanelNoise: false }, JSON.parse(JSON.stringify(input)));
+		expect(out).toEqual(input);
+		expect(summary.noise_removed).toEqual({});
+		expect(summary.noise_seen).toEqual({});
+	});
+
+	test('user records with the default: unchanged, maps empty', async () => {
+		const users = [{ $distinct_id: 'u1', $set: { $preshuffle_distinct_id: 'x' }, properties: { $preshuffle_distinct_id: 'y' } }];
+		const { summary, out } = await run({ recordType: 'user' }, JSON.parse(JSON.stringify(users)));
+		expect(out[0].properties).toEqual({ $preshuffle_distinct_id: 'y' });
+		expect(summary.noise_removed).toEqual({});
+	});
+
+	test('runs after transformFunc: the transform still reads the key, and a key it adds is removed', async () => {
+		const transformFunc = (r) => { r.properties.saw = r.properties.$preshuffle_distinct_id || 'none'; r.properties.$preshuffle_distinct_id = 'added'; return r; };
+		const { summary, out } = await run({ transformFunc });
+		expect(out.map(r => r.properties.saw)).toEqual(['old', 'none']);
+		expect(out.every(r => !('$preshuffle_distinct_id' in r.properties))).toBe(true);
+		expect(summary.noise_removed).toEqual({ $preshuffle_distinct_id: 2 });
+	});
+
+	test('a record epochFilter drops is not counted', async () => {
+		const { summary, out } = await run({ epochStart: 1700000001 });
+		expect(out.map(r => r.event)).toEqual(['b']);
+		expect(summary.noise_removed).toEqual({});
+		expect(summary.noise_seen).toEqual({});
+	});
+
+	test('CLI does not send an explicit value by default', () => {
+		const cliSrc = fs.readFileSync(path.join(__dirname, '../components/cli.js'), 'utf8');
+		const block = cliSrc.slice(cliSrc.indexOf('filterMixpanelNoise'), cliSrc.indexOf('filterMixpanelNoise') + 400);
+		expect(block).toMatch(/default:\s*undefined/);
+	});
+});

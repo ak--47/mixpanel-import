@@ -357,6 +357,7 @@ class Job {
 		this.destination = opts.destination || null; //path to write output (local file or gs://bucket/path or s3://bucket/path)
 		this.destinationOnly = u.isNil(opts.destinationOnly) ? false : opts.destinationOnly; //skip Mixpanel, only write to destination
 		this.fastMode = u.isNil(opts.fastMode) ? false : opts.fastMode; //skip all transformations for pre-processed data
+		this.filterMixpanelNoise = u.isNil(opts.filterMixpanelNoise) ? true : opts.filterMixpanelNoise; //delete Mixpanel-internal keys that hide events (events only)
 
 		this.v2_compat = u.isNil(opts.v2_compat) ? false : opts.v2_compat; //automatically set distinct_id from $user_id or $device_id (events only)
 
@@ -378,6 +379,20 @@ class Job {
 			// exported rows arrive FLAT (streamEvents spreads properties to the root);
 			// the replay rewrite contract depends on ezTransforms re-nesting them
 			if (this.recordType === 'export-import-event' && !this.fixData) this.fixData = true;
+		}
+
+		// filterMixpanelNoise: the default does nothing where it cannot apply; only an explicit true is an error
+		const noiseRecordTypes = ['event', 'export-import-event'];
+		if (opts.filterMixpanelNoise === true) {
+			if (this.fastMode) throw new Error('filterMixpanelNoise: true is incompatible with fastMode (fastMode skips every transform)');
+			if (!noiseRecordTypes.includes(this.recordType)) {
+				throw new Error(`filterMixpanelNoise: true requires recordType 'event' or 'export-import-event' (got '${this.recordType}')`);
+			}
+		}
+		this.noiseRemoved = {};
+		this.noiseSeen = {};
+		if (this.filterMixpanelNoise && !this.fastMode && noiseRecordTypes.includes(this.recordType)) {
+			this.noiseFilter = transforms.noiseFilter(this);
 		}
 
 		/** @type {string} directive for profile operations ($set, $set_once, $append, $increment, etc.) */
@@ -501,6 +516,7 @@ class Job {
 		if (this.shouldCreateInsertId) this.activeTransforms.push({ name: 'insertIdAdder', fn: this.insertIdAdder });
 		if (this.addToken) this.activeTransforms.push({ name: 'tokenAdder', fn: this.tokenAdder });
 		if (this.fixTime) this.activeTransforms.push({ name: 'timeTransform', fn: this.timeTransform });
+		if (this.noiseFilter) this.activeTransforms.push({ name: 'noiseFilter', fn: this.noiseFilter }); // must stay last
 
 		this.vendor = opts.vendor || '';
 
@@ -1152,6 +1168,8 @@ class Job {
 			rps: 0,
 			mbps: 0,
 			errors: this.errors,  // Always include errors object
+			noise_removed: this.noiseRemoved || {},
+			noise_seen: this.noiseSeen || {},
 			responses: this.responses,  // Include responses (empty if abridged)
 			dryRun: this.dryRunResults,
 			vendor: this.vendor || "",
@@ -1198,6 +1216,8 @@ class Job {
 				"failed",
 				"empty",
 				"errors",
+				"noise_removed",
+				"noise_seen",
 				"responses",  // Include responses (will be empty array in abridged mode)
 				"startTime",
 				"endTime",
