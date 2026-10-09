@@ -418,8 +418,25 @@ npx mixpanel-import messy_data.json \
 | `dedupe` | `boolean` | `false` | Remove duplicate records using content hash |
 | `strict` | `boolean` | `true` | Validate data and fail fast on errors |
 | `scrubProps` | `string[]` | `[]` | Property names to remove from all records |
+| `filterMixpanelNoise` | `boolean` | `true` | (Events only) Delete Mixpanel-internal keys that hide events in another project. See [Mixpanel noise filter](#mixpanel-noise-filter) |
 | `v2_compat` | `boolean` | `false` | (Events only) Auto-set `distinct_id` from `$user_id`/`user_id` or `$device_id`/`device_id`; falls back to `""` |
 | `directive` | `string` | `"$set"` | (Profiles only) Operation for profile updates: `$set`, `$set_once`, `$add`, `$union`, `$append`, `$remove`, `$unset` |
+
+#### Mixpanel noise filter
+
+`filterMixpanelNoise` is `true` by default for `recordType: "event"` and `"export-import-event"`. It runs last, after your `transformFunc`.
+
+It deletes `$preshuffle_distinct_id` from each event's top-level `properties`. Mixpanel's raw export writes this key. In any project but the source, Mixpanel's query engine hides every event that carries it, and `/import` still counts the event as imported.
+
+Set `filterMixpanelNoise: false` to keep the keys.
+
+The summary has two maps. `noise_removed` counts the records each deleted key was removed from. `noise_seen` counts the records each watched key was present on, and a watched event name is counted as `event:<name>` (for example `event:$delete`). The list of keys is `components/mixpanel-noise.json`.
+
+A key is deleted only when it makes the destination hide an event the source showed. Keys whose effect travels with the data, such as `$is_deleted` and `$delete` events, are counted and kept.
+
+On any other record type, or with `fastMode`, the filter does nothing. An explicit `filterMixpanelNoise: true` in those cases is an error.
+
+To re-import a Mixpanel export, also set `fixData: false` and `tags: {}`. With `fixData: true`, keys such as `name`, `source` and `country` are renamed to `$name`, `$source` and `mp_country_code`.
 
 ### 🎯 **Filtering Options**
 

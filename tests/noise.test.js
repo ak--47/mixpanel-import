@@ -202,3 +202,22 @@ describe('filterMixpanelNoise with export-import-event', () => {
 		expect(job.noiseRemoved).toEqual({ $preshuffle_distinct_id: 1 });
 	});
 });
+
+describe('noise golden fixture', () => {
+	const dir = path.join(__dirname, 'fixtures/noise');
+	test('the engine reproduces expected.ndjson and expected-counts.json', async () => {
+		const dest = tmpFile('golden.ndjson');
+		const summary = await mp(creds, path.join(dir, 'input.ndjson'), { recordType: 'event', streamFormat: 'jsonl', destination: dest, destinationOnly: true, fixData: false, removeNulls: false });
+		const expected = readNdjson(path.join(dir, 'expected.ndjson'));
+		const counts = JSON.parse(fs.readFileSync(path.join(dir, 'expected-counts.json'), 'utf8'));
+		expect(readNdjson(dest)).toEqual(expected);
+		expect({ records: expected.length, noise_removed: summary.noise_removed, noise_seen: summary.noise_seen }).toEqual(counts);
+	});
+
+	test('npm pack ships components/mixpanel-noise.json', () => {
+		const { execSync } = require('child_process');
+		const out = execSync('npm pack --dry-run --json', { cwd: path.join(__dirname, '..'), encoding: 'utf8' });
+		const files = JSON.parse(out)[0].files.map(f => f.path);
+		expect(files).toContain('components/mixpanel-noise.json');
+	});
+});
