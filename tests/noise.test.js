@@ -7,8 +7,13 @@ const DROP = MIXPANEL_NOISE.drop.map(e => e.key);
 const WATCH = MIXPANEL_NOISE.watch.map(e => e.key);
 
 describe('noiseFilter', () => {
-	test('list shape: drop is exactly $preshuffle_distinct_id; every entry has evidence', () => {
-		expect(DROP).toEqual(['$preshuffle_distinct_id']);
+	test('list shape: drop is $preshuffle_distinct_id plus fourteen ingestion keys; every entry has evidence', () => {
+		expect(DROP).toEqual([
+			'$preshuffle_distinct_id', '$mp_api_endpoint', '$mp_api_timestamp_ms', '$mp_event_size',
+			'mp_processing_time_ms', '$warehouse_import_id', '$warehouse_import_job_id',
+			'$warehouse_import_run_id', '$warehouse_table', '$warehouse_type', '$import',
+			'$mp_actor_type', '$mp_raw_user_agent', 'mp_original_distinct_id', 'mp_original_event_name'
+		]);
 		for (const e of [...MIXPANEL_NOISE.drop, ...MIXPANEL_NOISE.watch, ...MIXPANEL_NOISE.watch_events]) {
 			expect(typeof e.why).toBe('string');
 			expect(e.evidence.length).toBeGreaterThan(0);

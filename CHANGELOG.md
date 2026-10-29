@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.7.1
+
+### Changed
+
+- **Behaviour change: `filterMixpanelNoise` deletes fourteen more keys.** Mixpanel stamps these on
+  ingestion, and they arrive mostly from a Mixpanel export: `$mp_api_endpoint`,
+  `$mp_api_timestamp_ms`, `$mp_event_size`, `mp_processing_time_ms`, `$import`, `$mp_actor_type`,
+  `$mp_raw_user_agent`, `mp_original_distinct_id`, `mp_original_event_name`, `$warehouse_import_id`,
+  `$warehouse_import_job_id`, `$warehouse_import_run_id`, `$warehouse_table`, `$warehouse_type`.
+  Event jobs that sent these keys no longer send them. They now count in `noise_removed`, not
+  `noise_seen`. The rule widens: a key is deleted when it hides an event in the destination, or
+  when it is source-project ingestion metadata. `filterMixpanelNoise: false` still keeps every key.
+
 ## 3.7.0
 
 ### Changed

@@ -115,7 +115,7 @@ DOCS: https://github.com/ak--47/mixpanel-import`)
 		.option("filterMixpanelNoise", {
 			demandOption: false,
 			default: undefined,
-			describe: 'delete Mixpanel-internal keys that hide events ($preshuffle_distinct_id); on by default for events, pass false to keep them',
+			describe: 'delete Mixpanel-internal keys that hide events ($preshuffle_distinct_id) or are source-project ingestion metadata; on by default for events, pass false to keep them',
 			type: 'boolean'
 		})
 		.option("stream", {

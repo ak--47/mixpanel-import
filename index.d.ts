@@ -744,8 +744,12 @@ declare namespace main {
     fastMode?: boolean;
 
     /**
-     * Delete Mixpanel-internal keys that hide events (`$preshuffle_distinct_id`) and count
-     * watched keys. Events only (`event`, `export-import-event`); the step runs last.
+     * Delete Mixpanel-internal keys that hide events (`$preshuffle_distinct_id`) or are
+     * source-project ingestion metadata (`$mp_api_endpoint`, `$mp_api_timestamp_ms`,
+     * `$mp_event_size`, `mp_processing_time_ms`, `$import`, `$mp_actor_type`,
+     * `$mp_raw_user_agent`, `mp_original_distinct_id`, `mp_original_event_name`, `$warehouse_import_id`,
+     * `$warehouse_import_job_id`, `$warehouse_import_run_id`, `$warehouse_table`,
+     * `$warehouse_type`), and count watched keys. Events only (`event`, `export-import-event`); the step runs last.
      * The default does nothing for other record types or under `fastMode`.
      * `false` keeps the keys. An explicit `true` with `fastMode` or a non-event record type throws.
      * Counts appear in the summary as `noise_removed` and `noise_seen`.
