@@ -1324,6 +1324,7 @@ app.post("/dry-run", upload.array("files"), handleMulterError, async (req, res) 
 		rawOpts.removeNulls = false;
 		rawOpts.flattenData = false;
 		rawOpts.vendor = "";
+		rawOpts.filterMixpanelNoise = false; // Raw pass shows the input as it is
 		rawOpts.maxRecords = 100; // Match dry run limit
 
 		const rawResult = await mixpanelImport(creds, data, rawOpts);

@@ -1,5 +1,35 @@
 # Changelog
 
+## 3.7.2
+
+### Changed
+
+- **Behaviour change: `filterMixpanelNoise` applies the source project's deletes.** Event jobs
+  now drop every `$delete` event, every event that a valid `$delete` deletes, and every event
+  with `$is_deleted: true`. They delete the delete-mechanism keys (`$is_deleted`,
+  `$delete_event_name`, `$delete_insert_id`, `$delete_inserted_before`, `$inserted_at`,
+  `$distinct_id_before_identity`) from the events they keep. The match uses Mixpanel's
+  query-time rule and runs on the raw record, before any vendor transform or `transformFunc`.
+  The `$delete` index covers one run.
+- **The input is read twice.** To find the `$delete` events, the importer reads a file path,
+  folder, `gs://` or `s3://` URI, array of those, array of objects, or string of data once
+  before the import. This first pass changes no count and ignores `maxRecords`. For cloud
+  inputs it doubles the download.
+- **Deletes are not applied for three inputs:** a stream you pass in, `export-import-event`
+  (a live `/export` call cannot be read twice), and jobs with `vendor` set (this flow is for
+  events that came from Mixpanel). For these, the `$delete` events and the delete-mechanism keys
+  are kept and counted in `noise_seen`, so the `$delete` events work in the destination.
+- **The drop list grows by 8:** `$is_reshuffled`, `$original_distinct_id`,
+  `$identity_failure_reason`, `$had_persisted_distinct_id`, `$version`, `$possible_duplicate`,
+  `$sampling_factor`, `$bucket`. The `watch` list is now empty. `components/mixpanel-noise.json`
+  is list version 2, with a new `delete_keys` section.
+- **New counts.** `noise_removed` gains `event:$delete`, `event:deleted` and
+  `event:$is_deleted`. `noise_seen` gains `event:$delete:no_target` for a valid `$delete` that
+  deleted nothing in the run. Each drop also counts in `empty`, so `total - empty` is the number
+  of records sent.
+- **Web UI:** the Processing section has a "Filter Mixpanel Noise" checkbox (on by default, event
+  imports only). The raw side of a preview no longer runs the filter.
+
 ## 3.7.1
 
 ### Changed

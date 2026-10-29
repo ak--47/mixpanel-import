@@ -744,15 +744,18 @@ declare namespace main {
     fastMode?: boolean;
 
     /**
-     * Delete Mixpanel-internal keys that hide events (`$preshuffle_distinct_id`) or are
-     * source-project ingestion metadata (`$mp_api_endpoint`, `$mp_api_timestamp_ms`,
-     * `$mp_event_size`, `mp_processing_time_ms`, `$import`, `$mp_actor_type`,
-     * `$mp_raw_user_agent`, `mp_original_distinct_id`, `mp_original_event_name`, `$warehouse_import_id`,
-     * `$warehouse_import_job_id`, `$warehouse_import_run_id`, `$warehouse_table`,
-     * `$warehouse_type`), and count watched keys. Events only (`event`, `export-import-event`); the step runs last.
+     * Make the destination show what the source showed, with nothing Mixpanel stamps on ingestion.
+     * Events only (`event`, `export-import-event`). Deletes the list's `drop` keys
+     * (`$preshuffle_distinct_id` and source-project ingestion metadata) as the last step.
+     * When the input can be read twice (path, folder, `gs://`/`s3://` URI, an array of those, an
+     * array of objects, a string of data), the input is read twice: a first pass indexes `$delete`
+     * events, then the import drops every `$delete` event, every event a `$delete` deletes, and every
+     * event with `$is_deleted: true`, and deletes the delete-mechanism keys from the rest.
+     * Not applied for a caller's stream, `export-import-event`, or a `vendor` job: then the `$delete`
+     * events and delete-mechanism keys are kept and counted. The `$delete` index covers one run.
      * The default does nothing for other record types or under `fastMode`.
-     * `false` keeps the keys. An explicit `true` with `fastMode` or a non-event record type throws.
-     * Counts appear in the summary as `noise_removed` and `noise_seen`.
+     * `false` keeps every event and key. An explicit `true` with `fastMode` or a non-event record type throws.
+     * Counts appear in the summary as `noise_removed` and `noise_seen`; each drop also counts in `empty`.
      * @default true
      */
     filterMixpanelNoise?: boolean;

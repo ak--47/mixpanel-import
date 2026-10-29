@@ -20,7 +20,7 @@ DEPS
 const importJob = require('./components/job.js');
 
 // $ parsers
-const { determineDataType, getEnvVars } = require("./components/parsers.js");
+const { determineDataType, prescanDeletes, getEnvVars } = require("./components/parsers.js");
 
 // $ pipelines
 const { corePipeline } = require('./components/pipelines.js');
@@ -168,6 +168,8 @@ async function main(creds = {}, data, opts = {}, isCLI = false) {
 	let stream;
 	try {
 
+		// filterMixpanelNoise: index the source's $delete events when the input can be read twice
+		if (await prescanDeletes(data || cliData, job)) l(`\n🗑️  DELETES INDEXED: ${job.deleteIndex.size} $delete event(s)\n`);
 		stream = await determineDataType(data || cliData, job); // always stream[]
 		l(`\n🌊 STREAM CREATED!\n`);
 	}

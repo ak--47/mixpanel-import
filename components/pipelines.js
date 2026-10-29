@@ -38,6 +38,33 @@ dayjs.extend(utc);
 /** @typedef {import('../index').ImportResults} ImportResults */
 
 /**
+ * filterMixpanelNoise: apply the source's deletes on the raw record (components/deletes.js).
+ * Runs right after the first existence filter, before the vendor transform, so the match sees the
+ * source's name, ids and time. A drop is tallied `empty` as well, so total - empty still counts
+ * what was sent. Orphan `$delete` rows are counted at flush.
+ * @param {JobConfig} job
+ * @returns {Transform}
+ */
+function createDeleteApplier(job) {
+	const index = job.deleteIndex;
+	return new Transform({
+		objectMode: true,
+		highWaterMark: job.highWater,
+		transform(chunk, encoding, callback) {
+			if (index.drop(job, chunk)) {
+				job.empty++;
+				return callback();
+			}
+			callback(null, chunk);
+		},
+		flush(callback) {
+			index.countOrphans(job);
+			callback();
+		}
+	});
+}
+
+/**
  * Creates a transform stream that checks existence and enforces maxRecords
  * @param {JobConfig} job
  * @returns {Transform}
@@ -679,8 +706,10 @@ async function corePipeline(stream, job, toNodeStream = false) {
 		}
 	} else {
 		// Normal mode: full transformation pipeline
+		stages.push(createExistenceFilter(job));
+		// filterMixpanelNoise on an input read twice: the prescan indexed the source's deletes
+		if (job.deleteIndex) stages.push(createDeleteApplier(job));
 		stages.push(
-			createExistenceFilter(job),
 			createVendorTransform(job)
 			// Note: Vendor transforms are 1:1, no flatten needed
 		);

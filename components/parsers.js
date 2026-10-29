@@ -2682,10 +2682,56 @@ async function fetchFromS3(s3Path) {
 	}
 }
 
+/**
+ * filterMixpanelNoise: read the input once, before the main pass, and index its `$delete` events
+ * (components/deletes.js), so the pipeline can apply the source's deletes. Runs only when:
+ * - the noise filter is on (event jobs, not fastMode);
+ * - recordType is `event`: an `export-import-event` input is a live /export call that cannot be
+ *   read twice (determineDataType also rewrites the job's recordType and credentials);
+ * - no `vendor` is set: the flow is for events that came from Mixpanel;
+ * - the input can be read twice: a path, a folder, a gs:// or s3:// URI, an array of those, an
+ *   array of objects, or a string of data. A caller's stream cannot.
+ * Otherwise the deletes are not applied and travel to the destination as data.
+ *
+ * The prescan reads through a shadow of the job, so it changes no job counter and fires no
+ * callback: an unparsable line is skipped, not counted; a missing cloud object is counted once,
+ * by the main pass; `maxRecords` does not apply.
+ * @param  {any} data
+ * @param  {JobConfig} job
+ * @returns {Promise<boolean>} whether the deletes are applied
+ */
+async function prescanDeletes(data, job) {
+	if (!job.noiseFilter || job.recordType !== 'event' || job.vendor) return false;
+	if (data === null || data === undefined || isReadableStream(data)) return false;
+	if (typeof data === 'object' && !Array.isArray(data)) return false;
+	if (Array.isArray(data) && data.length === 0) return false;
+
+	/** @type {JobConfig} */
+	const shadow = Object.create(job);
+	shadow.cloudStreamCallback = null;
+	shadow.parseErrorHandler = () => ({});
+	shadow.verbose = false;
+
+	const { DeleteIndex } = require('./deletes.js');
+	const index = new DeleteIndex();
+	const source = await determineDataType(data, shadow);
+	for await (const record of source) index.add(record);
+
+	job.deleteIndex = index;
+	job.noiseDeletesApplied = true;
+	return true;
+}
+
+/** @param {any} data */
+function isReadableStream(data) {
+	return data instanceof stream.Stream || typeof data?.pipe === 'function' || typeof data?.[Symbol.asyncIterator] === 'function';
+}
+
 module.exports = {
 	buildMapFromPath,
 	JsonlParser,
 	determineDataType,
+	prescanDeletes,
 	existingStreamInterface,
 	StreamArray,
 	itemStream,

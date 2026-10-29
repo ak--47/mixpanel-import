@@ -418,23 +418,46 @@ npx mixpanel-import messy_data.json \
 | `dedupe` | `boolean` | `false` | Remove duplicate records using content hash |
 | `strict` | `boolean` | `true` | Validate data and fail fast on errors |
 | `scrubProps` | `string[]` | `[]` | Property names to remove from all records |
-| `filterMixpanelNoise` | `boolean` | `true` | (Events only) Delete Mixpanel-internal keys that hide events in another project, and source-project ingestion metadata. See [Mixpanel noise filter](#mixpanel-noise-filter) |
+| `filterMixpanelNoise` | `boolean` | `true` | (Events only) Delete Mixpanel-internal keys and source-project ingestion metadata, and apply the source's `$delete` events before import. See [Mixpanel noise filter](#mixpanel-noise-filter) |
 | `v2_compat` | `boolean` | `false` | (Events only) Auto-set `distinct_id` from `$user_id`/`user_id` or `$device_id`/`device_id`; falls back to `""` |
 | `directive` | `string` | `"$set"` | (Profiles only) Operation for profile updates: `$set`, `$set_once`, `$add`, `$union`, `$append`, `$remove`, `$unset` |
 
 #### Mixpanel noise filter
 
-`filterMixpanelNoise` is `true` by default for `recordType: "event"` and `"export-import-event"`. It runs last, after your `transformFunc`.
+`filterMixpanelNoise` is `true` by default for `recordType: "event"` and `"export-import-event"`. Its goal: project B shows what project A showed, with nothing that Mixpanel stamps on ingestion. Set `filterMixpanelNoise: false` to send every event and key as it is.
 
-It deletes `$preshuffle_distinct_id` from each event's top-level `properties`. Mixpanel's raw export writes this key. In any project but the source, Mixpanel's query engine hides every event that carries it, and `/import` still counts the event as imported.
+**Keys it deletes.** As the last step, after your `transformFunc`, it deletes 23 keys from each event's top-level `properties`:
 
-It also deletes fourteen keys that Mixpanel stamps on ingestion: `$mp_api_endpoint`, `$mp_api_timestamp_ms`, `$mp_event_size`, `mp_processing_time_ms`, `$import`, `$mp_actor_type`, `$mp_raw_user_agent`, `mp_original_distinct_id`, `mp_original_event_name`, `$warehouse_import_id`, `$warehouse_import_job_id`, `$warehouse_import_run_id`, `$warehouse_table`, and `$warehouse_type`. They describe the source project's ingestion or a warehouse sync the destination does not have.
+- `$preshuffle_distinct_id`. Mixpanel's raw export writes this key. In any project but the source, Mixpanel's query engine hides every event that carries it, and `/import` still counts the event as imported.
+- Source-project ingestion metadata: `$mp_api_endpoint`, `$mp_api_timestamp_ms`, `$mp_event_size`, `mp_processing_time_ms`, `$import`, `$mp_actor_type`, `$mp_raw_user_agent`, `mp_original_distinct_id`, `mp_original_event_name`, `$warehouse_import_id`, `$warehouse_import_job_id`, `$warehouse_import_run_id`, `$warehouse_table`, `$warehouse_type`, `$is_reshuffled`, `$original_distinct_id`, `$identity_failure_reason`, `$had_persisted_distinct_id`, `$version`, `$possible_duplicate`, `$sampling_factor`, and `$bucket`.
 
-Set `filterMixpanelNoise: false` to keep the keys.
+**Deletes it applies.** When the input can be read twice, the importer applies the source project's deletes before import, and never sends them:
 
-The summary has two maps. `noise_removed` counts the records each deleted key was removed from. `noise_seen` counts the records each watched key was present on, and a watched event name is counted as `event:<name>` (for example `event:$delete`). The list of keys is `components/mixpanel-noise.json`.
+- It drops every `$delete` event.
+- It drops every event that a valid `$delete` deletes. The rule is Mixpanel's query-time rule: same event name, `distinct_id`, `$insert_id` and `time` (to the millisecond), and `$inserted_at` absent or lower than the `$delete`'s `$delete_inserted_before`.
+- It drops every event with `$is_deleted: true`.
+- It deletes the delete-mechanism keys from the events it keeps: `$is_deleted`, `$delete_event_name`, `$delete_insert_id`, `$delete_inserted_before`, `$inserted_at`, and `$distinct_id_before_identity`.
 
-A key is deleted when it makes the destination hide an event the source showed, or when it is source-project ingestion metadata. Keys whose effect travels with the data, such as `$is_deleted` and `$delete` events, are counted and kept.
+The match runs on the raw record, before any vendor transform or `transformFunc`, so it sees the source's values.
+
+The input can be read twice when it is a file path, a folder, a `gs://` or `s3://` URI, an array of those, an array of objects, or a string of data. The importer then reads the input two times: a first pass indexes the `$delete` events, and the second pass imports. The first pass changes no count and ignores `maxRecords`. For large cloud inputs this doubles the download.
+
+The importer does **not** apply deletes, and reads the input once, in these cases:
+
+- The input is a stream you pass in.
+- `recordType` is `export-import-event`. The input is a live `/export` call, which cannot be read twice.
+- `vendor` is set. This flow is for events that came from Mixpanel.
+
+Then the `$delete` events and the delete-mechanism keys are kept and only counted, so the `$delete` events reach the destination complete and work there.
+
+**Scope.** The `$delete` index covers one run. A `$delete` whose target is in another run's input is dropped, and its target is sent. An export day file holds both, because a `$delete` carries its target's `time`.
+
+**Counts.** The summary has two maps. Each drop also counts in `empty`, so `total - empty` is the number of records sent.
+
+- `noise_removed` counts the records each deleted key was removed from, plus `event:$delete` (every `$delete` event dropped), `event:deleted` (events a `$delete` deleted) and `event:$is_deleted` (events dropped for `$is_deleted: true`).
+- `noise_seen` counts `event:$delete:no_target` (valid `$delete` events that deleted nothing in this run). When deletes are not applied, it also counts each delete-mechanism key and `event:$delete`, which are kept.
+
+The list of keys is `components/mixpanel-noise.json`.
 
 For `export-import-event`, records arrive flat, so the filter needs `fixData: true` to see `properties`.
 

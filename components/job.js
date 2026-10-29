@@ -391,6 +391,8 @@ class Job {
 		}
 		this.noiseRemoved = {};
 		this.noiseSeen = {};
+		this.noiseDeletesApplied = false; //set by parsers.js prescanDeletes when it indexed the source's $delete events
+		this.deleteIndex = null; //the source's $delete events (components/deletes.js), when applied
 		if (this.filterMixpanelNoise && !this.fastMode && noiseRecordTypes.includes(this.recordType)) {
 			this.noiseFilter = transforms.noiseFilter(this);
 		}

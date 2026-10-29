@@ -1,6 +1,6 @@
 {
-	"version": 1,
-	"about": "Mixpanel-internal event property keys found in Mixpanel's own raw export. filterMixpanelNoise deletes every 'drop' key from event properties before import and counts every 'watch' key and 'watch_events' name it sees, without changing them. A key moves into 'drop' with a code reference into Mixpanel's source, a sandbox reproduction, or an owner decision that the key is source-project ingestion metadata no destination wants. Evidence paths are relative to the Mixpanel analytics repo at 0bbc6a46c0e.",
+	"version": 2,
+	"about": "Mixpanel-internal event property keys found in Mixpanel's own raw export. filterMixpanelNoise deletes every 'drop' key from event properties before import. When the source can be read twice, it first applies the source's deletes: it drops every '$delete' event, every event that a valid '$delete' in the same source deletes (backend/libquery/event_reader/delete_event_reader.cpp:137-256), and every event with '$is_deleted' true (backend/arb/reader/main.cpp:3016), then deletes every 'delete_keys' key from the events it keeps. When the source cannot be read twice, it changes no 'delete_keys' key and counts each one, and each 'watch_events' name, as seen. It counts every 'watch' key it sees, without changing it. A key moves into 'drop' with a code reference into Mixpanel's source, a sandbox reproduction, or an owner decision that the key is source-project ingestion metadata no destination wants. Evidence paths are relative to the Mixpanel analytics repo at 0bbc6a46c0e unless an entry names another commit.",
 	"drop": [
 		{
 			"key": "$preshuffle_distinct_id",
@@ -91,25 +91,96 @@
 			"why": "Passes through; overwritten only on a hot shard. Dropped by owner decision (AK, 2026-10-29).",
 			"evidence": "go/src/mixpanel.com/ingestion/remap/transformers/hotshard_remediator_transformer.go:105-111; owner decision AK 2026-10-29",
 			"added": "2026-10-29"
+		},
+		{
+			"key": "$is_reshuffled",
+			"why": "Written by the reshuffle writer in the source project. No query or identity reader reads it, so it only adds a meaningless column in the destination. Dropped by owner decision (AK, 2026-10-29).",
+			"evidence": "backend/arb/writer/brb_to_brb.cpp:588-598; backend/arb/writer/sort_key.cpp:136-140; owner decision AK 2026-10-29",
+			"added": "2026-10-29"
+		},
+		{
+			"key": "$original_distinct_id",
+			"why": "Source-project identity metadata: an extra dedupe key on group clones the source made. The destination makes its own clones. Dropped by owner decision (AK, 2026-10-29).",
+			"evidence": "backend/arb/writer/possible_duplicates.cpp:118; go/src/mixpanel.com/ingestion/remap/transformers/group_transformer.go:113; owner decision AK 2026-10-29",
+			"added": "2026-10-29"
+		},
+		{
+			"key": "$identity_failure_reason",
+			"why": "Source-project identity metadata. No reader hides an event on it. Dropped by owner decision (AK, 2026-10-29).",
+			"evidence": "go/src/mixpanel.com/ingestion/remap/transformers/identity_manager_transformer.go:158-160; owner decision AK 2026-10-29",
+			"added": "2026-10-29"
+		},
+		{
+			"key": "$had_persisted_distinct_id",
+			"why": "Source-project identity metadata. No reader hides an event on it. Dropped by owner decision (AK, 2026-10-29).",
+			"evidence": "survey section 2 (not referenced by ingestion); owner decision AK 2026-10-29",
+			"added": "2026-10-29"
+		},
+		{
+			"key": "$version",
+			"why": "Source-project storage metadata that orders duplicates. The source already resolved its duplicates before export. Dropped by owner decision (AK, 2026-10-29).",
+			"evidence": "backend/libquery/brb/reader_v2/reader.cpp:202-219; owner decision AK 2026-10-29",
+			"added": "2026-10-29"
+		},
+		{
+			"key": "$possible_duplicate",
+			"why": "Source-project storage metadata. An imported key is a user column; the dedupe filter reads the builtin column. Dropped by owner decision (AK, 2026-10-29).",
+			"evidence": "backend/libquery/brb/reader_v2/filters/duplicates_filter.cpp:58-66; backend/arb/writer/write_brb.cpp:57-64; owner decision AK 2026-10-29",
+			"added": "2026-10-29"
+		},
+		{
+			"key": "$sampling_factor",
+			"why": "Source-project storage metadata. No effect on counts in a project without a sampling config. Dropped by owner decision (AK, 2026-10-29).",
+			"evidence": "backend/libquery/arb_bin/event.c:316-321; go/src/mixpanel.com/ingestion/api/verify/sampling_verify.go:19-23; owner decision AK 2026-10-29",
+			"added": "2026-10-29"
+		},
+		{
+			"key": "$bucket",
+			"why": "Source-project storage metadata, moved into a deprecated builtin. Dropped by owner decision (AK, 2026-10-29).",
+			"evidence": "go/src/mixpanel.com/arb/format/event.go:62; owner decision AK 2026-10-29",
+			"added": "2026-10-29"
 		}
 	],
-	"watch": [
-		{ "key": "$is_reshuffled", "group": "reshuffle", "why": "Written by the reshuffle writer. No query or identity reader reads it. Candidate for drop pending a sandbox test.", "evidence": "backend/arb/writer/brb_to_brb.cpp:588-598; backend/arb/writer/sort_key.cpp:136-140", "added": "2026-10-09" },
-		{ "key": "$is_deleted", "group": "deletion", "why": "true hides the event in the destination as it did in the source. Removing it would show a deleted event.", "evidence": "backend/arb/reader/main.cpp:3016; backend/libquery/value/value.c:268-270", "added": "2026-10-09" },
-		{ "key": "$delete_event_name", "group": "deletion", "why": "Part of the $delete mechanism; deletes the same events in the destination as in the source.", "evidence": "backend/libquery/event_reader/delete_event_reader.cpp:137-171", "added": "2026-10-09" },
-		{ "key": "$delete_insert_id", "group": "deletion", "why": "Part of the $delete mechanism.", "evidence": "backend/libquery/event_reader/delete_event_reader.cpp:137-171; go/src/mixpanel.com/ingestion/remap/converter/events.go:94-95", "added": "2026-10-09" },
-		{ "key": "$delete_inserted_before", "group": "deletion", "why": "Part of the $delete mechanism.", "evidence": "backend/libquery/event_reader/delete_event_reader.cpp:241-253", "added": "2026-10-09" },
-		{ "key": "$inserted_at", "group": "deletion", "why": "Decides whether a matching $delete removes the event. Effect travels with the data.", "evidence": "backend/libquery/event_reader/delete_event_reader.cpp:241-253; backend/arb/writer/possible_duplicates.cpp:15-20", "added": "2026-10-09" },
-		{ "key": "$distinct_id_before_identity", "group": "identity", "why": "Read back as an extra delete and dedupe id, as in the source.", "evidence": "backend/arb/writer/delete_key.cpp:67-100; backend/arb/writer/possible_duplicates.cpp:118-121", "added": "2026-10-09" },
-		{ "key": "$original_distinct_id", "group": "identity", "why": "Extra dedupe key on group clones, as in the source.", "evidence": "backend/arb/writer/possible_duplicates.cpp:118; go/src/mixpanel.com/ingestion/remap/transformers/group_transformer.go:113", "added": "2026-10-09" },
-		{ "key": "$identity_failure_reason", "group": "identity", "why": "Passes through; no hiding reader.", "evidence": "go/src/mixpanel.com/ingestion/remap/transformers/identity_manager_transformer.go:158-160", "added": "2026-10-09" },
-		{ "key": "$had_persisted_distinct_id", "group": "identity", "why": "Passes through; no hiding reader.", "evidence": "survey section 2 (not referenced by ingestion)", "added": "2026-10-09" },
-		{ "key": "$version", "group": "storage", "why": "Orders duplicates; the effect travels with the data.", "evidence": "backend/libquery/brb/reader_v2/reader.cpp:202-219", "added": "2026-10-09" },
-		{ "key": "$possible_duplicate", "group": "storage", "why": "An imported key is a user column; the dedupe filter reads the builtin column.", "evidence": "backend/libquery/brb/reader_v2/filters/duplicates_filter.cpp:58-66; backend/arb/writer/write_brb.cpp:57-64", "added": "2026-10-09" },
-		{ "key": "$sampling_factor", "group": "storage", "why": "No effect on counts in a project without a sampling config.", "evidence": "backend/libquery/arb_bin/event.c:316-321; go/src/mixpanel.com/ingestion/api/verify/sampling_verify.go:19-23", "added": "2026-10-09" },
-		{ "key": "$bucket", "group": "storage", "why": "Moved into a deprecated builtin; compaction writes an empty value.", "evidence": "go/src/mixpanel.com/arb/format/event.go:62", "added": "2026-10-09" }
+	"delete_keys": [
+		{
+			"key": "$is_deleted",
+			"why": "Source compaction marks an event deleted with it. When deletes are applied, an event with $is_deleted true is dropped (every query hides it in the source) and the key is deleted from the rest, where it is false and does nothing.",
+			"evidence": "backend/arb/reader/main.cpp:3016; backend/libquery/value/value.c:268-270; owner decision AK 2026-10-29 (deletes applied, analytics 7437f23a9a1)",
+			"added": "2026-10-29"
+		},
+		{
+			"key": "$delete_event_name",
+			"why": "Only on $delete events, which are dropped when deletes are applied.",
+			"evidence": "backend/libquery/event_reader/delete_event_reader.cpp:137-171; owner decision AK 2026-10-29 (deletes applied, analytics 7437f23a9a1)",
+			"added": "2026-10-29"
+		},
+		{
+			"key": "$delete_insert_id",
+			"why": "Only on $delete events, which are dropped when deletes are applied.",
+			"evidence": "backend/libquery/event_reader/delete_event_reader.cpp:137-171; go/src/mixpanel.com/ingestion/remap/converter/events.go:94-95; owner decision AK 2026-10-29 (deletes applied, analytics 7437f23a9a1)",
+			"added": "2026-10-29"
+		},
+		{
+			"key": "$delete_inserted_before",
+			"why": "Only on $delete events, which are dropped when deletes are applied.",
+			"evidence": "backend/libquery/event_reader/delete_event_reader.cpp:241-253; owner decision AK 2026-10-29 (deletes applied, analytics 7437f23a9a1)",
+			"added": "2026-10-29"
+		},
+		{
+			"key": "$inserted_at",
+			"why": "Decides whether a matching $delete removes the event. When deletes are applied no $delete reaches the destination, so the key does nothing there.",
+			"evidence": "backend/libquery/event_reader/delete_event_reader.cpp:241-253; backend/arb/writer/possible_duplicates.cpp:15-20; owner decision AK 2026-10-29 (deletes applied, analytics 7437f23a9a1)",
+			"added": "2026-10-29"
+		},
+		{
+			"key": "$distinct_id_before_identity",
+			"why": "Read back as an extra delete and dedupe id. When deletes are applied no $delete reaches the destination, so the key only adds a column.",
+			"evidence": "backend/arb/writer/delete_key.cpp:67-100; backend/arb/writer/possible_duplicates.cpp:118-121; owner decision AK 2026-10-29 (deletes applied, analytics 7437f23a9a1)",
+			"added": "2026-10-29"
+		}
 	],
+	"watch": [],
 	"watch_events": [
-		{ "event": "$delete", "group": "deletion", "why": "A $delete event deletes the matching events in the destination, as it did in the source. Export emits the targets too, so skipping it would show deleted events.", "evidence": "backend/libquery/event_reader/delete_event_reader.cpp:189-258; backend/arb/writer/sort_key.cpp:105, 155-172", "added": "2026-10-09" }
+		{ "event": "$delete", "group": "deletion", "why": "Counted only when deletes cannot be applied (the source cannot be read twice). Then a $delete event deletes the matching events in the destination, as it did in the source. When deletes are applied, every $delete event is dropped and counted in noise_removed as event:$delete.", "evidence": "backend/libquery/event_reader/delete_event_reader.cpp:189-258; backend/arb/writer/sort_key.cpp:105, 155-172", "added": "2026-10-09" }
 	]
 }

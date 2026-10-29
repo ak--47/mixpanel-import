@@ -1,5 +1,5 @@
 {
-	"records": 20,
+	"records": 22,
 	"noise_removed": {
 		"$preshuffle_distinct_id": 7,
 		"$mp_api_endpoint": 1,
@@ -15,23 +15,23 @@
 		"$mp_actor_type": 1,
 		"$mp_raw_user_agent": 1,
 		"mp_original_distinct_id": 1,
-		"mp_original_event_name": 1
-	},
-	"noise_seen": {
+		"mp_original_event_name": 1,
 		"$is_reshuffled": 3,
-		"$is_deleted": 2,
-		"$inserted_at": 1,
-		"$delete_event_name": 1,
-		"$delete_insert_id": 1,
-		"$delete_inserted_before": 1,
-		"event:$delete": 1,
+		"$original_distinct_id": 1,
+		"$identity_failure_reason": 1,
+		"$had_persisted_distinct_id": 1,
 		"$version": 2,
 		"$possible_duplicate": 1,
 		"$sampling_factor": 1,
 		"$bucket": 1,
+		"$is_deleted": 1,
+		"$inserted_at": 2,
 		"$distinct_id_before_identity": 1,
-		"$original_distinct_id": 1,
-		"$identity_failure_reason": 1,
-		"$had_persisted_distinct_id": 1
+		"event:$delete": 6,
+		"event:deleted": 2,
+		"event:$is_deleted": 1
+	},
+	"noise_seen": {
+		"event:$delete:no_target": 3
 	}
 }

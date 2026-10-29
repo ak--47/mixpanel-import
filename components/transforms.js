@@ -741,14 +741,19 @@ function dedupeRecords(jobConfig) {
 }
 
 /**
- * filterMixpanelNoise: delete Mixpanel-internal keys that make the destination hide an event
- * (the list's `drop`), and count the internal keys it only watches. Top-level `properties`
- * only; values are never changed and no record is dropped.
- * @param  {JobConfig} jobConfig - owns `noiseRemoved` and `noiseSeen`
- * @param  {{drop: {key: string}[], watch: {key: string}[], watch_events: {event: string}[]}} [list]
+ * filterMixpanelNoise: delete Mixpanel-internal keys that make the destination hide an event or
+ * are source-project ingestion metadata (the list's `drop`), and count the internal keys it only
+ * watches. Top-level `properties` only; values are never changed and no record is dropped.
+ * The list's `delete_keys` depend on `jobConfig.noiseDeletesApplied` (see components/deletes.js).
+ * Applied: no `$delete` event is left, so they are deleted like `drop` keys. Not applied: they
+ * decide what a `$delete` in the destination removes, so they are only counted as seen, and so is
+ * the `$delete` event name (`watch_events`).
+ * @param  {JobConfig} jobConfig - owns `noiseRemoved`, `noiseSeen` and `noiseDeletesApplied`
+ * @param  {{drop: {key: string}[], delete_keys?: {key: string}[], watch: {key: string}[], watch_events: {event: string}[]}} [list]
  */
 function noiseFilter(jobConfig, list = MIXPANEL_NOISE) {
 	const drop = list.drop.map(e => e.key);
+	const deleteKeys = (list.delete_keys || []).map(e => e.key);
 	const watch = list.watch.map(e => e.key);
 	const watchEvents = new Set(list.watch_events.map(e => e.event));
 	const has = Object.prototype.hasOwnProperty;
@@ -761,6 +766,17 @@ function noiseFilter(jobConfig, list = MIXPANEL_NOISE) {
 			if (has.call(props, key)) {
 				delete props[key];
 				removed[key] = (removed[key] || 0) + 1;
+			}
+		}
+		const applied = jobConfig.noiseDeletesApplied;
+		for (const key of deleteKeys) {
+			if (has.call(props, key)) {
+				if (applied) {
+					delete props[key];
+					removed[key] = (removed[key] || 0) + 1;
+				} else {
+					seen[key] = (seen[key] || 0) + 1;
+				}
 			}
 		}
 		for (const key of watch) {

@@ -64,11 +64,14 @@ jest.mock("@aws-sdk/client-s3", () => ({
 const mp = require("../index.js");
 
 const CREDS = { token: "test-token", secret: "test-secret", project: "1234" };
+// filterMixpanelNoise is off: on, the delete prescan reads every object a second time, and these
+// tests pin the open, resume and stall counts of one read.
 const BASE_OPTS = {
 	recordType: "event",
 	dryRun: true,
 	verbose: false,
 	abortOnError: false,
+	filterMixpanelNoise: false,
 };
 
 // ── stream factories ───────────────────────────────────────────────────────
@@ -233,7 +236,8 @@ describe("GCS source failures", () => {
 		mockGcs.exists = async (filePath) => [!filePath.endsWith("part-0001.jsonl")];
 		const events = [];
 
-		const res = await mp(CREDS, paths, { ...BASE_OPTS, cloudStreamCallback: (e) => events.push(e) });
+		// noise filter on: the delete prescan also reads every object; the skip still counts once
+		const res = await mp(CREDS, paths, { ...BASE_OPTS, filterMixpanelNoise: true, cloudStreamCallback: (e) => events.push(e) });
 		expect(res).toBeDefined();
 		expect(res.failed).toBe(0);
 		// the missing file must never be opened for reading

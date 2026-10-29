@@ -460,6 +460,21 @@
 									</div>
 								</div>
 
+								<div class="processing-option"
+									id="filterMixpanelNoise-row">
+									<label class="checkbox-label">
+										<input type="checkbox"
+											id="filterMixpanelNoise"
+											name="filterMixpanelNoise"
+											checked>
+										Filter Mixpanel Noise
+									</label>
+									<div class="example">
+										<code>{"event": "$delete", ...}</code> → dropped, with the events it deletes
+										<small>Events only. Deletes Mixpanel ingestion keys (such as $mp_api_endpoint) and applies the source project's $delete events. Files are read twice.</small>
+									</div>
+								</div>
+
 								<div class="processing-option">
 									<label class="checkbox-label">
 										<input type="checkbox"

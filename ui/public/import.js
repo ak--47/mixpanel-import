@@ -1025,6 +1025,12 @@ class MixpanelImportUI {
 			directiveRow.style.display = (recordType === 'user' || recordType === 'group') ? 'block' : 'none';
 		}
 
+		// Show the Mixpanel noise filter for events only (it does nothing for other record types)
+		const noiseRow = document.getElementById('filterMixpanelNoise-row');
+		if (noiseRow) {
+			noiseRow.style.display = recordType === 'event' ? 'block' : 'none';
+		}
+
 		// Show identity replay section for events only (job.js throws for user/group)
 		const identityReplayContainer = document.getElementById('identity-replay-container');
 		if (identityReplayContainer) {
@@ -1199,6 +1205,9 @@ class MixpanelImportUI {
 					command += ` --${cliFlag}`;
 				}
 			});
+
+			// Mixpanel noise filter defaults on for events; only an opt-out needs a flag
+			if (recordType === 'event' && !this.getElementChecked('filterMixpanelNoise')) command += ' --filterMixpanelNoise false';
 
 			// Time filters
 			const epochStartEl = document.getElementById('epochStart');
@@ -1668,6 +1677,8 @@ function transform(row) {
 		if (this.getElementChecked('fixJson')) options.fixJson = true;
 		if (this.getElementChecked('matchMixpanelDefaults')) options.matchMixpanelDefaults = true;
 		if (this.getElementChecked('dedupe')) options.dedupe = true;
+		// Mixpanel noise filter is on by default for events; send only an explicit opt-out
+		if (recordType === 'event' && !this.getElementChecked('filterMixpanelNoise')) options.filterMixpanelNoise = false;
 
 		// Tags and vendor options (JSON fields)
 		const tags = this.getElementValue('tags');
@@ -1848,6 +1859,9 @@ function transform(row) {
 			const identityReplay = window.IdentityReplayUI.collect();
 			if (identityReplay) options.identityReplay = identityReplay;
 		}
+
+		// Mixpanel noise filter is on by default for events; send only an explicit opt-out
+		if (recordType === 'event' && !this.getElementChecked('filterMixpanelNoise')) options.filterMixpanelNoise = false;
 
 		formData.append('options', JSON.stringify(options));
 
@@ -2719,6 +2733,7 @@ function transform(row) {
 			show_progress: this.getElementChecked('showProgress'),
 			dedupe: this.getElementChecked('dedupe'),
 			fix_data: this.getElementChecked('fixData'),
+			filter_mixpanel_noise: this.getElementChecked('filterMixpanelNoise'),
 			flatten_data: this.getElementChecked('flattenData'),
 			remove_nulls: this.getElementChecked('removeNulls'),
 			has_transform: !!(this.editor && this.editor.getValue().trim()),

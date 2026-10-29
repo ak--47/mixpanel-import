@@ -67,6 +67,8 @@ Deeper references, kept out of this file on purpose:
 | `components/smart-config.js` | Memory monitor stage and adaptive config |
 | `components/identity-graph.js` | Union-find identity graph (no internal imports) for identityReplay |
 | `components/identity-replay.js` | Original→Simplified id-merge translation stage (`identityReplay` option) |
+| `components/deletes.js` | `DeleteIndex` (no internal imports): applies the source's `$delete` events for `filterMixpanelNoise` |
+| `components/mixpanel-noise.json` | The `filterMixpanelNoise` key list; must stay byte-identical with snowcat's Go worker copy |
 | `components/constants.js` | Shared constants; no internal `require`s (avoids cycles) |
 | `components/jsonl.js`, `logs.js`, `meta.js`, `fakeData.js` | JSONL helpers, logger config, project metadata, test-data generator |
 | `vendor/` | Source-platform transforms: amplitude, ga4, heap, june, mixpanel, mparticle, posthog |
@@ -88,7 +90,8 @@ record types (`table`, `export`, `profile-export`, `annotations`, `get-annotatio
 build a stage array:
 
 - **Prelude** (conditional): `createMemoryMonitor` when `verbose` or `memoryMonitor`.
-- **Normal mode:** `createExistenceFilter` → `createVendorTransform` →
+- **Normal mode:** `createExistenceFilter` → [`createDeleteApplier` when the delete prescan ran] →
+  `createVendorTransform` →
   [`createIdentityReplay` when `identityReplay` is set] → `createUserTransform` →
   `createFlattenStream` → `createDedupeTransform` → `createExistenceFilter2` →
   `createHelperTransforms` → `createStringifyCacher`.
@@ -96,6 +99,11 @@ build a stage array:
   The identityReplay stage swallows `$identify`/`$create_alias`/`$merge` verbs and emits
   synthetic `identity association` events at flush — a user `transformFunc` downstream must
   tolerate those nested records.
+- **Delete prescan:** for `filterMixpanelNoise` event jobs whose input can be read twice (not a
+  caller's stream, not `export-import-event`, no `vendor`), `index.js` calls `prescanDeletes`
+  (`parsers.js`) before `determineDataType`. It reads the input once through a shadow of the job,
+  so it changes no counter, and sets `job.deleteIndex` / `job.noiseDeletesApplied`. Tests that pin
+  per-read cloud counts must set `filterMixpanelNoise: false`.
 - **`fastMode`:** collapses the above to `createExistenceFilter` → `createStringifyCacher`.
 - **Sink:** `createSmartBatcher` → optional `createTeeStream(destinationStream)` →
   `createHttpSender` → `createLogger`. With `destinationOnly`, records bypass batching and the HTTP
