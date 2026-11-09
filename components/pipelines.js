@@ -25,6 +25,7 @@ const { logger } = require('../components/logs.js');
 
 // $ transforms
 const { isNotEmpty } = require('./transforms.js');
+const MIXPANEL_NOISE = require('./mixpanel-noise.json');
 
 // $ utils
 const dayjs = require('dayjs');
@@ -60,6 +61,35 @@ function createDeleteApplier(job) {
 		flush(callback) {
 			index.countOrphans(job);
 			callback();
+		}
+	});
+}
+
+/**
+ * filterMixpanelNoise: drop every event whose name is a `drop_events` name ($mp_session_record: a
+ * Session Replay checkpoint whose recording exists only in the source project). Runs on the raw
+ * record, before the vendor and user transforms, so a later rename cannot change what is dropped.
+ * Needs no prescan. Exact, case-sensitive match on a string `event`. A drop is counted as
+ * `noise_removed['event:<name>']` and tallied `empty`, so total - empty still counts what was sent.
+ * parity: snowcat go-worker/internal/transform/noise.go DropNoiseEvent
+ * @param {JobConfig} job
+ * @param {{drop_events: {event: string}[]}} [list]
+ * @returns {Transform}
+ */
+function createNoiseEventDropper(job, list = MIXPANEL_NOISE) {
+	const names = new Set(list.drop_events.map(e => e.event));
+	return new Transform({
+		objectMode: true,
+		highWaterMark: job.highWater,
+		transform(chunk, encoding, callback) {
+			const name = chunk?.event;
+			if (typeof name === 'string' && names.has(name)) {
+				const k = `event:${name}`;
+				job.noiseRemoved[k] = (job.noiseRemoved[k] || 0) + 1;
+				job.empty++;
+				return callback();
+			}
+			callback(null, chunk);
 		}
 	});
 }
@@ -709,6 +739,8 @@ async function corePipeline(stream, job, toNodeStream = false) {
 		stages.push(createExistenceFilter(job));
 		// filterMixpanelNoise on an input read twice: the prescan indexed the source's deletes
 		if (job.deleteIndex) stages.push(createDeleteApplier(job));
+		// filterMixpanelNoise drop_events: no prescan needed; not under vendor (that record is not yet in Mixpanel's shape)
+		if (job.noiseFilter && !job.vendor) stages.push(createNoiseEventDropper(job));
 		stages.push(
 			createVendorTransform(job)
 			// Note: Vendor transforms are 1:1, no flatten needed
@@ -837,5 +869,6 @@ async function corePipeline(stream, job, toNodeStream = false) {
 }
 
 module.exports = {
-	corePipeline
+	corePipeline,
+	createNoiseEventDropper
 };

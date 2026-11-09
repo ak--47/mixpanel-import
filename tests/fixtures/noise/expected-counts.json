@@ -1,5 +1,5 @@
 {
-	"records": 22,
+	"records": 23,
 	"noise_removed": {
 		"$preshuffle_distinct_id": 7,
 		"$mp_api_endpoint": 1,
@@ -24,12 +24,14 @@
 		"$possible_duplicate": 1,
 		"$sampling_factor": 1,
 		"$bucket": 1,
+		"$mp_replay_id": 1,
 		"$is_deleted": 1,
 		"$inserted_at": 2,
 		"$distinct_id_before_identity": 1,
 		"event:$delete": 6,
 		"event:deleted": 2,
-		"event:$is_deleted": 1
+		"event:$is_deleted": 1,
+		"event:$mp_session_record": 1
 	},
 	"noise_seen": {
 		"event:$delete:no_target": 3

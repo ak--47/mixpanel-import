@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.7.3
+
+### Changed
+
+- **Behaviour change: `filterMixpanelNoise` drops Session Replay checkpoints.** Event jobs drop
+  every `$mp_session_record` event. Each one points at a recording that exists only in the source
+  project, so the destination's replay list showed sessions that cannot play. The match is exact,
+  runs on the raw record before any vendor transform or `transformFunc`, and needs no second read
+  of the input. It does not run when `vendor` is set or under `fastMode`.
+- **The drop list grows by 1:** `$mp_replay_id`, deleted from every event the filter keeps.
+- **New count:** `noise_removed` gains `event:$mp_session_record`. Each drop also counts in
+  `empty`.
+- `components/mixpanel-noise.json` is list version 3, with a new `drop_events` section.
+
 ## 3.7.2
 
 ### Changed

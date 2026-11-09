@@ -20,3 +20,4 @@
 {"event":"bought","properties":{"distinct_id":"u22","time":1760000022001,"$insert_id":"n26"}}
 {"event":"bought","properties":{"distinct_id":"u23","time":1760000023000,"$insert_id":"n29"}}
 {"event":"bought","properties":{"distinct_id":"u24","time":1760000024000,"$insert_id":"n30"}}
+{"event":"viewed","properties":{"distinct_id":"u25","time":1760000025001,"$insert_id":"r33"}}

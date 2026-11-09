@@ -8,22 +8,22 @@ const DELETE_KEYS = MIXPANEL_NOISE.delete_keys.map(e => e.key);
 const WATCH = MIXPANEL_NOISE.watch.map(e => e.key);
 
 describe('noiseFilter', () => {
-	test('list shape: version 2, 23 drop keys, six delete_keys, watch empty; every entry has evidence', () => {
-		expect(MIXPANEL_NOISE.version).toBe(2);
+	test('list shape: version 3, 24 drop keys, one drop_events name, six delete_keys, watch empty; every entry has evidence', () => {
+		expect(MIXPANEL_NOISE.version).toBe(3);
 		expect(DROP).toEqual([
 			'$preshuffle_distinct_id', '$mp_api_endpoint', '$mp_api_timestamp_ms', '$mp_event_size',
 			'mp_processing_time_ms', '$warehouse_import_id', '$warehouse_import_job_id',
 			'$warehouse_import_run_id', '$warehouse_table', '$warehouse_type', '$import',
 			'$mp_actor_type', '$mp_raw_user_agent', 'mp_original_distinct_id', 'mp_original_event_name',
 			'$is_reshuffled', '$original_distinct_id', '$identity_failure_reason', '$had_persisted_distinct_id',
-			'$version', '$possible_duplicate', '$sampling_factor', '$bucket'
+			'$version', '$possible_duplicate', '$sampling_factor', '$bucket', '$mp_replay_id'
 		]);
 		expect(DELETE_KEYS).toEqual([
 			'$is_deleted', '$delete_event_name', '$delete_insert_id', '$delete_inserted_before', '$inserted_at',
 			'$distinct_id_before_identity'
 		]);
 		expect(WATCH).toEqual([]);
-		for (const e of [...MIXPANEL_NOISE.drop, ...MIXPANEL_NOISE.delete_keys, ...MIXPANEL_NOISE.watch_events]) {
+		for (const e of [...MIXPANEL_NOISE.drop, ...MIXPANEL_NOISE.drop_events, ...MIXPANEL_NOISE.delete_keys, ...MIXPANEL_NOISE.watch_events]) {
 			expect(typeof e.why).toBe('string');
 			expect(e.evidence.length).toBeGreaterThan(0);
 			expect(e.added).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -408,5 +408,68 @@ describe('filterMixpanelNoise applies the source deletes', () => {
 		expect(await prescanDeletes(Readable.from([]), job)).toBe(false);
 		expect(await prescanDeletes(input, job)).toBe(true);
 		expect(job.deleteIndex.size).toBeGreaterThan(0);
+	});
+});
+
+// parity: snowcat go-worker/internal/transform/noise.go DropNoiseEvent
+describe('filterMixpanelNoise drop_events', () => {
+	const { Readable } = require('stream');
+	const { createNoiseEventDropper } = require('../components/pipelines.js');
+	const rows = () => [
+		{ event: '$mp_session_record', properties: { distinct_id: 'u', time: 1760000000, $insert_id: 'r1', $mp_replay_id: 'R-1', replay_length_ms: 2 } },
+		{ event: '$mp_session_recording', properties: { distinct_id: 'u', time: 1760000000, $insert_id: 'r2' } },
+		{ event: '$MP_SESSION_RECORD', properties: { distinct_id: 'u', time: 1760000000, $insert_id: 'r3' } },
+		{ properties: { distinct_id: 'u', time: 1760000000, $insert_id: 'r4' } },
+		{ event: 'viewed', properties: { distinct_id: 'u', time: 1760000000, $insert_id: 'r5', $mp_replay_id: 'R-1' } }
+	];
+
+	test('the list has drop_events $mp_session_record and drop key $mp_replay_id', () => {
+		expect(MIXPANEL_NOISE.version).toBe(3);
+		expect(MIXPANEL_NOISE.drop_events.map(e => e.event)).toEqual(['$mp_session_record']);
+		expect(DROP.at(-1)).toBe('$mp_replay_id');
+		expect(DROP).toHaveLength(24);
+	});
+
+	test('the stage drops only an exact $mp_session_record and counts empty and noise_removed', async () => {
+		const job = { highWater: 16, empty: 0, noiseRemoved: {} };
+		const out = await Readable.from(rows()).pipe(createNoiseEventDropper(job)).toArray();
+		expect(out.map(r => r.properties.$insert_id)).toEqual(['r2', 'r3', 'r4', 'r5']);
+		expect(job.empty).toBe(1);
+		expect(job.noiseRemoved).toEqual({ 'event:$mp_session_record': 1 });
+	});
+
+	test('noiseFilter deletes $mp_replay_id from an ordinary event and counts it', () => {
+		const job = jobStub();
+		const rec = rows()[4];
+		noiseFilter(job)(rec);
+		expect(rec.properties).not.toHaveProperty('$mp_replay_id');
+		expect(job.noiseRemoved).toEqual({ $mp_replay_id: 1 });
+	});
+
+	test('end to end: session record dropped, $mp_replay_id removed, total - empty counts what was written', async () => {
+		const { summary, out } = await run({}, rows());
+		expect(out.map(r => r.properties.$insert_id)).toEqual(['r2', 'r3', 'r4', 'r5']);
+		expect(out.every(r => !('$mp_replay_id' in r.properties))).toBe(true);
+		expect(summary.noise_removed).toEqual({ 'event:$mp_session_record': 1, $mp_replay_id: 1 });
+		expect(summary.total - summary.empty).toBe(out.length);
+	});
+
+	test('a caller\'s stream (deletes not applied) still drops it', async () => {
+		const text = rows().map(r => JSON.stringify(r)).join('\n');
+		const dest = tmpFile('out.ndjson');
+		const summary = await mp(creds, Readable.from([Buffer.from(text)], { objectMode: false }), { recordType: 'event', streamFormat: 'jsonl', destination: dest, destinationOnly: true });
+		expect(readNdjson(dest).map(r => r.event)).not.toContain('$mp_session_record');
+		expect(summary.noise_removed['event:$mp_session_record']).toBe(1);
+	});
+
+	test.each([
+		['filterMixpanelNoise: false', { filterMixpanelNoise: false }],
+		['fastMode', { fastMode: true }],
+		['vendor', { vendor: 'mixpanel' }]
+	])('not under %s', async (_, opts) => {
+		const { summary, out } = await run(opts, rows());
+		// the vendor transform reshapes each row, so count rows instead of reading names
+		expect(out).toHaveLength(rows().length);
+		expect(summary.noise_removed['event:$mp_session_record']).toBeUndefined();
 	});
 });
