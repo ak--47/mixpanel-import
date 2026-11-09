@@ -746,7 +746,9 @@ declare namespace main {
     /**
      * Make the destination show what the source showed, with nothing Mixpanel stamps on ingestion.
      * Events only (`event`, `export-import-event`). Deletes the list's `drop` keys
-     * (`$preshuffle_distinct_id` and source-project ingestion metadata) as the last step.
+     * (`$preshuffle_distinct_id`, `$mp_replay_id` and source-project ingestion metadata) as the last step.
+     * Drops every `$mp_session_record` event (a Session Replay checkpoint) on the raw record, for any
+     * input except a `vendor` job.
      * When the input can be read twice (path, folder, `gs://`/`s3://` URI, an array of those, an
      * array of objects, a string of data), the input is read twice: a first pass indexes `$delete`
      * events, then the import drops every `$delete` event, every event a `$delete` deletes, and every
@@ -1361,7 +1363,8 @@ declare namespace main {
      */
     errors: any;
     /**
-     * - per key: records whose noise key was deleted (filterMixpanelNoise)
+     * - per key: records whose noise key was deleted (filterMixpanelNoise); per `event:<name>`: events
+     *   dropped (`event:$mp_session_record`, `event:$delete`, `event:deleted`, `event:$is_deleted`)
      */
     noise_removed: { [key: string]: number };
     /**

@@ -91,6 +91,7 @@ build a stage array:
 
 - **Prelude** (conditional): `createMemoryMonitor` when `verbose` or `memoryMonitor`.
 - **Normal mode:** `createExistenceFilter` → [`createDeleteApplier` when the delete prescan ran] →
+  [`createNoiseEventDropper` when `filterMixpanelNoise` is active and no `vendor`: drops `$mp_session_record`] →
   `createVendorTransform` →
   [`createIdentityReplay` when `identityReplay` is set] → `createUserTransform` →
   `createFlattenStream` → `createDedupeTransform` → `createExistenceFilter2` →

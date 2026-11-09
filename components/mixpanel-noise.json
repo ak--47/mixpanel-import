@@ -1,6 +1,6 @@
 {
-	"version": 2,
-	"about": "Mixpanel-internal event property keys found in Mixpanel's own raw export. filterMixpanelNoise deletes every 'drop' key from event properties before import. When the source can be read twice, it first applies the source's deletes: it drops every '$delete' event, every event that a valid '$delete' in the same source deletes (backend/libquery/event_reader/delete_event_reader.cpp:137-256), and every event with '$is_deleted' true (backend/arb/reader/main.cpp:3016), then deletes every 'delete_keys' key from the events it keeps. When the source cannot be read twice, it changes no 'delete_keys' key and counts each one, and each 'watch_events' name, as seen. It counts every 'watch' key it sees, without changing it. A key moves into 'drop' with a code reference into Mixpanel's source, a sandbox reproduction, or an owner decision that the key is source-project ingestion metadata no destination wants. Evidence paths are relative to the Mixpanel analytics repo at 0bbc6a46c0e unless an entry names another commit.",
+	"version": 3,
+	"about": "Mixpanel-internal event property keys found in Mixpanel's own raw export. filterMixpanelNoise drops every event whose name is a 'drop_events' name, on the raw record, and deletes every 'drop' key from event properties before import. When the source can be read twice, it first applies the source's deletes: it drops every '$delete' event, every event that a valid '$delete' in the same source deletes (backend/libquery/event_reader/delete_event_reader.cpp:137-256), and every event with '$is_deleted' true (backend/arb/reader/main.cpp:3016), then deletes every 'delete_keys' key from the events it keeps. When the source cannot be read twice, it changes no 'delete_keys' key and counts each one, and each 'watch_events' name, as seen. It counts every 'watch' key it sees, without changing it. A key moves into 'drop' with a code reference into Mixpanel's source, a sandbox reproduction, or an owner decision that the key is source-project ingestion metadata no destination wants. Evidence paths are relative to the Mixpanel analytics repo at 0bbc6a46c0e unless an entry names another commit.",
 	"drop": [
 		{
 			"key": "$preshuffle_distinct_id",
@@ -139,6 +139,20 @@
 			"why": "Source-project storage metadata, moved into a deprecated builtin. Dropped by owner decision (AK, 2026-10-29).",
 			"evidence": "go/src/mixpanel.com/arb/format/event.go:62; owner decision AK 2026-10-29",
 			"added": "2026-10-29"
+		},
+		{
+			"key": "$mp_replay_id",
+			"why": "Session Replay id. SDKs put it on every event sent while a recording runs, and the event then links to that recording. The recording exists only in the source project, so in any other project the link points at nothing. Dropped by owner decision (AK, 2026-11-09).",
+			"evidence": "go/src/mixpanel.com/ingestion/api/verify/verify.go:450-457 (analytics fbb53b8262a); owner decision AK 2026-11-09",
+			"added": "2026-11-09"
+		}
+	],
+	"drop_events": [
+		{
+			"event": "$mp_session_record",
+			"why": "The Session Replay checkpoint. Mixpanel lists a project's replays from these events, and each one points through $mp_replay_id at a recording stored only in the source project. In any other project the replay list shows sessions that cannot play. Dropped by owner decision (AK, 2026-11-09).",
+			"evidence": "backend/replays/query_utils.py:41, 229-233; go/src/mixpanel.com/ingestion/api/verify/verify.go:450-457 (analytics fbb53b8262a); sandbox 4081039: 70 $mp_session_record events accepted by /import (fde-toolkit labs/klover-replay-test, 2026-11-09); owner decision AK 2026-11-09",
+			"added": "2026-11-09"
 		}
 	],
 	"delete_keys": [

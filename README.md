@@ -418,7 +418,7 @@ npx mixpanel-import messy_data.json \
 | `dedupe` | `boolean` | `false` | Remove duplicate records using content hash |
 | `strict` | `boolean` | `true` | Validate data and fail fast on errors |
 | `scrubProps` | `string[]` | `[]` | Property names to remove from all records |
-| `filterMixpanelNoise` | `boolean` | `true` | (Events only) Delete Mixpanel-internal keys and source-project ingestion metadata, and apply the source's `$delete` events before import. See [Mixpanel noise filter](#mixpanel-noise-filter) |
+| `filterMixpanelNoise` | `boolean` | `true` | (Events only) Delete Mixpanel-internal keys and source-project ingestion metadata, drop Session Replay checkpoints, and apply the source's `$delete` events before import. See [Mixpanel noise filter](#mixpanel-noise-filter) |
 | `v2_compat` | `boolean` | `false` | (Events only) Auto-set `distinct_id` from `$user_id`/`user_id` or `$device_id`/`device_id`; falls back to `""` |
 | `directive` | `string` | `"$set"` | (Profiles only) Operation for profile updates: `$set`, `$set_once`, `$add`, `$union`, `$append`, `$remove`, `$unset` |
 
@@ -426,10 +426,13 @@ npx mixpanel-import messy_data.json \
 
 `filterMixpanelNoise` is `true` by default for `recordType: "event"` and `"export-import-event"`. Its goal: project B shows what project A showed, with nothing that Mixpanel stamps on ingestion. Set `filterMixpanelNoise: false` to send every event and key as it is.
 
-**Keys it deletes.** As the last step, after your `transformFunc`, it deletes 23 keys from each event's top-level `properties`:
+**Keys it deletes.** As the last step, after your `transformFunc`, it deletes 24 keys from each event's top-level `properties`:
 
 - `$preshuffle_distinct_id`. Mixpanel's raw export writes this key. In any project but the source, Mixpanel's query engine hides every event that carries it, and `/import` still counts the event as imported.
 - Source-project ingestion metadata: `$mp_api_endpoint`, `$mp_api_timestamp_ms`, `$mp_event_size`, `mp_processing_time_ms`, `$import`, `$mp_actor_type`, `$mp_raw_user_agent`, `mp_original_distinct_id`, `mp_original_event_name`, `$warehouse_import_id`, `$warehouse_import_job_id`, `$warehouse_import_run_id`, `$warehouse_table`, `$warehouse_type`, `$is_reshuffled`, `$original_distinct_id`, `$identity_failure_reason`, `$had_persisted_distinct_id`, `$version`, `$possible_duplicate`, `$sampling_factor`, and `$bucket`.
+- `$mp_replay_id`. SDKs put it on every event sent while a Session Replay recording runs. The recording exists only in the source project, so the importer deletes the key from every event it keeps.
+
+**Events it drops.** It drops every `$mp_session_record` event (a Session Replay checkpoint that points at a recording only the source project has). The match is exact and runs on the raw record, before any vendor transform or `transformFunc`. It runs for every input, also when deletes are not applied. It does not run when `vendor` is set.
 
 **Deletes it applies.** When the input can be read twice, the importer applies the source project's deletes before import, and never sends them:
 
@@ -454,7 +457,7 @@ Then the `$delete` events and the delete-mechanism keys are kept and only counte
 
 **Counts.** The summary has two maps. Each drop also counts in `empty`, so `total - empty` is the number of records sent.
 
-- `noise_removed` counts the records each deleted key was removed from, plus `event:$delete` (every `$delete` event dropped), `event:deleted` (events a `$delete` deleted) and `event:$is_deleted` (events dropped for `$is_deleted: true`).
+- `noise_removed` counts the records each deleted key was removed from, plus `event:$mp_session_record` (Session Replay checkpoints dropped), `event:$delete` (every `$delete` event dropped), `event:deleted` (events a `$delete` deleted) and `event:$is_deleted` (events dropped for `$is_deleted: true`).
 - `noise_seen` counts `event:$delete:no_target` (valid `$delete` events that deleted nothing in this run). When deletes are not applied, it also counts each delete-mechanism key and `event:$delete`, which are kept.
 
 The list of keys is `components/mixpanel-noise.json`.

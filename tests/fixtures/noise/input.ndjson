@@ -29,3 +29,5 @@
 {"event":"bought","properties":{"distinct_id":"u23","time":1760000023000,"$insert_id":"n29"}}
 {"event":"bought","properties":{"distinct_id":"u24","time":1760000024000,"$insert_id":"n30","$inserted_at":"2025-01-01"}}
 {"event":"$delete","properties":{"distinct_id":"u24","time":1760000024000,"$insert_id":"d31","$delete_event_name":"bought","$delete_insert_id":"n30","$delete_inserted_before":1760000300000}}
+{"event":"$mp_session_record","properties":{"distinct_id":"u25","time":1760000025000,"$insert_id":"r32","$mp_replay_id":"R-1","replay_length_ms":2,"seq_no":0}}
+{"event":"viewed","properties":{"distinct_id":"u25","time":1760000025001,"$insert_id":"r33","$mp_replay_id":"R-1"}}
