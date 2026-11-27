@@ -688,7 +688,7 @@ function handleMulterError(err, req, res, next) {
 				error: `Too many files. Maximum is 10 files per upload.`
 			});
 		}
-		logger.error({ err }, "multer error");
+		logger.warn({ err }, "multer error"); // user-caused 400: not a Slack alert
 		return res.status(400).json({
 			success: false,
 			error: `Upload error: ${err.message}`
@@ -1543,7 +1543,7 @@ app.post("/export", async (req, res) => {
 				opts.where = exportData.gcsPath;
 				logger.debug({ jobId, gcsPath: exportData.gcsPath }, "gcs write validated");
 			} catch (error) {
-				logger.error({ err: error, jobId, gcsPath: exportData.gcsPath }, "gcs validation failed");
+				logger.warn({ err: error, jobId, gcsPath: exportData.gcsPath }, "gcs validation failed"); // user-caused 400
 				return res.status(400).json({
 					success: false,
 					error: `GCS write validation failed: ${error.message}`
@@ -1562,7 +1562,7 @@ app.post("/export", async (req, res) => {
 				opts.where = exportData.s3Path;
 				logger.debug({ jobId, s3Path: exportData.s3Path }, "s3 write validated");
 			} catch (error) {
-				logger.error({ err: error, jobId, s3Path: exportData.s3Path }, "s3 validation failed");
+				logger.warn({ err: error, jobId, s3Path: exportData.s3Path }, "s3 validation failed"); // user-caused 400
 				return res.status(400).json({
 					success: false,
 					error: `S3 write validation failed: ${error.message}`

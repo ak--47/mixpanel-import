@@ -169,6 +169,23 @@ describe("slack-alerts redaction + record extraction", () => {
 		expect(scrub(`Unexpected token 'a', "{"acct":"sa"... is not valid JSON`)).toBe("Unexpected token 'a', <redacted> is not valid JSON");
 	});
 
+	test("strips exported record tails, JSON slices, and cloud object paths", async () => {
+		const tail = '{"event":"Purchase","properties":{"$email":"bob@acme.com","amount":12';
+		const msg = `Export stream terminated early: the last line is not a JSON record ("${tail}"); the rest of the range is missing`;
+		expect(scrub(msg)).toBe("Export stream terminated early: the last line is not a JSON record (<redacted>); the rest of the range is missing");
+		expect(scrub('Response code 400: {"error":"bad $email bob@acme.com"}')).toBe("Response code 400: <redacted>");
+		expect(scrub('parse failed on [{"distinct_id":"u1"}]')).toBe("parse failed on <redacted>");
+		expect(scrub("could not write gs://cust-bucket/acme/exports/2026/file.json")).toBe("could not write gs://cust-bucket/<path>");
+		expect(scrub("NoSuchKey s3://b/x/y.ndjson.gz (retrying)")).toBe("NoSuchKey s3://b/<path> (retrying)");
+
+		const { a, posts } = make();
+		const err = new Error(msg);
+		err.code = "EXPORT_TERMINATED_EARLY";
+		a.notify(alertRecord([{ err }, "export handler error"]));
+		await a.flush();
+		expect(posts[0]).not.toMatch(/bob@acme\.com|Purchase|\$email/);
+	});
+
 	test("alert text never includes secrets in the error", async () => {
 		const { a, posts } = make();
 		const err = new Error("request failed for secret=deadbeefdeadbeefdeadbeefdeadbeef");

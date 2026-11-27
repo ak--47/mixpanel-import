@@ -23,7 +23,8 @@
  *     (never request bodies, credentials, options, or cloud paths), and those are
  *     scrubbed of secrets (basic-auth URLs, Basic/Bearer headers, key=value
  *     secrets, PEM keys, 32-hex API secrets, Slack webhook URLs, the input
- *     slice V8 quotes in JSON.parse errors).
+ *     slice V8 quotes in JSON.parse errors, record tails in export errors, any
+ *     JSON-looking slice, and gs:// / s3:// object paths down to the bucket).
  *   - Never throws. A failed post writes one console.warn line; this module never
  *     calls the app logger (an ERROR from here would loop back into Slack).
  *
@@ -53,6 +54,13 @@ function scrub(v) {
 	s = s.replace(/https?:\/\/hooks\.slack\.com\/\S*/g, '<webhook>');
 	// V8 JSON.parse errors quote a slice of the input (could be credentials or customer rows).
 	s = s.replace(/(?:\.\.\.)?"[^\n]*?"(?:\.\.\.)? is not valid JSON/g, `${R} is not valid JSON`);
+	// exporters.js EXPORT_TERMINATED_EARLY quotes the tail of a raw exported record.
+	s = s.replace(/is not a JSON record \([\s\S]*?\); the rest of the range is missing/g, `is not a JSON record (${R}); the rest of the range is missing`);
+	s = s.replace(/is not a JSON record \("[\s\S]*?"\)/g, `is not a JSON record (${R})`);
+	// Any other JSON-looking slice (a record, a response body): drop it to end of line.
+	s = s.replace(/"?[\[{](?:\s*[\[{])*\s*"[^\n]*/g, R);
+	// Cloud object paths: keep scheme + bucket only.
+	s = s.replace(/\b(gs|s3):\/\/([^\s/"'<>]+)\/[^\s"'<>)]*/gi, '$1://$2/<path>');
 	s = s.replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)/g, R);
 	s = s.replace(/(\b[a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/gi, `$1${R}@`);
 	s = s.replace(/\b(Basic|Bearer)\s+[A-Za-z0-9._~+/=-]+/g, `$1 ${R}`);
