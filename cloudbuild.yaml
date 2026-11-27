@@ -1,5 +1,5 @@
 steps:
-  # Warn (never fail) if the Slack alert secret is missing or empty. Alerts are optional.
+  # Warn (never fail) if the Slack alert secret has no enabled version (checked by metadata). Alerts are optional.
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'
     args:
