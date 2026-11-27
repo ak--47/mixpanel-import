@@ -1,4 +1,15 @@
 steps:
+  # Warn (never fail) if the Slack alert secret is missing or empty. Alerts are optional.
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        if [ -z "$$(gcloud secrets versions access latest --secret=fde-slack-alert-webhook --project=${_PROJECT_ID} 2>/dev/null)" ]; then
+          echo "WARNING: secret fde-slack-alert-webhook is missing, empty, or unreadable by the build SA; etl-lte Slack error alerts may be disabled"
+        fi
+        exit 0
+
   # Build the container image
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', 'gcr.io/${_PROJECT_ID}/${_SERVICE_NAME}:latest', '.']
@@ -25,6 +36,7 @@ steps:
       - '--port=8080'
       - '--no-use-http2'
       - '--set-env-vars=NODE_ENV=production'
+      - '--update-secrets=SLACK_ALERT_WEBHOOK_URL=fde-slack-alert-webhook:latest'
 
 # Substitution variables (defaults, can be overridden by deploy.sh)
 substitutions:

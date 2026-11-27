@@ -11,6 +11,8 @@ const cookieParser = require('cookie-parser');
 const { validateCloudWriteAccess } = require('../components/parsers.js');
 const { GoogleAuth } = require('google-auth-library');
 const { Storage } = require('@google-cloud/storage');
+// server-only Slack error alerts (inert unless prod + Cloud Run + SLACK_ALERT_WEBHOOK_URL)
+const { slackAlerts, logMethod: slackAlertLogMethod } = require('./slack-alerts.js');
 
 let { NODE_ENV = "" } = process.env;
 if (!NODE_ENV) NODE_ENV = "local";
@@ -31,7 +33,9 @@ if (NODE_ENV === "production") {
 				}
 			},
 			{
-				level: logLevel
+				level: logLevel,
+				// every ERROR/fatal line also goes to Slack (gated inside slack-alerts.js)
+				hooks: { logMethod: slackAlertLogMethod }
 			}
 		)
 	);
@@ -2323,8 +2327,41 @@ app.get("/browse-gcs", async (req, res) => {
 	}
 });
 
+// Final error middleware: log route errors (posts to Slack via the logger hook), then hand off
+// to Express's default handler so responses are unchanged. Never logs request bodies.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+	const status = Number(err?.status || err?.statusCode) || 500;
+	if (status >= 500) {
+		logger.error({ err, component: "http", path: `${req.method} ${req.route?.path || req.path}`, status }, "unhandled route error");
+	}
+	next(err);
+});
+
+/**
+ * Crash alerts: only when Slack alerts are live (prod Cloud Run with a webhook), so local
+ * `--ui` and library users keep Node's default behavior. Crash semantics are preserved:
+ * log fatal, flush the alert (bounded), then exit(1) like Node would.
+ */
+let crashHandlersInstalled = false;
+function installCrashAlerts() {
+	if (crashHandlersInstalled || !slackAlerts.enabled()) return;
+	crashHandlersInstalled = true;
+	/** @param {string} kind @param {unknown} reason */
+	const crash = (kind, reason) => {
+		const err = reason instanceof Error ? reason : new Error(String(reason));
+		try {
+			logger.fatal({ err, component: "process", path: kind }, `${kind}: ${err.message}`);
+		} catch (_) { /* never block exit */ }
+		slackAlerts.flush(3000).finally(() => process.exit(1));
+	};
+	process.on("uncaughtException", err => crash("uncaughtException", err));
+	process.on("unhandledRejection", reason => crash("unhandledRejection", reason));
+}
+
 // Start server
 function startUI(options = {}) {
+	installCrashAlerts();
 	const serverPort = options.port || port;
 	const { version } = require("../package.json");
 

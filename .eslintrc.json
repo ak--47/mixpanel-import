@@ -23,7 +23,7 @@
 			}
 		},
 		{
-			"files": ["ui/server.js"],
+			"files": ["ui/server.js", "ui/slack-alerts.js", "ui/alert-format.js"],
 			"env": {
 				"browser": false,
 				"node": true,
