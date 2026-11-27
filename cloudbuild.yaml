@@ -1,12 +1,13 @@
 steps:
-  # Warn (never fail) if the Slack alert secret is missing or empty. Alerts are optional.
+  # Warn (never fail) if the Slack alert secret has no enabled version (checked by metadata). Alerts are optional.
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
-        if [ -z "$$(gcloud secrets versions access latest --secret=fde-slack-alert-webhook --project=${_PROJECT_ID} 2>/dev/null)" ]; then
-          echo "WARNING: secret fde-slack-alert-webhook is missing, empty, or unreadable by the build SA; etl-lte Slack error alerts may be disabled"
+        # metadata only: never read the secret's value in the build
+        if ! gcloud secrets versions describe latest --secret=fde-slack-alert-webhook --project=${_PROJECT_ID} --format='value(state)' 2>/dev/null | grep -q ENABLED; then
+          echo "WARNING: could not verify secret fde-slack-alert-webhook (no enabled version, or the build SA cannot read its metadata); etl-lte Slack error alerts may be disabled"
         fi
         exit 0
 
