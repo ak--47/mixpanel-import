@@ -43,6 +43,7 @@ const DEFAULT_SERVICE = 'etl-lte';
 const SERVICE_NAME = 'Mixpanel Import (etl-lte)';
 
 const R = '<redacted>';
+const SCRUB_MAX = 4000;
 
 /**
  * Remove credentials from free text before it can reach Slack.
@@ -50,19 +51,21 @@ const R = '<redacted>';
  * @returns {string}
  */
 function scrub(v) {
-	let s = String(v ?? '');
+	// Cap first: scrub() runs synchronously in the logger hook, so every rule below must stay
+	// linear (no nested/overlapping quantifiers) and the input bounded.
+	let s = String(v ?? '').slice(0, SCRUB_MAX);
 	s = s.replace(/https?:\/\/hooks\.slack\.com\/\S*/g, '<webhook>');
 	// V8 JSON.parse errors quote a slice of the input (could be credentials or customer rows).
-	s = s.replace(/(?:\.\.\.)?"[^\n]*?"(?:\.\.\.)? is not valid JSON/g, `${R} is not valid JSON`);
+	s = s.replace(/(?:\.\.\.)?"[^\n]{0,200}?"(?:\.\.\.)? is not valid JSON/g, `${R} is not valid JSON`);
 	// exporters.js EXPORT_TERMINATED_EARLY quotes the tail of a raw exported record.
 	s = s.replace(/is not a JSON record \([\s\S]*?\); the rest of the range is missing/g, `is not a JSON record (${R}); the rest of the range is missing`);
 	s = s.replace(/is not a JSON record \("[\s\S]*?"\)/g, `is not a JSON record (${R})`);
-	// Any other JSON-looking slice (a record, a response body): drop it to end of line.
-	s = s.replace(/"?[\[{](?:\s*[\[{])*\s*"[^\n]*/g, R);
+	// Any other JSON-looking slice (a record, a response body), plain or escaped: cut to end of text.
+	s = cutJson(s);
 	// Cloud object paths: keep scheme + bucket only.
-	s = s.replace(/\b(gs|s3):\/\/([^\s/"'<>]+)\/[^\s"'<>)]*/gi, '$1://$2/<path>');
+	s = s.replace(/\b(gs|s3):\/\/([^\s/"'<>]+)\/[^\s"'<>):,]*/gi, '$1://$2/<path>');
 	s = s.replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)/g, R);
-	s = s.replace(/(\b[a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/gi, `$1${R}@`);
+	s = s.replace(/(\b[a-z][a-z0-9+.-]{0,30}:\/\/)[^\s/@:]+:[^\s/@]+@/gi, `$1${R}@`);
 	s = s.replace(/\b(Basic|Bearer)\s+[A-Za-z0-9._~+/=-]+/g, `$1 ${R}`);
 	s = s.replace(
 		/(["']?)\b(api[_-]?secret|secret(?:[_-]?access[_-]?key)?|client[_-]?secret|password|passwd|pass|token|api[_-]?key|access[_-]?key(?:[_-]?id)?|private[_-]?key|authorization|acct|credentials?)\1(\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s,&;}\]]+)/gi,
@@ -70,6 +73,36 @@ function scrub(v) {
 	);
 	s = s.replace(/\b[a-f0-9]{32}\b/gi, R);
 	return s;
+}
+
+/**
+ * Replace everything from the first JSON-looking opener (`{"`, `[{"`, `{\"`, with
+ * any leading brackets/quote) to the end of the text. Linear: one regex search
+ * whose pattern cannot backtrack across a run, then a backward walk.
+ * @param {string} s
+ */
+function cutJson(s) {
+	const i = s.search(/[[{]\s*\\?"/);
+	if (i < 0) return s;
+	let j = i;
+	while (j > 0 && /[[{\s]/.test(s[j - 1])) j--;
+	if (j > 0 && s[j - 1] === '"') j--;
+	// keep one separating space/newline before the marker
+	const keep = s.slice(0, j);
+	return (j < i && /\s/.test(s[j]) ? keep + s[j] : keep) + R;
+}
+
+/**
+ * Scrub an error stack: the message part like any text, then each `at` frame on its own
+ * (so a JSON slice in the message cannot swallow the frames WHERE is derived from).
+ * @param {string} stack
+ */
+function scrubStack(stack) {
+	const st = String(stack).slice(0, SCRUB_MAX * 2);
+	const k = st.search(/\n[ \t]+at /);
+	if (k < 0) return scrub(st);
+	const frames = st.slice(k + 1).split('\n').slice(0, 20).map(scrub);
+	return [scrub(st.slice(0, k)), ...frames].join('\n');
 }
 
 /**
@@ -177,7 +210,7 @@ class SlackAlerts {
 	 */
 	format(info, { message, notes, atMs }) {
 		const err = info.err instanceof Error ? info.err : null;
-		const stack = err && typeof err.stack === 'string' ? scrub(err.stack) : undefined;
+		const stack = err && typeof err.stack === 'string' ? scrubStack(err.stack) : undefined;
 		const detail = err && !stack ? scrub(err.message) : undefined;
 		const title = scrub(message);
 		return formatAlert({
@@ -196,7 +229,8 @@ class SlackAlerts {
 				project: GCP_PROJECT,
 				service: this.env.K_SERVICE || DEFAULT_SERVICE,
 				job: this.env.CLOUD_RUN_JOB || undefined,
-				needle: message,
+				// scrubbed, and cut before the first redaction so it still matches the raw log line
+				needle: title.split(/<redacted>|<webhook>|<path>/)[0].trim(),
 				atMs
 			})
 		});
@@ -293,6 +327,7 @@ function logMethod(args, method, level) {
 
 module.exports = {
 	SlackAlerts,
+	scrubStack,
 	slackAlerts,
 	logMethod,
 	alertRecord,

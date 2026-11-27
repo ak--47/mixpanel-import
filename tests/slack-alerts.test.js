@@ -6,7 +6,7 @@
 const path = require("path");
 const fs = require("fs");
 const { formatAlert, logsExplorerUrl } = require("../ui/alert-format.js");
-const { SlackAlerts, alertRecord, scrub, logMethod, CAP_PER_HOUR, DEDUPE_WINDOW_MS } = require("../ui/slack-alerts.js");
+const { SlackAlerts, alertRecord, scrub, scrubStack, logMethod, CAP_PER_HOUR, DEDUPE_WINDOW_MS } = require("../ui/slack-alerts.js");
 
 const AT = Date.parse("2026-11-27T04:15:00Z"); // 11/26/26 @ 11:15 PM ET
 const PROD = { NODE_ENV: "production", K_SERVICE: "etl-lte", SLACK_ALERT_WEBHOOK_URL: "https://hooks.slack.com/services/T/B/x" };
@@ -184,6 +184,39 @@ describe("slack-alerts redaction + record extraction", () => {
 		a.notify(alertRecord([{ err }, "export handler error"]));
 		await a.flush();
 		expect(posts[0]).not.toMatch(/bob@acme\.com|Purchase|\$email/);
+	});
+
+	test("redacts multi-line and escaped JSON to end of message; keeps ':' after cloud paths", () => {
+		expect(scrub('bad body:\n{\n  "event": "Purchase",\n  "$email": "bob@acme.com"\n}\ntrailer')).toBe("bad body:\n<redacted>");
+		expect(scrub('upstream said "{\\"distinct_id\\":\\"u1\\"}"')).toBe("upstream said <redacted>");
+		expect(scrub("open gs://bkt/a/b.json: permission denied")).toBe("open gs://bkt/<path>: permission denied");
+	});
+
+	test("a JSON slice in the error message keeps the stack frames (WHERE)", async () => {
+		const err = new Error('Response: {"$email":"bob@acme.com"}');
+		err.stack = 'Error: Response: {"$email":"bob@acme.com"}\n    at exportEvents (/app/components/exporters.js:423:17)\n    at run (/app/ui/server.js:1794:9)';
+		const { a, posts } = make();
+		a.notify(alertRecord([{ err }, "export handler error"]));
+		await a.flush();
+		expect(posts[0]).toContain("*WHERE:* components/exporters.js @ 423");
+		expect(posts[0]).toContain("> Error: Response: &lt;redacted&gt;");
+		expect(posts[0]).not.toContain("bob@acme.com");
+	});
+
+	test.each([
+		["{", "{".repeat(100_000)],
+		["[{", "[{".repeat(50_000)],
+		['"a" ', '"a" '.repeat(25_000)],
+		["a", "a".repeat(100_000)]
+	])("scrub is fast on a 100k-char %j run", (_n, input) => {
+		const t0 = Date.now();
+		scrub(input);
+		scrubStack(input);
+		expect(Date.now() - t0).toBeLessThan(100);
+	});
+
+	test("scrub caps its output", () => {
+		expect(scrub("x".repeat(100_000)).length).toBe(4000);
 	});
 
 	test("alert text never includes secrets in the error", async () => {
